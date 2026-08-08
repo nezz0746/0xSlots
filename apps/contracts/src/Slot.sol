@@ -6,6 +6,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IUtility} from "./interfaces/IUtility.sol";
 import {IOccupancyPolicy, OccupancyContext} from "./interfaces/IOccupancyPolicy.sol";
 import {SlotConfig, SlotInitParams, PendingUpdate, SlotInfo, ISlotEvents, EVT_BOUGHT, EVT_RELEASED, EVT_LIQUIDATED, EVT_PRICE_UPDATED, EVT_DEPOSITED, EVT_WITHDRAWN, EVT_TAX_COLLECTED, EVT_SETTLED} from "./interfaces/ISlot.sol";
@@ -787,8 +788,10 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     function _minDepositFor(uint256 price_) internal view returns (uint256) {
         if (minDepositSeconds == 0) return 0;
         return
-            (price_ * taxPercentage * minDepositSeconds) /
-            (MONTH * BASIS_POINTS);
+            Math.ceilDiv(
+                price_ * taxPercentage * minDepositSeconds,
+                MONTH * BASIS_POINTS
+            );
     }
 
     function _enforceMinDeposit(

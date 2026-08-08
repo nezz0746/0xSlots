@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
@@ -203,8 +204,11 @@ contract OccupancyPolicyTest is Test {
     }
 
     /// 1% monthly on 100 ether over 7 days = 100e18 * 100 * 604800 / (2592000 * 10000)
+    /// @dev Rounds UP, mirroring `Slot._minDepositFor`. This helper doubles as
+    ///      the expected core floor, so a truncating copy here would assert a
+    ///      floor one wei below the one the contract actually enforces.
     function _tenureCost(uint256 price_, uint256 tenure) internal pure returns (uint256) {
-        return (price_ * 100 * tenure) / (30 days * 10_000);
+        return Math.ceilDiv(price_ * 100 * tenure, 30 days * 10_000);
     }
 
     function test_Tenure_BlocksBuyInsideWindow() public {
