@@ -132,6 +132,7 @@ function _record(
   slot.price = BigInt.zero();
   slot.deposit = BigInt.zero();
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.totalCollected = BigInt.zero();
 
   // The policy now arrives in this event. Legacy slots pass address(0), which

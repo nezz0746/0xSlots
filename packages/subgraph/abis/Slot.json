@@ -1392,6 +1392,31 @@
   },
   {
     "type": "event",
+    "name": "TaxPaid",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "occupant",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "taxOwed",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "taxPaid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "event",
     "name": "TaxUpdateProposed",
     "inputs": [
       {

@@ -21,6 +21,7 @@ import {
   ReleasedEvent,
   SettledEvent,
   Slot,
+  TaxPaidEvent,
   SlotOperator,
   SlotRefund,
   TaxCollectedEvent,
@@ -45,6 +46,7 @@ import {
   RefundCredited,
   Released,
   Settled,
+  TaxPaid,
   SlotConfiguredV3,
   TaxCollected,
   TaxUpdateProposed,
@@ -184,6 +186,7 @@ export function handleReleased(event: Released): void {
   slot.price = BigInt.zero();
   slot.deposit = BigInt.zero();
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.occupiedSince = BigInt.zero();
   // A scheduled transfer deliberately SURVIVES vacancy: release/liquidate
   // before the boundary leave the slot empty, and the transfer still lands at
@@ -233,6 +236,7 @@ export function handleLiquidated(event: Liquidated): void {
   slot.price = BigInt.zero();
   slot.deposit = BigInt.zero();
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.occupiedSince = BigInt.zero();
   // A scheduled transfer deliberately SURVIVES vacancy: release/liquidate
   // before the boundary leave the slot empty, and the transfer still lands at
@@ -337,9 +341,74 @@ export function handleSettled(event: Settled): void {
   ev.save();
 }
 
+/**
+ * `TaxPaid` — the authoritative per-address tax ledger.
+ *
+ * Emitted immediately after `Settled`, in the same transaction, carrying the
+ * payer that `Settled` omits. `handleSettled` already attributes to
+ * `slot.occupant`, which is correct only because `_settle()` runs before
+ * occupancy is reassigned — an implicit ordering assumption with nothing
+ * checking it. This handler does not re-add the amount (that would double
+ * count); it records the authoritative event, keeps the per-slot denominator,
+ * and repairs the attribution if the inference ever disagreed.
+ */
+export function handleTaxPaid(event: TaxPaid): void {
+  const slot = getSlot(event.address);
+  const payer = event.params.occupant;
+  const amount = event.params.taxPaid;
+
+  // Only grows — `collectedTax` is drained by `collect()`, so it cannot serve
+  // as the denominator for a historical share.
+  slot.taxPaidTotal = slot.taxPaidTotal.plus(amount);
+  slot.updatedAt = event.block.timestamp;
+  slot.save();
+
+  const inferred = slot.occupant;
+  const matched =
+    inferred !== null && Address.fromBytes(inferred as Bytes).equals(payer);
+
+  const payerAS = getOrCreateAccountSlot(
+    payer,
+    event.address,
+    event.block.timestamp,
+  );
+
+  if (!matched) {
+    // handleSettled credited the wrong account this transaction. Move it,
+    // rather than letting the two sources drift apart silently.
+    if (inferred !== null) {
+      const wrongAS = getOrCreateAccountSlot(
+        Address.fromBytes(inferred as Bytes),
+        event.address,
+        event.block.timestamp,
+      );
+      wrongAS.taxPaid = wrongAS.taxPaid.minus(amount);
+      wrongAS.save();
+    }
+    payerAS.taxPaid = payerAS.taxPaid.plus(amount);
+  }
+
+  payerAS.lastInteractedAt = event.block.timestamp;
+  payerAS.save();
+
+  const ev = new TaxPaidEvent(evtId(event.transaction.hash, event.logIndex));
+  ev.slot = slot.id;
+  ev.account = getOrCreateAccount(payer).id;
+  ev.accountSlot = payerAS.id;
+  ev.currency = slot.currency;
+  ev.taxOwed = event.params.taxOwed;
+  ev.taxPaid = amount;
+  ev.matchedOccupant = matched;
+  ev.timestamp = event.block.timestamp;
+  ev.blockNumber = event.block.number;
+  ev.tx = event.transaction.hash;
+  ev.save();
+}
+
 export function handleTaxCollected(event: TaxCollected): void {
   const slot = getSlot(event.address);
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.totalCollected = slot.totalCollected.plus(event.params.amount);
   slot.updatedAt = event.block.timestamp;
   slot.save();
