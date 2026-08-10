@@ -70,6 +70,10 @@ type Slot @entity(immutable: false) {
   price: BigInt!
   deposit: BigInt!
   collectedTax: BigInt!
+  """Total tax ever paid into this slot, summed from TaxPaid.
+  The denominator for an account's share; unlike collectedTax it
+  only grows, since collecting drains the balance but not history."""
+  taxPaidTotal: BigInt!
   totalCollected: BigInt!
 
   # ── v3 occupancy layer ───────────────────────────────────────────────────
@@ -268,6 +272,33 @@ type SettledEvent @entity(immutable: true) {
   taxOwed: BigInt!
   taxPaid: BigInt!
   depositRemaining: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  tx: Bytes!
+}
+
+"""
+One tax payment, attributed to the address that paid it.
+
+`SettledEvent` carries the same amounts but not the payer, so it cannot be
+reduced to a per-address ledger. This can, and it is the contract's own
+statement rather than an inference from event ordering.
+"""
+type TaxPaidEvent @entity(immutable: true) {
+  id: ID!
+  slot: Slot!
+  account: Account!
+  accountSlot: AccountSlot!
+  currency: Currency!
+  taxOwed: BigInt!
+  """Actually taken from the deposit. Diverges from taxOwed when the occupant
+  went insolvent, since the charge is capped at the remaining deposit — this is
+  the figure to use for contribution accounting, never taxOwed."""
+  taxPaid: BigInt!
+  """False when the payer disagreed with the occupant the subgraph had on
+  record. Always false today; a true value means the ordering assumption behind
+  the pre-TaxPaid attribution has broken and older totals are suspect."""
+  matchedOccupant: Boolean!
   timestamp: BigInt!
   blockNumber: BigInt!
   tx: Bytes!

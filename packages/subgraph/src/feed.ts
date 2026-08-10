@@ -176,6 +176,7 @@ export function handleSlotAdded(event: SlotAdded): void {
     slot.price = BigInt.zero();
     slot.deposit = BigInt.zero();
     slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
     slot.totalCollected = BigInt.zero();
     slot.createdAt = event.block.timestamp;
     slot.createdTx = event.transaction.hash;

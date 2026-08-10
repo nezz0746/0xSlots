@@ -516,6 +516,32 @@ export class TaxCollected__Params {
   }
 }
 
+export class TaxPaid extends ethereum.Event {
+  get params(): TaxPaid__Params {
+    return new TaxPaid__Params(this);
+  }
+}
+
+export class TaxPaid__Params {
+  _event: TaxPaid;
+
+  constructor(event: TaxPaid) {
+    this._event = event;
+  }
+
+  get occupant(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+
+  get taxOwed(): BigInt {
+    return this._event.parameters[1].value.toBigInt();
+  }
+
+  get taxPaid(): BigInt {
+    return this._event.parameters[2].value.toBigInt();
+  }
+}
+
 export class TaxUpdateProposed extends ethereum.Event {
   get params(): TaxUpdateProposed__Params {
     return new TaxUpdateProposed__Params(this);

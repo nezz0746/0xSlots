@@ -149,6 +149,7 @@ templates:
         - DepositedEvent
         - WithdrawnEvent
         - SettledEvent
+        - TaxPaidEvent
         - TaxCollectedEvent
         - ModuleFeePaidEvent
       abis:
@@ -171,6 +172,11 @@ templates:
           handler: handleWithdrawn
         - event: Settled(uint256,uint256,uint256)
           handler: handleSettled
+        # Emitted immediately after Settled and carries WHO paid, which Settled
+        # does not. Attribution below is the contract's own statement rather
+        # than an inference from occupancy ordering.
+        - event: TaxPaid(indexed address,uint256,uint256)
+          handler: handleTaxPaid
         - event: TaxCollected(indexed address,uint256)
           handler: handleTaxCollected
         - event: TaxUpdateProposed(uint256)
