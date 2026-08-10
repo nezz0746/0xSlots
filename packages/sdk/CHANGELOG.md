@@ -1,5 +1,12 @@
 # @0xslots/sdk
 
+## 0.20.1
+
+### Patch Changes
+
+- Updated dependencies [4c4a412]
+  - @0xslots/contracts@0.17.0
+
 ## 0.20.0
 
 ### Minor Changes
