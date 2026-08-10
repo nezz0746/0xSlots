@@ -137,11 +137,11 @@ importers:
         specifier: ^4.3.1
         version: 4.4.0(react@19.2.4)(viem@2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
       '@adland/data':
-        specifier: ^0.16.1
-        version: 0.16.1(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)
+        specifier: 0.16.3
+        version: 0.16.3(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)
       '@adland/react':
-        specifier: ^0.17.1
-        version: 0.17.1(@0xslots/sdk@packages+sdk)(bufferutil@4.1.0)(encoding@0.1.13)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+        specifier: 0.18.1
+        version: 0.18.1(@0xslots/sdk@packages+sdk)(bufferutil@4.1.0)(encoding@0.1.13)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       '@farcaster/miniapp-sdk':
         specifier: ^0.2.3
         version: 0.2.3(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
@@ -453,11 +453,11 @@ packages:
       viem:
         optional: true
 
-  '@adland/data@0.16.1':
-    resolution: {integrity: sha512-ljFe5mR41YdfkjKBRsxyZjKWswqjXkHg6polSeQp37b3I+GjmJcpjCcuSj86C/usBEoBsYPUnQ/q200gS2MMuQ==}
+  '@adland/data@0.16.3':
+    resolution: {integrity: sha512-wacKahIJOQuBcQgpHR3qNKrfC7ciWxlV65fZKaG4QTCXE8pGww+g9FpH+UCroGU5903s2qIBXquiCCBvwV7ESQ==}
 
-  '@adland/react@0.17.1':
-    resolution: {integrity: sha512-YPhYd1j6LpG0vt/vsVL4bQtPL56l8CwbKqizOmAy1oAnHYqL/fYvI52jZ0YOAgd/+tcAJy6AK23SJlQwFbhpCQ==}
+  '@adland/react@0.18.1':
+    resolution: {integrity: sha512-gr98l0RikEZvyEzKclN8G3RV5TPfqkyFvfIJLJjyG4COW3G3zin7LsSfkMa12tmHfrzPnNmJCBeAKUxVG9GV/Q==}
     peerDependencies:
       '@0xslots/sdk': '>=0.1.0'
       react: 19.2.4
@@ -10978,7 +10978,7 @@ snapshots:
     optionalDependencies:
       viem: 2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
 
-  '@adland/data@0.16.1(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)':
+  '@adland/data@0.16.3(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)':
     dependencies:
       '@farcaster/miniapp-sdk': 0.2.3(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.1.12)
       zod: 4.1.12
@@ -10988,10 +10988,10 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@adland/react@0.17.1(@0xslots/sdk@packages+sdk)(bufferutil@4.1.0)(encoding@0.1.13)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)':
+  '@adland/react@0.18.1(@0xslots/sdk@packages+sdk)(bufferutil@4.1.0)(encoding@0.1.13)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)':
     dependencies:
       '@0xslots/sdk': link:packages/sdk
-      '@adland/data': 0.16.1(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@adland/data': 0.16.3(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)
       '@farcaster/miniapp-sdk': 0.2.3(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       lucide-react: 0.561.0(react@19.2.4)
       react: 19.2.4

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../interfaces/IOccupancyPolicy.sol";
 
 /// @title MinimumTenurePolicy
@@ -76,11 +77,17 @@ contract MinimumTenurePolicy is IOccupancyPolicy {
         return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
     }
 
+    /// @dev Rounds UP, mirroring `Slot._minDepositFor`. Truncating divided the
+    ///      pre-payment in the buyer's favour, and below a threshold price it
+    ///      truncated to zero outright — a tenure-protected slot could be taken
+    ///      with no pre-payment at all and then held for the whole window. The
+    ///      threshold is in RAW UNITS, so what it is worth depends on the
+    ///      currency's decimals, which this policy never sees.
     function _taxFor(
         uint256 price_,
         uint256 taxPercentage,
         uint256 seconds_
     ) internal pure returns (uint256) {
-        return (price_ * taxPercentage * seconds_) / (MONTH * BASIS_POINTS);
+        return Math.ceilDiv(price_ * taxPercentage * seconds_, MONTH * BASIS_POINTS);
     }
 }

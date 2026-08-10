@@ -3,6 +3,7 @@
 import { type SlotsChain, SlotsClient } from "@0xslots/sdk";
 import { useMemo } from "react";
 import { usePublicClient, useWalletClient } from "wagmi";
+import { subgraphUrlFor } from "@/config/subgraph";
 import { useChain } from "@/context/chain";
 
 /**
@@ -20,6 +21,7 @@ export function useSlotsClient(): SlotsClient {
         chainId: chainId as SlotsChain,
         publicClient: publicClient ?? undefined,
         walletClient: walletClient ?? undefined,
+        subgraphUrl: subgraphUrlFor(chainId as SlotsChain),
         subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
       }),
     [chainId, publicClient, walletClient],

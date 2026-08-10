@@ -4,6 +4,7 @@ import {
   type SlotsChain,
 } from "@0xslots/sdk";
 import { queryOptions } from "@tanstack/react-query";
+import { subgraphUrlFor } from "@/config/subgraph";
 
 /**
  * Create a SlotsClient instance for a given chain.
@@ -12,6 +13,7 @@ import { queryOptions } from "@tanstack/react-query";
 export function createServerSlotsClient(chainId: SlotsChain) {
   return createSlotsClient({
     chainId,
+    subgraphUrl: subgraphUrlFor(chainId),
     subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
   });
 }

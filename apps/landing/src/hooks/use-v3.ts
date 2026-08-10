@@ -7,6 +7,7 @@ import {
 } from "@0xslots/sdk";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { subgraphUrlFor } from "@/config/subgraph";
 import { useChain } from "@/context/chain";
 import {
   slotActivityQueryOptions,
@@ -23,6 +24,7 @@ export function useSlotsClient() {
     () =>
       createSlotsClient({
         chainId,
+        subgraphUrl: subgraphUrlFor(chainId),
         subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
       }),
     [chainId],
