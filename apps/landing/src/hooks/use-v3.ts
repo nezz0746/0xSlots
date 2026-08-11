@@ -7,12 +7,13 @@ import {
 } from "@0xslots/sdk";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { subgraphUrlFor } from "@/config/subgraph";
 import { useChain } from "@/context/chain";
+import { useSubgraphSource } from "@/context/subgraph-source";
 import {
   slotActivityQueryOptions,
   slotQueryOptions,
   slotsByRecipientQueryOptions,
+  withSource,
 } from "@/hooks/slot-queries";
 
 // Re-export the slot type for convenience
@@ -20,14 +21,15 @@ export type { SlotFieldsFragment as V3Slot } from "@0xslots/sdk";
 
 export function useSlotsClient() {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   return useMemo(
     () =>
       createSlotsClient({
         chainId,
-        subgraphUrl: subgraphUrlFor(chainId),
+        subgraphSource: source,
         subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
       }),
-    [chainId],
+    [chainId, source],
   );
 }
 
@@ -53,6 +55,7 @@ export function useSlots(
   pagination?: SlotPagination,
 ) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
 
   const conditions: Record<string, unknown>[] = [];
@@ -74,7 +77,7 @@ export function useSlots(
         : undefined;
 
   return useQuery({
-    queryKey: ["slots", chainId, filters, sort, pagination],
+    queryKey: withSource(["slots", chainId, filters, sort, pagination], source),
     queryFn: async () => {
       const { slots } = await client.getSlots({
         first: pagination?.first ?? 100,
@@ -92,25 +95,28 @@ export function useSlots(
 
 export function useSlot(id: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   return useQuery({
-    ...slotQueryOptions(chainId, id),
+    ...slotQueryOptions(chainId, id, source),
     enabled: !!id,
   });
 }
 
 export function useSlotsByRecipient(recipient: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   return useQuery({
-    ...slotsByRecipientQueryOptions(chainId, recipient),
+    ...slotsByRecipientQueryOptions(chainId, recipient, source),
     enabled: !!recipient,
   });
 }
 
 export function useSlotsByOccupant(occupant: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["slots-occupant", chainId, occupant],
+    queryKey: withSource(["slots-occupant", chainId, occupant], source),
     queryFn: async () => {
       const { slots } = await client.getSlotsByOccupant({
         occupant: occupant.toLowerCase(),
@@ -125,9 +131,10 @@ export function useSlotsByOccupant(occupant: string) {
 
 export function useFactory() {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["factory", chainId],
+    queryKey: withSource(["factory", chainId], source),
     queryFn: async () => {
       const { factories } = await client.getFactory();
       return factories[0] ?? null;
@@ -138,9 +145,10 @@ export function useFactory() {
 
 export function useModules() {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["modules", chainId],
+    queryKey: withSource(["modules", chainId], source),
     queryFn: async () => {
       const { modules } = await client.getModules({ first: 100 });
       return modules;
@@ -151,9 +159,10 @@ export function useModules() {
 
 export function useSlotPurchases(slotId: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["slot-purchases", chainId, slotId],
+    queryKey: withSource(["slot-purchases", chainId, slotId], source),
     queryFn: async () => {
       const { boughtEvents } = await client.getBoughtEvents({
         first: 50,
@@ -170,9 +179,10 @@ export function useSlotPurchases(slotId: string) {
 
 export function useSlotsettlements(slotId: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["slot-settlements", chainId, slotId],
+    queryKey: withSource(["slot-settlements", chainId, slotId], source),
     queryFn: async () => {
       const { settledEvents } = await client.getSettledEvents({
         first: 50,
@@ -189,9 +199,10 @@ export function useSlotsettlements(slotId: string) {
 
 export function useSlotTaxCollections(slotId: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["slot-tax-collections", chainId, slotId],
+    queryKey: withSource(["slot-tax-collections", chainId, slotId], source),
     queryFn: async () => {
       const { taxCollectedEvents } = await client.getTaxCollectedEvents({
         first: 50,
@@ -208,17 +219,19 @@ export function useSlotTaxCollections(slotId: string) {
 
 export function useSlotActivity(slotId: string) {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   return useQuery({
-    ...slotActivityQueryOptions(chainId, slotId),
+    ...slotActivityQueryOptions(chainId, slotId, source),
     enabled: !!slotId,
   });
 }
 
 export function useRecentEvents() {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["recent-events", chainId],
+    queryKey: withSource(["recent-events", chainId], source),
     queryFn: async () => {
       return client.getRecentEvents({ first: 100 });
     },
@@ -228,9 +241,10 @@ export function useRecentEvents() {
 
 export function useAccounts() {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["accounts", chainId],
+    queryKey: withSource(["accounts", chainId], source),
     queryFn: async () => {
       const { accounts } = await client.getAccounts({
         first: 100,

@@ -10,6 +10,7 @@ import { miniAppConfig } from "@/config/wagmi-miniapp";
 import { ChainProvider } from "@/context/chain";
 import { FarcasterProvider, useFarcaster } from "@/context/farcaster";
 import { NavigationProvider } from "@/context/navigation";
+import { SubgraphSourceProvider } from "@/context/subgraph-source";
 import { SplitsClientSync } from "./splits-client-sync";
 
 /** Lazy-load the web provider tree (includes RainbowKit) only when needed. */
@@ -43,12 +44,14 @@ function MiniAppProviders({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <FarcasterAutoConnect />
         <ChainProvider>
-          <SplitsProvider>
-            <SplitsClientSync />
-            <TooltipProvider>
-              <NavigationProvider>{children}</NavigationProvider>
-            </TooltipProvider>
-          </SplitsProvider>
+          <SubgraphSourceProvider>
+            <SplitsProvider>
+              <SplitsClientSync />
+              <TooltipProvider>
+                <NavigationProvider>{children}</NavigationProvider>
+              </TooltipProvider>
+            </SplitsProvider>
+          </SubgraphSourceProvider>
         </ChainProvider>
       </QueryClientProvider>
     </WagmiProvider>

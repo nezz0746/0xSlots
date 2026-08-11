@@ -60,6 +60,65 @@ export const SUBGRAPH_URLS: Record<SlotsChain, string> = {
     "https://gateway.thegraph.com/api/subgraphs/id/4sZrdv1SFzN4KzE9jiWDRuUyM4CnCrmvQ54Rv1s65qUq",
 };
 
+/**
+ * Which deployment of the subgraph to read.
+ *
+ * `Network` is the decentralized network through `gateway.thegraph.com`, and is
+ * what anything user-facing should be on.
+ *
+ * `Studio` is the development deployment. It matters because a freshly
+ * published version is NOT served by the gateway until an indexer allocates to
+ * it and syncs from `startBlock` — hours for these subgraphs — and until then
+ * the gateway answers `subgraph not found: no allocations`. Studio serves a
+ * deployment the moment it finishes indexing, so it is how you exercise a
+ * mapping or schema change before the network catches up.
+ *
+ * Studio is rate-limited and explicitly a development surface. Treat it as a
+ * tool you switch on deliberately, never as a fallback to reach for when the
+ * gateway is unhappy.
+ */
+export enum SubgraphSource {
+  Network = "network",
+  Studio = "studio",
+}
+
+/**
+ * Subgraph Studio endpoints, by chain.
+ *
+ * `version/latest` follows whatever was deployed to Studio most recently — a
+ * moving target, not a pin.
+ *
+ * The slugs are NOT symmetrical (`0-xslots-base` but `0-x-slots-base-sepolia`)
+ * and cannot be derived from the chain name. They come from
+ * `packages/subgraph/config/<network>.json` → `studioName`, which is what
+ * `graph deploy` publishes under; copy them from there rather than inferring
+ * the pattern. Getting one wrong fails quietly: Studio answers an unknown slug
+ * with HTTP 200 and a `{"message":"Not found"}` body, so a client that only
+ * checks the status code sees a successful request with no data.
+ */
+export const STUDIO_SUBGRAPH_URLS: Record<SlotsChain, string> = {
+  [SlotsChain.BASE_SEPOLIA]:
+    "https://api.studio.thegraph.com/query/958/0-x-slots-base-sepolia/version/latest",
+  [SlotsChain.BASE]:
+    "https://api.studio.thegraph.com/query/958/0-xslots-base/version/latest",
+};
+
+/**
+ * The subgraph endpoint for a chain, from whichever deployment `source` names.
+ *
+ * Both maps live here rather than in a consuming app so the two can never
+ * disagree about which chain is which, and so an app switching between them
+ * carries a flag rather than a URL.
+ */
+export function subgraphUrlFor(
+  chainId: SlotsChain,
+  source: SubgraphSource = SubgraphSource.Network,
+): string {
+  return source === SubgraphSource.Studio
+    ? STUDIO_SUBGRAPH_URLS[chainId]
+    : SUBGRAPH_URLS[chainId];
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
@@ -154,7 +213,21 @@ export interface SlotsClientConfig {
   factoryAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
+  /**
+   * An exact endpoint, overriding `subgraphSource` entirely. For a local
+   * graph-node or a pinned deployment ID — anything this package cannot know
+   * the address of.
+   */
   subgraphUrl?: string;
+  /**
+   * Which published deployment to read. Defaults to the decentralized network.
+   * Ignored when `subgraphUrl` is given.
+   */
+  subgraphSource?: SubgraphSource;
+  /**
+   * Gateway API key. Sent as a bearer token, and only to the decentralized
+   * network — see the constructor.
+   */
   subgraphApiKey?: string;
   headers?: Record<string, string>;
 }
@@ -197,10 +270,21 @@ export class SlotsClient {
     this.walletClient = config.walletClient;
     this._factory = config.factoryAddress ?? getSlotsHubAddress(config.chainId);
 
-    const url = config.subgraphUrl || SUBGRAPH_URLS[config.chainId];
+    const source = config.subgraphSource ?? SubgraphSource.Network;
+    const url = config.subgraphUrl || subgraphUrlFor(config.chainId, source);
     if (!url) throw new Error(`No subgraph URL for chain ${config.chainId}`);
+
     const headers: Record<string, string> = { ...config.headers };
-    if (config.subgraphApiKey) {
+    // The key authenticates against `gateway.thegraph.com` and is meaningless
+    // anywhere else, so it is withheld when this client resolved a Studio
+    // endpoint itself. Sending it would put a gateway credential in a request
+    // to a host that has no use for it.
+    //
+    // An explicit `subgraphUrl` still gets the key: the caller named that
+    // endpoint and we cannot tell what it is.
+    const isResolvedStudio =
+      !config.subgraphUrl && source === SubgraphSource.Studio;
+    if (config.subgraphApiKey && !isResolvedStudio) {
       headers["Authorization"] = `Bearer ${config.subgraphApiKey}`;
     }
     this.gqlClient = new GraphQLClient(url, { headers });

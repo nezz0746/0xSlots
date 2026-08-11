@@ -9,13 +9,20 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
+import { useSubgraphSource } from "@/context/subgraph-source";
+import { withSource } from "@/hooks/slot-queries";
 import { useSlotsClient } from "@/hooks/use-v3";
 
 function useSubgraphMeta() {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["subgraph-meta", chainId],
+    // Keyed by source like every other subgraph read. Without it the indicator
+    // would keep reporting the network's head block after switching to Studio —
+    // the one place a stale answer is actively misleading, since this dot is
+    // what you check to see whether the deployment you switched to has synced.
+    queryKey: withSource(["subgraph-meta", chainId], source),
     queryFn: async () => {
       const res = await client.getMeta();
       return res._meta;

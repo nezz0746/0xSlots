@@ -1,6 +1,7 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
+import { UpdateKind } from "@0xslots/sdk";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -61,6 +62,7 @@ import {
 import { useChain } from "@/context/chain";
 import { useFarcaster } from "@/context/farcaster";
 import { NavLink } from "@/context/navigation";
+import { useSubgraphSource } from "@/context/subgraph-source";
 import {
   slotActivityQueryOptions,
   slotQueryOptions,
@@ -88,11 +90,17 @@ import {
   SlotEventHistory,
 } from "./components/event-history";
 import { MetadataForm } from "./components/metadata-form";
+import {
+  PendingUpdatesNotice,
+  type PendingViewer,
+  pendingChanges,
+} from "./components/pending-updates";
 import { UserCurrencyBalance } from "./components/user-balance";
 
 export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const router = useRouter();
   const { explorerUrl, chainId: selectedChainId } = useChain();
+  const { source: subgraphSource } = useSubgraphSource();
   const { isMiniApp } = useFarcaster();
   const {
     data: slot,
@@ -102,12 +110,20 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
 
   // Subgraph data — prefetched on the server, reads from cache instantly
   const { data: subgraphSlot } = useSuspenseQuery(
-    slotQueryOptions(selectedChainId, slotAddress),
+    slotQueryOptions(selectedChainId, slotAddress, subgraphSource),
   );
   // Wall clock for the tenure meter. Above the isLoading/!slot early returns —
   // hooks cannot be conditional — and only ticking when there is something
   // time-positioned to draw.
-  const nowSeconds = useNow(!!slot?.occupancyPolicy);
+  // Also ticks whenever something is queued: the pending notice shows how long
+  // ago each change was proposed, which is the signal that separates a routine
+  // update from one timed against a buy in flight.
+  const nowSeconds = useNow(
+    !!slot?.occupancyPolicy ||
+      !!slot?.hasPendingTax ||
+      !!slot?.hasPendingUtility ||
+      !!slot?.hasPendingPolicy,
+  );
   // Static map first, then the chain — see use-resolved-policy. This drives the
   // tenure meter, so an unresolvable policy correctly draws nothing rather than
   // a meter with an invented window.
@@ -117,7 +133,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   );
 
   const { data: activityData } = useSuspenseQuery(
-    slotActivityQueryOptions(selectedChainId, slotAddress),
+    slotActivityQueryOptions(selectedChainId, slotAddress, subgraphSource),
   );
 
   const { address, isConnected, chainId, chain } = useAccount();
@@ -128,8 +144,8 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
     collect,
     liquidate,
     proposeTaxUpdate,
-    proposeModuleUpdate,
-    cancelPendingUpdates,
+    proposeUtilityUpdate,
+    cancelPendingUpdate,
     busy,
     activeAction,
   } = useSlotAction();
@@ -209,13 +225,43 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
     (slot.taxOwed < slot.deposit ? slot.taxOwed : slot.deposit);
 
   const hasModule =
-    slot.module != null && slot.module.toLowerCase() !== zeroAddress;
+    slot.utility != null && slot.utility.toLowerCase() !== zeroAddress;
   const moduleEntity = subgraphSlot?.module ?? null;
   const moduleUnverified = hasModule && moduleEntity && !moduleEntity.verified;
   const isMetadataModule =
     hasModule &&
     moduleEntity?.verified === true &&
     moduleEntity.name === "AdLandModule";
+
+  // ── Queued updates ────────────────────────────────────────────────────────
+  //
+  // Resolved once here so the terms panel, the buy panel and the manage tab all
+  // describe the same three changes rather than each rendering its own subset.
+  // The old page showed tax and module and silently omitted policy — the one
+  // update that changes whether the slot can be taken from you.
+  const utilityLabel = (addr: string | null) => {
+    if (!addr || addr.toLowerCase() === zeroAddress) return "None";
+    const known = modules?.find(
+      (m) => m.id.toLowerCase() === addr.toLowerCase(),
+    );
+    return known?.name || truncateAddress(addr);
+  };
+  const policyLabel = (addr: string | null) => {
+    if (!addr || addr.toLowerCase() === zeroAddress)
+      return "Open — anyone may buy at any time";
+    if (addr.toLowerCase() === slot.occupancyPolicy?.toLowerCase())
+      return knownPolicy?.label ?? truncateAddress(addr);
+    return truncateAddress(addr);
+  };
+  const queuedChanges = pendingChanges(slot, utilityLabel, policyLabel);
+  // A connected occupant is the one party these do NOT affect; the manager is
+  // the one who can retract them. Everyone else is a prospective buyer, which
+  // includes a disconnected visitor — the reader most likely to be caught out.
+  const pendingViewer: PendingViewer = isOccupant
+    ? "occupant"
+    : isManager
+      ? "manager"
+      : "buyer";
 
   const role = isConnected
     ? isOccupant && isRecipient
@@ -463,19 +509,6 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                           {formatBps(slot.taxPercentage.toString())}/mo
                         </span>
                       </div>
-                      {slot.hasPendingTax && (
-                        <div className="flex justify-between pl-5">
-                          <p className="text-xs text-amber-600">
-                            Pending update{" "}
-                            <span className="text-[10px]">
-                              Applied on next ownership transition
-                            </span>
-                          </p>
-                          <span className="text-[11px] text-amber-600">
-                            {formatBps(slot.pendingTaxPercentage.toString())}/mo
-                          </span>
-                        </div>
-                      )}
                       <div className="flex justify-between">
                         <span className="text-muted-foreground flex items-center gap-1.5">
                           <Timer className="size-3" /> Min. Deposit
@@ -584,13 +617,18 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                               truncateAddress(slot.module)}
                         </span>
                       </div>
-                      {slot.hasPendingModule && (
-                        <div className="pl-5">
-                          <p className="text-xs text-indigo-600">
-                            Pending module update — applied on next ownership
-                            transition
-                          </p>
-                        </div>
+                      {/* One notice for all three dimensions, in the reader's
+                          own terms. Previously tax and module each had their
+                          own line here and the occupancy policy had none. */}
+                      {queuedChanges.length > 0 && (
+                        <>
+                          <div className="border-t" />
+                          <PendingUpdatesNotice
+                            changes={queuedChanges}
+                            viewer={pendingViewer}
+                            nowSeconds={nowSeconds}
+                          />
+                        </>
                       )}
 
                       {moduleUnverified && (
@@ -641,6 +679,23 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                 {/* Manage tab (manager only) */}
                 {activeTab === "manage" && isManager && (
                   <div className="p-6 space-y-6">
+                    {/* Everything queued, with a per-dimension retract. Each
+                        cancel touches only its own dimension, so retracting a
+                        tax proposal no longer destroys a queued policy change
+                        alongside it. */}
+                    {queuedChanges.length > 0 && (
+                      <PendingUpdatesNotice
+                        changes={queuedChanges}
+                        viewer="manager"
+                        nowSeconds={nowSeconds}
+                        onCancel={(kind) =>
+                          cancelPendingUpdate(slotAddress as Address, kind)
+                        }
+                        busy={busy}
+                        activeAction={activeAction}
+                      />
+                    )}
+
                     {/* Tax Update */}
                     {slot.mutableTax && (
                       <div className="space-y-4">
@@ -668,13 +723,6 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                           <span>75%</span>
                           <span>100%</span>
                         </div>
-                        {slot.hasPendingTax && (
-                          <div className="text-sm bg-amber-500/10 text-amber-600 rounded px-3 py-2">
-                            Pending:{" "}
-                            {formatBps(slot.pendingTaxPercentage.toString())}/mo
-                            — applied on next ownership transition
-                          </div>
-                        )}
                         <Button
                           className="w-full"
                           disabled={
@@ -707,12 +755,6 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                         <label className="text-sm text-muted-foreground flex items-center gap-1.5">
                           <Settings className="size-4" /> Propose Module
                         </label>
-                        {slot.hasPendingModule && (
-                          <div className="text-sm bg-indigo-500/10 text-indigo-600 rounded px-3 py-2">
-                            Pending module update — applied on next ownership
-                            transition
-                          </div>
-                        )}
                         <div className="flex flex-wrap gap-2">
                           {modules
                             ?.filter((m) => m.verified)
@@ -757,39 +799,19 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                             busy ||
                             !newModule ||
                             newModule.toLowerCase() ===
-                              slot.module.toLowerCase()
+                              slot.utility.toLowerCase()
                           }
                           onClick={() =>
-                            proposeModuleUpdate(
+                            proposeUtilityUpdate(
                               slotAddress as Address,
                               newModule as Address,
                             )
                           }
                         >
-                          {busy && activeAction === "Propose module" ? (
+                          {busy && activeAction === "Propose utility" ? (
                             <Loader2 className="size-4 animate-spin" />
                           ) : (
                             `Propose Module ${newModule ? truncateAddress(newModule) : ""}`
-                          )}
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Cancel Pending Updates */}
-                    {(slot.hasPendingTax || slot.hasPendingModule) && (
-                      <div className="border-t pt-4">
-                        <Button
-                          variant="outline"
-                          className="w-full text-destructive hover:text-destructive"
-                          disabled={busy}
-                          onClick={() =>
-                            cancelPendingUpdates(slotAddress as Address)
-                          }
-                        >
-                          {busy && activeAction === "Cancel updates" ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            "Cancel Pending Updates"
                           )}
                         </Button>
                       </div>
@@ -1024,11 +1046,24 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
           ) : (
             <>
               {(slot.occupant == null || !isOccupant) && !isRecipient && (
-                <BuySection
-                  slot={slot}
-                  slotAddress={slotAddress}
-                  isOccupied={isOccupied}
-                />
+                <>
+                  {/* Restated next to the button, not just in the terms panel
+                      further up the page. A buy applies every queued change in
+                      the same transaction, so this is the last thing a buyer
+                      should read before committing. */}
+                  {queuedChanges.length > 0 && (
+                    <PendingUpdatesNotice
+                      changes={queuedChanges}
+                      viewer="buyer"
+                      nowSeconds={nowSeconds}
+                    />
+                  )}
+                  <BuySection
+                    slot={slot}
+                    slotAddress={slotAddress}
+                    isOccupied={isOccupied}
+                  />
+                </>
               )}
 
               {isOccupant && (

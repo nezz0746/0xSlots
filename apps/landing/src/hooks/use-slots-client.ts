@@ -3,8 +3,8 @@
 import { type SlotsChain, SlotsClient } from "@0xslots/sdk";
 import { useMemo } from "react";
 import { usePublicClient, useWalletClient } from "wagmi";
-import { subgraphUrlFor } from "@/config/subgraph";
 import { useChain } from "@/context/chain";
+import { useSubgraphSource } from "@/context/subgraph-source";
 
 /**
  * Returns a unified SlotsClient wired to the current chain.
@@ -12,6 +12,7 @@ import { useChain } from "@/context/chain";
  */
 export function useSlotsClient(): SlotsClient {
   const { chainId } = useChain();
+  const { source } = useSubgraphSource();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
 
@@ -21,9 +22,11 @@ export function useSlotsClient(): SlotsClient {
         chainId: chainId as SlotsChain,
         publicClient: publicClient ?? undefined,
         walletClient: walletClient ?? undefined,
-        subgraphUrl: subgraphUrlFor(chainId as SlotsChain),
+        // Reads only. Writes go through the wallet client to the chain and are
+        // unaffected by which copy of the index is being read.
+        subgraphSource: source,
         subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
       }),
-    [chainId, publicClient, walletClient],
+    [chainId, source, publicClient, walletClient],
   );
 }

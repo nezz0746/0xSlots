@@ -9,8 +9,11 @@ export {
   SlotsChain,
   SlotsClient,
   type SlotsClientConfig,
+  STUDIO_SUBGRAPH_URLS,
   SUBGRAPH_URLS,
   type SubgraphMeta,
+  SubgraphSource,
+  subgraphUrlFor,
   UpdateKind,
 } from "./client";
 // Errors

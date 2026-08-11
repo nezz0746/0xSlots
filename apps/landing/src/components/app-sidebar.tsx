@@ -4,7 +4,7 @@ import { CHAINS } from "@0xslots/contracts";
 import { Check, ChevronDown, PlusIcon, User } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-
+import { SubgraphSourceSwitch } from "@/components/subgraph-source-switch";
 import { SubgraphStatus } from "@/components/subgraph-status";
 import { TestnetFaucet } from "@/components/testnet-faucet";
 import { Button } from "@/components/ui/button";
@@ -134,6 +134,10 @@ export function AppSidebar() {
         {/* Renders only on chains with a mintable currency, so it disappears
             on mainnet without needing a testnet check here. */}
         <TestnetFaucet />
+
+        {/* Sits directly above the chain picker: both choose WHERE the app
+            reads from, and both are persisted per browser. */}
+        <SubgraphSourceSwitch />
 
         <div className="flex items-center justify-between px-2 pb-1">
           <DropdownMenu>

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { useChain } from "@/context/chain";
 import { NavLink, useNavigation } from "@/context/navigation";
+import { useSubgraphSource } from "@/context/subgraph-source";
 import { slotsByRecipientQueryOptions } from "@/hooks/slot-queries";
 import { useSlotsOnChain } from "@/hooks/use-slot-onchain";
 import { useEnsAvatar, useEnsName } from "@/lib/ens";
@@ -30,11 +31,12 @@ import { formatBalance, truncateAddress } from "@/utils";
 export function RecipientPageContent({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
   const { explorerUrl, chainId: selectedChainId } = useChain();
+  const { source: subgraphSource } = useSubgraphSource();
   const { push } = useNavigation();
 
   // Subgraph data — prefetched on the server, reads from cache instantly
   const { data: subgraphSlots } = useSuspenseQuery(
-    slotsByRecipientQueryOptions(selectedChainId, address),
+    slotsByRecipientQueryOptions(selectedChainId, address, subgraphSource),
   );
   const slotAddresses = subgraphSlots?.map((s) => s.id) ?? [];
 
