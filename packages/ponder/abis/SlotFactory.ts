@@ -45,6 +45,25 @@ export const SlotFactoryAbi = [
   },
   {
     type: "function",
+    name: "collectAll",
+    inputs: [
+      {
+        name: "slots",
+        type: "address[]",
+        internalType: "address[]",
+      },
+    ],
+    outputs: [
+      {
+        name: "collected",
+        type: "uint256[]",
+        internalType: "uint256[]",
+      },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "createSlot",
     inputs: [
       {
@@ -68,7 +87,12 @@ export const SlotFactoryAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "mutablePolicy",
             type: "bool",
             internalType: "bool",
           },
@@ -90,7 +114,7 @@ export const SlotFactoryAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -103,6 +127,11 @@ export const SlotFactoryAbi = [
             name: "minDepositSeconds",
             type: "uint256",
             internalType: "uint256",
+          },
+          {
+            name: "occupancyPolicy",
+            type: "address",
+            internalType: "address",
           },
         ],
       },
@@ -141,7 +170,12 @@ export const SlotFactoryAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "mutablePolicy",
             type: "bool",
             internalType: "bool",
           },
@@ -163,7 +197,7 @@ export const SlotFactoryAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -176,6 +210,11 @@ export const SlotFactoryAbi = [
             name: "minDepositSeconds",
             type: "uint256",
             internalType: "uint256",
+          },
+          {
+            name: "occupancyPolicy",
+            type: "address",
+            internalType: "address",
           },
         ],
       },
@@ -248,7 +287,7 @@ export const SlotFactoryAbi = [
     name: "isModuleVerified",
     inputs: [
       {
-        name: "module",
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -283,16 +322,22 @@ export const SlotFactoryAbi = [
   },
   {
     type: "function",
-    name: "migrateSlots",
+    name: "isUtilityVerified",
     inputs: [
       {
-        name: "slots",
-        type: "address[]",
-        internalType: "address[]",
+        name: "_utility",
+        type: "address",
+        internalType: "address",
       },
     ],
-    outputs: [],
-    stateMutability: "nonpayable",
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
   },
   {
     type: "function",
@@ -325,7 +370,43 @@ export const SlotFactoryAbi = [
     name: "setModuleVerified",
     inputs: [
       {
-        name: "_module",
+        name: "_utility",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "verified",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "setPolicyVerified",
+    inputs: [
+      {
+        name: "_policy",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "verified",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "setUtilityVerified",
+    inputs: [
+      {
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -344,6 +425,19 @@ export const SlotFactoryAbi = [
     inputs: [
       {
         name: "newAdmin",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "upgradeBeacon",
+    inputs: [
+      {
+        name: "newImplementation",
         type: "address",
         internalType: "address",
       },
@@ -372,6 +466,44 @@ export const SlotFactoryAbi = [
   {
     type: "function",
     name: "verifiedModules",
+    inputs: [
+      {
+        name: "_utility",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "verifiedPolicies",
+    inputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "verifiedUtilities",
     inputs: [
       {
         name: "",
@@ -409,10 +541,23 @@ export const SlotFactoryAbi = [
   },
   {
     type: "event",
+    name: "BeaconUpgraded",
+    inputs: [
+      {
+        name: "newImplementation",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
     name: "ModuleVerified",
     inputs: [
       {
-        name: "module",
+        name: "utility",
         type: "address",
         indexed: true,
         internalType: "address",
@@ -443,6 +588,43 @@ export const SlotFactoryAbi = [
       },
       {
         name: "moduleURI",
+        type: "string",
+        indexed: false,
+        internalType: "string",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "PolicyVerified",
+    inputs: [
+      {
+        name: "policy",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "verified",
+        type: "bool",
+        indexed: false,
+        internalType: "bool",
+      },
+      {
+        name: "name",
+        type: "string",
+        indexed: false,
+        internalType: "string",
+      },
+      {
+        name: "version",
+        type: "string",
+        indexed: false,
+        internalType: "string",
+      },
+      {
+        name: "policyURI",
         type: "string",
         indexed: false,
         internalType: "string",
@@ -484,7 +666,12 @@ export const SlotFactoryAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "mutablePolicy",
             type: "bool",
             internalType: "bool",
           },
@@ -507,7 +694,7 @@ export const SlotFactoryAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -520,6 +707,11 @@ export const SlotFactoryAbi = [
             name: "minDepositSeconds",
             type: "uint256",
             internalType: "uint256",
+          },
+          {
+            name: "occupancyPolicy",
+            type: "address",
+            internalType: "address",
           },
         ],
       },
@@ -614,6 +806,11 @@ export const SlotFactoryAbi = [
   {
     type: "error",
     name: "InvalidCount",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "InvalidModule_NoCode",
     inputs: [],
   },
   {

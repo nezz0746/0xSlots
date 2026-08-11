@@ -11,6 +11,7 @@ export {
   type SlotsClientConfig,
   SUBGRAPH_URLS,
   type SubgraphMeta,
+  UpdateKind,
 } from "./client";
 // Errors
 export { SlotsError } from "./errors";

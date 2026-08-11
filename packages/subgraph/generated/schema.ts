@@ -891,6 +891,91 @@ export class Slot extends Entity {
     this.set("hasPendingPolicy", Value.fromBoolean(value));
   }
 
+  get policyProposedAt(): BigInt | null {
+    let value = this.get("policyProposedAt");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set policyProposedAt(value: BigInt | null) {
+    if (!value) {
+      this.unset("policyProposedAt");
+    } else {
+      this.set("policyProposedAt", Value.fromBigInt(<BigInt>value));
+    }
+  }
+
+  get pendingTaxPercentage(): BigInt | null {
+    let value = this.get("pendingTaxPercentage");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set pendingTaxPercentage(value: BigInt | null) {
+    if (!value) {
+      this.unset("pendingTaxPercentage");
+    } else {
+      this.set("pendingTaxPercentage", Value.fromBigInt(<BigInt>value));
+    }
+  }
+
+  get taxProposedAt(): BigInt | null {
+    let value = this.get("taxProposedAt");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set taxProposedAt(value: BigInt | null) {
+    if (!value) {
+      this.unset("taxProposedAt");
+    } else {
+      this.set("taxProposedAt", Value.fromBigInt(<BigInt>value));
+    }
+  }
+
+  get pendingUtility(): Bytes | null {
+    let value = this.get("pendingUtility");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toBytes();
+    }
+  }
+
+  set pendingUtility(value: Bytes | null) {
+    if (!value) {
+      this.unset("pendingUtility");
+    } else {
+      this.set("pendingUtility", Value.fromBytes(<Bytes>value));
+    }
+  }
+
+  get utilityProposedAt(): BigInt | null {
+    let value = this.get("utilityProposedAt");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set utilityProposedAt(value: BigInt | null) {
+    if (!value) {
+      this.unset("utilityProposedAt");
+    } else {
+      this.set("utilityProposedAt", Value.fromBigInt(<BigInt>value));
+    }
+  }
+
   get createdAt(): BigInt {
     let value = this.get("createdAt");
     if (!value || value.kind == ValueKind.NULL) {
@@ -3584,6 +3669,145 @@ export class PendingUpdateCancelledEvent extends Entity {
 
   set slot(value: string) {
     this.set("slot", Value.fromString(value));
+  }
+
+  get timestamp(): BigInt {
+    let value = this.get("timestamp");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set timestamp(value: BigInt) {
+    this.set("timestamp", Value.fromBigInt(value));
+  }
+
+  get blockNumber(): BigInt {
+    let value = this.get("blockNumber");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set blockNumber(value: BigInt) {
+    this.set("blockNumber", Value.fromBigInt(value));
+  }
+
+  get tx(): Bytes {
+    let value = this.get("tx");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBytes();
+    }
+  }
+
+  set tx(value: Bytes) {
+    this.set("tx", Value.fromBytes(value));
+  }
+}
+
+export class PendingUpdateEvent extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save PendingUpdateEvent entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type PendingUpdateEvent must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+      );
+      store.set("PendingUpdateEvent", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): PendingUpdateEvent | null {
+    return changetype<PendingUpdateEvent | null>(
+      store.get_in_block("PendingUpdateEvent", id),
+    );
+  }
+
+  static load(id: string): PendingUpdateEvent | null {
+    return changetype<PendingUpdateEvent | null>(
+      store.get("PendingUpdateEvent", id),
+    );
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get slot(): string {
+    let value = this.get("slot");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set slot(value: string) {
+    this.set("slot", Value.fromString(value));
+  }
+
+  get kind(): i32 {
+    let value = this.get("kind");
+    if (!value || value.kind == ValueKind.NULL) {
+      return 0;
+    } else {
+      return value.toI32();
+    }
+  }
+
+  set kind(value: i32) {
+    this.set("kind", Value.fromI32(value));
+  }
+
+  get action(): string {
+    let value = this.get("action");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set action(value: string) {
+    this.set("action", Value.fromString(value));
+  }
+
+  get value(): Bytes | null {
+    let value = this.get("value");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toBytes();
+    }
+  }
+
+  set value(value: Bytes | null) {
+    if (!value) {
+      this.unset("value");
+    } else {
+      this.set("value", Value.fromBytes(<Bytes>value));
+    }
   }
 
   get timestamp(): BigInt {

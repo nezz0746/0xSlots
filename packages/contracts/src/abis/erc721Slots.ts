@@ -1,82 +1,7 @@
 export const erc721SlotsAbi = [
   {
     type: "constructor",
-    inputs: [
-      {
-        name: "name_",
-        type: "string",
-        internalType: "string",
-      },
-      {
-        name: "symbol_",
-        type: "string",
-        internalType: "string",
-      },
-      {
-        name: "factory_",
-        type: "address",
-        internalType: "address",
-      },
-      {
-        name: "creator_",
-        type: "address",
-        internalType: "address",
-      },
-      {
-        name: "currency_",
-        type: "address",
-        internalType: "address",
-      },
-      {
-        name: "config_",
-        type: "tuple",
-        internalType: "struct SlotConfig",
-        components: [
-          {
-            name: "mutableTax",
-            type: "bool",
-            internalType: "bool",
-          },
-          {
-            name: "mutableModule",
-            type: "bool",
-            internalType: "bool",
-          },
-          {
-            name: "manager",
-            type: "address",
-            internalType: "address",
-          },
-        ],
-      },
-      {
-        name: "initParams_",
-        type: "tuple",
-        internalType: "struct SlotInitParams",
-        components: [
-          {
-            name: "taxPercentage",
-            type: "uint256",
-            internalType: "uint256",
-          },
-          {
-            name: "module",
-            type: "address",
-            internalType: "address",
-          },
-          {
-            name: "liquidationBountyBps",
-            type: "uint256",
-            internalType: "uint256",
-          },
-          {
-            name: "minDepositSeconds",
-            type: "uint256",
-            internalType: "uint256",
-          },
-        ],
-      },
-    ],
+    inputs: [],
     stateMutability: "nonpayable",
   },
   {
@@ -211,7 +136,12 @@ export const erc721SlotsAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "mutablePolicy",
             type: "bool",
             internalType: "bool",
           },
@@ -231,7 +161,7 @@ export const erc721SlotsAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -261,6 +191,11 @@ export const erc721SlotsAbi = [
             internalType: "uint256",
           },
           {
+            name: "lastSettled",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
             name: "secondsUntilLiquidation",
             type: "uint256",
             internalType: "uint256",
@@ -269,6 +204,31 @@ export const erc721SlotsAbi = [
             name: "insolvent",
             type: "bool",
             internalType: "bool",
+          },
+          {
+            name: "utilityName",
+            type: "string",
+            internalType: "string",
+          },
+          {
+            name: "utilityVersion",
+            type: "string",
+            internalType: "string",
+          },
+          {
+            name: "utilityFeeBps",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "utilityFeeRecipient",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "utilityURI",
+            type: "string",
+            internalType: "string",
           },
           {
             name: "hasPendingTax",
@@ -281,19 +241,146 @@ export const erc721SlotsAbi = [
             internalType: "uint256",
           },
           {
-            name: "hasPendingModule",
+            name: "hasPendingUtility",
             type: "bool",
             internalType: "bool",
           },
           {
-            name: "pendingModule",
+            name: "pendingUtility",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "occupancyPolicy",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "occupiedSince",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "hasPendingPolicy",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "pendingPolicy",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "taxProposedAt",
+            type: "uint64",
+            internalType: "uint64",
+          },
+          {
+            name: "utilityProposedAt",
+            type: "uint64",
+            internalType: "uint64",
+          },
+          {
+            name: "policyProposedAt",
+            type: "uint64",
+            internalType: "uint64",
+          },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "initialize",
+    inputs: [
+      {
+        name: "name_",
+        type: "string",
+        internalType: "string",
+      },
+      {
+        name: "symbol_",
+        type: "string",
+        internalType: "string",
+      },
+      {
+        name: "factory_",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "creator_",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "currency_",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "config_",
+        type: "tuple",
+        internalType: "struct SlotConfig",
+        components: [
+          {
+            name: "mutableTax",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "mutableUtility",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "mutablePolicy",
+            type: "bool",
+            internalType: "bool",
+          },
+          {
+            name: "manager",
+            type: "address",
+            internalType: "address",
+          },
+        ],
+      },
+      {
+        name: "initParams_",
+        type: "tuple",
+        internalType: "struct SlotInitParams",
+        components: [
+          {
+            name: "taxPercentage",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "utility",
+            type: "address",
+            internalType: "address",
+          },
+          {
+            name: "liquidationBountyBps",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "minDepositSeconds",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "occupancyPolicy",
             type: "address",
             internalType: "address",
           },
         ],
       },
     ],
-    stateMutability: "view",
+    outputs: [],
+    stateMutability: "nonpayable",
   },
   {
     type: "function",
@@ -564,7 +651,12 @@ export const erc721SlotsAbi = [
         internalType: "bool",
       },
       {
-        name: "mutableModule",
+        name: "mutableUtility",
+        type: "bool",
+        internalType: "bool",
+      },
+      {
+        name: "mutablePolicy",
         type: "bool",
         internalType: "bool",
       },
@@ -587,7 +679,7 @@ export const erc721SlotsAbi = [
         internalType: "uint256",
       },
       {
-        name: "module",
+        name: "utility",
         type: "address",
         internalType: "address",
       },
@@ -600,6 +692,11 @@ export const erc721SlotsAbi = [
         name: "minDepositSeconds",
         type: "uint256",
         internalType: "uint256",
+      },
+      {
+        name: "occupancyPolicy",
+        type: "address",
+        internalType: "address",
       },
     ],
     stateMutability: "view",
@@ -781,6 +878,19 @@ export const erc721SlotsAbi = [
   },
   {
     type: "event",
+    name: "Initialized",
+    inputs: [
+      {
+        name: "version",
+        type: "uint64",
+        indexed: false,
+        internalType: "uint64",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
     name: "TokenMinted",
     inputs: [
       {
@@ -934,12 +1044,22 @@ export const erc721SlotsAbi = [
   },
   {
     type: "error",
+    name: "InvalidInitialization",
+    inputs: [],
+  },
+  {
+    type: "error",
     name: "InvalidTokenURI",
     inputs: [],
   },
   {
     type: "error",
     name: "NotCreator",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NotInitializing",
     inputs: [],
   },
   {

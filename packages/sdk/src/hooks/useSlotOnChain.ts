@@ -11,15 +11,15 @@ export type SlotOnChain = {
   currency: string;
   manager: string;
   mutableTax: boolean;
-  mutableModule: boolean;
+  mutableUtility: boolean;
   mutablePolicy: boolean;
   // State
   occupant: string | null;
   price: bigint;
-  taxPercentage: bigint;
-  module: string;
+  utility: string;
   liquidationBountyBps: bigint;
   minDepositSeconds: bigint;
+  taxPercentage: bigint;
   // Financials
   deposit: bigint;
   collectedTax: bigint;
@@ -27,35 +27,64 @@ export type SlotOnChain = {
   lastSettled: bigint;
   secondsUntilLiquidation: bigint;
   insolvent: boolean;
-  // Pending
+  // Pending updates — at most one per dimension, applied together on the next
+  // ownership transition. The `*ProposedAt` stamps are unix seconds and are
+  // what separates a change queued last week from one queued moments ago;
+  // zero alongside a set `has*` flag means the slot predates them being
+  // recorded.
   hasPendingTax: boolean;
   pendingTaxPercentage: bigint;
-  hasPendingModule: boolean;
-  pendingModule: string;
+  taxProposedAt: bigint;
+  hasPendingUtility: boolean;
+  pendingUtility: string;
+  utilityProposedAt: bigint;
+  hasPendingPolicy: boolean;
+  pendingPolicy: string | null;
+  policyProposedAt: bigint;
   // v3 occupancy layer
   occupancyPolicy: string | null;
   occupiedSince: bigint;
-  hasPendingPolicy: boolean;
-  pendingPolicy: string | null;
   // Currency metadata
   currencyName?: string;
   currencySymbol?: string;
   currencyDecimals?: number;
+
+  // ── deprecated aliases ──────────────────────────────────────
+  // The storage moved to clearer names; these mirror the deprecated
+  // `module()` / `mutableModule()` getters the contract still ships, so a
+  // consumer on the old names keeps working for one release.
+
+  /** @deprecated use `utility` */
+  module: string;
+  /** @deprecated use `mutableUtility` */
+  mutableModule: boolean;
+  /** @deprecated use `hasPendingUtility` */
+  hasPendingModule: boolean;
+  /** @deprecated use `pendingUtility` */
+  pendingModule: string;
 };
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+/**
+ * The raw `getSlotInfo()` tuple. Field names must match the Solidity struct
+ * exactly — viem decodes by ABI component name, so a mismatch here reads back
+ * `undefined` rather than failing loudly. This drifted once already: the SDK
+ * carried `module` / `mutableModule` while the contract had renamed them to
+ * `utility` / `mutableUtility`, and only a stale checked-in ABI kept the two
+ * agreeing.
+ */
 type SlotInfoResult = {
   recipient: string;
   currency: string;
   manager: string;
   mutableTax: boolean;
-  mutableModule: boolean;
+  mutableUtility: boolean;
   mutablePolicy: boolean;
   occupant: string;
   price: bigint;
   taxPercentage: bigint;
-  module: string;
+  utility: string;
   liquidationBountyBps: bigint;
   minDepositSeconds: bigint;
   deposit: bigint;
@@ -66,12 +95,15 @@ type SlotInfoResult = {
   insolvent: boolean;
   hasPendingTax: boolean;
   pendingTaxPercentage: bigint;
-  hasPendingModule: boolean;
-  pendingModule: string;
+  hasPendingUtility: boolean;
+  pendingUtility: string;
   occupancyPolicy: string;
   occupiedSince: bigint;
   hasPendingPolicy: boolean;
   pendingPolicy: string;
+  taxProposedAt: bigint;
+  utilityProposedAt: bigint;
+  policyProposedAt: bigint;
 };
 
 function parseSlotInfo(
@@ -85,13 +117,13 @@ function parseSlotInfo(
     currency: info.currency.toLowerCase(),
     manager: info.manager.toLowerCase(),
     mutableTax: info.mutableTax,
-    mutableModule: info.mutableModule,
+    mutableUtility: info.mutableUtility,
     mutablePolicy: info.mutablePolicy,
     occupant:
       info.occupant === ZERO_ADDRESS ? null : info.occupant.toLowerCase(),
     price: info.price,
     taxPercentage: info.taxPercentage,
-    module: info.module.toLowerCase(),
+    utility: info.utility.toLowerCase(),
     liquidationBountyBps: info.liquidationBountyBps,
     minDepositSeconds: info.minDepositSeconds,
     deposit: info.deposit,
@@ -102,8 +134,16 @@ function parseSlotInfo(
     insolvent: info.insolvent,
     hasPendingTax: info.hasPendingTax,
     pendingTaxPercentage: info.pendingTaxPercentage,
-    hasPendingModule: info.hasPendingModule,
-    pendingModule: info.pendingModule.toLowerCase(),
+    taxProposedAt: info.taxProposedAt,
+    hasPendingUtility: info.hasPendingUtility,
+    pendingUtility: info.pendingUtility.toLowerCase(),
+    utilityProposedAt: info.utilityProposedAt,
+    hasPendingPolicy: info.hasPendingPolicy,
+    pendingPolicy:
+      info.pendingPolicy === ZERO_ADDRESS
+        ? null
+        : info.pendingPolicy.toLowerCase(),
+    policyProposedAt: info.policyProposedAt,
     // Occupancy layer. `epochSeconds` is deliberately absent from SlotInfo:
     // six slots still carry a value in storage, nothing reads it, and
     // reporting a delay that is never applied would mislead.
@@ -112,14 +152,14 @@ function parseSlotInfo(
         ? null
         : info.occupancyPolicy.toLowerCase(),
     occupiedSince: info.occupiedSince,
-    hasPendingPolicy: info.hasPendingPolicy,
-    pendingPolicy:
-      info.pendingPolicy === ZERO_ADDRESS
-        ? null
-        : info.pendingPolicy.toLowerCase(),
     currencyName: currencyMeta?.name,
     currencySymbol: currencyMeta?.symbol,
     currencyDecimals: currencyMeta?.decimals,
+    // Deprecated aliases, filled from the same source as the canonical fields.
+    module: info.utility.toLowerCase(),
+    mutableModule: info.mutableUtility,
+    hasPendingModule: info.hasPendingUtility,
+    pendingModule: info.pendingUtility.toLowerCase(),
   };
 }
 

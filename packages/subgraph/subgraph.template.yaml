@@ -152,6 +152,7 @@ templates:
         - TaxPaidEvent
         - TaxCollectedEvent
         - ModuleFeePaidEvent
+        - PendingUpdateEvent
       abis:
         - name: Slot
           file: ./abis/Slot.json
@@ -200,6 +201,15 @@ templates:
           handler: handlePolicyUpdateProposed
         - event: PolicyUpdateApplied(address)
           handler: handlePolicyUpdateApplied
+        # Per-kind pending updates. These carry the dimension, so unlike the
+        # five events above them they can be reduced into "what is queued on
+        # this slot right now".
+        - event: UpdateProposed(indexed uint8,bytes32,uint64)
+          handler: handleUpdateProposed
+        - event: UpdateCancelled(indexed uint8)
+          handler: handleUpdateCancelled
+        - event: UpdateApplied(indexed uint8,bytes32)
+          handler: handleUpdateApplied
         - event: RefundCredited(indexed address,uint256)
           handler: handleRefundCredited
         - event: RefundClaimed(indexed address,uint256)

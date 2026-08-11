@@ -159,7 +159,7 @@ export class ModuleFeePaid__Params {
     this._event = event;
   }
 
-  get module(): Address {
+  get utility(): Address {
     return this._event.parameters[0].value.toAddress();
   }
 
@@ -185,7 +185,7 @@ export class ModuleUpdateProposed__Params {
     this._event = event;
   }
 
-  get newModule(): Address {
+  get newUtility(): Address {
     return this._event.parameters[0].value.toAddress();
   }
 }
@@ -233,7 +233,7 @@ export class PendingUpdateApplied__Params {
     return this._event.parameters[0].value.toBigInt();
   }
 
-  get newModule(): Address {
+  get newUtility(): Address {
     return this._event.parameters[1].value.toAddress();
   }
 }
@@ -612,12 +612,156 @@ export class Withdrawn__Params {
   }
 }
 
+export class SlotCreated1 extends ethereum.Event {
+  get params(): SlotCreated1__Params {
+    return new SlotCreated1__Params(this);
+  }
+}
+
+export class SlotCreated1__Params {
+  _event: SlotCreated1;
+
+  constructor(event: SlotCreated1) {
+    this._event = event;
+  }
+
+  get slot(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+
+  get recipient(): Address {
+    return this._event.parameters[1].value.toAddress();
+  }
+
+  get currency(): Address {
+    return this._event.parameters[2].value.toAddress();
+  }
+
+  get config(): SlotCreated1ConfigStruct {
+    return changetype<SlotCreated1ConfigStruct>(
+      this._event.parameters[3].value.toTuple(),
+    );
+  }
+
+  get initParams(): SlotCreated1InitParamsStruct {
+    return changetype<SlotCreated1InitParamsStruct>(
+      this._event.parameters[4].value.toTuple(),
+    );
+  }
+}
+
+export class SlotCreated1ConfigStruct extends ethereum.Tuple {
+  get mutableTax(): boolean {
+    return this[0].toBoolean();
+  }
+
+  get mutableUtility(): boolean {
+    return this[1].toBoolean();
+  }
+
+  get mutablePolicy(): boolean {
+    return this[2].toBoolean();
+  }
+
+  get manager(): Address {
+    return this[3].toAddress();
+  }
+}
+
+export class SlotCreated1InitParamsStruct extends ethereum.Tuple {
+  get taxPercentage(): BigInt {
+    return this[0].toBigInt();
+  }
+
+  get utility(): Address {
+    return this[1].toAddress();
+  }
+
+  get liquidationBountyBps(): BigInt {
+    return this[2].toBigInt();
+  }
+
+  get minDepositSeconds(): BigInt {
+    return this[3].toBigInt();
+  }
+
+  get occupancyPolicy(): Address {
+    return this[4].toAddress();
+  }
+}
+
+export class UpdateApplied extends ethereum.Event {
+  get params(): UpdateApplied__Params {
+    return new UpdateApplied__Params(this);
+  }
+}
+
+export class UpdateApplied__Params {
+  _event: UpdateApplied;
+
+  constructor(event: UpdateApplied) {
+    this._event = event;
+  }
+
+  get kind(): i32 {
+    return this._event.parameters[0].value.toI32();
+  }
+
+  get value(): Bytes {
+    return this._event.parameters[1].value.toBytes();
+  }
+}
+
+export class UpdateCancelled extends ethereum.Event {
+  get params(): UpdateCancelled__Params {
+    return new UpdateCancelled__Params(this);
+  }
+}
+
+export class UpdateCancelled__Params {
+  _event: UpdateCancelled;
+
+  constructor(event: UpdateCancelled) {
+    this._event = event;
+  }
+
+  get kind(): i32 {
+    return this._event.parameters[0].value.toI32();
+  }
+}
+
+export class UpdateProposed extends ethereum.Event {
+  get params(): UpdateProposed__Params {
+    return new UpdateProposed__Params(this);
+  }
+}
+
+export class UpdateProposed__Params {
+  _event: UpdateProposed;
+
+  constructor(event: UpdateProposed) {
+    this._event = event;
+  }
+
+  get kind(): i32 {
+    return this._event.parameters[0].value.toI32();
+  }
+
+  get value(): Bytes {
+    return this._event.parameters[1].value.toBytes();
+  }
+
+  get proposedAt(): BigInt {
+    return this._event.parameters[2].value.toBigInt();
+  }
+}
+
 export class Slot__getPendingUpdateResultValue0Struct extends ethereum.Tuple {
   get newTaxPercentage(): BigInt {
     return this[0].toBigInt();
   }
 
-  get newModule(): Address {
+  get newUtility(): Address {
     return this[1].toAddress();
   }
 
@@ -625,7 +769,7 @@ export class Slot__getPendingUpdateResultValue0Struct extends ethereum.Tuple {
     return this[2].toBoolean();
   }
 
-  get hasModuleUpdate(): boolean {
+  get hasUtilityUpdate(): boolean {
     return this[3].toBoolean();
   }
 }
@@ -647,108 +791,124 @@ export class Slot__getSlotInfoResultInfoStruct extends ethereum.Tuple {
     return this[3].toBoolean();
   }
 
-  get mutableModule(): boolean {
+  get mutableUtility(): boolean {
     return this[4].toBoolean();
   }
 
+  get mutablePolicy(): boolean {
+    return this[5].toBoolean();
+  }
+
   get occupant(): Address {
-    return this[5].toAddress();
+    return this[6].toAddress();
   }
 
   get price(): BigInt {
-    return this[6].toBigInt();
-  }
-
-  get taxPercentage(): BigInt {
     return this[7].toBigInt();
   }
 
-  get module(): Address {
-    return this[8].toAddress();
+  get taxPercentage(): BigInt {
+    return this[8].toBigInt();
+  }
+
+  get utility(): Address {
+    return this[9].toAddress();
   }
 
   get liquidationBountyBps(): BigInt {
-    return this[9].toBigInt();
-  }
-
-  get minDepositSeconds(): BigInt {
     return this[10].toBigInt();
   }
 
-  get deposit(): BigInt {
+  get minDepositSeconds(): BigInt {
     return this[11].toBigInt();
   }
 
-  get collectedTax(): BigInt {
+  get deposit(): BigInt {
     return this[12].toBigInt();
   }
 
-  get taxOwed(): BigInt {
+  get collectedTax(): BigInt {
     return this[13].toBigInt();
   }
 
-  get secondsUntilLiquidation(): BigInt {
+  get taxOwed(): BigInt {
     return this[14].toBigInt();
   }
 
+  get lastSettled(): BigInt {
+    return this[15].toBigInt();
+  }
+
+  get secondsUntilLiquidation(): BigInt {
+    return this[16].toBigInt();
+  }
+
   get insolvent(): boolean {
-    return this[15].toBoolean();
+    return this[17].toBoolean();
   }
 
-  get moduleName(): string {
-    return this[16].toString();
+  get utilityName(): string {
+    return this[18].toString();
   }
 
-  get moduleVersion(): string {
-    return this[17].toString();
+  get utilityVersion(): string {
+    return this[19].toString();
   }
 
-  get moduleFeeBps(): BigInt {
-    return this[18].toBigInt();
+  get utilityFeeBps(): BigInt {
+    return this[20].toBigInt();
   }
 
-  get moduleFeeRecipient(): Address {
-    return this[19].toAddress();
+  get utilityFeeRecipient(): Address {
+    return this[21].toAddress();
   }
 
-  get moduleURI(): string {
-    return this[20].toString();
+  get utilityURI(): string {
+    return this[22].toString();
   }
 
   get hasPendingTax(): boolean {
-    return this[21].toBoolean();
-  }
-
-  get pendingTaxPercentage(): BigInt {
-    return this[22].toBigInt();
-  }
-
-  get hasPendingModule(): boolean {
     return this[23].toBoolean();
   }
 
-  get pendingModule(): Address {
-    return this[24].toAddress();
+  get pendingTaxPercentage(): BigInt {
+    return this[24].toBigInt();
+  }
+
+  get hasPendingUtility(): boolean {
+    return this[25].toBoolean();
+  }
+
+  get pendingUtility(): Address {
+    return this[26].toAddress();
   }
 
   get occupancyPolicy(): Address {
-    return this[25].toAddress();
-  }
-
-  get epochSeconds(): BigInt {
-    return this[26].toBigInt();
+    return this[27].toAddress();
   }
 
   get occupiedSince(): BigInt {
-    return this[27].toBigInt();
+    return this[28].toBigInt();
   }
 
   get hasPendingPolicy(): boolean {
-    return this[28].toBoolean();
+    return this[29].toBoolean();
   }
 
   get pendingPolicy(): Address {
-    return this[29].toAddress();
+    return this[30].toAddress();
+  }
+
+  get taxProposedAt(): BigInt {
+    return this[31].toBigInt();
+  }
+
+  get utilityProposedAt(): BigInt {
+    return this[32].toBigInt();
+  }
+
+  get policyProposedAt(): BigInt {
+    return this[33].toBigInt();
   }
 }
 
@@ -860,7 +1020,7 @@ export class Slot__pendingUpdateResult {
     return this.value0;
   }
 
-  getNewModule(): Address {
+  getNewUtility(): Address {
     return this.value1;
   }
 
@@ -868,8 +1028,40 @@ export class Slot__pendingUpdateResult {
     return this.value2;
   }
 
-  getHasModuleUpdate(): boolean {
+  getHasUtilityUpdate(): boolean {
     return this.value3;
+  }
+}
+
+export class Slot__pendingUpdateOfResult {
+  value0: boolean;
+  value1: Bytes;
+  value2: BigInt;
+
+  constructor(value0: boolean, value1: Bytes, value2: BigInt) {
+    this.value0 = value0;
+    this.value1 = value1;
+    this.value2 = value2;
+  }
+
+  toMap(): TypedMap<string, ethereum.Value> {
+    let map = new TypedMap<string, ethereum.Value>();
+    map.set("value0", ethereum.Value.fromBoolean(this.value0));
+    map.set("value1", ethereum.Value.fromFixedBytes(this.value1));
+    map.set("value2", ethereum.Value.fromUnsignedBigInt(this.value2));
+    return map;
+  }
+
+  getIsSet(): boolean {
+    return this.value0;
+  }
+
+  getValue(): Bytes {
+    return this.value1;
+  }
+
+  getProposedAt(): BigInt {
+    return this.value2;
   }
 }
 
@@ -1013,7 +1205,7 @@ export class Slot extends ethereum.SmartContract {
   getSlotInfo(): Slot__getSlotInfoResultInfoStruct {
     let result = super.call(
       "getSlotInfo",
-      "getSlotInfo():((address,address,address,bool,bool,address,uint256,uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,bool,string,string,uint256,address,string,bool,uint256,bool,address,address,uint256,uint256,bool,address))",
+      "getSlotInfo():((address,address,address,bool,bool,bool,address,uint256,uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool,string,string,uint256,address,string,bool,uint256,bool,address,address,uint256,bool,address,uint64,uint64,uint64))",
       [],
     );
 
@@ -1023,7 +1215,7 @@ export class Slot extends ethereum.SmartContract {
   try_getSlotInfo(): ethereum.CallResult<Slot__getSlotInfoResultInfoStruct> {
     let result = super.tryCall(
       "getSlotInfo",
-      "getSlotInfo():((address,address,address,bool,bool,address,uint256,uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,bool,string,string,uint256,address,string,bool,uint256,bool,address,address,uint256,uint256,bool,address))",
+      "getSlotInfo():((address,address,address,bool,bool,bool,address,uint256,uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool,string,string,uint256,address,string,bool,uint256,bool,address,address,uint256,bool,address,uint64,uint64,uint64))",
       [],
     );
     if (result.reverted) {
@@ -1515,6 +1707,147 @@ export class Slot extends ethereum.SmartContract {
     let value = result.value;
     return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
+
+  mutablePolicy(): boolean {
+    let result = super.call("mutablePolicy", "mutablePolicy():(bool)", []);
+
+    return result[0].toBoolean();
+  }
+
+  try_mutablePolicy(): ethereum.CallResult<boolean> {
+    let result = super.tryCall("mutablePolicy", "mutablePolicy():(bool)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBoolean());
+  }
+
+  mutableUtility(): boolean {
+    let result = super.call("mutableUtility", "mutableUtility():(bool)", []);
+
+    return result[0].toBoolean();
+  }
+
+  try_mutableUtility(): ethereum.CallResult<boolean> {
+    let result = super.tryCall("mutableUtility", "mutableUtility():(bool)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBoolean());
+  }
+
+  pendingUpdateOf(kind: i32): Slot__pendingUpdateOfResult {
+    let result = super.call(
+      "pendingUpdateOf",
+      "pendingUpdateOf(uint8):(bool,bytes32,uint64)",
+      [ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(kind))],
+    );
+
+    return new Slot__pendingUpdateOfResult(
+      result[0].toBoolean(),
+      result[1].toBytes(),
+      result[2].toBigInt(),
+    );
+  }
+
+  try_pendingUpdateOf(
+    kind: i32,
+  ): ethereum.CallResult<Slot__pendingUpdateOfResult> {
+    let result = super.tryCall(
+      "pendingUpdateOf",
+      "pendingUpdateOf(uint8):(bool,bytes32,uint64)",
+      [ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(kind))],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(
+      new Slot__pendingUpdateOfResult(
+        value[0].toBoolean(),
+        value[1].toBytes(),
+        value[2].toBigInt(),
+      ),
+    );
+  }
+
+  policyProposedAt(): BigInt {
+    let result = super.call(
+      "policyProposedAt",
+      "policyProposedAt():(uint64)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_policyProposedAt(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "policyProposedAt",
+      "policyProposedAt():(uint64)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
+  taxProposedAt(): BigInt {
+    let result = super.call("taxProposedAt", "taxProposedAt():(uint64)", []);
+
+    return result[0].toBigInt();
+  }
+
+  try_taxProposedAt(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall("taxProposedAt", "taxProposedAt():(uint64)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
+  utility(): Address {
+    let result = super.call("utility", "utility():(address)", []);
+
+    return result[0].toAddress();
+  }
+
+  try_utility(): ethereum.CallResult<Address> {
+    let result = super.tryCall("utility", "utility():(address)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  utilityProposedAt(): BigInt {
+    let result = super.call(
+      "utilityProposedAt",
+      "utilityProposedAt():(uint64)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_utilityProposedAt(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "utilityProposedAt",
+      "utilityProposedAt():(uint64)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
 }
 
 export class ConstructorCall extends ethereum.Call {
@@ -1882,7 +2215,7 @@ export class ProposeModuleUpdateCall__Inputs {
     this._call = call;
   }
 
-  get newModule(): Address {
+  get newUtility(): Address {
     return this._call.inputValues[0].value.toAddress();
   }
 }
@@ -2131,6 +2464,156 @@ export class WithdrawCall__Outputs {
   _call: WithdrawCall;
 
   constructor(call: WithdrawCall) {
+    this._call = call;
+  }
+}
+
+export class CancelPendingUpdateCall extends ethereum.Call {
+  get inputs(): CancelPendingUpdateCall__Inputs {
+    return new CancelPendingUpdateCall__Inputs(this);
+  }
+
+  get outputs(): CancelPendingUpdateCall__Outputs {
+    return new CancelPendingUpdateCall__Outputs(this);
+  }
+}
+
+export class CancelPendingUpdateCall__Inputs {
+  _call: CancelPendingUpdateCall;
+
+  constructor(call: CancelPendingUpdateCall) {
+    this._call = call;
+  }
+
+  get kind(): i32 {
+    return this._call.inputValues[0].value.toI32();
+  }
+}
+
+export class CancelPendingUpdateCall__Outputs {
+  _call: CancelPendingUpdateCall;
+
+  constructor(call: CancelPendingUpdateCall) {
+    this._call = call;
+  }
+}
+
+export class Initialize1Call extends ethereum.Call {
+  get inputs(): Initialize1Call__Inputs {
+    return new Initialize1Call__Inputs(this);
+  }
+
+  get outputs(): Initialize1Call__Outputs {
+    return new Initialize1Call__Outputs(this);
+  }
+}
+
+export class Initialize1Call__Inputs {
+  _call: Initialize1Call;
+
+  constructor(call: Initialize1Call) {
+    this._call = call;
+  }
+
+  get _recipient(): Address {
+    return this._call.inputValues[0].value.toAddress();
+  }
+
+  get _currency(): Address {
+    return this._call.inputValues[1].value.toAddress();
+  }
+
+  get _config(): Initialize1Call_configStruct {
+    return changetype<Initialize1Call_configStruct>(
+      this._call.inputValues[2].value.toTuple(),
+    );
+  }
+
+  get _init(): Initialize1Call_initStruct {
+    return changetype<Initialize1Call_initStruct>(
+      this._call.inputValues[3].value.toTuple(),
+    );
+  }
+
+  get _factory(): Address {
+    return this._call.inputValues[4].value.toAddress();
+  }
+}
+
+export class Initialize1Call__Outputs {
+  _call: Initialize1Call;
+
+  constructor(call: Initialize1Call) {
+    this._call = call;
+  }
+}
+
+export class Initialize1Call_configStruct extends ethereum.Tuple {
+  get mutableTax(): boolean {
+    return this[0].toBoolean();
+  }
+
+  get mutableUtility(): boolean {
+    return this[1].toBoolean();
+  }
+
+  get mutablePolicy(): boolean {
+    return this[2].toBoolean();
+  }
+
+  get manager(): Address {
+    return this[3].toAddress();
+  }
+}
+
+export class Initialize1Call_initStruct extends ethereum.Tuple {
+  get taxPercentage(): BigInt {
+    return this[0].toBigInt();
+  }
+
+  get utility(): Address {
+    return this[1].toAddress();
+  }
+
+  get liquidationBountyBps(): BigInt {
+    return this[2].toBigInt();
+  }
+
+  get minDepositSeconds(): BigInt {
+    return this[3].toBigInt();
+  }
+
+  get occupancyPolicy(): Address {
+    return this[4].toAddress();
+  }
+}
+
+export class ProposeUtilityUpdateCall extends ethereum.Call {
+  get inputs(): ProposeUtilityUpdateCall__Inputs {
+    return new ProposeUtilityUpdateCall__Inputs(this);
+  }
+
+  get outputs(): ProposeUtilityUpdateCall__Outputs {
+    return new ProposeUtilityUpdateCall__Outputs(this);
+  }
+}
+
+export class ProposeUtilityUpdateCall__Inputs {
+  _call: ProposeUtilityUpdateCall;
+
+  constructor(call: ProposeUtilityUpdateCall) {
+    this._call = call;
+  }
+
+  get newUtility(): Address {
+    return this._call.inputValues[0].value.toAddress();
+  }
+}
+
+export class ProposeUtilityUpdateCall__Outputs {
+  _call: ProposeUtilityUpdateCall;
+
+  constructor(call: ProposeUtilityUpdateCall) {
     this._call = call;
   }
 }

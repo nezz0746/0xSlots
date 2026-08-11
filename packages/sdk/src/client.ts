@@ -16,6 +16,7 @@ import {
   type Hash,
   type PublicClient,
   type WalletClient,
+  zeroAddress as ZERO_ADDRESS,
 } from "viem";
 import { SlotsError } from "./errors";
 import { getSdk } from "./generated/graphql";
@@ -61,10 +62,25 @@ export const SUBGRAPH_URLS: Record<SlotsChain, string> = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Which of a slot's three governable dimensions a pending update targets.
+ *
+ * A slot holds at most one pending update per kind — three in total — and each
+ * can be proposed, inspected and cancelled independently. The numeric values
+ * mirror the Solidity enum and are what goes on the wire; do not reorder them.
+ */
+export enum UpdateKind {
+  Tax = 0,
+  Utility = 1,
+  Policy = 2,
+}
+
 export interface SlotConfig {
   mutableTax: boolean;
-  /** The UTILITY module — what the slot does. */
-  mutableModule: boolean;
+  /** The UTILITY — what the slot does. */
+  mutableUtility?: boolean;
+  /** @deprecated use `mutableUtility` */
+  mutableModule?: boolean;
   /** The OCCUPANCY policy — whether forced sale applies, and on what terms. */
   mutablePolicy: boolean;
   /** address(0) when every flag is false. */
@@ -73,11 +89,46 @@ export interface SlotConfig {
 
 export interface SlotInitParams {
   taxPercentage: bigint;
-  module: Address;
+  /** The utility contract, or the zero address for none. */
+  utility?: Address;
+  /** @deprecated use `utility` */
+  module?: Address;
   liquidationBountyBps: bigint;
   minDepositSeconds: bigint;
   /** IOccupancyPolicy address, or zero for plain instant buy. */
   occupancyPolicy: Address;
+}
+
+/**
+ * Build the exact tuples the factory expects.
+ *
+ * viem encodes a struct argument BY COMPONENT NAME, so an object carrying the
+ * old `mutableModule` / `module` keys against the current ABI encodes nothing
+ * for those fields. Both names are accepted here and normalised to the one the
+ * contract declares, so a caller on either spelling produces the same calldata.
+ *
+ * This drifted silently once: the SDK and the checked-in ABIs were BOTH on the
+ * old names, so they agreed with each other and disagreed with the chain. Doing
+ * the mapping explicitly is what stops that happening again — a missing field
+ * is now a type error here rather than a zero address on-chain.
+ */
+function encodeSlotConfig(config: SlotConfig) {
+  return {
+    mutableTax: config.mutableTax,
+    mutableUtility: config.mutableUtility ?? config.mutableModule ?? false,
+    mutablePolicy: config.mutablePolicy,
+    manager: config.manager,
+  } as const;
+}
+
+function encodeSlotInitParams(init: SlotInitParams) {
+  return {
+    taxPercentage: init.taxPercentage,
+    utility: init.utility ?? init.module ?? ZERO_ADDRESS,
+    liquidationBountyBps: init.liquidationBountyBps,
+    minDepositSeconds: init.minDepositSeconds,
+    occupancyPolicy: init.occupancyPolicy,
+  } as const;
 }
 
 export interface CreateSlotParams {
@@ -462,8 +513,8 @@ export class SlotsClient {
       args: [
         params.recipient,
         params.currency,
-        params.config,
-        params.initParams,
+        encodeSlotConfig(params.config),
+        encodeSlotInitParams(params.initParams),
       ],
       account: this.account,
       chain: this.chain,
@@ -612,8 +663,8 @@ export class SlotsClient {
       args: [
         params.recipient,
         params.currency,
-        params.config,
-        params.initParams,
+        encodeSlotConfig(params.config),
+        encodeSlotInitParams(params.initParams),
         params.count,
       ],
       account: this.account,
@@ -790,10 +841,30 @@ export class SlotsClient {
   }
 
   /**
-   * Propose a module update (manager only, slot must have mutableModule).
+   * Propose a utility update (manager only, slot must have mutableUtility).
    * @param slot - The slot contract address.
-   * @param newModule - The new module contract address.
+   * @param newUtility - The new utility contract address, or the zero address
+   *   to remove the utility entirely.
    * @returns Transaction hash.
+   */
+  async proposeUtilityUpdate(
+    slot: Address,
+    newUtility: Address,
+  ): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "proposeUtilityUpdate",
+      args: [newUtility],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * @deprecated Use {@link proposeUtilityUpdate}. Kept for one release; it
+   * targets the slot's deprecated `proposeModuleUpdate` selector, which simply
+   * forwards to the same place.
    */
   async proposeModuleUpdate(slot: Address, newModule: Address): Promise<Hash> {
     return this.wallet.writeContract({
@@ -807,7 +878,59 @@ export class SlotsClient {
   }
 
   /**
-   * Cancel pending updates (manager only).
+   * Propose an occupancy-policy update (manager only, slot must have
+   * mutablePolicy).
+   *
+   * Gated on its own flag rather than `mutableUtility`: swapping what a slot
+   * does and swapping whether it can be taken from you are different promises,
+   * and an occupant who accepted the first has not accepted the second.
+   *
+   * @param slot - The slot contract address.
+   * @param newPolicy - The new IOccupancyPolicy address, or the zero address
+   *   for plain Harberger rules with no policy at all.
+   * @returns Transaction hash.
+   */
+  async proposePolicyUpdate(slot: Address, newPolicy: Address): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "proposePolicyUpdate",
+      args: [newPolicy],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Cancel the pending update for ONE dimension, leaving the others queued
+   * (manager only).
+   *
+   * Prefer this over {@link cancelPendingUpdates}. A slot can hold a pending
+   * tax, utility and policy change at the same time, and the blanket version
+   * drops all three — including proposals someone else queued.
+   *
+   * @param slot - The slot contract address.
+   * @param kind - Which dimension to retract.
+   * @returns Transaction hash.
+   */
+  async cancelPendingUpdate(slot: Address, kind: UpdateKind): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "cancelPendingUpdate",
+      args: [kind],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Cancel EVERY pending update on the slot (manager only).
+   *
+   * Blunt by design — it clears tax, utility and policy together. Use
+   * {@link cancelPendingUpdate} unless dropping all three is genuinely what
+   * you mean.
+   *
    * @param slot - The slot contract address.
    * @returns Transaction hash.
    */

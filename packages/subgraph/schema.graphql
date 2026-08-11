@@ -99,9 +99,28 @@ type Slot @entity(immutable: false) {
   pendingPrice: BigInt
   pendingDeposit: BigInt
 
-  # Pending manager-proposed policy swap (applies on next ownership transition)
+  # ── Pending manager-proposed updates, one per dimension ──────────────────
+  #
+  # A slot holds at most three queued changes — tax, utility, policy — and all
+  # of them apply together on the next ownership transition. Each can be
+  # proposed and cancelled independently.
+  #
+  # NULL means nothing is queued for that dimension. That is NOT the same as
+  # the zero address, which is a real proposed value for the two address
+  # dimensions: "remove the utility" and "drop the occupancy policy" are both
+  # changes someone deliberately queued. Read the value, not its truthiness.
+  #
+  # The `*ProposedAt` stamps are what separate a change queued last week from
+  # one queued moments before a buy — a distinction a buyer needs and the
+  # `has*` flags cannot express. Null when nothing is queued; also null for
+  # the handful of updates queued before the contract recorded the time.
   pendingPolicy: Bytes
   hasPendingPolicy: Boolean!
+  policyProposedAt: BigInt
+  pendingTaxPercentage: BigInt
+  taxProposedAt: BigInt
+  pendingUtility: Bytes
+  utilityProposedAt: BigInt
 
   createdAt: BigInt!
   createdTx: Bytes!
@@ -348,6 +367,34 @@ type ModuleUpdateProposedEvent @entity(immutable: true) {
 type PendingUpdateCancelledEvent @entity(immutable: true) {
   id: ID!
   slot: Slot!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  tx: Bytes!
+}
+
+"""
+Every propose, cancel and apply, tagged with the dimension it touched.
+
+One entity rather than three because the contract emits one event shape for
+all of it. The older per-domain events cannot be reduced into pending state:
+PendingUpdateApplied carries both tax and utility on every apply — filling the
+unchanged one in from current state, so a reader sees a utility "change" to
+the value it already had — and PendingUpdateCancelled carries nothing at all.
+Those are kept for historical continuity; this is the one to query.
+"""
+type PendingUpdateEvent @entity(immutable: true) {
+  id: ID!
+  slot: Slot!
+  "0 = tax, 1 = utility, 2 = policy. Matches the Solidity enum."
+  kind: Int!
+  "proposed | cancelled | applied"
+  action: String!
+  """
+  The proposed value, widened to 32 bytes: raw basis points for tax, the
+  left-padded address for utility and policy. Null on a cancel — nothing was
+  set, only cleared.
+  """
+  value: Bytes
   timestamp: BigInt!
   blockNumber: BigInt!
   tx: Bytes!

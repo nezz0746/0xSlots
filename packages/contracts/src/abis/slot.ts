@@ -55,6 +55,19 @@ export const slotAbi = [
   },
   {
     type: "function",
+    name: "cancelPendingUpdate",
+    inputs: [
+      {
+        name: "kind",
+        type: "uint8",
+        internalType: "enum UpdateKind",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "cancelPendingUpdates",
     inputs: [],
     outputs: [],
@@ -161,7 +174,7 @@ export const slotAbi = [
             internalType: "uint256",
           },
           {
-            name: "newModule",
+            name: "newUtility",
             type: "address",
             internalType: "address",
           },
@@ -171,7 +184,7 @@ export const slotAbi = [
             internalType: "bool",
           },
           {
-            name: "hasModuleUpdate",
+            name: "hasUtilityUpdate",
             type: "bool",
             internalType: "bool",
           },
@@ -211,7 +224,7 @@ export const slotAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
             type: "bool",
             internalType: "bool",
           },
@@ -236,7 +249,7 @@ export const slotAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -281,27 +294,27 @@ export const slotAbi = [
             internalType: "bool",
           },
           {
-            name: "moduleName",
+            name: "utilityName",
             type: "string",
             internalType: "string",
           },
           {
-            name: "moduleVersion",
+            name: "utilityVersion",
             type: "string",
             internalType: "string",
           },
           {
-            name: "moduleFeeBps",
+            name: "utilityFeeBps",
             type: "uint256",
             internalType: "uint256",
           },
           {
-            name: "moduleFeeRecipient",
+            name: "utilityFeeRecipient",
             type: "address",
             internalType: "address",
           },
           {
-            name: "moduleURI",
+            name: "utilityURI",
             type: "string",
             internalType: "string",
           },
@@ -316,12 +329,12 @@ export const slotAbi = [
             internalType: "uint256",
           },
           {
-            name: "hasPendingModule",
+            name: "hasPendingUtility",
             type: "bool",
             internalType: "bool",
           },
           {
-            name: "pendingModule",
+            name: "pendingUtility",
             type: "address",
             internalType: "address",
           },
@@ -344,6 +357,21 @@ export const slotAbi = [
             name: "pendingPolicy",
             type: "address",
             internalType: "address",
+          },
+          {
+            name: "taxProposedAt",
+            type: "uint64",
+            internalType: "uint64",
+          },
+          {
+            name: "utilityProposedAt",
+            type: "uint64",
+            internalType: "uint64",
+          },
+          {
+            name: "policyProposedAt",
+            type: "uint64",
+            internalType: "uint64",
           },
         ],
       },
@@ -375,7 +403,7 @@ export const slotAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
             type: "bool",
             internalType: "bool",
           },
@@ -402,7 +430,7 @@ export const slotAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -614,6 +642,19 @@ export const slotAbi = [
   },
   {
     type: "function",
+    name: "mutableUtility",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "occupancyPolicy",
     inputs: [],
     outputs: [
@@ -713,7 +754,7 @@ export const slotAbi = [
         internalType: "uint256",
       },
       {
-        name: "newModule",
+        name: "newUtility",
         type: "address",
         internalType: "address",
       },
@@ -723,9 +764,51 @@ export const slotAbi = [
         internalType: "bool",
       },
       {
-        name: "hasModuleUpdate",
+        name: "hasUtilityUpdate",
         type: "bool",
         internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "pendingUpdateOf",
+    inputs: [
+      {
+        name: "kind",
+        type: "uint8",
+        internalType: "enum UpdateKind",
+      },
+    ],
+    outputs: [
+      {
+        name: "isSet",
+        type: "bool",
+        internalType: "bool",
+      },
+      {
+        name: "value",
+        type: "bytes32",
+        internalType: "bytes32",
+      },
+      {
+        name: "proposedAt",
+        type: "uint64",
+        internalType: "uint64",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "policyProposedAt",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint64",
+        internalType: "uint64",
       },
     ],
     stateMutability: "view",
@@ -748,7 +831,7 @@ export const slotAbi = [
     name: "proposeModuleUpdate",
     inputs: [
       {
-        name: "newModule",
+        name: "newUtility",
         type: "address",
         internalType: "address",
       },
@@ -777,6 +860,19 @@ export const slotAbi = [
         name: "newPct",
         type: "uint256",
         internalType: "uint256",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "proposeUtilityUpdate",
+    inputs: [
+      {
+        name: "newUtility",
+        type: "address",
+        internalType: "address",
       },
     ],
     outputs: [],
@@ -887,6 +983,19 @@ export const slotAbi = [
   },
   {
     type: "function",
+    name: "taxProposedAt",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint64",
+        internalType: "uint64",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "topUp",
     inputs: [
       {
@@ -897,6 +1006,32 @@ export const slotAbi = [
     ],
     outputs: [],
     stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "utility",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "utilityProposedAt",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "uint64",
+        internalType: "uint64",
+      },
+    ],
+    stateMutability: "view",
   },
   {
     type: "function",
@@ -1055,7 +1190,7 @@ export const slotAbi = [
     name: "ModuleFeePaid",
     inputs: [
       {
-        name: "module",
+        name: "utility",
         type: "address",
         indexed: true,
         internalType: "address",
@@ -1080,7 +1215,7 @@ export const slotAbi = [
     name: "ModuleUpdateProposed",
     inputs: [
       {
-        name: "newModule",
+        name: "newUtility",
         type: "address",
         indexed: false,
         internalType: "address",
@@ -1124,7 +1259,7 @@ export const slotAbi = [
         internalType: "uint256",
       },
       {
-        name: "newModule",
+        name: "newUtility",
         type: "address",
         indexed: false,
         internalType: "address",
@@ -1299,7 +1434,7 @@ export const slotAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
             type: "bool",
             internalType: "bool",
           },
@@ -1327,7 +1462,7 @@ export const slotAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -1410,6 +1545,63 @@ export const slotAbi = [
   },
   {
     type: "event",
+    name: "UpdateApplied",
+    inputs: [
+      {
+        name: "kind",
+        type: "uint8",
+        indexed: true,
+        internalType: "enum UpdateKind",
+      },
+      {
+        name: "value",
+        type: "bytes32",
+        indexed: false,
+        internalType: "bytes32",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "UpdateCancelled",
+    inputs: [
+      {
+        name: "kind",
+        type: "uint8",
+        indexed: true,
+        internalType: "enum UpdateKind",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "UpdateProposed",
+    inputs: [
+      {
+        name: "kind",
+        type: "uint8",
+        indexed: true,
+        internalType: "enum UpdateKind",
+      },
+      {
+        name: "value",
+        type: "bytes32",
+        indexed: false,
+        internalType: "bytes32",
+      },
+      {
+        name: "proposedAt",
+        type: "uint64",
+        indexed: false,
+        internalType: "uint64",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
     name: "Withdrawn",
     inputs: [
       {
@@ -1441,16 +1633,6 @@ export const slotAbi = [
   {
     type: "error",
     name: "CannotBuyFromYourself",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "InvalidValue",
-    inputs: [],
-  },
-  {
-    type: "error",
-    name: "TransferFailed",
     inputs: [],
   },
   {
@@ -1496,6 +1678,11 @@ export const slotAbi = [
   {
     type: "error",
     name: "InvalidTaxPercentage",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "InvalidValue",
     inputs: [],
   },
   {
@@ -1567,6 +1754,11 @@ export const slotAbi = [
   {
     type: "error",
     name: "TaxNotMutable",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "TransferFailed",
     inputs: [],
   },
 ] as const;

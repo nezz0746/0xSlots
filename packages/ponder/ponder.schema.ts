@@ -98,6 +98,21 @@ export const slot = onchainTable(
     updatedAt: t.bigint().notNull(),
     // parent factory so Slot-scoped handlers can resolve modules
     factory: t.hex().notNull(),
+    // Pending updates — at most one per dimension, all applied together on the
+    // next ownership transition. Answering "what is queued on this slot right
+    // now" used to require an RPC call per slot; the per-kind event log makes
+    // it derivable, so it lives here.
+    //
+    // NULL means nothing is queued. It is NOT interchangeable with the zero
+    // address, which is a real proposed value for the two address dimensions —
+    // "remove the utility" and "drop the occupancy policy" are both changes
+    // someone deliberately queued.
+    pendingTaxPercentage: t.bigint(),
+    taxProposedAt: t.bigint(),
+    pendingUtility: t.hex(),
+    utilityProposedAt: t.bigint(),
+    pendingPolicy: t.hex(),
+    policyProposedAt: t.bigint(),
   }),
   (table) => ({
     chainIdx: index().on(table.chainId),
@@ -402,6 +417,39 @@ export const pendingUpdateCancelledEvent = onchainTable(
   (table) => ({
     chainIdx: index().on(table.chainId),
     slotIdx: index().on(table.slot),
+  }),
+);
+
+/**
+ * The per-kind pending-update log: every propose, cancel and apply, tagged with
+ * the dimension it touched.
+ *
+ * One table rather than three because the contract emits one event shape for
+ * all of it. The older per-domain tables above cannot be reduced into slot
+ * state: `PendingUpdateApplied` carries both tax and utility on every apply,
+ * filling the unchanged one in from current state, and `PendingUpdateCancelled`
+ * carries nothing at all. They are kept for historical continuity.
+ *
+ * `kind` matches the Solidity enum: 0 tax, 1 utility, 2 policy.
+ * `value` is null on a cancel — nothing was set, only cleared.
+ */
+export const pendingUpdateEvent = onchainTable(
+  "pending_update_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    kind: t.integer().notNull(),
+    action: t.text().notNull(), // "proposed" | "cancelled" | "applied"
+    value: t.hex(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    kindIdx: index().on(table.kind),
   }),
 );
 

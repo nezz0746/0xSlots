@@ -96,11 +96,12 @@ server.tool(
       currency: info.currency,
       manager: info.manager,
       mutableTax: info.mutableTax,
-      mutableModule: info.mutableModule,
+      mutableUtility: info.mutableUtility,
+      mutablePolicy: info.mutablePolicy,
       occupant: info.occupant,
       price: formatUnits(info.price, decimals),
       taxPercentage: `${Number(info.taxPercentage) / 100}%`,
-      module: info.module,
+      utility: info.utility,
       liquidationBountyBps: Number(info.liquidationBountyBps),
       minDepositSeconds: Number(info.minDepositSeconds),
       deposit: formatUnits(info.deposit, decimals),
@@ -108,12 +109,25 @@ server.tool(
       taxOwed: formatUnits(info.taxOwed, decimals),
       secondsUntilLiquidation: Number(info.secondsUntilLiquidation),
       insolvent: info.insolvent,
+      // Queued changes, one per dimension. `proposedAt` is surfaced because a
+      // caller cannot otherwise tell a change queued last week from one queued
+      // seconds ago — and a buy applies whatever is queued at that moment.
+      // Null timestamps mean the slot predates the contract recording them.
       hasPendingTax: info.hasPendingTax,
       pendingTaxPercentage: info.hasPendingTax
         ? `${Number(info.pendingTaxPercentage) / 100}%`
         : null,
-      hasPendingModule: info.hasPendingModule,
-      pendingModule: info.hasPendingModule ? info.pendingModule : null,
+      taxProposedAt: info.taxProposedAt ? Number(info.taxProposedAt) : null,
+      hasPendingUtility: info.hasPendingUtility,
+      pendingUtility: info.hasPendingUtility ? info.pendingUtility : null,
+      utilityProposedAt: info.utilityProposedAt
+        ? Number(info.utilityProposedAt)
+        : null,
+      hasPendingPolicy: info.hasPendingPolicy,
+      pendingPolicy: info.hasPendingPolicy ? info.pendingPolicy : null,
+      policyProposedAt: info.policyProposedAt
+        ? Number(info.policyProposedAt)
+        : null,
     });
   },
 );

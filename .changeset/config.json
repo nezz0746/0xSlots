@@ -11,6 +11,7 @@
     "@0xslots/mcp",
     "@0xslots/config",
     "@0xslots/subgraph",
+    "@0xslots/ponder",
     "landing",
     "api"
   ]

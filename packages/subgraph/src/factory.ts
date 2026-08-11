@@ -51,6 +51,9 @@ export function handleSlotDeployedLegacy(event: SlotDeployed): void {
     event.params.recipient,
     event.params.currency,
     event.params.config.mutableTax,
+    // The legacy tuple predates the utility/module rename and is kept in the
+    // ABI verbatim, so it still carries the old component names. Only the
+    // current-signature handler below reads `mutableUtility`.
     event.params.config.mutableModule,
     false,
     event.params.config.manager,
@@ -70,11 +73,11 @@ export function handleSlotDeployed(event: SlotDeployed1): void {
     event.params.recipient,
     event.params.currency,
     event.params.config.mutableTax,
-    event.params.config.mutableModule,
+    event.params.config.mutableUtility,
     event.params.config.mutablePolicy,
     event.params.config.manager,
     event.params.initParams.taxPercentage,
-    event.params.initParams.module,
+    event.params.initParams.utility,
     event.params.initParams.liquidationBountyBps,
     event.params.initParams.minDepositSeconds,
     event.params.initParams.occupancyPolicy
@@ -189,7 +192,7 @@ function _record(
 }
 
 export function handleModuleVerified(event: ModuleVerified): void {
-  const id = event.params.module.toHexString();
+  const id = event.params.utility.toHexString();
   let module = Module.load(id);
   const wasVerified = module ? module.verified : false;
   if (!module) {
@@ -237,9 +240,9 @@ export function handleModuleVerified(event: ModuleVerified): void {
   ) {
     log.info("Creating template for module {} at address {}", [
       event.params.name,
-      event.params.module.toHexString(),
+      event.params.utility.toHexString(),
     ]);
-    MetadataModuleTemplate.create(event.params.module);
+    MetadataModuleTemplate.create(event.params.utility);
   }
 
   // Also start indexing FeedPostModule instances
@@ -249,9 +252,9 @@ export function handleModuleVerified(event: ModuleVerified): void {
     event.params.name == "FeedPostModule"
   ) {
     log.info("Creating FeedPostModule template at address {}", [
-      event.params.module.toHexString(),
+      event.params.utility.toHexString(),
     ]);
-    FeedPostModuleTemplate.create(event.params.module);
+    FeedPostModuleTemplate.create(event.params.utility);
   }
 }
 

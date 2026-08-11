@@ -9,7 +9,14 @@ import type {
   CreateSlotsParams,
   SlotsChain,
 } from "../client";
+import { UpdateKind } from "../client";
 import { useSlotsClient } from "./useSlotsClient";
+
+const CANCEL_LABELS: Record<UpdateKind, string> = {
+  [UpdateKind.Tax]: "Cancel tax update",
+  [UpdateKind.Utility]: "Cancel utility update",
+  [UpdateKind.Policy]: "Cancel policy update",
+};
 
 function extractErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -125,7 +132,7 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
    * should be told, not a mystery.
    */
   const preflight = useCallback(
-    async <T,>(label: string, fn: () => Promise<T>): Promise<T | undefined> => {
+    async <T>(label: string, fn: () => Promise<T>): Promise<T | undefined> => {
       try {
         return await fn();
       } catch (error) {
@@ -260,9 +267,28 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
       exec("Propose tax", () => client.proposeTaxUpdate(slot, newPct)),
     [exec, client],
   );
-  const proposeModuleUpdate = useCallback(
-    (slot: Address, newModule: Address) =>
-      exec("Propose module", () => client.proposeModuleUpdate(slot, newModule)),
+  const proposeUtilityUpdate = useCallback(
+    (slot: Address, newUtility: Address) =>
+      exec("Propose utility", () =>
+        client.proposeUtilityUpdate(slot, newUtility),
+      ),
+    [exec, client],
+  );
+  /** @deprecated use `proposeUtilityUpdate` */
+  const proposeModuleUpdate = proposeUtilityUpdate;
+  const proposePolicyUpdate = useCallback(
+    (slot: Address, newPolicy: Address) =>
+      exec("Propose policy", () => client.proposePolicyUpdate(slot, newPolicy)),
+    [exec, client],
+  );
+  /**
+   * Retract one queued change. Labelled per dimension so the pending UI can
+   * say which button is working — "Cancel updates" spinning next to three
+   * separate rows tells the user nothing.
+   */
+  const cancelPendingUpdate = useCallback(
+    (slot: Address, kind: UpdateKind) =>
+      exec(CANCEL_LABELS[kind], () => client.cancelPendingUpdate(slot, kind)),
     [exec, client],
   );
   const cancelPendingUpdates = useCallback(
@@ -299,7 +325,11 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     collect,
     liquidate,
     proposeTaxUpdate,
+    proposeUtilityUpdate,
+    proposePolicyUpdate,
+    /** @deprecated use `proposeUtilityUpdate` */
     proposeModuleUpdate,
+    cancelPendingUpdate,
     cancelPendingUpdates,
     setLiquidationBounty,
     updateMetadata,

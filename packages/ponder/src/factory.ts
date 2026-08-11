@@ -20,7 +20,7 @@ ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
   const slotId = lower(event.args.slot);
-  const moduleAddr = lower(event.args.initParams.module);
+  const moduleAddr = lower(event.args.initParams.utility);
 
   // Factory: bump slot count
   await context.db
@@ -50,7 +50,7 @@ ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
     recipientAccount: recipient.id,
     currency: cur.id,
     mutableTax: event.args.config.mutableTax,
-    mutableModule: event.args.config.mutableModule,
+    mutableModule: event.args.config.mutableUtility,
     manager: lower(event.args.config.manager),
     taxPercentage: event.args.initParams.taxPercentage,
     module: moduleAddr === ZERO_ADDR ? null : moduleAddr,
@@ -77,7 +77,7 @@ ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
     currency: cur.id,
     manager: lower(event.args.config.manager),
     mutableTax: event.args.config.mutableTax,
-    mutableModule: event.args.config.mutableModule,
+    mutableModule: event.args.config.mutableUtility,
     taxPercentage: event.args.initParams.taxPercentage,
     module: moduleAddr,
     liquidationBountyBps: event.args.initParams.liquidationBountyBps,
@@ -92,7 +92,7 @@ ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
 ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
-  const id = lower(event.args.module);
+  const id = lower(event.args.utility);
 
   const existing = await context.db.find(module, { id });
 

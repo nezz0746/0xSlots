@@ -87,7 +87,7 @@ export const slotFactoryAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
             type: "bool",
             internalType: "bool",
           },
@@ -114,7 +114,7 @@ export const slotFactoryAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -170,7 +170,7 @@ export const slotFactoryAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
             type: "bool",
             internalType: "bool",
           },
@@ -197,7 +197,7 @@ export const slotFactoryAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
@@ -287,7 +287,7 @@ export const slotFactoryAbi = [
     name: "isModuleVerified",
     inputs: [
       {
-        name: "module",
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -307,6 +307,25 @@ export const slotFactoryAbi = [
     inputs: [
       {
         name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isUtilityVerified",
+    inputs: [
+      {
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -351,7 +370,7 @@ export const slotFactoryAbi = [
     name: "setModuleVerified",
     inputs: [
       {
-        name: "_module",
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -370,6 +389,24 @@ export const slotFactoryAbi = [
     inputs: [
       {
         name: "_policy",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "verified",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "setUtilityVerified",
+    inputs: [
+      {
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -431,7 +468,7 @@ export const slotFactoryAbi = [
     name: "verifiedModules",
     inputs: [
       {
-        name: "",
+        name: "_utility",
         type: "address",
         internalType: "address",
       },
@@ -448,6 +485,25 @@ export const slotFactoryAbi = [
   {
     type: "function",
     name: "verifiedPolicies",
+    inputs: [
+      {
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+        internalType: "bool",
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "verifiedUtilities",
     inputs: [
       {
         name: "",
@@ -501,7 +557,7 @@ export const slotFactoryAbi = [
     name: "ModuleVerified",
     inputs: [
       {
-        name: "module",
+        name: "utility",
         type: "address",
         indexed: true,
         internalType: "address",
@@ -610,7 +666,7 @@ export const slotFactoryAbi = [
             internalType: "bool",
           },
           {
-            name: "mutableModule",
+            name: "mutableUtility",
             type: "bool",
             internalType: "bool",
           },
@@ -638,7 +694,7 @@ export const slotFactoryAbi = [
             internalType: "uint256",
           },
           {
-            name: "module",
+            name: "utility",
             type: "address",
             internalType: "address",
           },
