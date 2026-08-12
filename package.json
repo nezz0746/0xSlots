@@ -5,6 +5,8 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "dev:landing": "turbo dev --filter=landing",
+    "dev:local": "turbo run dev:local",
+    "dev:local:chain": "turbo run dev:local --filter=@0xslots/chain",
     "dev:vitrine": "turbo dev --filter=vitrine",
     "dev:mcp": "turbo dev --filter=@0xslots/mcp",
     "dev:nft": "turbo dev --filter=nft",
