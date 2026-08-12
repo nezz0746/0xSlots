@@ -583,7 +583,7 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
 
     /// @notice Cancel the pending update for ONE dimension, leaving the others.
     ///
-    /// @dev The reason this exists is `SlotManager`, where tax, utility and
+    /// @dev The reason this exists is `SlotCollective`, where tax, utility and
     ///      policy are three separate roles. While cancelling was all-or-nothing
     ///      the manager had to gate it on `DEFAULT_ADMIN_ROLE` — a tax manager
     ///      retracting their own proposal would otherwise have destroyed the

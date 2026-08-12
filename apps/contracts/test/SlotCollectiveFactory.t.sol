@@ -10,22 +10,22 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotManager} from "../src/SlotManager.sol";
-import {SlotManagerFactory} from "../src/SlotManagerFactory.sol";
+import {SlotCollective} from "../src/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
 
 /// @dev Storage-compatible successor, used to prove a beacon upgrade actually
 ///      moves the code every existing manager runs.
-contract SlotManagerV2 is SlotManager {
-    constructor(address warehouse) SlotManager(warehouse) {}
+contract SlotCollectiveV2 is SlotCollective {
+    constructor(address warehouse) SlotCollective(warehouse) {}
 
     function version() external pure returns (string memory) {
         return "v2";
     }
 }
 
-contract SlotManagerFactoryTest is Test {
-    SlotManagerFactory internal factory;
-    SlotManager internal implementation;
+contract SlotCollectiveFactoryTest is Test {
+    SlotCollectiveFactory internal factory;
+    SlotCollective internal implementation;
     SplitsWarehouse internal warehouse;
 
     address internal factoryAdmin = makeAddr("factoryAdmin");
@@ -36,15 +36,15 @@ contract SlotManagerFactoryTest is Test {
 
     function setUp() public {
         warehouse = new SplitsWarehouse("Ether", "ETH");
-        implementation = new SlotManager(address(warehouse));
+        implementation = new SlotCollective(address(warehouse));
 
-        SlotManagerFactory factoryImpl = new SlotManagerFactory();
-        factory = SlotManagerFactory(
+        SlotCollectiveFactory factoryImpl = new SlotCollectiveFactory();
+        factory = SlotCollectiveFactory(
             address(
                 new ERC1967Proxy(
                     address(factoryImpl),
                     abi.encodeCall(
-                        SlotManagerFactory.initialize,
+                        SlotCollectiveFactory.initialize,
                         (factoryAdmin, address(implementation))
                     )
                 )
@@ -74,13 +74,13 @@ contract SlotManagerFactoryTest is Test {
     function _roles(address admin_)
         internal
         pure
-        returns (SlotManager.InitialRoles memory r)
+        returns (SlotCollective.InitialRoles memory r)
     {
         r.admin = admin_;
     }
 
-    function _create(address admin_) internal returns (SlotManager) {
-        return SlotManager(payable(factory.createManager(_split(), _roles(admin_))));
+    function _create(address admin_) internal returns (SlotCollective) {
+        return SlotCollective(payable(factory.createManager(_split(), _roles(admin_))));
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -88,7 +88,7 @@ contract SlotManagerFactoryTest is Test {
     // ═══════════════════════════════════════════════════════════
 
     function test_deploysAFullyConfiguredManager() public {
-        SlotManager mgr = _create(managerAdmin);
+        SlotCollective mgr = _create(managerAdmin);
 
         assertTrue(mgr.hasRole(mgr.DEFAULT_ADMIN_ROLE(), managerAdmin));
         assertEq(mgr.owner(), address(mgr), "owner must be self-bound");
@@ -97,7 +97,7 @@ contract SlotManagerFactoryTest is Test {
             address(warehouse),
             "warehouse immutable must resolve through the proxy"
         );
-        assertTrue(factory.isSlotManager(address(mgr)));
+        assertTrue(factory.isSlotCollective(address(mgr)));
     }
 
     /// @dev The immutables live in the implementation's bytecode, not storage.
@@ -105,7 +105,7 @@ contract SlotManagerFactoryTest is Test {
     ///      delegatecall — if they were not, every manager would push tax at a
     ///      zero-address warehouse.
     function test_immutablesResolveThroughTheProxy() public {
-        SlotManager mgr = _create(managerAdmin);
+        SlotCollective mgr = _create(managerAdmin);
         assertEq(address(mgr.SPLITS_WAREHOUSE()), address(warehouse));
         assertEq(mgr.NATIVE_TOKEN(), implementation.NATIVE_TOKEN());
     }
@@ -114,25 +114,25 @@ contract SlotManagerFactoryTest is Test {
     ///      NAMED it, so minting one grants nothing by itself.
     function test_anyoneCanDeployAManager() public {
         vm.prank(stranger);
-        SlotManager mgr = _create(managerAdmin);
-        assertTrue(factory.isSlotManager(address(mgr)));
+        SlotCollective mgr = _create(managerAdmin);
+        assertTrue(factory.isSlotCollective(address(mgr)));
     }
 
     function test_registryTracksEveryManager() public {
         assertEq(factory.managerCount(), 0);
 
-        SlotManager a = _create(managerAdmin);
-        SlotManager b = _create(stranger);
+        SlotCollective a = _create(managerAdmin);
+        SlotCollective b = _create(stranger);
 
         assertEq(factory.managerCount(), 2);
         assertEq(factory.managers(0), address(a));
         assertEq(factory.managers(1), address(b));
-        assertFalse(factory.isSlotManager(makeAddr("notAManager")));
+        assertFalse(factory.isSlotCollective(makeAddr("notAManager")));
     }
 
     function test_managersAreIndependent() public {
-        SlotManager a = _create(managerAdmin);
-        SlotManager b = _create(stranger);
+        SlotCollective a = _create(managerAdmin);
+        SlotCollective b = _create(stranger);
 
         assertTrue(a.hasRole(a.DEFAULT_ADMIN_ROLE(), managerAdmin));
         assertFalse(b.hasRole(b.DEFAULT_ADMIN_ROLE(), managerAdmin));
@@ -153,7 +153,7 @@ contract SlotManagerFactoryTest is Test {
     }
 
     function test_managerCannotBeReinitialized() public {
-        SlotManager mgr = _create(managerAdmin);
+        SlotCollective mgr = _create(managerAdmin);
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         vm.prank(stranger);
@@ -176,15 +176,15 @@ contract SlotManagerFactoryTest is Test {
     }
 
     function test_beaconUpgradeMovesEveryExistingManager() public {
-        SlotManager a = _create(managerAdmin);
-        SlotManager b = _create(stranger);
+        SlotCollective a = _create(managerAdmin);
+        SlotCollective b = _create(stranger);
 
-        SlotManagerV2 v2 = new SlotManagerV2(address(warehouse));
+        SlotCollectiveV2 v2 = new SlotCollectiveV2(address(warehouse));
         vm.prank(factoryAdmin);
         factory.upgradeBeacon(address(v2));
 
-        assertEq(SlotManagerV2(payable(address(a))).version(), "v2");
-        assertEq(SlotManagerV2(payable(address(b))).version(), "v2");
+        assertEq(SlotCollectiveV2(payable(address(a))).version(), "v2");
+        assertEq(SlotCollectiveV2(payable(address(b))).version(), "v2");
 
         // State survives the code swap.
         assertTrue(a.hasRole(a.DEFAULT_ADMIN_ROLE(), managerAdmin));
@@ -192,13 +192,13 @@ contract SlotManagerFactoryTest is Test {
     }
 
     function test_beaconUpgradeIsAdminOnly() public {
-        SlotManagerV2 v2 = new SlotManagerV2(address(warehouse));
+        SlotCollectiveV2 v2 = new SlotCollectiveV2(address(warehouse));
 
-        vm.expectRevert(SlotManagerFactory.NotAdmin.selector);
+        vm.expectRevert(SlotCollectiveFactory.NotAdmin.selector);
         vm.prank(stranger);
         factory.upgradeBeacon(address(v2));
 
-        vm.expectRevert(SlotManagerFactory.NotAdmin.selector);
+        vm.expectRevert(SlotCollectiveFactory.NotAdmin.selector);
         vm.prank(managerAdmin);
         factory.upgradeBeacon(address(v2));
     }
@@ -208,27 +208,27 @@ contract SlotManagerFactoryTest is Test {
     // ═══════════════════════════════════════════════════════════
 
     function test_factoryCannotBeReinitialized() public {
-        vm.expectRevert(SlotManagerFactory.AlreadyInitialized.selector);
+        vm.expectRevert(SlotCollectiveFactory.AlreadyInitialized.selector);
         factory.initialize(stranger, address(implementation));
     }
 
     function test_rejectsZeroAdminAndCodelessImplementation() public {
-        SlotManagerFactory impl = new SlotManagerFactory();
+        SlotCollectiveFactory impl = new SlotCollectiveFactory();
 
-        vm.expectRevert(SlotManagerFactory.AdminRequired.selector);
+        vm.expectRevert(SlotCollectiveFactory.AdminRequired.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
-                SlotManagerFactory.initialize,
+                SlotCollectiveFactory.initialize,
                 (address(0), address(implementation))
             )
         );
 
-        vm.expectRevert(SlotManagerFactory.ImplementationRequired.selector);
+        vm.expectRevert(SlotCollectiveFactory.ImplementationRequired.selector);
         new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
-                SlotManagerFactory.initialize,
+                SlotCollectiveFactory.initialize,
                 (factoryAdmin, makeAddr("noCode"))
             )
         );
@@ -239,15 +239,15 @@ contract SlotManagerFactoryTest is Test {
         factory.transferAdmin(stranger);
         assertEq(factory.admin(), stranger);
 
-        vm.expectRevert(SlotManagerFactory.NotAdmin.selector);
+        vm.expectRevert(SlotCollectiveFactory.NotAdmin.selector);
         vm.prank(factoryAdmin);
         factory.transferAdmin(factoryAdmin);
     }
 
     function test_factoryUpgradeIsAdminOnly() public {
-        SlotManagerFactory next = new SlotManagerFactory();
+        SlotCollectiveFactory next = new SlotCollectiveFactory();
 
-        vm.expectRevert(SlotManagerFactory.NotAdmin.selector);
+        vm.expectRevert(SlotCollectiveFactory.NotAdmin.selector);
         vm.prank(stranger);
         factory.upgradeToAndCall(address(next), "");
 
@@ -261,14 +261,14 @@ contract SlotManagerFactoryTest is Test {
     // THE GAS CAP, THROUGH THE PROXY
     // ═══════════════════════════════════════════════════════════
 
-    /// @dev The one thing proxying a SlotManager genuinely risked. Native tax
+    /// @dev The one thing proxying a SlotCollective genuinely risked. Native tax
     ///      arrives via `Slot._payOrCredit`'s `call{gas: 30_000}`, and a
     ///      BeaconProxy adds a staticcall to the beacon plus a delegatecall
     ///      before `receive()` even runs. If that no longer fits, every native
     ///      push silently degrades into a `withdrawableOf` credit needing a
     ///      manual claim.
     function test_nativeTaxStillFitsThe30kCapThroughTheProxy() public {
-        SlotManager mgr = _create(managerAdmin);
+        SlotCollective mgr = _create(managerAdmin);
         vm.deal(address(this), 1 ether);
 
         (bool ok,) = address(mgr).call{value: 1 ether, gas: 30_000}("");

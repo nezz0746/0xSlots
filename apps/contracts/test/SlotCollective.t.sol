@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {SlotManager, IManagedSlot} from "../src/SlotManager.sol";
-import {SlotManagerFactory} from "../src/SlotManagerFactory.sol";
+import {SlotCollective, IManagedSlot} from "../src/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {UpdateKind} from "../src/interfaces/ISlot.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
@@ -69,9 +69,9 @@ contract MockSlot {
     function claim(address) external {}
 }
 
-contract SlotManagerTest is Test {
-    SlotManager internal mgr;
-    SlotManagerFactory internal factory;
+contract SlotCollectiveTest is Test {
+    SlotCollective internal mgr;
+    SlotCollectiveFactory internal factory;
     MockSlot internal slot;
     SplitsWarehouse internal warehouse;
 
@@ -92,21 +92,21 @@ contract SlotManagerTest is Test {
         // Managers are proxies now, so every test below exercises the real
         // deployment path rather than a directly-constructed manager that no
         // longer resembles what ships.
-        SlotManager impl = new SlotManager(address(warehouse));
-        SlotManagerFactory factoryImpl = new SlotManagerFactory();
-        factory = SlotManagerFactory(
+        SlotCollective impl = new SlotCollective(address(warehouse));
+        SlotCollectiveFactory factoryImpl = new SlotCollectiveFactory();
+        factory = SlotCollectiveFactory(
             address(
                 new ERC1967Proxy(
                     address(factoryImpl),
                     abi.encodeCall(
-                        SlotManagerFactory.initialize,
+                        SlotCollectiveFactory.initialize,
                         (factoryAdmin, address(impl))
                     )
                 )
             )
         );
 
-        mgr = SlotManager(payable(factory.createManager(_split(), _roles())));
+        mgr = SlotCollective(payable(factory.createManager(_split(), _roles())));
         slot = new MockSlot(address(mgr));
     }
 
@@ -127,7 +127,7 @@ contract SlotManagerTest is Test {
         });
     }
 
-    function _roles() internal view returns (SlotManager.InitialRoles memory r) {
+    function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         r.admin = admin;
         r.taxManagers = _one(taxMgr);
         r.policyManagers = _one(policyMgr);
@@ -147,7 +147,7 @@ contract SlotManagerTest is Test {
     }
 
     function test_transferOwnershipAlwaysReverts() public {
-        vm.expectRevert(SlotManager.OwnershipIsSelfBound.selector);
+        vm.expectRevert(SlotCollective.OwnershipIsSelfBound.selector);
         vm.prank(admin);
         mgr.transferOwnership(admin);
     }
@@ -365,9 +365,9 @@ contract SlotManagerTest is Test {
     // ── initializer guards ───────────────────────────────────────────────────
 
     function test_rejectsZeroAdmin() public {
-        SlotManager.InitialRoles memory r = _roles();
+        SlotCollective.InitialRoles memory r = _roles();
         r.admin = address(0);
-        vm.expectRevert(SlotManager.AdminRequired.selector);
+        vm.expectRevert(SlotCollective.AdminRequired.selector);
         factory.createManager(_split(), r);
     }
 
@@ -377,7 +377,7 @@ contract SlotManagerTest is Test {
         bad.allocations[1] = 0;
         bad.totalAllocation = 0;
 
-        vm.expectRevert(SlotManager.EmptySplit.selector);
+        vm.expectRevert(SlotCollective.EmptySplit.selector);
         factory.createManager(bad, _roles());
     }
 
@@ -389,7 +389,7 @@ contract SlotManagerTest is Test {
             distributionIncentive: 0
         });
 
-        vm.expectRevert(SlotManager.EmptySplit.selector);
+        vm.expectRevert(SlotCollective.EmptySplit.selector);
         factory.createManager(bad, _roles());
     }
 

@@ -7,11 +7,11 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotManager} from "./SlotManager.sol";
+import {SlotCollective} from "./SlotCollective.sol";
 
-/// @title SlotManagerFactory — deploys SlotManagers behind one upgradeable beacon
+/// @title SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon
 ///
-/// @notice A `SlotManager` is a 0xSplits PushSplit wearing a role-gated control
+/// @notice A `SlotCollective` is a 0xSplits PushSplit wearing a role-gated control
 ///         panel: it receives a slot's tax AND governs that slot's tax, utility
 ///         and occupancy policy. Deploying one by hand means getting a warehouse
 ///         address, a validated split, four role arrays and a self-bound owner
@@ -46,9 +46,9 @@ import {SlotManager} from "./SlotManager.sol";
 ///      are therefore read correctly through a delegatecall. The first two are
 ///      chain-wide constants and want to be shared. The third would have been a
 ///      problem — it gates the inherited `initialize` on `msg.sender == FACTORY`
-///      — except `SlotManager.initializeManager` does that work itself and never
+///      — except `SlotCollective.initializeManager` does that work itself and never
 ///      touches it. See the constructor note over there.
-contract SlotManagerFactory is UUPSUpgradeable {
+contract SlotCollectiveFactory is UUPSUpgradeable {
     // ═══════════════════════════════════════════════════════════
     // ERRORS
     // ═══════════════════════════════════════════════════════════
@@ -66,7 +66,7 @@ contract SlotManagerFactory is UUPSUpgradeable {
     ///      NOT this factory's admin. Indexed because "which managers can this
     ///      address govern" is the question a UI actually asks, and it cannot be
     ///      answered from the split or from role events alone.
-    event SlotManagerDeployed(
+    event SlotCollectiveDeployed(
         address indexed manager,
         address indexed admin,
         address indexed deployer
@@ -88,7 +88,7 @@ contract SlotManagerFactory is UUPSUpgradeable {
 
     /// @notice Managers deployed here. The provenance check a slot creator needs
     ///         before naming an address as both `recipient` and `manager`.
-    mapping(address => bool) public isSlotManager;
+    mapping(address => bool) public isSlotCollective;
 
     /// @notice Deployed managers, in order, so a UI can enumerate without logs.
     address[] public managers;
@@ -104,7 +104,7 @@ contract SlotManagerFactory is UUPSUpgradeable {
 
     /// @notice Initialize the factory (called once, through its proxy).
     /// @param _admin Upgrades this factory and the beacon.
-    /// @param _managerImplementation A deployed `SlotManager`, constructed with
+    /// @param _managerImplementation A deployed `SlotCollective`, constructed with
     ///        this chain's canonical `SplitsWarehouse`.
     function initialize(address _admin, address _managerImplementation) external {
         if (_initialized) revert AlreadyInitialized();
@@ -152,7 +152,7 @@ contract SlotManagerFactory is UUPSUpgradeable {
     /// @return manager The deployed manager's address.
     function createManager(
         SplitV2Lib.Split calldata split,
-        SlotManager.InitialRoles calldata roles
+        SlotCollective.InitialRoles calldata roles
     ) external returns (address manager) {
         manager = _deployManager(split, roles);
     }
@@ -187,17 +187,17 @@ contract SlotManagerFactory is UUPSUpgradeable {
 
     function _deployManager(
         SplitV2Lib.Split calldata split,
-        SlotManager.InitialRoles calldata roles
+        SlotCollective.InitialRoles calldata roles
     ) internal returns (address manager) {
         bytes memory initData = abi.encodeCall(
-            SlotManager.initializeManager,
+            SlotCollective.initializeManager,
             (split, roles)
         );
         manager = address(new BeaconProxy(address(beacon), initData));
 
-        isSlotManager[manager] = true;
+        isSlotCollective[manager] = true;
         managers.push(manager);
 
-        emit SlotManagerDeployed(manager, roles.admin, msg.sender);
+        emit SlotCollectiveDeployed(manager, roles.admin, msg.sender);
     }
 }

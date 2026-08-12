@@ -164,7 +164,7 @@ contract PendingUpdatesTest is Test, ISlotEvents {
 
     /// @dev The headline: cancelling one kind must not disturb the other two.
     ///      Under the old all-or-nothing `cancelPendingUpdates` this was
-    ///      inexpressible, which is why `SlotManager` had to gate cancelling on
+    ///      inexpressible, which is why `SlotCollective` had to gate cancelling on
     ///      `DEFAULT_ADMIN_ROLE`.
     function test_CancelOneKind_LeavesTheOthersStanding() public {
         Slot s = _slot();

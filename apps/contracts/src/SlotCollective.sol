@@ -39,7 +39,7 @@ interface IManagedSlot {
     function claim(address account) external;
 }
 
-/// @title SlotManager — one address that both receives a slot's tax and governs it
+/// @title SlotCollective — one address that both receives a slot's tax and governs it
 ///
 /// @notice A slot names two addresses at creation and never lets go of either:
 ///         `recipient`, which money flows to, and `manager`, which may propose
@@ -86,7 +86,7 @@ interface IManagedSlot {
 ///      `receive()`, every native-ETH tax push from `Slot._payOrCredit` — a
 ///      deliberately gas-capped `call{gas: 30_000}` — would fail and silently
 ///      degrade into a `withdrawableOf` credit needing a manual `claim`.
-contract SlotManager is PushSplit, AccessControl, Initializable {
+contract SlotCollective is PushSplit, AccessControl, Initializable {
     using SplitV2Lib for SplitV2Lib.Split;
 
     // ═══════════════════════════════════════════════════════════
@@ -198,7 +198,7 @@ contract SlotManager is PushSplit, AccessControl, Initializable {
         _disableInitializers();
     }
 
-    /// @notice Set up a manager. Called by `SlotManagerFactory` in the proxy
+    /// @notice Set up a manager. Called by `SlotCollectiveFactory` in the proxy
     ///         constructor.
     ///
     /// @dev Byte-for-byte the old constructor body. It deliberately does NOT
