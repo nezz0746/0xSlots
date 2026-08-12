@@ -59,10 +59,10 @@ export default function Home() {
 
       <div className="w-full px-3 md:px-5 py-3">
         <AdBar />
-        {/* Desktop navigates sections from the sidebar; below md the strip
-            stays, driving the same selection. */}
+        {/* The sections belong to this page, so the control for them sits
+            directly above the table it changes. In the sidebar the selected
+            section was a screen away from the rows it produced. */}
         <TabStrip
-          className="md:hidden"
           tabs={EXPLORER_SECTIONS}
           active={section}
           onSelect={setSection}
