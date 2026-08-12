@@ -1,4 +1,4 @@
-import { ponder } from "ponder:registry";
+import { type Context, ponder } from "ponder:registry";
 import {
   account,
   factory,
@@ -6,6 +6,7 @@ import {
   slot,
   slotDeployedEvent,
 } from "ponder:schema";
+import type { Hex } from "viem";
 import {
   evtId,
   getOrCreateAccount,
@@ -16,11 +17,46 @@ import {
   ZERO_ADDR,
 } from "./helpers";
 
-ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
+/**
+ * One `SlotDeployed` body for both eras.
+ *
+ * The pre-occupancy-layer signature carries neither `mutablePolicy` nor
+ * `occupancyPolicy`; those are backfilled as false/null by the caller rather
+ * than left undefined, so every column means the same thing for every row.
+ */
+type SlotDeployedEvent = {
+  log: { address: Hex; logIndex: number };
+  args: { slot: Hex; recipient: Hex; currency: Hex };
+  block: { timestamp: bigint; number: bigint };
+  transaction: { hash: Hex; from: Hex };
+};
+
+async function recordSlotDeployed(
+  event: SlotDeployedEvent,
+  context: Context,
+  config: {
+    mutableTax: boolean;
+    mutableUtility: boolean;
+    mutablePolicy: boolean;
+    manager: Hex;
+  },
+  initParams: {
+    taxPercentage: bigint;
+    utility: Hex;
+    liquidationBountyBps: bigint;
+    minDepositSeconds: bigint;
+    occupancyPolicy: Hex | null;
+  },
+) {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
   const slotId = lower(event.args.slot);
-  const moduleAddr = lower(event.args.initParams.utility);
+  const moduleAddr = lower(initParams.utility);
+
+  const policy =
+    initParams.occupancyPolicy && lower(initParams.occupancyPolicy) !== ZERO_ADDR
+      ? lower(initParams.occupancyPolicy)
+      : null;
 
   // Factory: bump slot count
   await context.db
@@ -49,18 +85,23 @@ ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
     recipient: lower(event.args.recipient),
     recipientAccount: recipient.id,
     currency: cur.id,
-    mutableTax: event.args.config.mutableTax,
-    mutableModule: event.args.config.mutableUtility,
-    manager: lower(event.args.config.manager),
-    taxPercentage: event.args.initParams.taxPercentage,
+    mutableTax: config.mutableTax,
+    mutableModule: config.mutableUtility,
+    mutablePolicy: config.mutablePolicy,
+    manager: lower(config.manager),
+    taxPercentage: initParams.taxPercentage,
     module: moduleAddr === ZERO_ADDR ? null : moduleAddr,
-    liquidationBountyBps: event.args.initParams.liquidationBountyBps,
-    minDepositSeconds: event.args.initParams.minDepositSeconds,
+    occupancyPolicy: policy,
+    liquidationBountyBps: initParams.liquidationBountyBps,
+    minDepositSeconds: initParams.minDepositSeconds,
     occupant: null,
     occupantAccount: null,
+    isOccupied: false,
+    occupiedSince: 0n,
     price: 0n,
     deposit: 0n,
     collectedTax: 0n,
+    taxPaidTotal: 0n,
     totalCollected: 0n,
     createdAt: event.block.timestamp,
     createdTx: event.transaction.hash,
@@ -75,18 +116,39 @@ ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
     slot: slotId,
     recipient: lower(event.args.recipient),
     currency: cur.id,
-    manager: lower(event.args.config.manager),
-    mutableTax: event.args.config.mutableTax,
-    mutableModule: event.args.config.mutableUtility,
-    taxPercentage: event.args.initParams.taxPercentage,
+    manager: lower(config.manager),
+    mutableTax: config.mutableTax,
+    mutableModule: config.mutableUtility,
+    mutablePolicy: config.mutablePolicy,
+    taxPercentage: initParams.taxPercentage,
     module: moduleAddr,
-    liquidationBountyBps: event.args.initParams.liquidationBountyBps,
-    minDepositSeconds: event.args.initParams.minDepositSeconds,
+    occupancyPolicy: policy,
+    liquidationBountyBps: initParams.liquidationBountyBps,
+    minDepositSeconds: initParams.minDepositSeconds,
     deployer: lower(event.transaction.from),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
+}
+
+ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
+  await recordSlotDeployed(
+    event,
+    context,
+    event.args.config,
+    event.args.initParams,
+  );
+});
+
+/** Pre-occupancy-layer slots — 301 of the 303 deployed so far. */
+ponder.on("SlotFactoryLegacy:SlotDeployed", async ({ event, context }) => {
+  await recordSlotDeployed(
+    event,
+    context,
+    { ...event.args.config, mutablePolicy: false },
+    { ...event.args.initParams, occupancyPolicy: null },
+  );
 });
 
 ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {

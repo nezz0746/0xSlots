@@ -1,8 +1,7 @@
 export { ERC20Abi } from "./ERC20";
-export { ERC721SlotsAbi } from "./ERC721Slots";
-export { ERC721SlotsFactoryAbi } from "./ERC721SlotsFactory";
 export { FeedPostModuleAbi } from "./FeedPostModule";
 export { FeedPostModuleV2Abi } from "./FeedPostModuleV2";
+export { slotFactoryLegacyAbi } from "./legacy";
 export { MetadataModuleAbi } from "./MetadataModule";
 export { SlotAbi } from "./Slot";
 export { SlotFactoryAbi } from "./SlotFactory";

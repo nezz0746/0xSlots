@@ -96,27 +96,90 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
   let decimals = 18;
 
   if (id !== ZERO_ADDR) {
-    try {
-      const checksum = getAddress(id);
-      const abi = ERC20Abi as unknown as readonly unknown[];
-      const [n, s, d] = await ctx.client.multicall({
-        allowFailure: true,
-        contracts: [
-          { address: checksum, abi, functionName: "name" },
-          { address: checksum, abi, functionName: "symbol" },
-          { address: checksum, abi, functionName: "decimals" },
-        ],
-      });
-      if (n.status === "success" && typeof n.result === "string")
-        name = n.result;
-      if (s.status === "success" && typeof s.result === "string")
-        symbol = s.result;
-      if (d.status === "success") {
-        if (typeof d.result === "number") decimals = d.result;
-        else if (typeof d.result === "bigint") decimals = Number(d.result);
+    const checksum = getAddress(id);
+    const abi = ERC20Abi as unknown as readonly unknown[];
+
+    const take = (
+      n: unknown,
+      s: unknown,
+      d: unknown,
+    ): { any: boolean } => {
+      let any = false;
+      if (typeof n === "string") {
+        name = n;
+        any = true;
       }
-    } catch {
-      // leave defaults (e.g. chain has no Multicall3 deployment)
+      if (typeof s === "string") {
+        symbol = s;
+        any = true;
+      }
+      if (typeof d === "number") {
+        decimals = d;
+        any = true;
+      } else if (typeof d === "bigint") {
+        decimals = Number(d);
+        any = true;
+      }
+      return { any };
+    };
+
+    // Ask only if the chain actually declares Multicall3.
+    //
+    // Letting the call fail and catching it is not equivalent: ponder retries a
+    // failed `context.client` action with backoff before the error surfaces
+    // here, so on a bare anvil — which has no Multicall3 — every new currency
+    // logged a warning and turned a 5ms block into a 630ms one. The retries are
+    // pure waste when the answer is knowable up front.
+    const hasMulticall3 = Boolean(
+      (
+        ctx.client as {
+          chain?: { contracts?: { multicall3?: { address?: string } } };
+        }
+      ).chain?.contracts?.multicall3?.address,
+    );
+
+    let resolved = false;
+    if (hasMulticall3) {
+      try {
+        const [n, s, d] = await ctx.client.multicall({
+          allowFailure: true,
+          contracts: [
+            { address: checksum, abi, functionName: "name" },
+            { address: checksum, abi, functionName: "symbol" },
+            { address: checksum, abi, functionName: "decimals" },
+          ],
+        });
+        resolved = take(
+          n.status === "success" ? n.result : undefined,
+          s.status === "success" ? s.result : undefined,
+          d.status === "success" ? d.result : undefined,
+        ).any;
+      } catch {
+        // Declared but unreachable — fall through to the individual reads.
+      }
+    }
+
+    // Fall back to three plain eth_calls. Three round trips instead of one is a
+    // fine trade for a row written once per currency, and it is the difference
+    // between a named token and a bare address on any chain without Multicall3.
+    if (!resolved) {
+      const read = async (functionName: string) => {
+        try {
+          return await ctx.client.readContract({
+            address: checksum,
+            abi,
+            functionName,
+          });
+        } catch {
+          return undefined;
+        }
+      };
+      const [n, s, d] = await Promise.all([
+        read("name"),
+        read("symbol"),
+        read("decimals"),
+      ]);
+      take(n, s, d);
     }
   }
 

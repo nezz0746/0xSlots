@@ -82,16 +82,30 @@ export const slot = onchainTable(
     currency: t.hex().notNull(),
     mutableTax: t.boolean().notNull(),
     mutableModule: t.boolean().notNull(),
+    // Slots created before the occupancy layer carry neither this nor
+    // `occupancyPolicy`; both are backfilled (false / null) rather than left
+    // undefined, so each column means the same thing for every row.
+    mutablePolicy: t.boolean().notNull(),
     manager: t.hex().notNull(),
     taxPercentage: t.bigint().notNull(),
     module: t.hex(),
+    // null = no policy, i.e. plain instant buy
+    occupancyPolicy: t.hex(),
     liquidationBountyBps: t.bigint().notNull(),
     minDepositSeconds: t.bigint().notNull(),
     occupant: t.hex(),
     occupantAccount: t.hex(),
+    // Mirrors `occupant != null`, so the column is sortable and filterable
+    // without a null check in every query.
+    isOccupied: t.boolean().notNull(),
+    occupiedSince: t.bigint().notNull(),
     price: t.bigint().notNull(),
     deposit: t.bigint().notNull(),
     collectedTax: t.bigint().notNull(),
+    // Total tax ever paid into this slot, summed from TaxPaid. Unlike
+    // `collectedTax` it only grows — collecting drains the balance, not the
+    // history.
+    taxPaidTotal: t.bigint().notNull(),
     totalCollected: t.bigint().notNull(),
     createdAt: t.bigint().notNull(),
     createdTx: t.hex().notNull(),
@@ -177,8 +191,10 @@ export const slotDeployedEvent = onchainTable(
     manager: t.hex().notNull(),
     mutableTax: t.boolean().notNull(),
     mutableModule: t.boolean().notNull(),
+    mutablePolicy: t.boolean().notNull(),
     taxPercentage: t.bigint().notNull(),
     module: t.hex().notNull(),
+    occupancyPolicy: t.hex(),
     liquidationBountyBps: t.bigint().notNull(),
     minDepositSeconds: t.bigint().notNull(),
     deployer: t.hex().notNull(),
@@ -475,52 +491,203 @@ export const metadataUpdatedEvent = onchainTable(
   }),
 );
 
-// ──────────────────────────────────────────
-// ERC721Slots
-// ──────────────────────────────────────────
-
-export const nftCollection = onchainTable(
-  "nft_collection",
-  (t) => ({
-    id: t.hex().primaryKey(),
-    chainId: t.integer().notNull(),
-    name: t.text().notNull(),
-    symbol: t.text().notNull(),
-    creator: t.hex().notNull(),
-    factory: t.hex().notNull(),
-    currency: t.hex().notNull(),
-    taxPercentage: t.bigint().notNull(),
-    totalSupply: t.bigint().notNull(),
-    createdAt: t.bigint().notNull(),
-    createdTx: t.hex().notNull(),
-  }),
-  (table) => ({
-    chainIdx: index().on(table.chainId),
-  }),
-);
-
-export const nftToken = onchainTable(
-  "nft_token",
+/**
+ * Per-address tax attribution.
+ *
+ * `Settled` and `TaxPaid` both fire inside the same `_settle()`, but only
+ * `TaxPaid` names the payer, and it fires only when money actually moved. So
+ * attribution hangs off this event, never off `Settled` plus current
+ * occupancy — settlement runs BEFORE a buy reassigns the occupant, so the
+ * charge belongs to the outgoing tenant, not the incoming one.
+ */
+export const taxPaidEvent = onchainTable(
+  "tax_paid_event",
   (t) => ({
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
-    collection: t.hex().notNull(),
-    tokenId: t.bigint().notNull(),
     slot: t.hex().notNull(),
-    uri: t.text().notNull(),
-    mintedAt: t.bigint().notNull(),
-    mintedTx: t.hex().notNull(),
+    currency: t.hex().notNull(),
+    occupant: t.hex().notNull(),
+    taxOwed: t.bigint().notNull(),
+    // Capped by the remaining deposit, so it can fall well short of `taxOwed`
+    // when an occupant is going insolvent. This is the number that means money
+    // moved — anything reconstructing contributions from price x time
+    // over-credits.
+    taxPaid: t.bigint().notNull(),
+    // False when the payer disagreed with the occupant on record. Always false
+    // today; a true value means the ordering assumption above has broken and
+    // older totals are suspect.
+    matchedOccupant: t.boolean().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
   }),
   (table) => ({
     chainIdx: index().on(table.chainId),
-    collectionIdx: index().on(table.collection),
+    slotIdx: index().on(table.slot),
+    occupantIdx: index().on(table.occupant),
+  }),
+);
+
+export const operatorSetEvent = onchainTable(
+  "operator_set_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    occupant: t.hex().notNull(),
+    operator: t.hex().notNull(),
+    approved: t.boolean().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+/**
+ * Current operator approvals. An operator may selfAssess and topUp on the
+ * occupant's behalf; it may never withdraw or release.
+ */
+export const slotOperator = onchainTable(
+  "slot_operator",
+  (t) => ({
+    slot: t.hex().notNull(),
+    occupant: t.hex().notNull(),
+    operator: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    approved: t.boolean().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.slot, table.occupant, table.operator],
+    }),
+    chainIdx: index().on(table.chainId),
+  }),
+);
+
+export const policyUpdateProposedEvent = onchainTable(
+  "policy_update_proposed_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    newPolicy: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+export const policyUpdateAppliedEvent = onchainTable(
+  "policy_update_applied_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    newPolicy: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+/**
+ * A refund that could not be pushed — a blocklisting currency, a recipient
+ * that reverts — and was credited for later claim instead. Crediting is what
+ * keeps liquidation unconditional: an occupant the currency refuses to pay
+ * must not be able to veto their own forced sale.
+ */
+export const refundCreditedEvent = onchainTable(
+  "refund_credited_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    currency: t.hex().notNull(),
+    account: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    accountIdx: index().on(table.account),
+  }),
+);
+
+export const refundClaimedEvent = onchainTable(
+  "refund_claimed_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    currency: t.hex().notNull(),
+    account: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    accountIdx: index().on(table.account),
+  }),
+);
+
+/** Outstanding credit. A non-zero `balance` means the slot owes someone money. */
+export const slotRefund = onchainTable(
+  "slot_refund",
+  (t) => ({
+    slot: t.hex().notNull(),
+    account: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    currency: t.hex().notNull(),
+    credited: t.bigint().notNull(),
+    claimed: t.bigint().notNull(),
+    balance: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.slot, table.account] }),
+    chainIdx: index().on(table.chainId),
   }),
 );
 
 // ──────────────────────────────────────────
-// Relations (one() only — query event tables directly by foreign key column,
-// e.g. boughtEvents(where: { slot: "0x...", chainId: 84532 }).
+// Relations
+//
+// The subgraph exposed per-slot event lists via @derivedFrom, so the explorer
+// fetched a slot and its history in ONE query. Reproducing that here needs
+// `many()` on `slot` — and drizzle resolves a `many()` only when the child
+// declares the inverse `one()`, hence the block of one-line child relations
+// below. Filtering an event table directly by its foreign key still works and
+// stays the right call for long, paginated lists.
 // ──────────────────────────────────────────
+
+export const accountRelations = relations(account, ({ many }) => ({
+  accountSlots: many(accountSlot),
+  // The inverses of slot's two account links. Both need the same relationName
+  // as the `one()` side, or drizzle cannot tell which of the two it is looking
+  // at — a slot points at an account twice, for different reasons.
+  slotsAsRecipient: many(slot, { relationName: "recipient" }),
+  slotsAsOccupant: many(slot, { relationName: "occupant" }),
+}));
 
 export const accountSlotRelations = relations(accountSlot, ({ one }) => ({
   accountRef: one(account, {
@@ -533,7 +700,12 @@ export const accountSlotRelations = relations(accountSlot, ({ one }) => ({
   }),
 }));
 
-export const slotRelations = relations(slot, ({ one }) => ({
+export const factoryRelations = relations(factory, ({ many }) => ({
+  slots: many(slot),
+  modules: many(module),
+}));
+
+export const slotRelations = relations(slot, ({ one, many }) => ({
   recipientAccountRef: one(account, {
     fields: [slot.recipientAccount],
     references: [account.id],
@@ -552,26 +724,302 @@ export const slotRelations = relations(slot, ({ one }) => ({
     fields: [slot.module],
     references: [module.id],
   }),
+  factoryRef: one(factory, {
+    fields: [slot.factory],
+    references: [factory.id],
+  }),
   metadata: one(metadataSlot, {
     fields: [slot.id],
     references: [metadataSlot.slot],
   }),
+
+  accountSlots: many(accountSlot),
+  operators: many(slotOperator),
+  refunds: many(slotRefund),
+
+  deployedEvents: many(slotDeployedEvent),
+  boughtEvents: many(boughtEvent),
+  releasedEvents: many(releasedEvent),
+  liquidatedEvents: many(liquidatedEvent),
+  priceUpdatedEvents: many(priceUpdatedEvent),
+  depositedEvents: many(depositedEvent),
+  withdrawnEvents: many(withdrawnEvent),
+  settledEvents: many(settledEvent),
+  taxPaidEvents: many(taxPaidEvent),
+  taxCollectedEvents: many(taxCollectedEvent),
+  moduleFeePaidEvents: many(moduleFeePaidEvent),
+  taxUpdateProposedEvents: many(taxUpdateProposedEvent),
+  moduleUpdateProposedEvents: many(moduleUpdateProposedEvent),
+  pendingUpdateCancelledEvents: many(pendingUpdateCancelledEvent),
+  pendingUpdateEvents: many(pendingUpdateEvent),
+  policyUpdateProposedEvents: many(policyUpdateProposedEvent),
+  policyUpdateAppliedEvents: many(policyUpdateAppliedEvent),
+  operatorSetEvents: many(operatorSetEvent),
+  refundCreditedEvents: many(refundCreditedEvent),
+  refundClaimedEvents: many(refundClaimedEvent),
+  metadataUpdates: many(metadataUpdatedEvent),
 }));
 
-export const moduleRelations = relations(module, ({ one }) => ({
+export const moduleRelations = relations(module, ({ one, many }) => ({
   factoryRef: one(factory, {
     fields: [module.factory],
     references: [factory.id],
   }),
+  slots: many(slot),
+  feesPaid: many(moduleFeePaidEvent),
 }));
 
-export const nftTokenRelations = relations(nftToken, ({ one }) => ({
-  collectionRef: one(nftCollection, {
-    fields: [nftToken.collection],
-    references: [nftCollection.id],
-  }),
+export const metadataSlotRelations = relations(metadataSlot, ({ one }) => ({
   slotRef: one(slot, {
-    fields: [nftToken.slot],
+    fields: [metadataSlot.slot],
     references: [slot.id],
   }),
 }));
+
+// ── Inverse one() for every slot-scoped child ────────────────────────────────
+
+export const slotOperatorRelations = relations(slotOperator, ({ one }) => ({
+  slotRef: one(slot, { fields: [slotOperator.slot], references: [slot.id] }),
+}));
+
+export const slotRefundRelations = relations(slotRefund, ({ one }) => ({
+  slotRef: one(slot, { fields: [slotRefund.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [slotRefund.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const slotDeployedEventRelations = relations(
+  slotDeployedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [slotDeployedEvent.slot],
+      references: [slot.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [slotDeployedEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const boughtEventRelations = relations(boughtEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [boughtEvent.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [boughtEvent.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const releasedEventRelations = relations(releasedEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [releasedEvent.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [releasedEvent.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const liquidatedEventRelations = relations(
+  liquidatedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [liquidatedEvent.slot],
+      references: [slot.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [liquidatedEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const priceUpdatedEventRelations = relations(
+  priceUpdatedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [priceUpdatedEvent.slot],
+      references: [slot.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [priceUpdatedEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const depositedEventRelations = relations(depositedEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [depositedEvent.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [depositedEvent.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const withdrawnEventRelations = relations(withdrawnEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [withdrawnEvent.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [withdrawnEvent.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const settledEventRelations = relations(settledEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [settledEvent.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [settledEvent.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const taxPaidEventRelations = relations(taxPaidEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [taxPaidEvent.slot], references: [slot.id] }),
+    currencyRef: one(currency, {
+      fields: [taxPaidEvent.currency],
+      references: [currency.id],
+    }),
+}));
+
+export const taxCollectedEventRelations = relations(
+  taxCollectedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [taxCollectedEvent.slot],
+      references: [slot.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [taxCollectedEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const moduleFeePaidEventRelations = relations(
+  moduleFeePaidEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [moduleFeePaidEvent.slot],
+      references: [slot.id],
+    }),
+    moduleRef: one(module, {
+      fields: [moduleFeePaidEvent.module],
+      references: [module.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [moduleFeePaidEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const taxUpdateProposedEventRelations = relations(
+  taxUpdateProposedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [taxUpdateProposedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const moduleUpdateProposedEventRelations = relations(
+  moduleUpdateProposedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [moduleUpdateProposedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const pendingUpdateCancelledEventRelations = relations(
+  pendingUpdateCancelledEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [pendingUpdateCancelledEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const pendingUpdateEventRelations = relations(
+  pendingUpdateEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [pendingUpdateEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const policyUpdateProposedEventRelations = relations(
+  policyUpdateProposedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [policyUpdateProposedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const policyUpdateAppliedEventRelations = relations(
+  policyUpdateAppliedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [policyUpdateAppliedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const operatorSetEventRelations = relations(
+  operatorSetEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [operatorSetEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const refundCreditedEventRelations = relations(
+  refundCreditedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [refundCreditedEvent.slot],
+      references: [slot.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [refundCreditedEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const refundClaimedEventRelations = relations(
+  refundClaimedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [refundClaimedEvent.slot],
+      references: [slot.id],
+    }),
+    currencyRef: one(currency, {
+      fields: [refundClaimedEvent.currency],
+      references: [currency.id],
+    }),
+  }),
+);
+
+export const metadataUpdatedEventRelations = relations(
+  metadataUpdatedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [metadataUpdatedEvent.slot],
+      references: [slot.id],
+    }),
+    authorRef: one(account, {
+      fields: [metadataUpdatedEvent.author],
+      references: [account.id],
+    }),
+  }),
+);
