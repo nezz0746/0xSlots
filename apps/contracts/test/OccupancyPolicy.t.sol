@@ -8,6 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
@@ -194,7 +195,7 @@ contract OccupancyPolicyTest is Test {
     function test_ProposePolicyUpdate_RevertsWhenNotMutable() public {
         address s = factory.createSlot(recipient, IERC20(address(token)), _immutableConfig(), _init());
         DenyAllPolicy policy = new DenyAllPolicy();
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         Slot(s).proposePolicyUpdate(address(policy));
     }
 
@@ -272,7 +273,7 @@ contract OccupancyPolicyTest is Test {
         token.approve(s, type(uint256).max);
         Slot(s).buy(alice, need, 100 ether);
         // The core floor is the only thing stopping a full withdrawal.
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         Slot(s).withdraw(need);
         Slot(s).withdraw(need - floor);
         vm.stopPrank();
@@ -408,7 +409,7 @@ contract OccupancyPolicyTest is Test {
         vm.stopPrank();
 
         vm.prank(agent);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         Slot(s).withdraw(1 ether);
     }
 
@@ -423,7 +424,7 @@ contract OccupancyPolicyTest is Test {
         vm.stopPrank();
 
         vm.prank(agent);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         Slot(s).release();
     }
 
@@ -439,7 +440,7 @@ contract OccupancyPolicyTest is Test {
         vm.stopPrank();
 
         vm.prank(agent);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         Slot(s).selfAssess(150 ether);
     }
 }

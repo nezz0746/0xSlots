@@ -9,7 +9,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IUtility} from "./interfaces/IUtility.sol";
 import {IOccupancyPolicy, OccupancyContext} from "./interfaces/IOccupancyPolicy.sol";
-import {SlotConfig, SlotInitParams, PendingUpdate, UpdateKind, SlotInfo, ISlotEvents, EVT_BOUGHT, EVT_RELEASED, EVT_LIQUIDATED, EVT_PRICE_UPDATED, EVT_DEPOSITED, EVT_WITHDRAWN, EVT_TAX_COLLECTED, EVT_SETTLED} from "./interfaces/ISlot.sol";
+import {SlotConfig, SlotInitParams, PendingUpdate, PendingPolicyUpdate, PendingTransfer, UpdateKind, SlotInfo, ISlotEvents, EVT_BOUGHT, EVT_RELEASED, EVT_LIQUIDATED, EVT_PRICE_UPDATED, EVT_DEPOSITED, EVT_WITHDRAWN, EVT_TAX_COLLECTED, EVT_SETTLED} from "./interfaces/ISlot.sol";
+// Errors live in their own file so the contract body reads as behaviour. They
+// are file-level (free) declarations — importing them makes the bare names
+// available to `revert`, and the selectors are unchanged. See `SlotErrors.sol`.
+import "./interfaces/SlotErrors.sol";
 import {SlotFactory} from "./SlotFactory.sol";
 
 /// @title Slot — Immutable & modular Harberger-taxed slot
@@ -27,38 +31,6 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
 
     uint256 public constant BASIS_POINTS = 10_000;
     uint256 public constant MONTH = 30 days;
-
-    // ═══════════════════════════════════════════════════════════
-    // ERRORS
-    // ═══════════════════════════════════════════════════════════
-
-    error NotManager();
-    error NotOccupant();
-    error CannotBuyFromYourself();
-    error InvalidPrice();
-    error InvalidTaxPercentage();
-    error InsufficientDeposit();
-    error NotInsolvent();
-    error NothingToCollect();
-
-    error TaxNotMutable();
-    error ModuleNotMutable();
-    error NoPendingUpdate();
-    error InvalidLiquidationBounty();
-    error InvalidRecipient();
-    error InvalidCurrency();
-    error InvalidModule_NoCode();
-    error PolicyNotMutable();
-    error NotFactory();
-    error NothingToClaim();
-
-    /// @notice `msg.value` did not match what this slot's currency mode expects.
-    /// @dev Native slots require exact value; ERC-20 slots require none. The
-    ///      ERC-20 direction is what stops ETH being stranded in a token slot.
-    error InvalidValue();
-
-    /// @notice An uncapped native send failed in `withdraw` or `claim`.
-    error TransferFailed();
 
     // ═══════════════════════════════════════════════════════════
     // STORAGE — KEEP ORDER, APPEND ONLY
@@ -97,30 +69,23 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     /// @dev INERT — held an epoch length when a buy could be deferred to a
     ///      clock boundary. Nothing reads it; `initialize` cannot set it and
     ///      `SlotFactory` rejects a non-zero value. Six slots still carry one.
-    uint64 public epochSeconds;     // slot 15, offset 20
-    uint256 public occupiedSince;   // slot 16
+    uint64 public epochSeconds; // slot 15, offset 20
+    uint256 public occupiedSince; // slot 16
 
-    struct PendingPolicyUpdate {
-        address newPolicy;
-        bool hasPolicyUpdate;
-    }
+    // struct PendingPolicyUpdate — declared in interfaces/ISlot.sol
     PendingPolicyUpdate public pendingPolicyUpdate; // slot 17
 
     /// @dev INERT — held a committed-but-not-yet-effective transfer. Every
     ///      outstanding one was drained before the code that completed them was
     ///      removed, so all four slots are permanently zero.
     ///
-    ///      Deleting them would shift `isOperator` (22) and `withdrawableOf`
-    ///      (23) on every live proxy, silently voiding operator approvals and
-    ///      unclaimed refunds. Guarded by
+    ///      Occupies slots 18-21: `buyer`+`effectiveAt` packed in slot 18,
+    ///      `deposit` 19, `newPrice` 20, `pricePaid` 21. Deleting the field would
+    ///      shift `isOperator` (22) and `withdrawableOf` (23) on every live proxy,
+    ///      silently voiding operator approvals and unclaimed refunds. Guarded by
     ///      `test_StorageLayout_SurvivesDrainRemoval`.
-    struct PendingTransfer {
-        address buyer;       // slot 18, offset 0
-        uint96 effectiveAt;  // slot 18, offset 20
-        uint256 deposit;     // slot 19
-        uint256 newPrice;    // slot 20
-        uint256 pricePaid;   // slot 21
-    }
+    ///
+    ///      struct PendingTransfer — declared in interfaces/ISlot.sol.
     PendingTransfer public pendingTransfer;
 
     /// @notice occupant => operator => approved. Keyed by occupant so approvals
@@ -146,9 +111,9 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     ///      cancelled, so a non-zero value always means "pending since". The
     ///      converse does not hold: an update queued before this upgrade reads
     ///      zero while its `has*` flag is set. Read the pair, not the timestamp.
-    uint64 public taxProposedAt;     // slot 24, offset 0
+    uint64 public taxProposedAt; // slot 24, offset 0
     uint64 public utilityProposedAt; // slot 24, offset 8
-    uint64 public policyProposedAt;  // slot 24, offset 16
+    uint64 public policyProposedAt; // slot 24, offset 16
 
     // ═══════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -181,14 +146,17 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         // other address must actually be a contract: a codeless non-zero
         // currency used to pass this check and produce a slot whose every
         // transfer silently no-ops.
-        if (address(_currency) != address(0) && address(_currency).code.length == 0)
-            revert InvalidCurrency();
+        if (
+            address(_currency) != address(0) &&
+            address(_currency).code.length == 0
+        ) revert InvalidCurrency();
         if (_init.taxPercentage == 0) revert InvalidTaxPercentage();
         if (_init.liquidationBountyBps > BASIS_POINTS)
             revert InvalidLiquidationBounty();
-        if (_init.occupancyPolicy != address(0) &&
-            _init.occupancyPolicy.code.length == 0)
-            revert InvalidModule_NoCode();
+        if (
+            _init.occupancyPolicy != address(0) &&
+            _init.occupancyPolicy.code.length == 0
+        ) revert InvalidModule_NoCode();
 
         recipient = _recipient;
         currency = _currency;
@@ -226,7 +194,8 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     ///      against the correct (incoming) occupant.
     modifier onlyOccupantOrOperator() {
         address occ = occupant();
-        if (msg.sender != occ && !isOperator[occ][msg.sender]) revert NotOccupant();
+        if (msg.sender != occ && !isOperator[occ][msg.sender])
+            revert NotOccupant();
         _;
     }
 
@@ -317,10 +286,22 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
             abi.encodeCall(IUtility.onTransfer, (0, prev, account))
         );
 
-        emit Bought(account, prev, currentPrice, depositAmount, selfAssessedPrice);
+        emit Bought(
+            account,
+            prev,
+            currentPrice,
+            depositAmount,
+            selfAssessedPrice
+        );
         _emitProtocolEvent(
             EVT_BOUGHT,
-            abi.encode(account, prev, currentPrice, depositAmount, selfAssessedPrice)
+            abi.encode(
+                account,
+                prev,
+                currentPrice,
+                depositAmount,
+                selfAssessedPrice
+            )
         );
     }
 
@@ -371,7 +352,9 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     }
 
     /// @notice Occupant (or an approved operator) self-assesses a new price
-    function selfAssess(uint256 newPrice) external nonReentrant onlyOccupantOrOperator {
+    function selfAssess(
+        uint256 newPrice
+    ) external nonReentrant onlyOccupantOrOperator {
         if (newPrice == 0) revert InvalidPrice();
 
         // Settle first: materialises any matured transfer, so the guard below
@@ -725,11 +708,9 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     ///         left-padded address for `Utility` and `Policy`.
     /// @return proposedAt When it was queued. Zero with `isSet` true means it
     ///         predates the timestamp being recorded.
-    function pendingUpdateOf(UpdateKind kind)
-        external
-        view
-        returns (bool isSet, bytes32 value, uint64 proposedAt)
-    {
+    function pendingUpdateOf(
+        UpdateKind kind
+    ) external view returns (bool isSet, bytes32 value, uint64 proposedAt) {
         if (kind == UpdateKind.Tax) {
             return (
                 pendingUpdate.hasTaxUpdate,
@@ -794,11 +775,21 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         // ABI-decode failures from empty returndata).
         if (utility != address(0) && utility.code.length > 0) {
             IUtility mod = IUtility(utility);
-            try mod.name() returns (string memory n) { info.utilityName = n; } catch {}
-            try mod.version() returns (string memory v) { info.utilityVersion = v; } catch {}
-            try mod.feeBps() returns (uint256 f) { info.utilityFeeBps = f; } catch {}
-            try mod.feeRecipient() returns (address r) { info.utilityFeeRecipient = r; } catch {}
-            try mod.moduleURI() returns (string memory u) { info.utilityURI = u; } catch {}
+            try mod.name() returns (string memory n) {
+                info.utilityName = n;
+            } catch {}
+            try mod.version() returns (string memory v) {
+                info.utilityVersion = v;
+            } catch {}
+            try mod.feeBps() returns (uint256 f) {
+                info.utilityFeeBps = f;
+            } catch {}
+            try mod.feeRecipient() returns (address r) {
+                info.utilityFeeRecipient = r;
+            } catch {}
+            try mod.moduleURI() returns (string memory u) {
+                info.utilityURI = u;
+            } catch {}
         }
 
         info.hasPendingTax = pendingUpdate.hasTaxUpdate;
@@ -825,17 +816,18 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         uint256 newPrice,
         uint256 depositAmount
     ) internal view returns (OccupancyContext memory) {
-        return OccupancyContext({
-            slot: address(this),
-            caller: msg.sender,
-            account: account,
-            occupant: occupant(),
-            occupiedSince: occupiedSince,
-            taxPercentage: taxPercentage,
-            currentPrice: price(),
-            newPrice: newPrice,
-            depositAmount: depositAmount
-        });
+        return
+            OccupancyContext({
+                slot: address(this),
+                caller: msg.sender,
+                account: account,
+                occupant: occupant(),
+                occupiedSince: occupiedSince,
+                taxPercentage: taxPercentage,
+                currentPrice: price(),
+                newPrice: newPrice,
+                depositAmount: depositAmount
+            });
     }
 
     /// @dev Accrue tax for the current occupant up to `upTo`.
@@ -848,7 +840,8 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         }
 
         uint256 elapsed = upTo - lastSettled;
-        uint256 owed = (_price * taxPercentage * elapsed) / (MONTH * BASIS_POINTS);
+        uint256 owed = (_price * taxPercentage * elapsed) /
+            (MONTH * BASIS_POINTS);
 
         uint256 paid;
         if (owed >= _deposit) {

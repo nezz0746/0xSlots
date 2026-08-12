@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -78,7 +79,7 @@ contract MinDepositRoundingTest is Test {
 
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         s.buy(alice, 0, THRESHOLD - 1); // 214: used to be free
         vm.stopPrank();
     }
@@ -98,7 +99,7 @@ contract MinDepositRoundingTest is Test {
         below.buy(alice, 1, THRESHOLD - 1); // 214 → floor 1
         assertEq(below.deposit(), 1);
 
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         at.buy(alice, 1, THRESHOLD); // 215 → floor 2, one unit no longer clears
         at.buy(alice, 2, THRESHOLD);
         assertEq(at.deposit(), 2);
@@ -113,7 +114,7 @@ contract MinDepositRoundingTest is Test {
         Slot s = _slotWith(TAX_BPS, RUNWAY, address(0));
 
         vm.prank(alice);
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         s.buy(alice, 0, price_);
     }
 
@@ -144,7 +145,7 @@ contract MinDepositRoundingTest is Test {
         // Hoisted: `vm.expectRevert` arms the NEXT call, and an inline
         // `s.deposit()` would be it.
         uint256 everything = s.deposit();
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         s.withdraw(everything);
         vm.stopPrank();
 

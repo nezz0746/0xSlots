@@ -8,6 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams, SlotInfo} from "../src/interfaces/ISlot.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
@@ -162,7 +163,7 @@ contract FinalFixesTest is Test {
         // No manager exists on an immutable slot, so `onlyManager` refuses
         // everyone — there is simply nobody who could install one.
         vm.prank(attacker);
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         s.proposePolicyUpdate(address(deny));
 
         assertEq(s.manager(), address(0), "no manager to authorise one");
@@ -205,7 +206,7 @@ contract FinalFixesTest is Test {
         s.proposeUtilityUpdate(address(0));
 
         // ...but the occupancy terms may not.
-        vm.expectRevert(Slot.PolicyNotMutable.selector);
+        vm.expectRevert(PolicyNotMutable.selector);
         s.proposePolicyUpdate(address(p));
         assertEq(s.occupancyPolicy(), address(0));
     }
@@ -219,7 +220,7 @@ contract FinalFixesTest is Test {
             _init()
         ));
 
-        vm.expectRevert(Slot.ModuleNotMutable.selector);
+        vm.expectRevert(ModuleNotMutable.selector);
         s.proposeUtilityUpdate(address(0));
     }
 
@@ -387,7 +388,7 @@ contract FinalFixesTest is Test {
         assertEq(blk.balanceOf(alice), before + credited, "blocked party paid in full");
         assertEq(s.withdrawableOf(alice), 0);
 
-        vm.expectRevert(Slot.NothingToClaim.selector);
+        vm.expectRevert(NothingToClaim.selector);
         s.claim(alice);
     }
 

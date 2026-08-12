@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams, SlotInfo, UpdateKind, ISlotEvents} from "../src/interfaces/ISlot.sol";
 import {IUtility} from "../src/interfaces/IUtility.sol";
@@ -236,7 +237,7 @@ contract PendingUpdatesTest is Test, ISlotEvents {
         s.proposeTaxUpdate(200);
 
         vm.prank(manager);
-        vm.expectRevert(Slot.NoPendingUpdate.selector);
+        vm.expectRevert(NoPendingUpdate.selector);
         s.cancelPendingUpdate(UpdateKind.Policy);
     }
 
@@ -249,11 +250,11 @@ contract PendingUpdatesTest is Test, ISlotEvents {
         }));
 
         vm.prank(manager);
-        vm.expectRevert(Slot.ModuleNotMutable.selector);
+        vm.expectRevert(ModuleNotMutable.selector);
         s.cancelPendingUpdate(UpdateKind.Utility);
 
         vm.prank(manager);
-        vm.expectRevert(Slot.PolicyNotMutable.selector);
+        vm.expectRevert(PolicyNotMutable.selector);
         s.cancelPendingUpdate(UpdateKind.Policy);
     }
 
@@ -263,7 +264,7 @@ contract PendingUpdatesTest is Test, ISlotEvents {
         s.proposeTaxUpdate(200);
 
         vm.prank(alice);
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         s.cancelPendingUpdate(UpdateKind.Tax);
     }
 

@@ -113,6 +113,32 @@ struct PendingUpdate {
     bool hasUtilityUpdate;
 }
 
+/// @notice A queued occupancy-policy swap, applied on the next transition.
+/// @dev Its own struct rather than a field on `PendingUpdate` because it lands
+///      at a different storage offset (see `Slot`), fixed on every live proxy.
+///      The two fields pack into one slot.
+struct PendingPolicyUpdate {
+    address newPolicy;
+    bool hasPolicyUpdate;
+}
+
+/// @notice INERT — a committed-but-not-yet-effective transfer, retained only to
+///         hold its storage offsets.
+/// @dev Every outstanding transfer was drained before the code that completed
+///      them was removed, so all five fields are permanently zero on every live
+///      proxy. The type cannot be dropped: doing so would shift `isOperator` and
+///      `withdrawableOf` on every proxy, voiding operator approvals and unclaimed
+///      refunds. Guarded by `test_StorageLayout_SurvivesDrainRemoval`. The field
+///      order and packing (`buyer`+`effectiveAt` share one slot) are load-bearing
+///      and must not change.
+struct PendingTransfer {
+    address buyer;
+    uint96 effectiveAt;
+    uint256 deposit;
+    uint256 newPrice;
+    uint256 pricePaid;
+}
+
 /// @notice Which of a slot's three governable dimensions a pending update targets.
 /// @dev The storage behind them is still two structs — `PendingUpdate` carries
 ///      tax and utility, `PendingPolicyUpdate` carries policy — because those
