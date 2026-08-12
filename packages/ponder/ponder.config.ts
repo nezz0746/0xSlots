@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createConfig, factory } from "ponder";
-import { http, type Hex, parseAbiItem } from "viem";
+import { createConfig, factory, loadBalance, rateLimit } from "ponder";
+import { http, type Hex, parseAbiItem, type Transport, webSocket } from "viem";
 import {
+  FeedAbi,
+  FeedHubAbi,
   FeedPostModuleAbi,
   SlotAbi,
   SlotFactoryAbi,
@@ -49,6 +51,20 @@ const BASE_SEPOLIA_SLOT_FACTORY_START_BLOCK = 39341061;
 
 const BASE_SLOT_FACTORY = "0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e" as const;
 const BASE_SLOT_FACTORY_START_BLOCK = 43581441;
+
+// FeedHub — base-sepolia only.
+//
+// packages/subgraph/config/base.json carries a mainnet entry, but it is an
+// explicit placeholder reusing this same address with a note that there is no
+// code at it on mainnet. Indexing that would mean a log filter that can never
+// match; the source is added here when the mainnet hub actually ships.
+const BASE_SEPOLIA_FEED_HUB =
+  "0xE4c0c374E3233b5174a1600AF1321cDa9b6B5cF8" as const;
+const BASE_SEPOLIA_FEED_HUB_START_BLOCK = 44088994;
+
+const FEED_CREATED_EVENT = parseAbiItem(
+  "event FeedCreated(uint256 indexed index, address indexed feed, address indexed owner)",
+);
 
 // ──────────────────────────────────────────
 // Event signatures used to derive child addresses via factory()
@@ -135,37 +151,124 @@ const slotChildAddress = (
 const ALCHEMY_KEY =
   process.env.ALCHEMY_API_KEY ?? process.env.ALCHEMY_KEY ?? "";
 
-function rpcUrl(
-  label: string,
+/**
+ * How hard to lean on Alchemy when public endpoints are also in the pool.
+ *
+ * Backfill is `eth_getLogs`-heavy and wants a provider that answers wide ranges
+ * reliably; steady state is just block polling, which any public node serves.
+ * Capping Alchemy and load-balancing the rest keeps the paid quota for the work
+ * that actually needs it.
+ */
+const ALCHEMY_RPS = Number(process.env.ALCHEMY_RPS ?? 25);
+
+/**
+ * Public endpoints — OPT-IN, via PONDER_PUBLIC_RPCS=1.
+ *
+ * Not the default, because most of them refuse the one method that matters.
+ * Measured against the exact `eth_getLogs` ponder issues during backfill:
+ *
+ *   mainnet.base.org                  ok
+ *   base.api.onfinality.io/public     -32029, needs an API key
+ *   api.zan.top/base-mainnet          -32012, "not available for
+ *                                     unregistered accounts"
+ *
+ * Mixed into the pool by default they produced 48 errors and zero progress:
+ * load balancing spreads requests round-robin, so a provider that rejects
+ * eth_getLogs does not degrade throughput, it stalls the sync outright.
+ *
+ * They remain useful for the realtime phase, which is block polling and cheap
+ * for anyone to serve — see the note on staged backfill below.
+ *
+ * Coinbase's https://sepolia.base.org is excluded entirely: its eth_getLogs is
+ * broken for some contracts, which is a wrong answer rather than an error.
+ */
+const PUBLIC_RPCS: Record<string, string[]> = {
+  base: [
+    "wss://base-rpc.publicnode.com",
+    "wss://base.drpc.org",
+    "https://mainnet.base.org",
+  ],
+  base_sepolia: [
+    "wss://base-sepolia-rpc.publicnode.com",
+    "https://base-sepolia-rpc.publicnode.com",
+  ],
+};
+
+const USE_PUBLIC_RPCS = process.env.PONDER_PUBLIC_RPCS === "1";
+
+const toTransport = (url: string): Transport =>
+  url.startsWith("ws") ? webSocket(url) : http(url);
+
+/**
+ * The transport pool for a chain.
+ *
+ *   1. PONDER_RPC_URL_<CHAIN> — comma-separated, and the complete answer when
+ *      set. Nothing else is added, so a deployment can pin exactly what it
+ *      wants and balance across paid providers.
+ *   2. Otherwise Alchemy, plus the public pool when PONDER_PUBLIC_RPCS=1.
+ *
+ * ── Spending Alchemy only on the backfill ────────────────────────────────────
+ *
+ * Ponder has no per-phase transport hook, so this cannot be expressed in
+ * config. It is an operational sequence instead: deploy with Alchemy alone and
+ * let the historical sync finish, then set PONDER_PUBLIC_RPCS=1 (or point
+ * PONDER_RPC_URL_* at public endpoints) and redeploy against the SAME schema.
+ * History already lives in Postgres, so the second boot does not refetch it,
+ * and steady state is block polling — which the public endpoints serve fine.
+ */
+function rpcPool(
+  label: "base" | "base_sepolia",
   explicit: string | undefined,
   alchemySubdomain: string,
-): string {
-  if (explicit) return explicit;
-  if (ALCHEMY_KEY)
-    return `https://${alchemySubdomain}.g.alchemy.com/v2/${ALCHEMY_KEY}`;
-  throw new Error(
-    `No RPC endpoint for ${label}. Set PONDER_RPC_URL_${label.toUpperCase()} ` +
-      `to a full URL, or ALCHEMY_API_KEY (ALCHEMY_KEY is also accepted).`,
-  );
+): Transport {
+  const explicitUrls = (explicit ?? "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
+  if (explicitUrls.length > 0) {
+    return loadBalance(explicitUrls.map(toTransport));
+  }
+
+  const pool: Transport[] = [];
+  if (ALCHEMY_KEY) {
+    const alchemy = http(
+      `https://${alchemySubdomain}.g.alchemy.com/v2/${ALCHEMY_KEY}`,
+    );
+    // Only worth capping when something else can absorb the overflow.
+    pool.push(
+      USE_PUBLIC_RPCS
+        ? rateLimit(alchemy, { requestsPerSecond: ALCHEMY_RPS })
+        : alchemy,
+    );
+  }
+  if (USE_PUBLIC_RPCS) {
+    pool.push(...(PUBLIC_RPCS[label] ?? []).map(toTransport));
+  }
+
+  if (pool.length === 0) {
+    throw new Error(
+      `No RPC endpoint for ${label}. Set PONDER_RPC_URL_${label.toUpperCase()} ` +
+        `to a URL (or a comma-separated list), or ALCHEMY_API_KEY ` +
+        `(ALCHEMY_KEY is also accepted). PONDER_PUBLIC_RPCS=1 adds public ` +
+        `endpoints, which are suitable for realtime but not for backfill.`,
+    );
+  }
+  return pool.length === 1 ? pool[0]! : loadBalance(pool);
 }
 
 const remoteConfig = createConfig({
   chains: {
     baseSepolia: {
       id: 84532,
-      rpc: http(
-        rpcUrl(
-          "base_sepolia",
-          process.env.PONDER_RPC_URL_BASE_SEPOLIA,
-          "base-sepolia",
-        ),
+      rpc: rpcPool(
+        "base_sepolia",
+        process.env.PONDER_RPC_URL_BASE_SEPOLIA,
+        "base-sepolia",
       ),
     },
     base: {
       id: 8453,
-      rpc: http(
-        rpcUrl("base", process.env.PONDER_RPC_URL_BASE, "base-mainnet"),
-      ),
+      rpc: rpcPool("base", process.env.PONDER_RPC_URL_BASE, "base-mainnet"),
     },
   },
   contracts: {
@@ -227,6 +330,29 @@ const remoteConfig = createConfig({
       abi: FeedPostModuleAbi,
       chain: slotChildAddress(MODULE_VERIFIED_EVENT, "module"),
     },
+    FeedHub: {
+      abi: FeedHubAbi,
+      chain: {
+        baseSepolia: {
+          address: BASE_SEPOLIA_FEED_HUB,
+          startBlock: BASE_SEPOLIA_FEED_HUB_START_BLOCK,
+        },
+      },
+    },
+    // Beacon-proxy feeds, derived from the hub's FeedCreated.
+    Feed: {
+      abi: FeedAbi,
+      chain: {
+        baseSepolia: {
+          address: factory({
+            address: BASE_SEPOLIA_FEED_HUB,
+            event: FEED_CREATED_EVENT,
+            parameter: "feed",
+          }),
+          startBlock: BASE_SEPOLIA_FEED_HUB_START_BLOCK,
+        },
+      },
+    },
   },
 });
 
@@ -272,6 +398,12 @@ function buildLocalConfig() {
         abi: FeedPostModuleAbi,
         chain: child(MODULE_VERIFIED_EVENT, "module"),
       },
+      // No FeedHub is deployed locally, so these never match. Declared anyway
+      // for the same reason as the legacy sources: src/feed.ts registers its
+      // handlers unconditionally and ponder rejects a handler whose source is
+      // missing. Pointed at the slot factory purely so the address is valid.
+      FeedHub: { abi: FeedHubAbi, chain: { anvil: at } },
+      Feed: { abi: FeedAbi, chain: { anvil: at } },
     },
   });
 }
@@ -285,6 +417,6 @@ function buildLocalConfig() {
  * correctly; the two differ only in chain identity, and handlers read nothing
  * from `context.chain` but `.id`, which is a number in both.
  */
-export default (
-  LOCAL ? (buildLocalConfig() as unknown as typeof remoteConfig) : remoteConfig
-);
+export default LOCAL
+  ? (buildLocalConfig() as unknown as typeof remoteConfig)
+  : remoteConfig;

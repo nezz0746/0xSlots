@@ -112,6 +112,9 @@ export const slot = onchainTable(
     updatedAt: t.bigint().notNull(),
     // parent factory so Slot-scoped handlers can resolve modules
     factory: t.hex().notNull(),
+    // Null unless the slot belongs to a Feed. Driven by SlotAdded/SlotRemoved,
+    // never by reading the feed's own list.
+    feed: t.hex(),
     // Pending updates — at most one per dimension, all applied together on the
     // next ownership transition. Answering "what is queued on this slot right
     // now" used to require an RPC call per slot; the per-kind event log makes
@@ -669,6 +672,175 @@ export const slotRefund = onchainTable(
   }),
 );
 
+
+// ──────────────────────────────────────────
+// Feeds — beacon-proxy collections, each owning a set of slots
+// ──────────────────────────────────────────
+
+export const feedHub = onchainTable(
+  "feed_hub",
+  (t) => ({
+    id: t.hex().primaryKey(),
+    chainId: t.integer().notNull(),
+    feedCount: t.bigint().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+  }),
+);
+
+/**
+ * A feed, with its metadata document resolved inline.
+ *
+ * The subgraph could not do this. Its File Data Sources fetch asynchronously
+ * and are forbidden from writing back to the entity that spawned them, so for
+ * any IPFS `metadataURI` the name, description, image, banner and link were all
+ * permanently null and `displayName` could only ever fall back to the on-chain
+ * name. A ponder handler just awaits the fetch and writes the fields, so they
+ * carry real values here.
+ */
+export const feed = onchainTable(
+  "feed",
+  (t) => ({
+    id: t.hex().primaryKey(),
+    chainId: t.integer().notNull(),
+    hub: t.hex().notNull(),
+    index: t.bigint().notNull(),
+    owner: t.hex().notNull(),
+    onchainName: t.text().notNull(),
+    metadataURI: t.text().notNull(),
+    recipient: t.hex().notNull(),
+    // Driven solely by SlotAdded/SlotRemoved — see the handler for why reading
+    // `slotCount()` here would double-count.
+    slotCount: t.bigint().notNull(),
+
+    // Resolved from metadataURI.
+    metadataName: t.text(),
+    description: t.text(),
+    image: t.text(),
+    banner: t.text(),
+    externalLink: t.text(),
+    metadataRaw: t.text(),
+    metadataCid: t.text(),
+    /** `metadataName ?? onchainName`. Actually meaningful here. */
+    displayName: t.text().notNull(),
+
+    createdAt: t.bigint().notNull(),
+    createdTx: t.hex().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    hubIdx: index().on(table.hub),
+  }),
+);
+
+export const feedCreatedEvent = onchainTable(
+  "feed_created_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    hub: t.hex().notNull(),
+    feed: t.hex().notNull(),
+    index: t.bigint().notNull(),
+    owner: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    feedIdx: index().on(table.feed),
+  }),
+);
+
+export const feedNameUpdatedEvent = onchainTable(
+  "feed_name_updated_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    feed: t.hex().notNull(),
+    name: t.text().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    feedIdx: index().on(table.feed),
+  }),
+);
+
+export const feedMetadataURIUpdatedEvent = onchainTable(
+  "feed_metadata_uri_updated_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    feed: t.hex().notNull(),
+    uri: t.text().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    feedIdx: index().on(table.feed),
+  }),
+);
+
+export const feedRecipientUpdatedEvent = onchainTable(
+  "feed_recipient_updated_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    feed: t.hex().notNull(),
+    recipient: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    feedIdx: index().on(table.feed),
+  }),
+);
+
+export const feedSlotAddedEvent = onchainTable(
+  "feed_slot_added_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    feed: t.hex().notNull(),
+    slot: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    feedIdx: index().on(table.feed),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+export const feedSlotRemovedEvent = onchainTable(
+  "feed_slot_removed_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    feed: t.hex().notNull(),
+    slot: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    feedIdx: index().on(table.feed),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
 // ──────────────────────────────────────────
 // Relations
 //
@@ -727,6 +899,10 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
   factoryRef: one(factory, {
     fields: [slot.factory],
     references: [factory.id],
+  }),
+  feedRef: one(feed, {
+    fields: [slot.feed],
+    references: [feed.id],
   }),
   metadata: one(metadataSlot, {
     fields: [slot.id],
@@ -1020,6 +1196,86 @@ export const metadataUpdatedEventRelations = relations(
     authorRef: one(account, {
       fields: [metadataUpdatedEvent.author],
       references: [account.id],
+    }),
+  }),
+);
+
+export const feedHubRelations = relations(feedHub, ({ many }) => ({
+  feeds: many(feed),
+}));
+
+export const feedRelations = relations(feed, ({ one, many }) => ({
+  hubRef: one(feedHub, { fields: [feed.hub], references: [feedHub.id] }),
+  slots: many(slot),
+  createdEvents: many(feedCreatedEvent),
+  nameUpdates: many(feedNameUpdatedEvent),
+  metadataUpdates: many(feedMetadataURIUpdatedEvent),
+  recipientUpdates: many(feedRecipientUpdatedEvent),
+  slotsAdded: many(feedSlotAddedEvent),
+  slotsRemoved: many(feedSlotRemovedEvent),
+}));
+
+export const feedCreatedEventRelations = relations(
+  feedCreatedEvent,
+  ({ one }) => ({
+    feedRef: one(feed, { fields: [feedCreatedEvent.feed], references: [feed.id] }),
+  }),
+);
+
+export const feedNameUpdatedEventRelations = relations(
+  feedNameUpdatedEvent,
+  ({ one }) => ({
+    feedRef: one(feed, {
+      fields: [feedNameUpdatedEvent.feed],
+      references: [feed.id],
+    }),
+  }),
+);
+
+export const feedMetadataURIUpdatedEventRelations = relations(
+  feedMetadataURIUpdatedEvent,
+  ({ one }) => ({
+    feedRef: one(feed, {
+      fields: [feedMetadataURIUpdatedEvent.feed],
+      references: [feed.id],
+    }),
+  }),
+);
+
+export const feedRecipientUpdatedEventRelations = relations(
+  feedRecipientUpdatedEvent,
+  ({ one }) => ({
+    feedRef: one(feed, {
+      fields: [feedRecipientUpdatedEvent.feed],
+      references: [feed.id],
+    }),
+  }),
+);
+
+export const feedSlotAddedEventRelations = relations(
+  feedSlotAddedEvent,
+  ({ one }) => ({
+    feedRef: one(feed, {
+      fields: [feedSlotAddedEvent.feed],
+      references: [feed.id],
+    }),
+    slotRef: one(slot, {
+      fields: [feedSlotAddedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const feedSlotRemovedEventRelations = relations(
+  feedSlotRemovedEvent,
+  ({ one }) => ({
+    feedRef: one(feed, {
+      fields: [feedSlotRemovedEvent.feed],
+      references: [feed.id],
+    }),
+    slotRef: one(slot, {
+      fields: [feedSlotRemovedEvent.slot],
+      references: [slot.id],
     }),
   }),
 );

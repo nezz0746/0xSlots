@@ -14,7 +14,7 @@
   "dependencies": {
     "@0xslots/contracts": "workspace:*",
     "hono": "^4.6.13",
-    "ponder": "0.16.6",
+    "ponder": "0.17.6",
     "viem": "^2.21.0"
   },
   "devDependencies": {

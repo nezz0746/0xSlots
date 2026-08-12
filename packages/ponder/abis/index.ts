@@ -1,4 +1,5 @@
 export { ERC20Abi } from "./ERC20";
+export { FeedAbi, FeedHubAbi } from "./feed";
 export { FeedPostModuleAbi } from "./FeedPostModule";
 export { FeedPostModuleV2Abi } from "./FeedPostModuleV2";
 export { slotFactoryLegacyAbi } from "./legacy";
