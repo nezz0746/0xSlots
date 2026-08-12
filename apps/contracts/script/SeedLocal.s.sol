@@ -39,13 +39,22 @@ contract SeedLocal is BaseScript {
      * LocalToken's address, pinned.
      *
      * Plain CREATE, so this depends on (deployer, nonce) — not on the token's
-     * bytecode. It survives Solidity edits and moves only if the deployment
-     * ORDER in this script changes. packages/sdk/src/tokens.ts lists it as
-     * anvil's default currency, so drift would leave the create form pointed at
-     * an address with no code; assert rather than discover that in the UI.
+     * bytecode. It survives Solidity edits, and moves whenever the deployer's
+     * NONCE COUNT changes at the moment this line runs.
+     *
+     * That is a wider surface than it looks, and it has bitten once: the nonce
+     * is shared with `DeployLocal`, which runs first against the same EOA. Any
+     * contract added THERE shifts this address, even though nothing in this
+     * script changed. Adding the SplitsWarehouse and collective deployments
+     * moved it from 0x8A79…C318 to the value below.
+     *
+     * packages/sdk/src/tokens.ts lists this as anvil's default currency, so
+     * drift would leave the create form pointed at an address with no code.
+     * Assert rather than discover that in the UI — and when it fires, update
+     * BOTH constants together.
      */
     address internal constant EXPECTED_LOCAL_TOKEN =
-        0x8A791620dd6260079BF849Dc5567aDC3F2FdC318;
+        0x9A676e781A523b5d0C0e43731313A708CB607508;
 
     SlotFactory internal factory;
     MetadataModule internal metadata;

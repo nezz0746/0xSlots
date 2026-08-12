@@ -1,7 +1,7 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { Check, ChevronDown, PlusIcon, User } from "lucide-react";
+import { Check, ChevronDown, PlusIcon, User, Users } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
@@ -118,6 +118,15 @@ export function AppSidebar() {
                 >
                   <User className="size-4" />
                   <span>My Slots</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/collectives")}
+                  onClick={() => push("/collectives")}
+                >
+                  <Users className="size-4" />
+                  <span>My Collectives</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

@@ -7,6 +7,9 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {MetadataModule} from "../src/modules/MetadataModule.sol";
+import {SlotCollective} from "../src/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 
 /**
  * @title DeployLocal
@@ -46,12 +49,17 @@ contract DeployLocal is BaseScript {
     bytes32 internal constant BOOTSTRAP_SALT = keccak256("0xslots.local.bootstrap.v1");
     bytes32 internal constant FACTORY_SALT = keccak256("0xslots.local.factory.v1");
     bytes32 internal constant METADATA_SALT = keccak256("0xslots.local.metadata.v1");
+    bytes32 internal constant COLLECTIVE_FACTORY_SALT =
+        keccak256("0xslots.local.collectivefactory.v1");
 
     /// Expected pinned addresses. Zero disables the check (first run).
     address internal constant EXPECTED_FACTORY =
         0x78F614D6e3489a90BD2584D2ab1D90F5C35722F6;
     address internal constant EXPECTED_METADATA =
         0x6b2FB65de140764b208007b1591Cc6F7BaAad129;
+    /// Zero until the first run logs it — see the docblock on drift.
+    address internal constant EXPECTED_COLLECTIVE_FACTORY =
+        0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d;
 
     function run() external {
         _deploy();
@@ -116,9 +124,45 @@ contract DeployLocal is BaseScript {
             );
         }
 
+        // 7. Collectives.
+        //
+        // A collective is a 0xSplits PushSplit wearing a role-gated control
+        // panel, so it needs a SplitsWarehouse. Mainnet and Base have a
+        // canonical one; anvil has nothing, so deploy a local instance. It is
+        // only reached by `distribute()` — creating a collective never touches
+        // it — but the address is an immutable baked into the implementation's
+        // runtime bytecode, so it has to exist before the implementation does.
+        SplitsWarehouse warehouse = new SplitsWarehouse("Ether", "ETH");
+        SlotCollective collectiveImpl = new SlotCollective(address(warehouse));
+        ERC1967Proxy collectiveFactoryProxy = new ERC1967Proxy{
+            salt: COLLECTIVE_FACTORY_SALT
+        }(address(bootstrap), seedInit);
+
+        SlotCollectiveFactory collectiveFactoryImpl = new SlotCollectiveFactory();
+        LocalBootstrap(address(collectiveFactoryProxy)).upgradeToAndCall(
+            address(collectiveFactoryImpl),
+            abi.encodeCall(
+                SlotCollectiveFactory.initialize,
+                (deployer, address(collectiveImpl))
+            )
+        );
+
+        console2.log("SplitsWarehouse:", address(warehouse));
+        console2.log("SlotCollective impl:", address(collectiveImpl));
+        console2.log("SlotCollectiveFactory proxy:", address(collectiveFactoryProxy));
+
+        if (EXPECTED_COLLECTIVE_FACTORY != address(0)) {
+            require(
+                address(collectiveFactoryProxy) == EXPECTED_COLLECTIVE_FACTORY,
+                "collective factory address drifted - see DeployLocal docblock"
+            );
+        }
+
         _saveDeployment(address(factoryProxy), "SlotFactory");
         _saveDeployment(address(metadataProxy), "MetadataModule");
         _saveDeployment(address(slotImpl), "SlotImplementation");
+        _saveDeployment(address(collectiveFactoryProxy), "SlotCollectiveFactory");
+        _saveDeployment(address(warehouse), "SplitsWarehouse");
 
         console2.log("=== done ===");
     }

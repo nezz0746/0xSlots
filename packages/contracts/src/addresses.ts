@@ -19,6 +19,26 @@ export const slotFactoryAddress = {
   [anvil.id]: "0x78F614D6e3489a90BD2584D2ab1D90F5C35722F6",
 } as const;
 
+/**
+ * SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon.
+ *
+ * A collective fills BOTH of a slot's named addresses: `recipient` (tax flows to
+ * it) and `manager` (it may propose tax / utility / policy changes).
+ *
+ * This table is the single source of truth for whether collectives exist on a
+ * chain: `CollectiveUnavailable` in the app derives its "not deployed here, try
+ * X" message straight from these keys, so shipping to a new chain is one entry
+ * and every screen updates with it.
+ *
+ * base is deliberately absent — not yet deployed there.
+ */
+export const slotCollectiveFactoryAddress = {
+  // Deployed 2026-08-12, block 45393270. Beacon-backed, admin is the deployer.
+  [baseSepolia.id]: "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d",
+  // Local anvil, pinned by `apps/contracts/script/DeployLocal.s.sol` step 7.
+  [anvil.id]: "0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d",
+} as const;
+
 export const batchCollectorAddress = {
   [baseSepolia.id]: "0xd3c7090C2F89c5132C3f91DD1da4bCffEAe10e13",
 } as const;

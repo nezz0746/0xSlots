@@ -7,6 +7,8 @@ import {
   FeedHubAbi,
   FeedPostModuleAbi,
   SlotAbi,
+  SlotCollectiveAbi,
+  SlotCollectiveFactoryAbi,
   SlotFactoryAbi,
   slotFactoryLegacyAbi,
 } from "./abis";
@@ -51,6 +53,13 @@ const BASE_SEPOLIA_SLOT_FACTORY_START_BLOCK = 39341061;
 
 const BASE_SLOT_FACTORY = "0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e" as const;
 const BASE_SLOT_FACTORY_START_BLOCK = 43581441;
+
+// SlotCollectiveFactory, deployed 2026-08-12. Its own start block rather than
+// the slot factory's: collectives did not exist for the ~6M blocks before this,
+// and starting earlier would be that many pointless eth_getLogs.
+const BASE_SEPOLIA_COLLECTIVE_FACTORY =
+  "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d" as const;
+const BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK = 45393270;
 
 // FeedHub — base-sepolia only.
 //
@@ -100,7 +109,14 @@ const MODULE_VERIFIED_EVENT = parseAbiItem(
   "event ModuleVerified(address indexed module, bool verified, string name, string version, uint256 feeBps, string moduleURI)",
 );
 
+// Collectives. One signature, one source — none of the dual-era complication
+// above, because nothing is deployed yet and this is the shape it ships with.
+const COLLECTIVE_DEPLOYED_EVENT = parseAbiItem(
+  "event SlotCollectiveDeployed(address indexed manager, address indexed admin, address indexed deployer)",
+);
+
 type WatchedEvent =
+  | typeof COLLECTIVE_DEPLOYED_EVENT
   | typeof SLOT_DEPLOYED_EVENT
   | typeof SLOT_DEPLOYED_LEGACY_EVENT
   | typeof MODULE_VERIFIED_EVENT;
@@ -318,6 +334,50 @@ const remoteConfig = createConfig({
         },
       },
     },
+    // ── Collectives ──────────────────────────────────────────────────────
+    //
+    // Live on base-sepolia. NOT deployed on base: that entry is pointed at the
+    // slot factory address, which is valid and simply never emits
+    // `SlotCollectiveDeployed`, so it indexes nothing. The same device the
+    // local config uses for FeedHub, and for the same reason — src/collective.ts
+    // registers its handlers unconditionally, and ponder rejects a handler
+    // whose source is missing.
+    //
+    // When base ships, swap its two entries for the real address and startBlock.
+    SlotCollectiveFactory: {
+      abi: SlotCollectiveFactoryAbi,
+      chain: {
+        baseSepolia: {
+          address: BASE_SEPOLIA_COLLECTIVE_FACTORY,
+          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
+        },
+        base: {
+          address: BASE_SLOT_FACTORY,
+          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
+        },
+      },
+    },
+    SlotCollective: {
+      abi: SlotCollectiveAbi,
+      chain: {
+        baseSepolia: {
+          address: factory({
+            address: BASE_SEPOLIA_COLLECTIVE_FACTORY,
+            event: COLLECTIVE_DEPLOYED_EVENT,
+            parameter: "manager",
+          }),
+          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
+        },
+        base: {
+          address: factory({
+            address: BASE_SLOT_FACTORY,
+            event: COLLECTIVE_DEPLOYED_EVENT,
+            parameter: "manager",
+          }),
+          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
+        },
+      },
+    },
     Slot: {
       abi: SlotAbi,
       chain: slotChildAddress(SLOT_DEPLOYED_EVENT, "slot"),
@@ -375,6 +435,7 @@ const remoteConfig = createConfig({
 function buildLocalConfig() {
   const { address, startBlock } = localDeployment("SlotFactory");
   const at = { address, startBlock };
+  const collectiveAt = localDeployment("SlotCollectiveFactory");
   const child = (event: WatchedEvent, parameter: "slot" | "module") => ({
     anvil: {
       address: factory({ address, event, parameter }),
@@ -404,6 +465,26 @@ function buildLocalConfig() {
       FeedPostModule: {
         abi: FeedPostModuleAbi,
         chain: child(MODULE_VERIFIED_EVENT, "module"),
+      },
+      // Unlike the remote chains, the collective factory IS deployed locally —
+      // DeployLocal step 7 — so this indexes real rows and the create-collective
+      // flow is exercisable end to end.
+      SlotCollectiveFactory: {
+        abi: SlotCollectiveFactoryAbi,
+        chain: { anvil: collectiveAt },
+      },
+      SlotCollective: {
+        abi: SlotCollectiveAbi,
+        chain: {
+          anvil: {
+            address: factory({
+              address: collectiveAt.address,
+              event: COLLECTIVE_DEPLOYED_EVENT,
+              parameter: "manager",
+            }),
+            startBlock: collectiveAt.startBlock,
+          },
+        },
       },
       // No FeedHub is deployed locally, so these never match. Declared anyway
       // for the same reason as the legacy sources: src/feed.ts registers its

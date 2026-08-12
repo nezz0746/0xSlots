@@ -132,25 +132,64 @@ contract SlotCollective is PushSplit, AccessControl, Initializable {
     // EVENTS
     // ═══════════════════════════════════════════════════════════
 
-    /// @dev Relays are logged with the caller as well as the slot. The slot
-    ///      emits its own `TaxUpdateProposed` etc., but from its point of view
-    ///      the proposer is always this contract's address — the fact that a
-    ///      specific role holder pulled the lever exists nowhere else.
-    event TaxUpdateRelayed(address indexed slot, address indexed by, uint256 newPercentage);
-    event UtilityUpdateRelayed(address indexed slot, address indexed by, address newUtility);
-    event PolicyUpdateRelayed(address indexed slot, address indexed by, address newPolicy);
-    event PendingUpdatesCancelled(address indexed slot, address indexed by);
+    // ── Why these exist at all ───────────────────────────────────
+    //
+    // Not redundancy with the slot's own logs. The slot's propose events carry
+    // NO proposer:
+    //
+    //     event TaxUpdateProposed(uint256 newPercentage);
+    //     event UpdateProposed(UpdateKind indexed kind, bytes32 value, uint64 proposedAt);
+    //
+    // so from the slot side, who pulled the lever is simply absent.
+    //
+    // An indexer cannot recover it from `transaction.from` either. That works
+    // only while the role holder is an EOA, and breaks in exactly the cases this
+    // contract exists to serve: a Safe holding a role reports whichever owner
+    // executed, and a bundled/AA call reports the bundler. A role-gated
+    // governance contract is built so a multisig CAN hold a role, so the one
+    // fallback is wrong precisely where it matters.
+    //
+    // ── One shape for all three dimensions ───────────────────────
+    //
+    // `value` is the proposed value widened to 32 bytes: raw basis points for
+    // `Tax`, the left-padded address for `Utility` and `Policy` — matching how
+    // the slot's own `UpdateProposed` carries it, so both sides of the relay
+    // speak one vocabulary.
 
-    /// @dev One relay event for all three single-dimension cancels. The slot
-    ///      emits its own `UpdateCancelled(kind)`, but from its side the caller
-    ///      is always this contract — which role holder pulled the lever exists
-    ///      only here, and that is the whole point of splitting them.
+    /// @notice A role holder relayed a pending-update proposal to `slot`.
+    event UpdateRelayed(
+        address indexed slot,
+        address indexed by,
+        UpdateKind indexed kind,
+        bytes32 value
+    );
+
+    /// @notice A role holder retracted `slot`'s pending update for one dimension.
     event UpdateCancelRelayed(
         address indexed slot,
         address indexed by,
         UpdateKind indexed kind
     );
+
+    /// @notice An admin dropped every pending update on `slot` at once.
+    /// @dev Distinct from `UpdateCancelRelayed`: this is the admin-only reach
+    ///      across all three dimensions, not a per-kind retraction.
+    event PendingUpdatesCancelled(address indexed slot, address indexed by);
+
+    /// @notice A role holder changed `slot`'s liquidation bounty.
+    /// @dev Kept off `UpdateRelayed` deliberately. The bounty is not an
+    ///      `UpdateKind`, and adding a fourth member to that enum to fold this in
+    ///      would be a genuinely dangerous edit: `UpdateKind` is positional and
+    ///      is IMPORTED from `ISlot.sol` rather than redeclared here, precisely so
+    ///      the two sides cannot drift. Saving one event is not worth touching it.
     event LiquidationBountyRelayed(address indexed slot, address indexed by, uint256 newBps);
+
+    /// @dev Widens an address to the `bytes32` `UpdateRelayed` carries, so one
+    ///      event shape describes a rate and two contract addresses. Mirrors
+    ///      `Slot._asValue`.
+    function _asValue(address a) private pure returns (bytes32) {
+        return bytes32(uint256(uint160(a)));
+    }
 
     // ═══════════════════════════════════════════════════════════
     // CONSTRUCTOR
@@ -268,7 +307,7 @@ contract SlotCollective is PushSplit, AccessControl, Initializable {
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
     {
         slot.proposeTaxUpdate(newPct);
-        emit TaxUpdateRelayed(address(slot), msg.sender, newPct);
+        emit UpdateRelayed(address(slot), msg.sender, UpdateKind.Tax, bytes32(newPct));
     }
 
     /// @notice Propose a new utility on `slot` — what holding it grants.
@@ -277,7 +316,12 @@ contract SlotCollective is PushSplit, AccessControl, Initializable {
         onlyRoleOrAdmin(UTILITY_MANAGER_ROLE)
     {
         slot.proposeUtilityUpdate(newUtility);
-        emit UtilityUpdateRelayed(address(slot), msg.sender, newUtility);
+        emit UpdateRelayed(
+            address(slot),
+            msg.sender,
+            UpdateKind.Utility,
+            _asValue(newUtility)
+        );
     }
 
     /// @notice Propose a new occupancy policy on `slot` — who may hold it.
@@ -291,7 +335,12 @@ contract SlotCollective is PushSplit, AccessControl, Initializable {
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
         slot.proposePolicyUpdate(newPolicy);
-        emit PolicyUpdateRelayed(address(slot), msg.sender, newPolicy);
+        emit UpdateRelayed(
+            address(slot),
+            msg.sender,
+            UpdateKind.Policy,
+            _asValue(newPolicy)
+        );
     }
 
     /// @notice Update the liquidation bounty on `slot`. Takes effect immediately.
