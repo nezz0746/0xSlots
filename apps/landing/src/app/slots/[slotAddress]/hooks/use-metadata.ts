@@ -59,7 +59,7 @@ export function useIpfsContent(uri: string | null | undefined) {
 }
 
 /**
- * Fetch metadata update history from the subgraph.
+ * Fetch metadata update history from the indexer.
  */
 export function useMetadataHistory(slotAddress: string) {
   const subgraphClient = useSubgraphSlotsClient();
@@ -71,9 +71,9 @@ export function useMetadataHistory(slotAddress: string) {
       const { metadataUpdatedEvents } =
         await subgraphClient.modules.metadata.getUpdateHistory({
           where: { slot: slotAddress.toLowerCase() },
-          first: 10,
+          limit: 10,
         });
-      return metadataUpdatedEvents;
+      return metadataUpdatedEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotAddress,

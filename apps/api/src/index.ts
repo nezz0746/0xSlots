@@ -2,7 +2,7 @@ import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { slotsClient } from "./services/subgraph";
+import { slotsClient } from "./services/indexer";
 
 // import { startEventListener } from "./services/events";
 // const alchemyKey = process.env.ALCHEMY_KEY as string;

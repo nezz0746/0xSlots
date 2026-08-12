@@ -10,6 +10,7 @@ import {
   AdLoading,
   AdTitle,
 } from "@adland/react";
+import { adlandSupported } from "@/lib/adland-chains";
 import Autoplay from "embla-carousel-autoplay";
 import { useCallback, useEffect, useState } from "react";
 import { EnsAddress } from "@/components/ens-address";
@@ -36,6 +37,9 @@ function AdCard({
 }) {
   const { isMiniApp } = useFarcaster();
   const { data: slotData } = useSlotOnChain(slot, chainId);
+
+  // See lib/adland-chains — <Ad slot=...> throws on an unknown chain.
+  if (!adlandSupported(chainId)) return null;
 
   return (
     <Ad

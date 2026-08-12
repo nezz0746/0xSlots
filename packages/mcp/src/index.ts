@@ -25,6 +25,11 @@ const RPC_URL =
   process.env.RPC_URL ||
   "https://base-sepolia.g.alchemy.com/v2/4XrtaFg8OqFaNxv45MreCFT3ekifcxWm";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
+// MetadataModule is per-deployment and not in the addresses map, so writes need
+// it supplied explicitly.
+const METADATA_MODULE = process.env.METADATA_MODULE_ADDRESS as
+  | Address
+  | undefined;
 const CHAIN_ID = Number(
   process.env.CHAIN_ID || SlotsChain.BASE_SEPOLIA,
 ) as SlotsChain;
@@ -48,7 +53,7 @@ const client = new SlotsClient({
   chainId: CHAIN_ID,
   publicClient: publicClient as any,
   walletClient: walletClient as any,
-  subgraphUrl: process.env.SUBGRAPH_URL,
+  apiUrl: process.env.PONDER_URL,
 });
 
 function ok(data: unknown) {
@@ -144,18 +149,18 @@ server.tool(
     if (recipient) {
       const data = await client.getSlotsByRecipient({
         recipient: recipient.toLowerCase(),
-        first: first || 20,
+        limit: first || 20,
       });
       return ok(data);
     }
     if (occupant) {
       const data = await client.getSlotsByOccupant({
         occupant: occupant.toLowerCase(),
-        first: first || 20,
+        limit: first || 20,
       });
       return ok(data);
     }
-    const data = await client.getSlots({ first: first || 20 });
+    const data = await client.getSlots({ limit: first || 20 });
     return ok(data);
   },
 );
@@ -167,7 +172,7 @@ server.tool(
     first: z.number().optional().describe("Number of results (default 20)"),
   },
   async ({ first }) => {
-    const data = await client.getRecentEvents({ first: first || 20 });
+    const data = await client.getRecentEvents({ limit: first || 20 });
     return ok(data);
   },
 );
@@ -184,8 +189,8 @@ server.tool(
   },
   async ({ slot, first }) => {
     const data = await client.getSlotActivity({
-      slotId: slot.toLowerCase(),
-      first: first || 10,
+      slot: slot.toLowerCase(),
+      limit: first || 10,
     });
     return ok(data);
   },
@@ -233,11 +238,11 @@ server.tool(
 
 server.tool(
   "get_metadata",
-  "Get metadata URI for a slot via MetadataModule (subgraph)",
+  "Get metadata URI for a slot via MetadataModule",
   { slot: z.string().describe("Slot contract address") },
   async ({ slot }) => {
-    const data = await client.modules.metadata.getMetadata({
-      slotId: slot.toLowerCase(),
+    const data = await client.modules.metadata.getSlot({
+      id: slot.toLowerCase(),
     });
     return ok(data);
   },
@@ -265,6 +270,9 @@ server.tool(
     const decimals = dec || 6;
     const hash = await client.buy({
       slot: slot as Address,
+      // The occupant to buy for. This server only ever holds one key, so the
+      // wallet's own address is the only sensible answer.
+      account: getWalletClient().account.address,
       selfAssessedPrice: parseUnits(selfAssessedPrice, decimals),
       depositAmount: parseUnits(deposit, decimals),
     });
@@ -427,7 +435,10 @@ server.tool(
       currency: currency as Address,
       config: {
         mutableTax,
-        mutableModule,
+        mutableUtility: mutableModule,
+        // The occupancy policy is not exposed as a tool argument yet; an
+        // immutable policy is the conservative default.
+        mutablePolicy: false,
         manager: mgr as Address,
       },
       initParams: {
@@ -436,6 +447,8 @@ server.tool(
           "0x0000000000000000000000000000000000000000") as Address,
         liquidationBountyBps: BigInt(liquidationBountyBps || 0),
         minDepositSeconds: BigInt(minDepositSeconds || 86400),
+        // Zero = plain instant buy, no forced-sale veto.
+        occupancyPolicy: "0x0000000000000000000000000000000000000000",
       },
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -451,7 +464,10 @@ server.tool(
     uri: z.string().describe("New metadata URI"),
   },
   async ({ slot, uri }) => {
+    if (!METADATA_MODULE)
+      throw new Error("METADATA_MODULE_ADDRESS env required to write metadata");
     const hash = await client.modules.metadata.updateMetadata(
+      METADATA_MODULE,
       slot as Address,
       uri,
     );

@@ -10,15 +10,28 @@ export type UnifiedEvent = {
   tx: string;
 };
 
+/**
+ * Rows out of a ponder plural field.
+ *
+ * These used to be bare arrays; ponder returns `{ items, totalCount, pageInfo }`,
+ * and `for...of` over the page object throws "object is not iterable" rather
+ * than yielding nothing. Accepts either shape so a half-migrated caller still
+ * renders.
+ */
+function rows(field: any): any[] {
+  if (!field) return [];
+  return Array.isArray(field) ? field : (field.items ?? []);
+}
+
 export function normalizeEvents(data: any): UnifiedEvent[] {
   if (!data) return [];
   const events: UnifiedEvent[] = [];
 
-  const getDecimals = (e: any) => e.currency?.decimals ?? 6;
-  const getSymbol = (e: any) => e.currency?.symbol ?? "";
+  const getDecimals = (e: any) => e.currencyRef?.decimals ?? 6;
+  const getSymbol = (e: any) => e.currencyRef?.symbol ?? "";
   const getSlot = (e: any) => e.slot?.id ?? e.slot ?? undefined;
 
-  for (const e of data.slotDeployedEvents ?? []) {
+  for (const e of rows(data.slotDeployedEvents)) {
     events.push({
       id: e.id,
       type: "Deploy",
@@ -29,7 +42,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.boughtEvents ?? []) {
+  for (const e of rows(data.boughtEvents)) {
     const d = getDecimals(e);
     const s = getSymbol(e);
     events.push({
@@ -45,7 +58,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.releasedEvents ?? []) {
+  for (const e of rows(data.releasedEvents)) {
     events.push({
       id: e.id,
       type: "Release",
@@ -56,7 +69,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.liquidatedEvents ?? []) {
+  for (const e of rows(data.liquidatedEvents)) {
     events.push({
       id: e.id,
       type: "Liquidate",
@@ -67,7 +80,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.priceUpdatedEvents ?? []) {
+  for (const e of rows(data.priceUpdatedEvents)) {
     const d = getDecimals(e);
     const s = getSymbol(e);
     events.push({
@@ -80,7 +93,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.depositedEvents ?? []) {
+  for (const e of rows(data.depositedEvents)) {
     events.push({
       id: e.id,
       type: "Deposit",
@@ -91,7 +104,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.withdrawnEvents ?? []) {
+  for (const e of rows(data.withdrawnEvents)) {
     events.push({
       id: e.id,
       type: "Withdraw",
@@ -102,7 +115,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.taxCollectedEvents ?? []) {
+  for (const e of rows(data.taxCollectedEvents)) {
     events.push({
       id: e.id,
       type: "Collect",
@@ -113,7 +126,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.taxUpdateProposedEvents ?? []) {
+  for (const e of rows(data.taxUpdateProposedEvents)) {
     events.push({
       id: e.id,
       type: "Tax Proposed",
@@ -124,7 +137,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.moduleUpdateProposedEvents ?? []) {
+  for (const e of rows(data.moduleUpdateProposedEvents)) {
     events.push({
       id: e.id,
       type: "Module Proposed",
@@ -135,7 +148,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       tx: e.tx,
     });
   }
-  for (const e of data.pendingUpdateCancelledEvents ?? []) {
+  for (const e of rows(data.pendingUpdateCancelledEvents)) {
     events.push({
       id: e.id,
       type: "Update Cancelled",

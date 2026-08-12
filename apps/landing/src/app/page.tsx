@@ -57,7 +57,7 @@ export default function Home() {
         </div>
       </PageHeader>
 
-      <div className="max-w-6xl mx-auto px-2 md:px-6 py-1 md:py-4">
+      <div className="w-full px-3 md:px-5 py-3">
         <AdBar />
         {/* Desktop navigates sections from the sidebar; below md the strip
             stays, driving the same selection. */}
@@ -70,7 +70,7 @@ export default function Home() {
         {SECTION_CONTENT[section]?.()}
 
         <div className="mt-8 text-center text-xs text-muted-foreground">
-          Powered by 0xSlots · The Graph
+          Powered by 0xSlots · Ponder
         </div>
       </div>
     </div>

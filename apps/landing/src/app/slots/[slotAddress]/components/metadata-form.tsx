@@ -13,6 +13,7 @@ import {
   AdTitle,
 } from "@adland/react";
 import { formatDistanceToNow } from "date-fns";
+import { adlandSupported } from "@/lib/adland-chains";
 import {
   Check,
   ChevronLeft,
@@ -135,7 +136,14 @@ export function MetadataForm({
 
   return (
     <div className="space-y-4">
-      {/* Current Ad — rendered via @adland/react */}
+      {/* Current Ad — rendered via @adland/react, which cannot build a client
+          for a local chain. Skipped rather than crashed; the form below still
+          reads and writes metadata normally. */}
+      {!adlandSupported(chainId) ? (
+        <p className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+          Ad preview unavailable on this chain.
+        </p>
+      ) : (
       <Ad slot={slotAddress} chainId={chainId}>
         <AdLoading className="flex items-center gap-1.5 text-xs text-muted-foreground py-2">
           <Loader2 className="size-3 animate-spin" />
@@ -158,6 +166,7 @@ export function MetadataForm({
           </div>
         </AdLoaded>
       </Ad>
+      )}
 
       {!isOccupant && (
         <p className="text-xs text-muted-foreground">
@@ -291,10 +300,10 @@ export function MetadataForm({
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 text-xs shrink-0">
                           <AccountTypeIcon
-                            type={event.author.type}
+                            type={event.authorRef?.type ?? "EOA"}
                             className="size-3"
                           />
-                          <EnsAddress address={event.author.id} />
+                          <EnsAddress address={event.author} />
                         </div>
                         <HistoryTypeBadge adType={event.adType} />
                         <span className="text-muted-foreground text-xs whitespace-nowrap ml-auto">

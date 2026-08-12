@@ -1,6 +1,9 @@
-fragment MetadataSlotFields on MetadataSlot {
+fragment MetadataSlotFields on metadataSlot {
   id
+  chainId
+  slot
   uri
+  cid
   rawJson
   adType
   updatedBy
@@ -9,90 +12,95 @@ fragment MetadataSlotFields on MetadataSlot {
   createdTx
   updatedAt
   updatedTx
-  slot {
-    id
-    recipient
-    occupant
-    price
-    deposit
-    taxPercentage
-    currency {
-      id
-      symbol
-      decimals
-    }
-    module {
-      id
-      verified
-      name
-      version
-    }
-  }
 }
 
 query GetMetadataSlots(
-  $first: Int = 100
-  $skip: Int = 0
-  $orderBy: MetadataSlot_orderBy = updatedAt
-  $orderDirection: OrderDirection = desc
-  $where: MetadataSlot_filter
+  $limit: Int
+  $offset: Int
+  $after: String
+  $orderBy: String
+  $orderDirection: String
+  $where: metadataSlotFilter
 ) {
   metadataSlots(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
+    after: $after
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
   ) {
-    ...MetadataSlotFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...MetadataSlotFields
+    }
   }
 }
 
-query GetMetadataSlot($id: ID!) {
+query GetMetadataSlot($id: String!) {
   metadataSlot(id: $id) {
     ...MetadataSlotFields
+    slotRef {
+      id
+      occupant
+      recipient
+      price
+    }
   }
 }
 
-query GetMetadataSlotsByRecipient($recipient: Bytes!, $first: Int = 100) {
-  metadataSlots(
-    first: $first
-    where: { slot_: { recipient: $recipient } }
-    orderBy: updatedAt
-    orderDirection: desc
-  ) {
-    ...MetadataSlotFields
+# Two hops: metadata is keyed by slot, and "whose slot" lives on the slot row.
+# The subgraph could express this as a nested filter; ponder filters on scalar
+# columns only, so the caller resolves the slot ids first and passes them in.
+query GetMetadataSlotsBySlots($slots: [String!], $limit: Int) {
+  metadataSlots(where: { slot_in: $slots }, limit: $limit) {
+    totalCount
+    items {
+      ...MetadataSlotFields
+    }
   }
 }
 
 query GetMetadataUpdatedEvents(
-  $first: Int = 50
-  $skip: Int = 0
-  $orderBy: MetadataUpdatedEvent_orderBy = timestamp
-  $orderDirection: OrderDirection = desc
-  $where: MetadataUpdatedEvent_filter
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: metadataUpdatedEventFilter
 ) {
   metadataUpdatedEvents(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
   ) {
-    id
-    slot {
-      id
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
     }
-    author {
+    items {
       id
-      type
+      chainId
+      slot
+      author
+      authorRef {
+        id
+        type
+      }
+      updatedBy
+      uri
+      cid
+      rawJson
+      adType
+      timestamp
+      blockNumber
+      tx
     }
-    updatedBy
-    uri
-    rawJson
-    adType
-    timestamp
-    blockNumber
-    tx
   }
 }

@@ -1,6 +1,8 @@
-specVersion: 1.0.0
-features:
-  - ipfsOnEthereumContracts
+specVersion: 1.3.0
+# `ipfsOnEthereumContracts` is gone with the last `ipfs.cat` call. That feature
+# flag exists to declare that chain handlers block on IPFS — which made the
+# subgraph non-deterministic, since whether a fetch timed out depended on the
+# indexer. File data sources replace it and need no flag.
 indexerHints:
   prune: auto
 schema:
@@ -8,7 +10,7 @@ schema:
 dataSources:
   - kind: ethereum
     name: SlotFactory
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{factoryAddress}}"
       abi: SlotFactory
@@ -21,6 +23,7 @@ dataSources:
         - Factory
         - Slot
         - Module
+        - IpfsContent
       abis:
         - name: SlotFactory
           file: ./abis/SlotFactory.json
@@ -47,7 +50,7 @@ dataSources:
       file: ./src/factory.ts
   - kind: ethereum
     name: SlotFactory2
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{factory2Address}}"
       abi: SlotFactory
@@ -60,6 +63,7 @@ dataSources:
         - Factory
         - Slot
         - Module
+        - IpfsContent
       abis:
         - name: SlotFactory
           file: ./abis/SlotFactory.json
@@ -86,7 +90,7 @@ dataSources:
       file: ./src/factory.ts
   - kind: ethereum
     name: ERC721SlotsFactory
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{erc721FactoryAddress}}"
       abi: ERC721SlotsFactory
@@ -108,7 +112,7 @@ dataSources:
       file: ./src/erc721slots-factory.ts
   - kind: ethereum
     name: FeedHub
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{feedHubAddress}}"
       abi: FeedHub
@@ -133,7 +137,7 @@ dataSources:
 templates:
   - kind: ethereum
     name: Slot
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: Slot
     mapping:
@@ -217,7 +221,7 @@ templates:
       file: ./src/slot.ts
   - kind: ethereum
     name: MetadataModule
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: MetadataModule
     mapping:
@@ -227,6 +231,7 @@ templates:
       entities:
         - MetadataSlot
         - MetadataUpdatedEvent
+        - IpfsContent
       abis:
         - name: MetadataModule
           file: ./abis/MetadataModule.json
@@ -236,7 +241,7 @@ templates:
       file: ./src/metadata.ts
   - kind: ethereum
     name: FeedPostModule
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: FeedPostModule
     mapping:
@@ -246,6 +251,7 @@ templates:
       entities:
         - MetadataSlot
         - MetadataUpdatedEvent
+        - IpfsContent
       abis:
         - name: FeedPostModule
           file: ./abis/FeedPostModule.json
@@ -259,7 +265,7 @@ templates:
       file: ./src/metadata.ts
   - kind: ethereum
     name: ERC721Slots
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: ERC721Slots
     mapping:
@@ -278,7 +284,7 @@ templates:
       file: ./src/erc721slots.ts
   - kind: ethereum
     name: Feed
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: Feed
     mapping:
@@ -288,6 +294,7 @@ templates:
       entities:
         - Feed
         - Slot
+        - IpfsContent
         - FeedNameUpdatedEvent
         - FeedMetadataURIUpdatedEvent
         - FeedRecipientUpdatedEvent
@@ -308,3 +315,25 @@ templates:
         - event: SlotRemoved(indexed address)
           handler: handleSlotRemoved
       file: ./src/feed.ts
+  # ── File data source: IPFS metadata ──────────────────────────────────────
+  #
+  # Spawned by name from the chain handlers above (`IpfsContent.create(cid)`),
+  # once per CID. Graph Node fetches the file out of band and retries until it
+  # succeeds, then calls the handler — so an unreachable CID no longer records
+  # itself as "no metadata" the way a timed-out `ipfs.cat` did.
+  #
+  # `abis` is required by graph-cli even though a file data source cannot call
+  # a contract. Any ABI satisfies it; this is the smallest one in the repo.
+  - kind: file/ipfs
+    name: IpfsContent
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - IpfsContent
+      abis:
+        - name: ERC20
+          file: ./abis/ERC20.json
+      handler: handleIpfsContent
+      file: ./src/ipfs-content.ts

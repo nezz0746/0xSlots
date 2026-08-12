@@ -112,20 +112,60 @@ const slotChildAddress = (
   },
 });
 
-// Alchemy is the default RPC provider — base-sepolia.publicnode.com works too
-// but Coinbase's https://sepolia.base.org has a broken eth_getLogs.
-// Set ALCHEMY_API_KEY in .env.local.
-const ALCHEMY_KEY = process.env.ALCHEMY_API_KEY ?? "";
+// ──────────────────────────────────────────
+// RPC endpoints
+//
+// Two ways in, checked in order:
+//
+//   1. PONDER_RPC_URL_BASE / PONDER_RPC_URL_BASE_SEPOLIA — a complete URL.
+//      Preferred for a deployment: paste what the provider gave you and no
+//      secret has to be reassembled here.
+//   2. ALCHEMY_API_KEY (or ALCHEMY_KEY, which is what turbo.json and the rest
+//      of the repo use) — the URL is built around it.
+//
+// Missing credentials used to resolve to `.../v2/` and fail on every request
+// with "Must be authenticated!", eight retries per chain, forever. That reads
+// like a provider outage rather than an unset variable, so it now throws at
+// boot naming the variables involved.
+//
+// Alchemy is the default provider — base-sepolia.publicnode.com works too, but
+// Coinbase's https://sepolia.base.org has a broken eth_getLogs.
+// ──────────────────────────────────────────
+
+const ALCHEMY_KEY =
+  process.env.ALCHEMY_API_KEY ?? process.env.ALCHEMY_KEY ?? "";
+
+function rpcUrl(
+  label: string,
+  explicit: string | undefined,
+  alchemySubdomain: string,
+): string {
+  if (explicit) return explicit;
+  if (ALCHEMY_KEY)
+    return `https://${alchemySubdomain}.g.alchemy.com/v2/${ALCHEMY_KEY}`;
+  throw new Error(
+    `No RPC endpoint for ${label}. Set PONDER_RPC_URL_${label.toUpperCase()} ` +
+      `to a full URL, or ALCHEMY_API_KEY (ALCHEMY_KEY is also accepted).`,
+  );
+}
 
 const remoteConfig = createConfig({
   chains: {
     baseSepolia: {
       id: 84532,
-      rpc: http(`https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`),
+      rpc: http(
+        rpcUrl(
+          "base_sepolia",
+          process.env.PONDER_RPC_URL_BASE_SEPOLIA,
+          "base-sepolia",
+        ),
+      ),
     },
     base: {
       id: 8453,
-      rpc: http(`https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`),
+      rpc: http(
+        rpcUrl("base", process.env.PONDER_RPC_URL_BASE, "base-mainnet"),
+      ),
     },
   },
   contracts: {

@@ -1,31 +1,35 @@
-import { Address, BigInt, ipfs, json } from "@graphprotocol/graph-ts";
+import { Address, BigInt, json } from "@graphprotocol/graph-ts";
 import { MetadataUpdated } from "../generated/MetadataModule/MetadataModule";
 import { MetadataSlot, MetadataUpdatedEvent, Slot } from "../generated/schema";
 import { MetadataUpdated as MetadataUpdatedV2 } from "../generated/templates/FeedPostModule/FeedPostModuleV2";
+import { IpfsContent as IpfsContentTemplate } from "../generated/templates";
 import { getOrCreateAccount, getOrCreateAccountSlot } from "./helpers";
 
 /**
- * Try to resolve a URI to raw JSON content.
- * - Inline JSON (starts with "{") → return as-is
- * - IPFS hash or ipfs:// URI → fetch via ipfs.cat
- * - Anything else → null (client-side fallback)
+ * INLINE content only — a `uri` that is literally a JSON document.
+ *
+ * That case needs no fetching, so it is still resolved synchronously here and
+ * stored on the chain entity. Anything IPFS returns null and is handled by
+ * `spawnIpfsContent` instead: `ipfs.cat` used to serve both from this one
+ * function, blocking the handler and returning null on timeout — which the
+ * callers then recorded, permanently, as "this URI has no content".
  */
-export function resolveContent(uri: string): string | null {
-  if (uri.startsWith("{")) return uri;
+export function resolveInlineContent(uri: string): string | null {
+  return uri.startsWith("{") ? uri : null;
+}
 
-  let hash: string | null = null;
-  if (uri.startsWith("Qm") || uri.startsWith("bafy")) {
-    hash = uri;
-  } else if (uri.startsWith("ipfs://")) {
-    hash = uri.slice(7);
-  }
-
-  if (hash) {
-    const data = ipfs.cat(hash);
-    if (data) return data.toString();
-  }
-
-  return null;
+/**
+ * Start fetching `uri`'s file if it is an IPFS URI, and return the CID to
+ * store as the link. Null for inline JSON and anything unrecognised.
+ *
+ * Safe to call repeatedly with the same CID — Graph Node de-duplicates file
+ * data sources by (template, id), which matters because the same metadata
+ * document is commonly re-set across many slots and updates.
+ */
+export function spawnIpfsContent(uri: string): string | null {
+  const cid = extractCid(uri);
+  if (cid) IpfsContentTemplate.create(cid);
+  return cid;
 }
 
 /**
@@ -58,10 +62,11 @@ export function handleMetadataUpdated(event: MetadataUpdated): void {
   slot.updatedAt = event.block.timestamp;
   slot.save();
 
-  // Resolve content once, reuse for both entities
-  const content = resolveContent(event.params.uri);
+  // Inline JSON is parsed here; an IPFS uri is fetched out of band and lands
+  // on the linked IpfsContent row instead.
+  const content = resolveInlineContent(event.params.uri);
   const adType: string | null = content ? extractAdType(content) : null;
-  const cid = extractCid(event.params.uri);
+  const cid = spawnIpfsContent(event.params.uri);
 
   // Upsert MetadataSlot (mutable — latest state)
   let metadataSlot = MetadataSlot.load(slotId);
@@ -74,6 +79,7 @@ export function handleMetadataUpdated(event: MetadataUpdated): void {
   }
   metadataSlot.uri = event.params.uri;
   metadataSlot.cid = cid;
+  metadataSlot.content = cid;
   metadataSlot.rawJson = content;
   metadataSlot.adType = adType;
   metadataSlot.updatedBy = event.transaction.from;
@@ -109,6 +115,7 @@ export function handleMetadataUpdated(event: MetadataUpdated): void {
   metadataEvent.updatedBy = event.transaction.from;
   metadataEvent.uri = event.params.uri;
   metadataEvent.cid = cid;
+  metadataEvent.content = cid;
   metadataEvent.rawJson = content;
   metadataEvent.adType = adType;
   metadataEvent.timestamp = event.block.timestamp;
@@ -130,9 +137,9 @@ export function handleMetadataUpdatedV2(event: MetadataUpdatedV2): void {
   slot.save();
 
   const authorAddress: Address = event.params.updatedBy;
-  const content = resolveContent(event.params.uri);
+  const content = resolveInlineContent(event.params.uri);
   const adType: string | null = content ? extractAdType(content) : null;
-  const cid = extractCid(event.params.uri);
+  const cid = spawnIpfsContent(event.params.uri);
 
   // Upsert MetadataSlot (mutable — latest state)
   let metadataSlot = MetadataSlot.load(slotId);
@@ -145,6 +152,7 @@ export function handleMetadataUpdatedV2(event: MetadataUpdatedV2): void {
   }
   metadataSlot.uri = event.params.uri;
   metadataSlot.cid = cid;
+  metadataSlot.content = cid;
   metadataSlot.rawJson = content;
   metadataSlot.adType = adType;
   metadataSlot.updatedBy = authorAddress;
@@ -180,6 +188,7 @@ export function handleMetadataUpdatedV2(event: MetadataUpdatedV2): void {
   metadataEvent.updatedBy = authorAddress;
   metadataEvent.uri = event.params.uri;
   metadataEvent.cid = cid;
+  metadataEvent.content = cid;
   metadataEvent.rawJson = content;
   metadataEvent.adType = adType;
   metadataEvent.timestamp = event.block.timestamp;

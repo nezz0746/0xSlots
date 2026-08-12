@@ -176,6 +176,13 @@ export default function CreatePage() {
           distributorFeePercent: data.distributorFeePercent,
           salt: ZERO_SALT,
         };
+        // 0xSplits does not deploy to every chain — notably not a local anvil,
+        // where the client is null rather than throwing on construction.
+        if (!splitClient) {
+          throw new Error(
+            "Splits are not available on this chain — pick a single recipient address instead.",
+          );
+        }
         // Check if this exact split already exists
         const { splitAddress: predictedAddress, deployed } =
           await splitClient.isDeployed(splitParams);

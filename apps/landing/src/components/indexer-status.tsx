@@ -9,34 +9,40 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
-import { useSubgraphSource } from "@/context/subgraph-source";
-import { withSource } from "@/hooks/slot-queries";
 import { useSlotsClient } from "@/hooks/use-v3";
 
-function useSubgraphMeta() {
+/**
+ * How far the indexer trails the chain.
+ *
+ * Two things changed with the move off the subgraph:
+ *
+ *   * `_meta` returns `status`, a blob keyed by ponder's own chain NAME, each
+ *     entry carrying `{ id, block }`. The name is a config label, not something
+ *     this app knows, so the entry is found by matching `id` to the chain.
+ *   * `hasIndexingErrors` has no counterpart. Ponder halts on an indexing error
+ *     rather than serving stale rows behind a flag, so a broken indexer shows up
+ *     as a failed request — which is what `isError` already covers.
+ */
+function useIndexerMeta() {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    // Keyed by source like every other subgraph read. Without it the indicator
-    // would keep reporting the network's head block after switching to Studio —
-    // the one place a stale answer is actively misleading, since this dot is
-    // what you check to see whether the deployment you switched to has synced.
-    queryKey: withSource(["subgraph-meta", chainId], source),
+    queryKey: ["indexer-meta", chainId],
     queryFn: async () => {
       const res = await client.getMeta();
-      return res._meta;
+      const status = res._meta?.status ?? {};
+      return Object.values(status).find((c) => c?.id === chainId) ?? null;
     },
     refetchInterval: 10_000,
   });
 }
 
-export function SubgraphStatus() {
-  const { data: meta, isError } = useSubgraphMeta();
+export function IndexerStatus() {
+  const { data: meta, isError } = useIndexerMeta();
   const { chainId } = useChain();
   const { data: chainBlock } = useBlockNumber({ chainId });
 
-  if (isError || meta?.hasIndexingErrors) {
+  if (isError) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -45,15 +51,15 @@ export function SubgraphStatus() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
             </span>
-            <span className="text-[10px] text-red-500 font-mono">ERR</span>
+            <span className="text-[10px] text-red-500">ERR</span>
           </div>
         </TooltipTrigger>
-        <TooltipContent>Subgraph indexing error</TooltipContent>
+        <TooltipContent>Indexer unreachable</TooltipContent>
       </Tooltip>
     );
   }
 
-  if (!meta || !chainBlock) {
+  if (!meta?.block || !chainBlock) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -63,13 +69,15 @@ export function SubgraphStatus() {
             </span>
           </div>
         </TooltipTrigger>
-        <TooltipContent>Loading subgraph status...</TooltipContent>
+        <TooltipContent>
+          {meta ? "Waiting for indexer" : "Loading indexer status…"}
+        </TooltipContent>
       </Tooltip>
     );
   }
 
-  const subgraphBlock = BigInt(meta.block.number);
-  const behind = Number(chainBlock - subgraphBlock);
+  const indexedBlock = BigInt(meta.block.number);
+  const behind = Number(chainBlock - indexedBlock);
 
   let color: string;
   let label: string;
@@ -103,7 +111,7 @@ export function SubgraphStatus() {
           </span>
           {behind > 5 && (
             <span
-              className={`text-[10px] font-mono ${behind > 100 ? "text-red-500" : behind > 20 ? "text-orange-500" : "text-yellow-500"}`}
+              className={`text-[10px] ${behind > 100 ? "text-red-500" : behind > 20 ? "text-orange-500" : "text-yellow-500"}`}
             >
               {label}
             </span>
@@ -111,7 +119,7 @@ export function SubgraphStatus() {
         </div>
       </TooltipTrigger>
       <TooltipContent>
-        <p>Subgraph indexer — block {meta.block.number}</p>
+        <p>Indexer — block {meta.block.number}</p>
         <p className="text-muted-foreground">
           Chain block {chainBlock.toString()} ·{" "}
           {behind === 0 ? "fully synced" : `${behind} blocks behind`}

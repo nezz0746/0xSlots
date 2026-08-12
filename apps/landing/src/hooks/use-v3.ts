@@ -8,12 +8,11 @@ import {
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useChain } from "@/context/chain";
-import { useSubgraphSource } from "@/context/subgraph-source";
+import { INDEXER_API_KEY, indexerUrlFor } from "@/lib/indexer";
 import {
   slotActivityQueryOptions,
   slotQueryOptions,
   slotsByRecipientQueryOptions,
-  withSource,
 } from "@/hooks/slot-queries";
 
 // Re-export the slot type for convenience
@@ -21,15 +20,14 @@ export type { SlotFieldsFragment as V3Slot } from "@0xslots/sdk";
 
 export function useSlotsClient() {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   return useMemo(
     () =>
       createSlotsClient({
         chainId,
-        subgraphSource: source,
-        subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
+        apiUrl: indexerUrlFor(chainId),
+        apiKey: INDEXER_API_KEY,
       }),
-    [chainId, source],
+    [chainId],
   );
 }
 
@@ -55,7 +53,6 @@ export function useSlots(
   pagination?: SlotPagination,
 ) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
 
   const conditions: Record<string, unknown>[] = [];
@@ -77,16 +74,16 @@ export function useSlots(
         : undefined;
 
   return useQuery({
-    queryKey: withSource(["slots", chainId, filters, sort, pagination], source),
+    queryKey: ["slots", chainId, filters, sort, pagination],
     queryFn: async () => {
       const { slots } = await client.getSlots({
-        first: pagination?.first ?? 100,
-        skip: pagination?.skip ?? 0,
+        limit: pagination?.first ?? 100,
+        offset: pagination?.skip ?? 0,
         where: where as any,
         orderBy: (sort?.orderBy ?? "createdAt") as any,
         orderDirection: (sort?.orderDirection ?? "desc") as any,
       });
-      return slots as SlotFieldsFragment[];
+      return slots.items as SlotFieldsFragment[];
     },
     staleTime: 15_000,
     placeholderData: keepPreviousData,
@@ -95,34 +92,31 @@ export function useSlots(
 
 export function useSlot(id: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   return useQuery({
-    ...slotQueryOptions(chainId, id, source),
+    ...slotQueryOptions(chainId, id),
     enabled: !!id,
   });
 }
 
 export function useSlotsByRecipient(recipient: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   return useQuery({
-    ...slotsByRecipientQueryOptions(chainId, recipient, source),
+    ...slotsByRecipientQueryOptions(chainId, recipient),
     enabled: !!recipient,
   });
 }
 
 export function useSlotsByOccupant(occupant: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["slots-occupant", chainId, occupant], source),
+    queryKey: ["slots-occupant", chainId, occupant],
     queryFn: async () => {
       const { slots } = await client.getSlotsByOccupant({
         occupant: occupant.toLowerCase(),
-        first: 100,
+        limit: 100,
       });
-      return slots as SlotFieldsFragment[];
+      return slots.items as SlotFieldsFragment[];
     },
     staleTime: 15_000,
     enabled: !!occupant,
@@ -131,13 +125,12 @@ export function useSlotsByOccupant(occupant: string) {
 
 export function useFactory() {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["factory", chainId], source),
+    queryKey: ["factory", chainId],
     queryFn: async () => {
-      const { factories } = await client.getFactory();
-      return factories[0] ?? null;
+      const { factorys } = await client.getFactory();
+      return factorys.items[0] ?? null;
     },
     staleTime: 30_000,
   });
@@ -145,13 +138,12 @@ export function useFactory() {
 
 export function useModules() {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["modules", chainId], source),
+    queryKey: ["modules", chainId],
     queryFn: async () => {
-      const { modules } = await client.getModules({ first: 100 });
-      return modules;
+      const { modules } = await client.getModules({ limit: 100 });
+      return modules.items;
     },
     staleTime: 30_000,
   });
@@ -159,18 +151,17 @@ export function useModules() {
 
 export function useSlotPurchases(slotId: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["slot-purchases", chainId, slotId], source),
+    queryKey: ["slot-purchases", chainId, slotId],
     queryFn: async () => {
       const { boughtEvents } = await client.getBoughtEvents({
-        first: 50,
+        limit: 50,
         where: { slot: slotId.toLowerCase() },
         orderBy: "timestamp" as any,
         orderDirection: "desc" as any,
       });
-      return boughtEvents;
+      return boughtEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotId,
@@ -179,18 +170,17 @@ export function useSlotPurchases(slotId: string) {
 
 export function useSlotsettlements(slotId: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["slot-settlements", chainId, slotId], source),
+    queryKey: ["slot-settlements", chainId, slotId],
     queryFn: async () => {
       const { settledEvents } = await client.getSettledEvents({
-        first: 50,
+        limit: 50,
         where: { slot: slotId.toLowerCase() },
         orderBy: "timestamp" as any,
         orderDirection: "desc" as any,
       });
-      return settledEvents;
+      return settledEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotId,
@@ -199,18 +189,17 @@ export function useSlotsettlements(slotId: string) {
 
 export function useSlotTaxCollections(slotId: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["slot-tax-collections", chainId, slotId], source),
+    queryKey: ["slot-tax-collections", chainId, slotId],
     queryFn: async () => {
       const { taxCollectedEvents } = await client.getTaxCollectedEvents({
-        first: 50,
+        limit: 50,
         where: { slot: slotId.toLowerCase() },
         orderBy: "timestamp" as any,
         orderDirection: "desc" as any,
       });
-      return taxCollectedEvents;
+      return taxCollectedEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotId,
@@ -219,21 +208,19 @@ export function useSlotTaxCollections(slotId: string) {
 
 export function useSlotActivity(slotId: string) {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   return useQuery({
-    ...slotActivityQueryOptions(chainId, slotId, source),
+    ...slotActivityQueryOptions(chainId, slotId),
     enabled: !!slotId,
   });
 }
 
 export function useRecentEvents() {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["recent-events", chainId], source),
+    queryKey: ["recent-events", chainId],
     queryFn: async () => {
-      return client.getRecentEvents({ first: 100 });
+      return client.getRecentEvents({ limit: 100 });
     },
     staleTime: 10_000,
   });
@@ -241,18 +228,17 @@ export function useRecentEvents() {
 
 export function useAccounts() {
   const { chainId } = useChain();
-  const { source } = useSubgraphSource();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: withSource(["accounts", chainId], source),
+    queryKey: ["accounts", chainId],
     queryFn: async () => {
       const { accounts } = await client.getAccounts({
-        first: 100,
+        limit: 100,
         orderBy: "slotCount" as any,
         orderDirection: "desc" as any,
         where: { slotCount_gt: 0 } as any,
       });
-      return accounts as AccountFieldsFragment[];
+      return accounts.items as AccountFieldsFragment[];
     },
     staleTime: 15_000,
   });

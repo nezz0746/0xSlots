@@ -3,17 +3,18 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "prepare:base-sepolia": "mustache config/base-sepolia.json subgraph.template.yaml > subgraph.yaml",
+    "prepare:base-sepolia": "mustache config/base-sepolia.json subgraph.template.yaml > subgraph.yaml && pnpm check:manifest",
     "codegen": "graph codegen",
     "build": "graph codegen && graph build",
     "build:base-sepolia": "pnpm prepare:base-sepolia && pnpm build",
     "deploy:base-sepolia": "pnpm build:base-sepolia && graph deploy $(node -p \"require('./config/base-sepolia.json').studioName\")",
-    "prepare:base": "mustache config/base.json subgraph.template.yaml > subgraph.yaml",
+    "prepare:base": "mustache config/base.json subgraph.template.yaml > subgraph.yaml && pnpm check:manifest",
     "build:base": "pnpm prepare:base && pnpm build",
     "deploy:base": "pnpm build:base && graph deploy $(node -p \"require('./config/base.json').studioName\")",
     "create:local": "graph create --node http://localhost:8020/ 0xslots",
     "deploy:local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 0xslots",
-    "deploy:all": "bash deploy-all.sh"
+    "deploy:all": "bash deploy-all.sh",
+    "check:manifest": "node scripts/check-manifest.mjs"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "^0.98.1",

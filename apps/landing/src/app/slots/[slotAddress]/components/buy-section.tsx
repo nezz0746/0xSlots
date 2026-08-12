@@ -1,15 +1,19 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type Address, formatUnits } from "viem";
 import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DepositChoice } from "@/components/ui/deposit-choice";
+import { PriceInput } from "@/components/ui/price-input";
 import { MONTH_SECONDS } from "@/constants";
 import { useSlotAction } from "@/hooks/use-slot-action";
 import type { SlotOnChain } from "@/hooks/use-slot-onchain";
-import { formatBalance, normalizeDecimal, toRawUnits } from "@/utils";
+import { formatBalance, formatBps, toRawUnits } from "@/utils";
+
+/** Fallback runway unit for a slot that sets no minimum. */
+const WEEK = 604_800n;
 
 export function BuySection({
   slot,
@@ -23,8 +27,6 @@ export function BuySection({
   const decimals = slot.currencyDecimals ?? 6;
   const symbol = slot.currencySymbol ?? "USDC";
   const { buy, selfAssess, busy } = useSlotAction();
-  const [buyPrice, setBuyPrice] = useState("");
-  const [buyDeposit, setBuyDeposit] = useState("");
   const { address } = useAccount();
 
   const isOccupant =
@@ -32,74 +34,112 @@ export function BuySection({
     !!slot.occupant &&
     slot.occupant.toLowerCase() === address.toLowerCase();
 
-  const currentPriceRaw = isOccupied ? formatUnits(slot.price, decimals) : "0";
-  const currentPriceDisplay = isOccupied
-    ? formatBalance(slot.price, decimals)
-    : "0";
+  // Seed from the standing price, and from nothing when there is no standing
+  // price. A vacant slot really is priced at zero, and inventing a friendlier
+  // opening number would put a figure the user never chose behind a button
+  // that self-assesses at exactly that figure.
+  //
+  // The cost is that the percentage steps have nothing to compound off — 0 x
+  // 1.2 is 0 — so PriceInput disables them until a price exists.
+  const startingPrice = useMemo(() => {
+    if (!isOccupied) return 0;
+    return Number(formatUnits(slot.price, decimals));
+  }, [isOccupied, slot.price, decimals]);
 
-  function computeMinDeposit(price: bigint): string {
-    if (slot.minDepositSeconds === 0n) return "0";
-    const min =
-      (price * slot.taxPercentage * slot.minDepositSeconds) /
-      (MONTH_SECONDS * 10000n);
-    return formatUnits(min, decimals);
-  }
+  const [price, setPrice] = useState(startingPrice);
+  const [mult, setMult] = useState(1);
 
-  const effectivePrice = buyPrice || currentPriceRaw;
-  const priceForMin = effectivePrice
-    ? toRawUnits(effectivePrice, decimals)
-    : 0n;
-  const minDep = computeMinDeposit(priceForMin);
-  const effectiveDeposit = buyDeposit || (minDep !== "0" ? minDep : "");
+  /**
+   * Follow the seed until the user takes over.
+   *
+   * `useState(startingPrice)` reads its argument on the FIRST render only. The
+   * slot is an async on-chain read, so a page that paints before it resolves
+   * seeds from `price === 0n` — the vacant fallback — and then never catches
+   * up, leaving an occupied slot offering 100 instead of its real price. Once
+   * the field has been touched it is the user's, and the seed stops applying.
+   */
+  const touched = useRef(false);
+  const seeded = useRef(startingPrice);
+  useEffect(() => {
+    if (touched.current || seeded.current === startingPrice) return;
+    seeded.current = startingPrice;
+    setPrice(startingPrice);
+  }, [startingPrice]);
 
-  function totalApprovalDisplay(): string {
-    try {
-      const dep = Number.parseFloat(normalizeDecimal(effectiveDeposit || "0"));
-      const cost = Number.parseFloat(normalizeDecimal(currentPriceRaw));
-      return (dep + cost).toFixed(2);
-    } catch {
-      return "0";
-    }
-  }
+  const updatePrice = (next: number) => {
+    touched.current = true;
+    setPrice(next);
+  };
+
+  /**
+   * The rate a buyer will actually pay.
+   *
+   * `buy` applies pending updates BEFORE checking the deposit, so a queued rise
+   * is already in force by the time the floor is computed — sizing from the
+   * current rate under-funds the slot and the buy reverts with
+   * `InsufficientDeposit`. The sitting occupant has transitioned nothing, so
+   * their own rate still governs.
+   */
+  const effectiveTax =
+    !isOccupant && slot.hasPendingTax
+      ? slot.pendingTaxPercentage
+      : slot.taxPercentage;
+
+  const base = slot.minDepositSeconds > 0n ? slot.minDepositSeconds : WEEK;
+  const priceRaw = toRawUnits(String(price), decimals);
+
+  /**
+   * Mirrors `Slot._minDepositFor`, including its `ceilDiv`.
+   *
+   * Flooring instead under-funds by one wei whenever the division leaves a
+   * remainder. It passes for any generous multiple and fails only on ×1 — the
+   * exact-minimum option, and the one a user picks when funds are tight.
+   */
+  const depositFor = (m: number): bigint => {
+    // No early return when the slot sets no minimum. The contract accepts any
+    // deposit there, but offering 0 is the worst possible default — the buyer
+    // is liquidatable the instant tax accrues. `base` already falls back to a
+    // week, so the options stay real amounts of runway rather than three zeroes.
+    const seconds = base * BigInt(m);
+    const num = priceRaw * effectiveTax * seconds;
+    const den = MONTH_SECONDS * 10_000n;
+    return num === 0n ? 0n : (num + den - 1n) / den;
+  };
+
+  const deposit = depositFor(mult);
+  const purchase = isOccupied ? slot.price : 0n;
+  const total = purchase + deposit;
 
   function handleBuy() {
     if (!address) return;
-    const dep = toRawUnits(effectiveDeposit || "0", decimals);
     buy({
       account: address,
       slot: slotAddress as Address,
-      depositAmount: dep,
-      selfAssessedPrice: toRawUnits(effectivePrice || "0", decimals),
+      depositAmount: deposit,
+      selfAssessedPrice: priceRaw,
     });
   }
 
   function handleSelfAssess() {
-    if (!address || !buyPrice) return;
-    selfAssess(slotAddress as Address, toRawUnits(buyPrice, decimals));
+    if (!address) return;
+    selfAssess(slotAddress as Address, priceRaw);
   }
 
   // ── Self-assess view (connected wallet is the current occupant) ──────────
   if (isOccupant) {
     return (
       <div className="space-y-3">
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">
-            New Price ({symbol})
-          </label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            placeholder={currentPriceDisplay || "1.00"}
-            value={buyPrice}
-            onChange={(e) => setBuyPrice(e.target.value)}
-            className="text-xs"
-          />
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            Current: {currentPriceDisplay} {symbol}
-          </p>
-        </div>
+        <PriceInput
+          label="New price"
+          value={price}
+          onChange={updatePrice}
+          taxBps={effectiveTax}
+          symbol={symbol}
+          disabled={busy}
+          hint={`Current: ${formatBalance(slot.price, decimals)} ${symbol}`}
+        />
         <Button
-          disabled={busy || !buyPrice}
+          disabled={busy || priceRaw === slot.price || priceRaw === 0n}
           onClick={handleSelfAssess}
           className="w-full"
         >
@@ -118,85 +158,58 @@ export function BuySection({
   // ── Buy view ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-3">
-      {isOccupied && (
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>Purchase cost</span>
-          <span className="font-bold text-foreground">
-            {currentPriceDisplay} {symbol}
-          </span>
-        </div>
-      )}
+      <PriceInput
+        label="Your price"
+        value={price}
+        onChange={updatePrice}
+        taxBps={effectiveTax}
+        symbol={symbol}
+        disabled={busy}
+        hint="Others can force-buy at this price"
+      />
 
-      <div>
-        <label className="text-xs text-muted-foreground block mb-1">
-          Your Price ({symbol})
-        </label>
-        <Input
-          type="text"
-          inputMode="decimal"
-          placeholder={currentPriceDisplay || "1.00"}
-          value={buyPrice}
-          onChange={(e) => setBuyPrice(e.target.value)}
-          className="text-xs"
-        />
-        <p className="text-[10px] text-muted-foreground mt-0.5">
-          Others can force-buy at this price
-        </p>
-      </div>
-
-      <div>
-        <label className="text-xs text-muted-foreground block mb-1">
-          Deposit ({symbol})
-        </label>
-        <Input
-          type="text"
-          inputMode="decimal"
-          placeholder={
-            minDep !== "0"
-              ? `Min: ${formatBalance(toRawUnits(minDep, decimals), decimals)}`
-              : "0.00"
-          }
-          value={buyDeposit}
-          onChange={(e) => setBuyDeposit(e.target.value)}
-          className="text-xs"
-        />
-        {minDep !== "0" && (
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            Minimum deposit:{" "}
-            {formatBalance(toRawUnits(minDep, decimals), decimals)} {symbol}
-          </p>
-        )}
-      </div>
+      <DepositChoice
+        label="Deposit"
+        base={base}
+        mult={mult}
+        onPick={setMult}
+        amountFor={depositFor}
+        decimals={decimals}
+        symbol={symbol}
+        disabled={busy}
+        note={
+          slot.hasPendingTax
+            ? `Sized at the queued ${formatBps(Number(effectiveTax))}/mo, which takes effect on this buy`
+            : undefined
+        }
+      />
 
       {/* Summary */}
-      <div className="rounded-md bg-muted/50 p-2.5 space-y-1">
+      <div className="bg-muted/50 p-2.5 space-y-1">
         {isOccupied && (
           <div className="flex justify-between text-xs">
             <span className="text-muted-foreground">Purchase</span>
-            <span>
-              {currentPriceDisplay} {symbol}
+            <span className="tabular-nums">
+              {formatBalance(purchase, decimals)} {symbol}
             </span>
           </div>
         )}
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground">Deposit</span>
-          <span>
-            {effectiveDeposit
-              ? formatBalance(toRawUnits(effectiveDeposit, decimals), decimals)
-              : "0"}{" "}
-            {symbol}
+          <span className="tabular-nums">
+            {formatBalance(deposit, decimals)} {symbol}
           </span>
         </div>
         <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
           <span>Total</span>
-          <span>
-            {totalApprovalDisplay()} {symbol}
+          <span className="tabular-nums">
+            {formatBalance(total, decimals)} {symbol}
           </span>
         </div>
       </div>
 
       <Button
-        disabled={busy || !address}
+        disabled={busy || !address || priceRaw === 0n}
         onClick={handleBuy}
         className="w-full"
       >
@@ -205,7 +218,7 @@ export function BuySection({
             <Loader2 className="size-4 animate-spin mr-2" /> Processing...
           </>
         ) : isOccupied ? (
-          `Buy @ ${currentPriceDisplay} ${symbol}`
+          `Buy @ ${formatBalance(purchase, decimals)} ${symbol}`
         ) : (
           "Buy Slot"
         )}

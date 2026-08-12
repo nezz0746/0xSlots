@@ -3,6 +3,7 @@
 import { slotAbi } from "@0xslots/contracts";
 import { type Address, erc20Abi } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
+import { NATIVE_CURRENCY } from "../tokens";
 
 export type SlotOnChain = {
   // Identity
@@ -194,10 +195,18 @@ export function useSlotOnChain(
     query: { gcTime: 0, staleTime: 0, refetchOnMount: "always" },
   });
 
-  // Currency metadata — only fetch when we have info (static, can cache)
-  const currencyAddr = info
+  // Currency metadata — only fetch when we have info (static, can cache).
+  //
+  // `address(0)` is the native-ETH sentinel and has no ERC-20 to ask, so the
+  // three reads below fail and every consumer falls back to its own default.
+  // That was catastrophic rather than cosmetic: the usual fallback is 6
+  // decimals, so an 18-decimal native balance rendered a trillion times too
+  // large — 0.5 ETH as "500.00B". Native metadata is known statically.
+  const rawCurrency = info
     ? ((info as SlotInfoResult).currency as Address)
     : undefined;
+  const isNative = rawCurrency === ZERO_ADDRESS;
+  const currencyAddr = isNative ? undefined : rawCurrency;
   const { data: currencyMeta, isLoading: metaLoading } = useReadContracts({
     contracts: currencyAddr
       ? [
@@ -224,19 +233,25 @@ export function useSlotOnChain(
     query: { enabled: !!currencyAddr, staleTime: Infinity },
   });
 
-  const isLoading = infoLoading || metaLoading;
+  const isLoading = infoLoading || (!!currencyAddr && metaLoading);
 
   const slot = info
     ? parseSlotInfo(
         slotAddress,
         info as SlotInfoResult,
-        currencyMeta
+        isNative
           ? {
-              name: currencyMeta[0]?.result as string | undefined,
-              symbol: currencyMeta[1]?.result as string | undefined,
-              decimals: currencyMeta[2]?.result as number | undefined,
+              name: NATIVE_CURRENCY.name,
+              symbol: NATIVE_CURRENCY.symbol,
+              decimals: NATIVE_CURRENCY.decimals,
             }
-          : undefined,
+          : currencyMeta
+            ? {
+                name: currencyMeta[0]?.result as string | undefined,
+                symbol: currencyMeta[1]?.result as string | undefined,
+                decimals: currencyMeta[2]?.result as number | undefined,
+              }
+            : undefined,
       )
     : null;
 

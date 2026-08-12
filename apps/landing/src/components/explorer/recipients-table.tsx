@@ -39,9 +39,9 @@ export function RecipientsTable() {
           </TableHeader>
           <TableBody>
             {paged.map((a) => {
-              const recipientOccupied = a.slotsAsRecipient.filter(
-                (s) => s.occupant != null,
-              ).length;
+              const recipientOccupied = (
+                a.slotsAsRecipient?.items ?? []
+              ).filter((s) => s.occupant != null).length;
               return (
                 <TableRow
                   key={a.id}

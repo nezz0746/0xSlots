@@ -1,41 +1,91 @@
-fragment AccountFields on Account {
+fragment AccountFields on account {
   id
   type
   slotCount
   occupiedCount
   metadataUpdateCount
   totalHoldTime
-  slotsAsRecipient {
-    id
-    occupant
-  }
-  slotsAsOccupant {
-    id
+  # Bounded on purpose. The subgraph exposed these as unbounded @derivedFrom
+  # lists on every account read; here they are pages, so a recipient with
+  # thousands of slots does not turn an account lookup into a table scan.
+  slotsAsRecipient(limit: 500) {
+    totalCount
+    items {
+      id
+      occupant
+    }
   }
 }
 
-query GetAccount($id: ID!, $block: Block_height) {
-  account(id: $id, block: $block) {
+query GetAccount($id: String!) {
+  account(id: $id) {
     ...AccountFields
   }
 }
 
 query GetAccounts(
-  $first: Int!
-  $skip: Int
-  $orderBy: Account_orderBy
-  $orderDirection: OrderDirection
-  $where: Account_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $after: String
+  $orderBy: String
+  $orderDirection: String
+  $where: accountFilter
 ) {
   accounts(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
+    after: $after
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...AccountFields
+    }
+  }
+}
+
+# The subgraph put `slotsAsRecipient` / `slotsAsOccupant` inline on Account via
+# @derivedFrom. Ponder can nest them too, but they are unbounded lists on an
+# account with many slots, so they live behind their own paginated query rather
+# than riding along on every account read.
+query GetAccountWithSlots($id: String!, $limit: Int, $chainId: Int) {
+  account(id: $id) {
     ...AccountFields
+  }
+  asRecipient: slots(
+    where: { recipient: $id, chainId: $chainId }
+    limit: $limit
+    orderBy: "createdAt"
+    orderDirection: "desc"
+  ) {
+    totalCount
+    items {
+      id
+      chainId
+      occupant
+      isOccupied
+      price
+    }
+  }
+  asOccupant: slots(
+    where: { occupant: $id, chainId: $chainId }
+    limit: $limit
+    orderBy: "occupiedSince"
+    orderDirection: "desc"
+  ) {
+    totalCount
+    items {
+      id
+      chainId
+      price
+      deposit
+      occupiedSince
+    }
   }
 }

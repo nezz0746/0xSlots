@@ -82,9 +82,9 @@ function SlotTable({
                 </TableCell>
                 <TableCell className="text-xs">
                   <span className="inline-flex items-center gap-1.5">
-                    {sg?.recipientAccount?.type && (
+                    {sg?.recipientAccountRef?.type && (
                       <AccountTypeIcon
-                        type={sg.recipientAccount.type}
+                        type={sg.recipientAccountRef.type}
                         className="h-3 w-3"
                       />
                     )}
@@ -94,9 +94,9 @@ function SlotTable({
                 <TableCell className="text-xs">
                   {s.occupant ? (
                     <span className="inline-flex items-center gap-1.5">
-                      {sg?.occupantAccount?.type && (
+                      {sg?.occupantAccountRef?.type && (
                         <AccountTypeIcon
-                          type={sg.occupantAccount.type}
+                          type={sg.occupantAccountRef.type}
                           className="h-3 w-3"
                         />
                       )}
@@ -107,13 +107,13 @@ function SlotTable({
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {formatUnits(s.price, decimals)} {symbol}
+                  {formatBalance(s.price, decimals)} {symbol}
                 </TableCell>
                 <TableCell className="text-right">
-                  {formatUnits(s.deposit, decimals)} {symbol}
+                  {formatBalance(s.deposit, decimals)} {symbol}
                 </TableCell>
                 <TableCell className="text-right">
-                  {formatUnits(s.taxOwed, decimals)} {symbol}
+                  {formatBalance(s.taxOwed, decimals)} {symbol}
                 </TableCell>
               </TableRow>
             );

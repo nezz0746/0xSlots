@@ -1136,6 +1136,167 @@ export class Slot extends Entity {
   }
 }
 
+export class IpfsContent extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save IpfsContent entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type IpfsContent must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+      );
+      store.set("IpfsContent", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): IpfsContent | null {
+    return changetype<IpfsContent | null>(
+      store.get_in_block("IpfsContent", id),
+    );
+  }
+
+  static load(id: string): IpfsContent | null {
+    return changetype<IpfsContent | null>(store.get("IpfsContent", id));
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get json(): string | null {
+    let value = this.get("json");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set json(value: string | null) {
+    if (!value) {
+      this.unset("json");
+    } else {
+      this.set("json", Value.fromString(<string>value));
+    }
+  }
+
+  get name(): string | null {
+    let value = this.get("name");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set name(value: string | null) {
+    if (!value) {
+      this.unset("name");
+    } else {
+      this.set("name", Value.fromString(<string>value));
+    }
+  }
+
+  get description(): string | null {
+    let value = this.get("description");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set description(value: string | null) {
+    if (!value) {
+      this.unset("description");
+    } else {
+      this.set("description", Value.fromString(<string>value));
+    }
+  }
+
+  get image(): string | null {
+    let value = this.get("image");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set image(value: string | null) {
+    if (!value) {
+      this.unset("image");
+    } else {
+      this.set("image", Value.fromString(<string>value));
+    }
+  }
+
+  get banner(): string | null {
+    let value = this.get("banner");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set banner(value: string | null) {
+    if (!value) {
+      this.unset("banner");
+    } else {
+      this.set("banner", Value.fromString(<string>value));
+    }
+  }
+
+  get externalLink(): string | null {
+    let value = this.get("externalLink");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set externalLink(value: string | null) {
+    if (!value) {
+      this.unset("externalLink");
+    } else {
+      this.set("externalLink", Value.fromString(<string>value));
+    }
+  }
+
+  get adType(): string | null {
+    let value = this.get("adType");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set adType(value: string | null) {
+    if (!value) {
+      this.unset("adType");
+    } else {
+      this.set("adType", Value.fromString(<string>value));
+    }
+  }
+}
+
 export class Module extends Entity {
   constructor(id: string) {
     super();
@@ -1257,8 +1418,8 @@ export class Module extends Entity {
     }
   }
 
-  get image(): string | null {
-    let value = this.get("image");
+  get metadata(): string | null {
+    let value = this.get("metadata");
     if (!value || value.kind == ValueKind.NULL) {
       return null;
     } else {
@@ -1266,28 +1427,11 @@ export class Module extends Entity {
     }
   }
 
-  set image(value: string | null) {
+  set metadata(value: string | null) {
     if (!value) {
-      this.unset("image");
+      this.unset("metadata");
     } else {
-      this.set("image", Value.fromString(<string>value));
-    }
-  }
-
-  get description(): string | null {
-    let value = this.get("description");
-    if (!value || value.kind == ValueKind.NULL) {
-      return null;
-    } else {
-      return value.toString();
-    }
-  }
-
-  set description(value: string | null) {
-    if (!value) {
-      this.unset("description");
-    } else {
-      this.set("description", Value.fromString(<string>value));
+      this.set("metadata", Value.fromString(<string>value));
     }
   }
 
@@ -1428,6 +1572,23 @@ export class MetadataSlot extends Entity {
       this.unset("adType");
     } else {
       this.set("adType", Value.fromString(<string>value));
+    }
+  }
+
+  get content(): string | null {
+    let value = this.get("content");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set content(value: string | null) {
+    if (!value) {
+      this.unset("content");
+    } else {
+      this.set("content", Value.fromString(<string>value));
     }
   }
 
@@ -1653,6 +1814,23 @@ export class MetadataUpdatedEvent extends Entity {
       this.unset("adType");
     } else {
       this.set("adType", Value.fromString(<string>value));
+    }
+  }
+
+  get content(): string | null {
+    let value = this.get("content");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set content(value: string | null) {
+    if (!value) {
+      this.unset("content");
+    } else {
+      this.set("content", Value.fromString(<string>value));
     }
   }
 
@@ -4153,6 +4331,23 @@ export class Feed extends Entity {
       this.unset("metadataCid");
     } else {
       this.set("metadataCid", Value.fromString(<string>value));
+    }
+  }
+
+  get metadata(): string | null {
+    let value = this.get("metadata");
+    if (!value || value.kind == ValueKind.NULL) {
+      return null;
+    } else {
+      return value.toString();
+    }
+  }
+
+  set metadata(value: string | null) {
+    if (!value) {
+      this.unset("metadata");
+    } else {
+      this.set("metadata", Value.fromString(<string>value));
     }
   }
 

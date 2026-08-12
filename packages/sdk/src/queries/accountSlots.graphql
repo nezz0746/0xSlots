@@ -1,11 +1,7 @@
-fragment AccountSlotFields on AccountSlot {
-  id
-  account {
-    id
-  }
-  slot {
-    id
-  }
+fragment AccountSlotFields on accountSlot {
+  account
+  slot
+  chainId
   metadataUpdateCount
   taxPaid
   holdTime
@@ -14,28 +10,45 @@ fragment AccountSlotFields on AccountSlot {
   lastInteractedAt
 }
 
-query GetAccountSlot($id: ID!, $block: Block_height) {
-  accountSlot(id: $id, block: $block) {
+# Composite primary key — the subgraph's synthetic "{account}-{slot}" id is gone.
+query GetAccountSlot($account: String!, $slot: String!) {
+  accountSlot(account: $account, slot: $slot) {
     ...AccountSlotFields
+    accountRef {
+      id
+      type
+    }
+    slotRef {
+      id
+      price
+      isOccupied
+    }
   }
 }
 
 query GetAccountSlots(
-  $first: Int!
-  $skip: Int
-  $orderBy: AccountSlot_orderBy
-  $orderDirection: OrderDirection
-  $where: AccountSlot_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $after: String
+  $orderBy: String
+  $orderDirection: String
+  $where: accountSlotFilter
 ) {
   accountSlots(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
+    after: $after
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    ...AccountSlotFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...AccountSlotFields
+    }
   }
 }

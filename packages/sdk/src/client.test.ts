@@ -32,7 +32,7 @@ function harness(reads: Record<string, unknown>) {
 
   const client = new SlotsClient({
     chainId: SlotsChain.BASE,
-    subgraphUrl: "http://localhost/never-called",
+    apiUrl: "http://localhost/never-called",
     publicClient: {
       readContract,
       waitForTransactionReceipt: vi.fn(async () => ({ status: "success" })),

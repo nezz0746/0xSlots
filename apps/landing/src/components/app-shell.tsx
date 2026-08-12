@@ -5,7 +5,7 @@ import { Check, ChevronDown, Menu, User } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SubgraphStatus } from "@/components/subgraph-status";
+import { IndexerStatus } from "@/components/indexer-status";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -116,7 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     >
       {chainSelector}
       <div className="flex items-center gap-2">
-        <SubgraphStatus />
+        <IndexerStatus />
       </div>
     </nav>
   );
@@ -135,7 +135,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SidebarInset className="min-h-svh flex flex-col">
           {/* Sticky rather than fixed, so it spans the content column beside
               the sidebar instead of overlapping it. */}
-          <nav className="sticky top-0 z-50 bg-background flex items-center justify-between p-2 md:px-6 md:py-3 border-b">
+          {/* Mobile only. On desktop the logo lives in the sidebar and the
+              wallet moved into PageHeader, which left this band holding a
+              single button across a full-width strip — 57px of every viewport
+              spent on nothing. */}
+          <nav className="md:hidden sticky top-0 z-50 bg-background flex items-center justify-between p-2 border-b">
             {/* The sidebar carries the logo on desktop. */}
             <div className="flex flex-row items-center gap-6 md:hidden">
               {logo}

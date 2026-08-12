@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { useChain } from "@/context/chain";
 import { NavLink, useNavigation } from "@/context/navigation";
-import { useSubgraphSource } from "@/context/subgraph-source";
 import { slotsByRecipientQueryOptions } from "@/hooks/slot-queries";
 import { useSlotsOnChain } from "@/hooks/use-slot-onchain";
 import { useEnsAvatar, useEnsName } from "@/lib/ens";
@@ -31,12 +30,11 @@ import { formatBalance, truncateAddress } from "@/utils";
 export function RecipientPageContent({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
   const { explorerUrl, chainId: selectedChainId } = useChain();
-  const { source: subgraphSource } = useSubgraphSource();
   const { push } = useNavigation();
 
   // Subgraph data — prefetched on the server, reads from cache instantly
   const { data: subgraphSlots } = useSuspenseQuery(
-    slotsByRecipientQueryOptions(selectedChainId, address, subgraphSource),
+    slotsByRecipientQueryOptions(selectedChainId, address),
   );
   const slotAddresses = subgraphSlots?.map((s) => s.id) ?? [];
 
@@ -50,7 +48,7 @@ export function RecipientPageContent({ address }: { address: string }) {
   const { data: ensAvatar } = useEnsAvatar(ensName);
 
   const isLoading = onchainLoading;
-  const recipientType = subgraphSlots?.[0]?.recipientAccount?.type;
+  const recipientType = subgraphSlots?.[0]?.recipientAccountRef?.type;
   const subgraphMap = new Map((subgraphSlots ?? []).map((s) => [s.id, s]));
   const occupied = slots.filter((s) => s.occupant != null);
   const vacant = slots.length - occupied.length;
@@ -174,7 +172,7 @@ export function RecipientPageContent({ address }: { address: string }) {
               </TableHeader>
               <TableBody>
                 {paged.map((s) => {
-                  const occupantType = subgraphMap.get(s.id)?.occupantAccount
+                  const occupantType = subgraphMap.get(s.id)?.occupantAccountRef
                     ?.type;
                   return (
                     <TableRow
@@ -209,16 +207,16 @@ export function RecipientPageContent({ address }: { address: string }) {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatUnits(s.price, decimals)} {symbol}
+                        {formatBalance(s.price, decimals)} {symbol}
                       </TableCell>
                       <TableCell className="text-right">
                         {Number(s.taxPercentage) / 100}%
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatUnits(s.deposit, decimals)} {symbol}
+                        {formatBalance(s.deposit, decimals)} {symbol}
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatUnits(s.taxOwed, decimals)} {symbol}
+                        {formatBalance(s.taxOwed, decimals)} {symbol}
                       </TableCell>
                     </TableRow>
                   );

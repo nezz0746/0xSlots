@@ -1,20 +1,31 @@
-query GetFactory {
-  factories(first: 1) {
-    id
-    slotCount
+query GetFactory($chainId: Int) {
+  factorys(where: { chainId: $chainId }, limit: 1) {
+    totalCount
+    items {
+      id
+      chainId
+      slotCount
+    }
   }
 }
 
-query GetModules($first: Int!) {
-  modules(first: $first) {
-    id
-    verified
-    name
-    version
-    feeBps
-    moduleURI
-    image
-    description
-    totalFeesCollected
+# `image` and `description` are columns here, not a nested `metadata` object:
+# ponder resolves the module URI at index time instead of modelling the fetched
+# document as its own entity.
+query GetModules($limit: Int, $where: moduleFilter) {
+  modules(where: $where, limit: $limit) {
+    totalCount
+    items {
+      id
+      chainId
+      verified
+      name
+      version
+      feeBps
+      moduleURI
+      image
+      description
+      totalFeesCollected
+    }
   }
 }

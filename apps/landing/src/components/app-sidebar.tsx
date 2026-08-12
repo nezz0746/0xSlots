@@ -4,8 +4,9 @@ import { CHAINS } from "@0xslots/contracts";
 import { Check, ChevronDown, PlusIcon, User } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { SubgraphSourceSwitch } from "@/components/subgraph-source-switch";
-import { SubgraphStatus } from "@/components/subgraph-status";
+import { DevAccountSwitcher } from "@/components/dev-account-switcher";
+import { DevTimeWarp } from "@/components/dev-time-warp";
+import { IndexerStatus } from "@/components/indexer-status";
 import { TestnetFaucet } from "@/components/testnet-faucet";
 import { Button } from "@/components/ui/button";
 import {
@@ -135,9 +136,12 @@ export function AppSidebar() {
             on mainnet without needing a testnet check here. */}
         <TestnetFaucet />
 
+        {/* Local chain only — both return null everywhere else. */}
+        <DevAccountSwitcher />
+        <DevTimeWarp />
+
         {/* Sits directly above the chain picker: both choose WHERE the app
             reads from, and both are persisted per browser. */}
-        <SubgraphSourceSwitch />
 
         <div className="flex items-center justify-between px-2 pb-1">
           <DropdownMenu>
@@ -161,7 +165,7 @@ export function AppSidebar() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <SubgraphStatus />
+          <IndexerStatus />
         </div>
       </SidebarFooter>
     </Sidebar>

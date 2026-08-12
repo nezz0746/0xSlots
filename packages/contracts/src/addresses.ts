@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { base, baseSepolia } from "viem/chains";
+import { anvil, base, baseSepolia } from "viem/chains";
 
 /**
  * SlotsHub contract addresses by chain ID.
@@ -12,6 +12,11 @@ import { base, baseSepolia } from "viem/chains";
 export const slotFactoryAddress = {
   [base.id]: "0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e",
   [baseSepolia.id]: "0x6D87C1647f228Baf8DE0374FCd7FdEBF6900fdFF",
+  // Local anvil, pinned by apps/contracts/script/DeployLocal.s.sol. The address
+  // survives edits to Slot.sol and friends — see LocalBootstrap.sol for why a
+  // plain CREATE2 would not. Listed unconditionally because it is only data;
+  // whether the chain is OFFERED is decided by `CHAINS` in ./index.ts.
+  [anvil.id]: "0x78F614D6e3489a90BD2584D2ab1D90F5C35722F6",
 } as const;
 
 export const batchCollectorAddress = {

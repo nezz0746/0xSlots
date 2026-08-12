@@ -12,6 +12,7 @@ import {
   CircleDollarSign,
   Clock,
   Cog,
+  Coins,
   Copy,
   FileBox,
   Flame,
@@ -21,6 +22,7 @@ import {
   Loader2,
   Lock,
   LockOpen,
+  Puzzle,
   RefreshCw,
   Settings,
   Shield,
@@ -28,11 +30,12 @@ import {
   Sparkles,
   Timer,
   User,
+  Users,
   Wallet,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { type Address, zeroAddress } from "viem";
+import { useEffect, useRef, useState } from "react";
+import { type Address, formatUnits, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { AccountTypeIcon } from "@/components/account-type-icon";
 import { EnsIdentity } from "@/components/ens-identity";
@@ -62,7 +65,6 @@ import {
 import { useChain } from "@/context/chain";
 import { useFarcaster } from "@/context/farcaster";
 import { NavLink } from "@/context/navigation";
-import { useSubgraphSource } from "@/context/subgraph-source";
 import {
   slotActivityQueryOptions,
   slotQueryOptions,
@@ -83,6 +85,13 @@ import {
   toRawUnits,
   truncateAddress,
 } from "@/utils";
+import { PriceInput } from "@/components/ui/price-input";
+import {
+  DetailGroup,
+  DetailRow,
+  MutabilityChip,
+} from "@/components/detail-group";
+import { SECTION } from "@/app/create/sections";
 import { BuySection } from "./components/buy-section";
 import { DepositSlider } from "./components/deposit-slider";
 import {
@@ -100,7 +109,6 @@ import { UserCurrencyBalance } from "./components/user-balance";
 export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const router = useRouter();
   const { explorerUrl, chainId: selectedChainId } = useChain();
-  const { source: subgraphSource } = useSubgraphSource();
   const { isMiniApp } = useFarcaster();
   const {
     data: slot,
@@ -110,7 +118,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
 
   // Subgraph data — prefetched on the server, reads from cache instantly
   const { data: subgraphSlot } = useSuspenseQuery(
-    slotQueryOptions(selectedChainId, slotAddress, subgraphSource),
+    slotQueryOptions(selectedChainId, slotAddress),
   );
   // Wall clock for the tenure meter. Above the isLoading/!slot early returns —
   // hooks cannot be conditional — and only ticking when there is something
@@ -133,7 +141,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   );
 
   const { data: activityData } = useSuspenseQuery(
-    slotActivityQueryOptions(selectedChainId, slotAddress, subgraphSource),
+    slotActivityQueryOptions(selectedChainId, slotAddress),
   );
 
   const { address, isConnected, chainId, chain } = useAccount();
@@ -150,7 +158,11 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
     activeAction,
   } = useSlotAction();
   const { data: modules } = useModules();
-  const [newPrice, setNewPrice] = useState("");
+  // The occupant's self-assessment, seeded from what they currently declare.
+  // A number rather than a string: PriceInput compounds percentage steps off
+  // it, and re-parsing a formatted string each tap loses precision.
+  const [ownerPrice, setOwnerPrice] = useState(0);
+  const ownerTouched = useRef(false);
   const [newTaxPct, setNewTaxPct] = useState<number | null>(null);
   const [newModule, setNewModule] = useState("");
   const [activeTab, setActiveTab] = useState<"details" | "activity" | "manage">(
@@ -179,10 +191,22 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const decimals = slot?.currencyDecimals ?? 6;
   const symbol = slot?.currencySymbol ?? "USDC";
 
+  /**
+   * Follow the declared price until the occupant edits it.
+   *
+   * The slot is an async read, so seeding once at mount would leave the field
+   * on 0 for anyone whose page painted first.
+   */
+  const ownerPriceSeed = slot ? Number(formatUnits(slot.price, decimals)) : 0;
+  useEffect(() => {
+    if (!ownerTouched.current) setOwnerPrice(ownerPriceSeed);
+  }, [ownerPriceSeed]);
+  const ownerPriceRaw = toRawUnits(String(ownerPrice), decimals);
+
   if (isLoading) {
     return (
       <div className="min-h-screen">
-        <div className="max-w-6xl mx-auto px-6 py-12">
+        <div className="w-full px-5 py-12">
           <div className="rounded-lg border p-12 text-center animate-pulse">
             <p className="text-sm text-muted-foreground">Loading slot...</p>
           </div>
@@ -194,7 +218,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   if (!slot) {
     return (
       <div className="min-h-screen">
-        <div className="max-w-6xl mx-auto px-6 py-12">
+        <div className="w-full px-5 py-12">
           <div className="rounded-lg border p-12 text-center">
             <p className="text-sm">Slot not found</p>
             <NavLink
@@ -226,7 +250,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
 
   const hasModule =
     slot.utility != null && slot.utility.toLowerCase() !== zeroAddress;
-  const moduleEntity = subgraphSlot?.module ?? null;
+  const moduleEntity = subgraphSlot?.moduleRef ?? null;
   const moduleUnverified = hasModule && moduleEntity && !moduleEntity.verified;
   const isMetadataModule =
     hasModule &&
@@ -346,7 +370,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
         </div>
       </PageHeader>
 
-      <div className="max-w-6xl mx-auto p-2 md:p-6 pb-32 lg:pb-6">
+      <div className="w-full px-3 md:px-5 py-3 pb-32 lg:pb-6">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
           {/* Left: Tabbed content + mobile slide panel */}
           <div className="relative overflow-hidden">
@@ -387,9 +411,172 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                 {activeTab === "details" && (
                   <div>
                     <div className="p-4 space-y-3 text-sm">
-                      {/* Identity */}
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
+                      {/* Terms lead. The rate and the funding floor are what
+                          decide whether to buy; everything else qualifies them. */}
+                      <DetailGroup
+                        icon={HandCoins}
+                        title="Terms"
+                        tint={SECTION.economics.tint}
+                      >
+                        <DetailRow
+                          weight="primary"
+                          label="Tax rate"
+                          badge={
+                            <MutabilityChip
+                              mutable={slot.mutableTax}
+                              what="tax rate"
+                            />
+                          }
+                          value={`${formatBps(slot.taxPercentage.toString())}/mo`}
+                        />
+                        <DetailRow
+                          weight="primary"
+                          label="Min. deposit"
+                          value={formatDuration(Number(slot.minDepositSeconds))}
+                        />
+                        <DetailRow
+                          label="Liquidation bounty"
+                          value={formatBps(
+                            slot.liquidationBountyBps.toString(),
+                          )}
+                        />
+                      </DetailGroup>
+
+                      <DetailGroup
+                        icon={Coins}
+                        title="Currency"
+                        tint={SECTION.currency.tint}
+                      >
+                        <DetailRow
+                          label="Priced in"
+                          value={`${slot.currencyName ?? truncateAddress(slot.currency)} (${symbol})`}
+                        />
+                      </DetailGroup>
+
+                      <DetailGroup
+                        icon={Users}
+                        title="Parties"
+                        tint={SECTION.recipient.tint}
+                      >
+                        <DetailRow
+                          label={
+                            <>
+                              {subgraphSlot?.recipientAccountRef?.type ? (
+                                <AccountTypeIcon
+                                  type={subgraphSlot.recipientAccountRef.type}
+                                  className="size-3"
+                                />
+                              ) : (
+                                <User className="size-3" />
+                              )}
+                              Recipient
+                            </>
+                          }
+                          value={
+                            <span className="flex items-center gap-1.5">
+                              <NavLink
+                                href={`/recipient/${slot.recipient}`}
+                                className="text-primary hover:underline"
+                              >
+                                <EnsIdentity
+                                  address={slot.recipient}
+                                  size={16}
+                                  nameClassName="text-xs"
+                                />
+                              </NavLink>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyAddress("recipient", slot.recipient)
+                                }
+                                className="text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                {copiedField === "recipient" ? (
+                                  <Check className="size-3" />
+                                ) : (
+                                  <Copy className="size-3" />
+                                )}
+                              </button>
+                            </span>
+                          }
+                        />
+                        {subgraphSlot?.recipientAccountRef?.type === "SPLIT" && (
+                          <SplitRecipientsBar
+                            chainId={selectedChainId}
+                            splitAddress={slot.recipient}
+                          />
+                        )}
+                        {slot.manager.toLowerCase() !== zeroAddress && (
+                          <DetailRow
+                            label="Manager"
+                            value={truncateAddress(slot.manager)}
+                          />
+                        )}
+                      </DetailGroup>
+
+                      {/* Extensions, deliberately quiet. Both are absent on
+                          most slots and neither changes the price; a reader
+                          deciding whether to buy should reach the rate first. */}
+                      {slot.occupancyPolicy && (
+                        <DetailGroup
+                          weight="quiet"
+                          icon={ShieldCheck}
+                          title="Occupancy policy"
+                          tint={SECTION.occupancy.tint}
+                        >
+                          <DetailRow
+                            weight="quiet"
+                            label={knownPolicy?.label ?? "Policy"}
+                            badge={
+                              <MutabilityChip
+                                mutable={slot.mutablePolicy}
+                                what="occupancy terms"
+                              />
+                            }
+                            value={truncateAddress(slot.occupancyPolicy)}
+                          />
+                          {knownPolicy?.tenureSeconds && isOccupied && (
+                            <TenureMeter
+                              tenureSeconds={knownPolicy.tenureSeconds}
+                              occupiedSince={Number(slot.occupiedSince)}
+                              now={nowSeconds}
+                            />
+                          )}
+                          {knownPolicy && (
+                            <p className="text-[11px] text-muted-foreground">
+                              {knownPolicy.description}
+                            </p>
+                          )}
+                        </DetailGroup>
+                      )}
+
+                      <DetailGroup
+                        weight="quiet"
+                        icon={Puzzle}
+                        title="Utility"
+                        tint={SECTION.module.tint}
+                      >
+                        <DetailRow
+                          weight="quiet"
+                          label="Contract"
+                          badge={
+                            <MutabilityChip
+                              mutable={slot.mutableModule}
+                              what="utility"
+                            />
+                          }
+                          value={
+                            !hasModule
+                              ? "None"
+                              : (moduleEntity?.name ??
+                                truncateAddress(slot.module))
+                          }
+                        />
+                      </DetailGroup>
+
+                      {/* The address itself is reference material, not a term. */}
+                      <div className="flex items-center justify-between border-t pt-2 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
                           <LandPlot className="size-3" /> Slot contract
                         </span>
                         <span className="flex items-center gap-1.5">
@@ -397,14 +584,14 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                             href={`${explorerUrl}/address/${slot.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-primary hover:underline text-xs"
+                            className="text-primary hover:underline"
                           >
                             {truncateAddress(slot.id)}
                           </a>
                           <button
                             type="button"
                             onClick={() => copyAddress("slot", slot.id)}
-                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            className="hover:text-foreground transition-colors"
                           >
                             {copiedField === "slot" ? (
                               <Check className="size-3" />
@@ -414,209 +601,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                           </button>
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          {subgraphSlot?.recipientAccount?.type ? (
-                            <AccountTypeIcon
-                              type={subgraphSlot.recipientAccount.type}
-                              className="size-3"
-                            />
-                          ) : (
-                            <User className="size-3" />
-                          )}{" "}
-                          Recipient
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <NavLink
-                            href={`/recipient/${slot.recipient}`}
-                            className="text-primary hover:underline text-xs"
-                          >
-                            <EnsIdentity
-                              address={slot.recipient}
-                              size={16}
-                              nameClassName="text-xs"
-                            />
-                          </NavLink>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyAddress("recipient", slot.recipient)
-                            }
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {copiedField === "recipient" ? (
-                              <Check className="size-3" />
-                            ) : (
-                              <Copy className="size-3" />
-                            )}
-                          </button>
-                        </span>
-                      </div>
-                      {subgraphSlot?.recipientAccount?.type === "SPLIT" && (
-                        <SplitRecipientsBar
-                          chainId={selectedChainId}
-                          splitAddress={slot.recipient}
-                        />
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <CircleDollarSign className="size-3" /> Currency
-                        </span>
-                        <span className="text-xs">
-                          {slot.currencyName ?? truncateAddress(slot.currency)}{" "}
-                          ({symbol})
-                        </span>
-                      </div>
-                      {slot.manager.toLowerCase() !== zeroAddress && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1.5">
-                            <Shield className="size-3" /> Manager
-                          </span>
-                          <span className="text-xs">
-                            {truncateAddress(slot.manager)}
-                          </span>
-                        </div>
-                      )}
 
-                      <div className="border-t" />
-
-                      {/* Economics */}
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <HandCoins className="size-3" /> Tax Rate
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium cursor-default ${slot.mutableTax ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}
-                                >
-                                  {slot.mutableTax ? (
-                                    <LockOpen className="size-2.5" />
-                                  ) : (
-                                    <Lock className="size-2.5" />
-                                  )}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                {slot.mutableTax
-                                  ? "Mutable — tax rate can be changed"
-                                  : "Immutable — tax rate is fixed"}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </span>
-                        <span>
-                          {formatBps(slot.taxPercentage.toString())}/mo
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <Timer className="size-3" /> Min. Deposit
-                        </span>
-                        <span>
-                          {formatDuration(Number(slot.minDepositSeconds))}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <Sparkles className="size-3 text-amber-500" /> Liq.
-                          Bounty
-                        </span>
-                        <span>
-                          {formatBps(slot.liquidationBountyBps.toString())}
-                        </span>
-                      </div>
-
-                      {slot.occupancyPolicy && (
-                        <>
-                          <div className="border-t" />
-
-                          {/* Occupancy terms, shown rather than described — a
-                              protection window is a position in time, which a
-                              reader takes in far quicker from a picture. */}
-                          {slot.occupancyPolicy && (
-                            <div className="space-y-2">
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground flex items-center gap-1.5">
-                                  <ShieldCheck className="size-3 text-violet-500" />{" "}
-                                  Occupancy policy
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span
-                                          className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium cursor-default ${slot.mutablePolicy ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}
-                                        >
-                                          {slot.mutablePolicy ? (
-                                            <LockOpen className="size-2.5" />
-                                          ) : (
-                                            <Lock className="size-2.5" />
-                                          )}
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="top">
-                                        {slot.mutablePolicy
-                                          ? "Mutable — the manager can change who may take this slot, and on what terms"
-                                          : "Immutable — the occupancy terms are fixed forever"}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </span>
-                                <span className="text-xs">
-                                  {knownPolicy?.label ??
-                                    truncateAddress(slot.occupancyPolicy)}
-                                </span>
-                              </div>
-                              {knownPolicy?.tenureSeconds && isOccupied && (
-                                <TenureMeter
-                                  tenureSeconds={knownPolicy.tenureSeconds}
-                                  occupiedSince={Number(slot.occupiedSince)}
-                                  now={nowSeconds}
-                                />
-                              )}
-                              {knownPolicy && (
-                                <p className="text-[11px] text-muted-foreground">
-                                  {knownPolicy.description}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      <div className="border-t" />
-
-                      {/* Module */}
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <FileBox className="size-3" /> Module
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium cursor-default ${slot.mutableModule ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`}
-                                >
-                                  {slot.mutableModule ? (
-                                    <LockOpen className="size-2.5" />
-                                  ) : (
-                                    <Lock className="size-2.5" />
-                                  )}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                {slot.mutableModule
-                                  ? "Mutable — module can be changed"
-                                  : "Immutable — module is fixed"}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </span>
-                        <span className="text-xs">
-                          {!hasModule
-                            ? "None"
-                            : moduleEntity?.name ||
-                              truncateAddress(slot.module)}
-                        </span>
-                      </div>
                       {/* One notice for all three dimensions, in the reader's
                           own terms. Previously tax and module each had their
                           own line here and the occupancy policy had none. */}
@@ -1068,37 +1053,37 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
 
               {isOccupant && (
                 <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground block mb-1">
-                      New Price ({symbol})
-                    </label>
-                    <div className="flex gap-2">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="1.00"
-                        value={newPrice}
-                        onChange={(e) => setNewPrice(e.target.value)}
-                        className="text-xs flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          selfAssess(
-                            slotAddress as Address,
-                            toRawUnits(newPrice, decimals),
-                          )
-                        }
-                      >
-                        {busy && activeAction === "Set price" ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          "Set"
-                        )}
-                      </Button>
-                    </div>
+                  <div className="space-y-2">
+                    <PriceInput
+                      label="New price"
+                      value={ownerPrice}
+                      onChange={(n) => {
+                        ownerTouched.current = true;
+                        setOwnerPrice(n);
+                      }}
+                      taxBps={slot.taxPercentage}
+                      symbol={symbol}
+                      disabled={busy}
+                      hint={`Currently ${formatBalance(slot.price, decimals)} ${symbol} — raising it raises your own bill`}
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={
+                        busy ||
+                        ownerPriceRaw === slot.price ||
+                        ownerPriceRaw === 0n
+                      }
+                      onClick={() =>
+                        selfAssess(slotAddress as Address, ownerPriceRaw)
+                      }
+                    >
+                      {busy && activeAction === "Set price" ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        "Set price"
+                      )}
+                    </Button>
                   </div>
 
                   <div className="border-t pt-3">

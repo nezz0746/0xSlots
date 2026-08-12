@@ -19,31 +19,37 @@ import {
   zeroAddress as ZERO_ADDRESS,
 } from "viem";
 import { SlotsError } from "./errors";
+import * as Gen from "./generated/graphql";
 import { getSdk } from "./generated/graphql";
 import { FeedModuleClient } from "./modules/feed";
 import { MetadataModuleClient } from "./modules/metadata";
 import { isNativeCurrency } from "./native";
 
-// ─── GraphQL Meta ─────────────────────────────────────────────────────────────
+// ─── Indexer meta ─────────────────────────────────────────────────────────────
 
+/**
+ * Ponder's indexing status, keyed by chain name.
+ *
+ * Replaces the subgraph's `_meta { block { number hash timestamp } hasIndexingErrors }`,
+ * which has no equivalent here: ponder halts on an indexing error rather than
+ * serving stale data behind a flag, so "are there errors" is answered by the
+ * endpoint being down, not by a boolean.
+ */
 const META_QUERY = gql`
   query GetMeta {
     _meta {
-      block {
-        number
-        hash
-        timestamp
-      }
-      hasIndexingErrors
+      status
     }
   }
 `;
 
-export interface SubgraphMeta {
-  _meta: {
-    block: { number: number; hash: string; timestamp: number };
-    hasIndexingErrors: boolean;
-  };
+export interface ChainStatus {
+  id: number;
+  block: { number: number; timestamp: number } | null;
+}
+
+export interface IndexerMeta {
+  _meta: { status: Record<string, ChainStatus> | null };
 }
 
 // ─── Chain Config ─────────────────────────────────────────────────────────────
@@ -51,73 +57,24 @@ export interface SubgraphMeta {
 export enum SlotsChain {
   BASE = 8453,
   BASE_SEPOLIA = 84532,
-}
-
-export const SUBGRAPH_URLS: Record<SlotsChain, string> = {
-  [SlotsChain.BASE_SEPOLIA]:
-    "https://gateway.thegraph.com/api/subgraphs/id/Z361DLoMdPh9WAopH7shJP8WoXYAB9XeKrLUCTYjdZR",
-  [SlotsChain.BASE]:
-    "https://gateway.thegraph.com/api/subgraphs/id/4sZrdv1SFzN4KzE9jiWDRuUyM4CnCrmvQ54Rv1s65qUq",
-};
-
-/**
- * Which deployment of the subgraph to read.
- *
- * `Network` is the decentralized network through `gateway.thegraph.com`, and is
- * what anything user-facing should be on.
- *
- * `Studio` is the development deployment. It matters because a freshly
- * published version is NOT served by the gateway until an indexer allocates to
- * it and syncs from `startBlock` — hours for these subgraphs — and until then
- * the gateway answers `subgraph not found: no allocations`. Studio serves a
- * deployment the moment it finishes indexing, so it is how you exercise a
- * mapping or schema change before the network catches up.
- *
- * Studio is rate-limited and explicitly a development surface. Treat it as a
- * tool you switch on deliberately, never as a fallback to reach for when the
- * gateway is unhappy.
- */
-export enum SubgraphSource {
-  Network = "network",
-  Studio = "studio",
+  /** Local anvil — see `pnpm dev:local` at the repo root. */
+  ANVIL = 31337,
 }
 
 /**
- * Subgraph Studio endpoints, by chain.
+ * The default read endpoint.
  *
- * `version/latest` follows whatever was deployed to Studio most recently — a
- * moving target, not a pin.
- *
- * The slugs are NOT symmetrical (`0-xslots-base` but `0-x-slots-base-sepolia`)
- * and cannot be derived from the chain name. They come from
- * `packages/subgraph/config/<network>.json` → `studioName`, which is what
- * `graph deploy` publishes under; copy them from there rather than inferring
- * the pattern. Getting one wrong fails quietly: Studio answers an unknown slug
- * with HTTP 200 and a `{"message":"Not found"}` body, so a client that only
- * checks the status code sees a successful request with no data.
+ * ONE url for every chain, which is the shape change that matters most in the
+ * move off the subgraph: a subgraph is one deployment per network, so the SDK
+ * used to carry a `Record<SlotsChain, string>` and pick by chain. Ponder indexes
+ * every chain into one database, so the chain is a `where: { chainId }` filter
+ * on the query instead of a property of the endpoint — see `withChain`.
  */
-export const STUDIO_SUBGRAPH_URLS: Record<SlotsChain, string> = {
-  [SlotsChain.BASE_SEPOLIA]:
-    "https://api.studio.thegraph.com/query/958/0-x-slots-base-sepolia/version/latest",
-  [SlotsChain.BASE]:
-    "https://api.studio.thegraph.com/query/958/0-xslots-base/version/latest",
-};
+export const DEFAULT_API_URL =
+  "https://0xslots-production.up.railway.app/graphql";
 
-/**
- * The subgraph endpoint for a chain, from whichever deployment `source` names.
- *
- * Both maps live here rather than in a consuming app so the two can never
- * disagree about which chain is which, and so an app switching between them
- * carries a flag rather than a URL.
- */
-export function subgraphUrlFor(
-  chainId: SlotsChain,
-  source: SubgraphSource = SubgraphSource.Network,
-): string {
-  return source === SubgraphSource.Studio
-    ? STUDIO_SUBGRAPH_URLS[chainId]
-    : SUBGRAPH_URLS[chainId];
-}
+/** The local indexer `pnpm dev:local` starts, for chain 31337. */
+export const LOCAL_API_URL = "http://localhost:42069/graphql";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,26 +166,20 @@ export interface BuyParams {
 }
 
 export interface SlotsClientConfig {
+  /**
+   * Which chain's rows to read.
+   *
+   * No longer selects an endpoint — one ponder deployment holds every chain —
+   * so this is a filter applied to queries, not a routing decision.
+   */
   chainId: SlotsChain;
   factoryAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
-  /**
-   * An exact endpoint, overriding `subgraphSource` entirely. For a local
-   * graph-node or a pinned deployment ID — anything this package cannot know
-   * the address of.
-   */
-  subgraphUrl?: string;
-  /**
-   * Which published deployment to read. Defaults to the decentralized network.
-   * Ignored when `subgraphUrl` is given.
-   */
-  subgraphSource?: SubgraphSource;
-  /**
-   * Gateway API key. Sent as a bearer token, and only to the decentralized
-   * network — see the constructor.
-   */
-  subgraphApiKey?: string;
+  /** Ponder GraphQL endpoint. Defaults to {@link DEFAULT_API_URL}. */
+  apiUrl?: string;
+  /** Sent as a bearer token, for a deployment behind auth. */
+  apiKey?: string;
   headers?: Record<string, string>;
 }
 
@@ -237,7 +188,8 @@ export interface SlotsClientConfig {
 /**
  * Client for reading and writing 0xSlots protocol data.
  *
- * Reads come from a Graph Protocol subgraph (via graphql-request).
+ * Reads come from a Ponder GraphQL API (via graphql-request); one deployment
+ * serves every chain, so `chainId` filters rows rather than choosing a host.
  * Writes go through a viem WalletClient and handle ERC-20 approvals automatically.
  *
  * @example
@@ -247,7 +199,7 @@ export interface SlotsClientConfig {
  *   publicClient,
  *   walletClient,
  * });
- * const slots = await client.getSlots({ first: 10 });
+ * const { items, totalCount } = (await client.getSlots({ limit: 10 })).slots;
  * ```
  */
 export class SlotsClient {
@@ -270,22 +222,13 @@ export class SlotsClient {
     this.walletClient = config.walletClient;
     this._factory = config.factoryAddress ?? getSlotsHubAddress(config.chainId);
 
-    const source = config.subgraphSource ?? SubgraphSource.Network;
-    const url = config.subgraphUrl || subgraphUrlFor(config.chainId, source);
-    if (!url) throw new Error(`No subgraph URL for chain ${config.chainId}`);
+    // One endpoint for every chain — the chain is a query filter now, not a
+    // routing decision, so there is nothing to resolve per chainId.
+    const url = config.apiUrl || DEFAULT_API_URL;
 
     const headers: Record<string, string> = { ...config.headers };
-    // The key authenticates against `gateway.thegraph.com` and is meaningless
-    // anywhere else, so it is withheld when this client resolved a Studio
-    // endpoint itself. Sending it would put a gateway credential in a request
-    // to a host that has no use for it.
-    //
-    // An explicit `subgraphUrl` still gets the key: the caller named that
-    // endpoint and we cannot tell what it is.
-    const isResolvedStudio =
-      !config.subgraphUrl && source === SubgraphSource.Studio;
-    if (config.subgraphApiKey && !isResolvedStudio) {
-      headers["Authorization"] = `Bearer ${config.subgraphApiKey}`;
+    if (config.apiKey) {
+      headers["Authorization"] = `Bearer ${config.apiKey}`;
     }
     this.gqlClient = new GraphQLClient(url, { headers });
     this.sdk = getSdk(this.gqlClient);
@@ -362,185 +305,211 @@ export class SlotsClient {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // READ — Subgraph Queries
+  // READ — Indexer queries
+  //
+  // Every list method merges `chainId` into `where` before sending. One ponder
+  // deployment holds every chain, so an unfiltered query returns base and
+  // base-sepolia rows interleaved — a caller who forgets the filter gets a
+  // plausible-looking result that is quietly wrong. Passing `chainId`
+  // explicitly in `where` still wins, for the rare cross-chain read.
+  //
+  // Results are `{ items, totalCount, pageInfo }`. Pagination is `limit` with
+  // either `offset` or the `after`/`before` cursors from `pageInfo`; the
+  // subgraph's `first`/`skip` are gone, as is its `block:` time-travel argument,
+  // which has no ponder equivalent.
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Merge the client's chain into a query's `where`, without overriding it. */
+  private withChain<V extends { where?: unknown } | undefined>(vars?: V): V {
+    const where = (vars as { where?: Record<string, unknown> } | undefined)
+      ?.where;
+    return {
+      ...(vars ?? {}),
+      where: { chainId: this.chainId, ...(where ?? {}) },
+    } as V;
+  }
 
   // Slot queries
 
-  /** Fetch a paginated list of slots. */
-  getSlots(...args: Parameters<ReturnType<typeof getSdk>["GetSlots"]>) {
-    return this.query("getSlots", () => this.sdk.GetSlots(...args));
+  /** Fetch a paginated page of slots. */
+  getSlots(variables?: Gen.GetSlotsQueryVariables) {
+    return this.query("getSlots", () =>
+      this.sdk.GetSlots(this.withChain(variables)),
+    );
   }
   /** Fetch a single slot by its address. */
-  getSlot(...args: Parameters<ReturnType<typeof getSdk>["GetSlot"]>) {
-    return this.query("getSlot", () => this.sdk.GetSlot(...args));
+  getSlot(variables: Gen.GetSlotQueryVariables) {
+    return this.query("getSlot", () => this.sdk.GetSlot(variables));
   }
-  /** Fetch all slots owned by a given recipient address. */
-  getSlotsByRecipient(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetSlotsByRecipient"]>
-  ) {
+  /** Slots paying out to a given recipient. */
+  getSlotsByRecipient(variables: Gen.GetSlotsByRecipientQueryVariables) {
     return this.query("getSlotsByRecipient", () =>
-      this.sdk.GetSlotsByRecipient(...args),
+      this.sdk.GetSlotsByRecipient({ chainId: this.chainId, ...variables }),
     );
   }
-  /** Fetch all slots currently occupied by a given address. */
-  getSlotsByOccupant(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetSlotsByOccupant"]>
-  ) {
+  /** Slots currently occupied by a given address. */
+  getSlotsByOccupant(variables: Gen.GetSlotsByOccupantQueryVariables) {
     return this.query("getSlotsByOccupant", () =>
-      this.sdk.GetSlotsByOccupant(...args),
+      this.sdk.GetSlotsByOccupant({ chainId: this.chainId, ...variables }),
     );
   }
-  /** Fetch a paginated list of slots with their metadata. */
-  getSlotsWithMetadata(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetSlotsWithMetadata"]>
-  ) {
+  /** Slots with their current metadata row joined. */
+  getSlotsWithMetadata(variables?: Gen.GetSlotsWithMetadataQueryVariables) {
     return this.query("getSlotsWithMetadata", () =>
-      this.sdk.GetSlotsWithMetadata(...args),
+      this.sdk.GetSlotsWithMetadata(this.withChain(variables)),
     );
   }
 
   // Factory queries
 
-  /** Fetch factory configuration. */
+  /** Factory row for this chain. */
   getFactory() {
-    return this.query("getFactory", () => this.sdk.GetFactory());
+    return this.query("getFactory", () =>
+      this.sdk.GetFactory({ chainId: this.chainId }),
+    );
   }
-  /** Fetch registered modules. */
-  getModules(...args: Parameters<ReturnType<typeof getSdk>["GetModules"]>) {
-    return this.query("getModules", () => this.sdk.GetModules(...args));
+  /** Registered utility modules. */
+  getModules(variables?: Gen.GetModulesQueryVariables) {
+    return this.query("getModules", () =>
+      this.sdk.GetModules(this.withChain(variables)),
+    );
   }
 
   // Event queries
 
-  /** Fetch slot deployed events with optional filters. */
-  getSlotDeployedEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetSlotDeployedEvents"]>
-  ) {
+  getSlotDeployedEvents(variables?: Gen.GetSlotDeployedEventsQueryVariables) {
     return this.query("getSlotDeployedEvents", () =>
-      this.sdk.GetSlotDeployedEvents(...args),
+      this.sdk.GetSlotDeployedEvents(this.withChain(variables)),
     );
   }
-  /** Fetch bought events with optional filters. */
-  getBoughtEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetBoughtEvents"]>
-  ) {
+  getBoughtEvents(variables?: Gen.GetBoughtEventsQueryVariables) {
     return this.query("getBoughtEvents", () =>
-      this.sdk.GetBoughtEvents(...args),
+      this.sdk.GetBoughtEvents(this.withChain(variables)),
     );
   }
-  /** Fetch settled events with optional filters. */
-  getSettledEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetSettledEvents"]>
-  ) {
+  getReleasedEvents(variables?: Gen.GetReleasedEventsQueryVariables) {
+    return this.query("getReleasedEvents", () =>
+      this.sdk.GetReleasedEvents(this.withChain(variables)),
+    );
+  }
+  getLiquidatedEvents(variables?: Gen.GetLiquidatedEventsQueryVariables) {
+    return this.query("getLiquidatedEvents", () =>
+      this.sdk.GetLiquidatedEvents(this.withChain(variables)),
+    );
+  }
+  getPriceUpdatedEvents(variables?: Gen.GetPriceUpdatedEventsQueryVariables) {
+    return this.query("getPriceUpdatedEvents", () =>
+      this.sdk.GetPriceUpdatedEvents(this.withChain(variables)),
+    );
+  }
+  getDepositedEvents(variables?: Gen.GetDepositedEventsQueryVariables) {
+    return this.query("getDepositedEvents", () =>
+      this.sdk.GetDepositedEvents(this.withChain(variables)),
+    );
+  }
+  getWithdrawnEvents(variables?: Gen.GetWithdrawnEventsQueryVariables) {
+    return this.query("getWithdrawnEvents", () =>
+      this.sdk.GetWithdrawnEvents(this.withChain(variables)),
+    );
+  }
+  getSettledEvents(variables?: Gen.GetSettledEventsQueryVariables) {
     return this.query("getSettledEvents", () =>
-      this.sdk.GetSettledEvents(...args),
+      this.sdk.GetSettledEvents(this.withChain(variables)),
     );
   }
-  /** Fetch tax-collected events with optional filters. */
-  getTaxCollectedEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetTaxCollectedEvents"]>
-  ) {
+  /**
+   * Per-address tax attribution.
+   *
+   * `taxPaid` is the figure that means money actually moved — it is capped by
+   * the remaining deposit, so it falls short of `taxOwed` for an occupant going
+   * insolvent. Reconstructing contributions from price x time over-credits.
+   */
+  getTaxPaidEvents(variables?: Gen.GetTaxPaidEventsQueryVariables) {
+    return this.query("getTaxPaidEvents", () =>
+      this.sdk.GetTaxPaidEvents(this.withChain(variables)),
+    );
+  }
+  getTaxCollectedEvents(variables?: Gen.GetTaxCollectedEventsQueryVariables) {
     return this.query("getTaxCollectedEvents", () =>
-      this.sdk.GetTaxCollectedEvents(...args),
+      this.sdk.GetTaxCollectedEvents(this.withChain(variables)),
     );
   }
-  /** Fetch all activity for a specific slot (all event types). */
-  getSlotActivity(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetSlotActivity"]>
-  ) {
+  /** Every event type for one slot, in a single round trip. */
+  getSlotActivity(variables: Gen.GetSlotActivityQueryVariables) {
     return this.query("getSlotActivity", () =>
-      this.sdk.GetSlotActivity(...args),
+      this.sdk.GetSlotActivity(variables),
     );
   }
-  /** Fetch the most recent events across all slots. */
-  getRecentEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetRecentEvents"]>
-  ) {
+  /** Recent activity across all slots. Caller merges and sorts by timestamp. */
+  getRecentEvents(variables?: Gen.GetRecentEventsQueryVariables) {
     return this.query("getRecentEvents", () =>
-      this.sdk.GetRecentEvents(...args),
+      this.sdk.GetRecentEvents({ chainId: this.chainId, ...variables }),
+    );
+  }
+
+  // Refunds and operators
+
+  /**
+   * Outstanding refund credits. A non-zero `balance` means the slot owes
+   * someone money — a push that failed and was credited for later claim, which
+   * is what keeps liquidation unconditional.
+   */
+  getSlotRefunds(variables?: Gen.GetSlotRefundsQueryVariables) {
+    return this.query("getSlotRefunds", () =>
+      this.sdk.GetSlotRefunds(this.withChain(variables)),
+    );
+  }
+  /** Operator approvals. An operator may selfAssess and topUp, never withdraw. */
+  getSlotOperators(variables?: Gen.GetSlotOperatorsQueryVariables) {
+    return this.query("getSlotOperators", () =>
+      this.sdk.GetSlotOperators(this.withChain(variables)),
     );
   }
 
   // Account queries
 
-  /** Fetch a single account by address. */
-  getAccount(...args: Parameters<ReturnType<typeof getSdk>["GetAccount"]>) {
-    return this.query("getAccount", () => this.sdk.GetAccount(...args));
+  getAccount(variables: Gen.GetAccountQueryVariables) {
+    return this.query("getAccount", () => this.sdk.GetAccount(variables));
   }
-  /** Fetch a paginated list of accounts. */
-  getAccounts(...args: Parameters<ReturnType<typeof getSdk>["GetAccounts"]>) {
-    return this.query("getAccounts", () => this.sdk.GetAccounts(...args));
+  getAccounts(variables?: Gen.GetAccountsQueryVariables) {
+    return this.query("getAccounts", () => this.sdk.GetAccounts(variables));
+  }
+  /** An account plus its slots, as recipient and as occupant. */
+  getAccountWithSlots(variables: Gen.GetAccountWithSlotsQueryVariables) {
+    return this.query("getAccountWithSlots", () =>
+      this.sdk.GetAccountWithSlots({ chainId: this.chainId, ...variables }),
+    );
   }
 
   // AccountSlot queries
 
-  /** Fetch a single account-slot interaction by composite ID ({account}-{slot}). */
-  getAccountSlot(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetAccountSlot"]>
-  ) {
-    return this.query("getAccountSlot", () => this.sdk.GetAccountSlot(...args));
+  /** Composite key — the subgraph's synthetic "{account}-{slot}" id is gone. */
+  getAccountSlot(variables: Gen.GetAccountSlotQueryVariables) {
+    return this.query("getAccountSlot", () =>
+      this.sdk.GetAccountSlot(variables),
+    );
   }
-  /** Fetch a paginated list of account-slot interactions. */
-  getAccountSlots(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetAccountSlots"]>
-  ) {
+  getAccountSlots(variables?: Gen.GetAccountSlotsQueryVariables) {
     return this.query("getAccountSlots", () =>
-      this.sdk.GetAccountSlots(...args),
-    );
-  }
-
-  // Individual event queries
-
-  /** Fetch released events with optional filters. */
-  getReleasedEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetReleasedEvents"]>
-  ) {
-    return this.query("getReleasedEvents", () =>
-      this.sdk.GetReleasedEvents(...args),
-    );
-  }
-  /** Fetch liquidated events with optional filters. */
-  getLiquidatedEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetLiquidatedEvents"]>
-  ) {
-    return this.query("getLiquidatedEvents", () =>
-      this.sdk.GetLiquidatedEvents(...args),
-    );
-  }
-  /** Fetch deposited events with optional filters. */
-  getDepositedEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetDepositedEvents"]>
-  ) {
-    return this.query("getDepositedEvents", () =>
-      this.sdk.GetDepositedEvents(...args),
-    );
-  }
-  /** Fetch withdrawn events with optional filters. */
-  getWithdrawnEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetWithdrawnEvents"]>
-  ) {
-    return this.query("getWithdrawnEvents", () =>
-      this.sdk.GetWithdrawnEvents(...args),
-    );
-  }
-  /** Fetch price-updated events with optional filters. */
-  getPriceUpdatedEvents(
-    ...args: Parameters<ReturnType<typeof getSdk>["GetPriceUpdatedEvents"]>
-  ) {
-    return this.query("getPriceUpdatedEvents", () =>
-      this.sdk.GetPriceUpdatedEvents(...args),
+      this.sdk.GetAccountSlots(this.withChain(variables)),
     );
   }
 
   // Meta
 
-  /** Fetch subgraph indexing metadata (latest block, indexing errors). */
-  getMeta(): Promise<SubgraphMeta> {
+  /**
+   * Indexing status per chain.
+   *
+   * The subgraph's `hasIndexingErrors` has no counterpart: ponder stops rather
+   * than serving stale rows behind a flag, so an erroring indexer shows up as a
+   * failed request, not a `true` here.
+   */
+  getMeta(): Promise<IndexerMeta> {
     return this.query("getMeta", () =>
-      this.gqlClient.request<SubgraphMeta>(META_QUERY),
+      this.gqlClient.request<IndexerMeta>(META_QUERY),
     );
   }
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // READ — On-chain (RPC)

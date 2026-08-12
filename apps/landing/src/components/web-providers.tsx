@@ -11,7 +11,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { config } from "@/config/wagmi";
 import { ChainProvider } from "@/context/chain";
 import { NavigationProvider } from "@/context/navigation";
-import { SubgraphSourceProvider } from "@/context/subgraph-source";
 import { SplitsClientSync } from "./splits-client-sync";
 
 export function WebProviders({ children }: { children: ReactNode }) {
@@ -22,14 +21,12 @@ export function WebProviders({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider>
           <ChainProvider>
-            <SubgraphSourceProvider>
-              <SplitsProvider>
-                <SplitsClientSync />
+            <SplitsProvider>
+              <SplitsClientSync />
                 <TooltipProvider>
                   <NavigationProvider>{children}</NavigationProvider>
                 </TooltipProvider>
-              </SplitsProvider>
-            </SubgraphSourceProvider>
+            </SplitsProvider>
           </ChainProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

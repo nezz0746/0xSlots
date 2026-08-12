@@ -40,7 +40,7 @@ export function useSlotsClient(
       factoryAddress,
       publicClient,
       walletClient: walletClient ?? undefined,
-      subgraphApiKey,
+      apiKey: subgraphApiKey,
     });
   }, [chainId, publicClient, walletClient, subgraphApiKey]);
 }

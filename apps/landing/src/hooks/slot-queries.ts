@@ -2,59 +2,33 @@ import {
   createSlotsClient,
   type SlotFieldsFragment,
   type SlotsChain,
-  SubgraphSource,
 } from "@0xslots/sdk";
 import { queryOptions } from "@tanstack/react-query";
+import { INDEXER_API_KEY, indexerUrlFor } from "@/lib/indexer";
 
 /**
- * Create a SlotsClient for a chain and a subgraph deployment.
- * Works both server-side and client-side.
+ * Create a SlotsClient for a chain. Works server-side and client-side.
  *
- * `source` defaults to the decentralized network, which is what the server
- * must use: the Studio preference lives in localStorage and cannot be read
- * during a server render. Client callers pass `useSubgraphSource().source`.
+ * The `source` parameter is gone along with the network/Studio switch: there is
+ * one indexer endpoint now, so server and client always read the same thing.
+ * That also removes the reason query keys had to carry a source — see the
+ * deleted `withSource`. Server prefetch and client hydration now match by
+ * construction.
  */
-export function createServerSlotsClient(
-  chainId: SlotsChain,
-  source: SubgraphSource = SubgraphSource.Network,
-) {
+export function createServerSlotsClient(chainId: SlotsChain) {
   return createSlotsClient({
     chainId,
-    subgraphSource: source,
-    subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
+    apiUrl: indexerUrlFor(chainId),
+    apiKey: INDEXER_API_KEY,
   });
 }
 
-/**
- * The subgraph source is part of every query key below.
- *
- * It has to be. These pages prefetch on the server and hydrate through a
- * `HydrationBoundary`, and the server always renders from the network — it
- * cannot see a browser preference. Were the key the same for both, React Query
- * would treat the dehydrated network result as a fresh answer for the Studio
- * query and never refetch, so the switch would appear to do nothing until the
- * `staleTime` elapsed.
- *
- * Keying them apart makes the two deployments distinct cache entries: flipping
- * the switch refetches immediately, and flipping back reuses what was already
- * loaded rather than re-fetching it.
- */
-export function withSource(parts: unknown[], source: SubgraphSource) {
-  // The network key is left exactly as it was, so the server's dehydrated
-  // entries still match the client's default and hydrate without a refetch.
-  return source === SubgraphSource.Network ? parts : [...parts, source];
-}
-
-/** Query options for fetching a single slot from the subgraph. */
-export function slotQueryOptions(
-  chainId: SlotsChain,
-  id: string,
-  source: SubgraphSource = SubgraphSource.Network,
-) {
+/** Query options for a single slot. */
+export function slotQueryOptions(chainId: SlotsChain, id: string) {
   return queryOptions({
-    queryKey: withSource(["slot", chainId, id], source),
+    queryKey: ["slot", chainId, id],
     queryFn: async () => {
-      const client = createServerSlotsClient(chainId, source);
+      const client = createServerSlotsClient(chainId);
       const { slot } = await client.getSlot({ id: id.toLowerCase() });
       return (slot as SlotFieldsFragment | null) ?? null;
     },
@@ -62,39 +36,35 @@ export function slotQueryOptions(
   });
 }
 
-/** Query options for fetching slots by recipient from the subgraph. */
+/** Query options for slots paying out to a recipient. */
 export function slotsByRecipientQueryOptions(
   chainId: SlotsChain,
   recipient: string,
-  source: SubgraphSource = SubgraphSource.Network,
 ) {
   return queryOptions({
-    queryKey: withSource(["slots-recipient", chainId, recipient], source),
+    queryKey: ["slots-recipient", chainId, recipient],
     queryFn: async () => {
-      const client = createServerSlotsClient(chainId, source);
+      const client = createServerSlotsClient(chainId);
       const { slots } = await client.getSlotsByRecipient({
         recipient: recipient.toLowerCase(),
-        first: 100,
+        limit: 100,
       });
-      return slots as SlotFieldsFragment[];
+      // Plural fields are pages now — `{ items, totalCount, pageInfo }`.
+      return slots.items as SlotFieldsFragment[];
     },
     staleTime: 15_000,
   });
 }
 
-/** Query options for fetching slot activity from the subgraph. */
-export function slotActivityQueryOptions(
-  chainId: SlotsChain,
-  slotId: string,
-  source: SubgraphSource = SubgraphSource.Network,
-) {
+/** Query options for one slot's full activity feed. */
+export function slotActivityQueryOptions(chainId: SlotsChain, slotId: string) {
   return queryOptions({
-    queryKey: withSource(["slot-activity", chainId, slotId], source),
+    queryKey: ["slot-activity", chainId, slotId],
     queryFn: async () => {
-      const client = createServerSlotsClient(chainId, source);
+      const client = createServerSlotsClient(chainId);
       return client.getSlotActivity({
-        slotId: slotId.toLowerCase(),
-        first: 100,
+        slot: slotId.toLowerCase(),
+        limit: 100,
       });
     },
     staleTime: 10_000,
