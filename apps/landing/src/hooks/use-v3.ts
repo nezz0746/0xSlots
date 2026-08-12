@@ -8,12 +8,12 @@ import {
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useChain } from "@/context/chain";
-import { indexerUrlFor } from "@/lib/indexer";
 import {
   slotActivityQueryOptions,
   slotQueryOptions,
   slotsByRecipientQueryOptions,
 } from "@/hooks/slot-queries";
+import { indexerUrlFor } from "@/lib/indexer";
 
 // Re-export the slot type for convenience
 export type { SlotFieldsFragment as V3Slot } from "@0xslots/sdk";
@@ -119,6 +119,40 @@ export function useSlotsByOccupant(occupant: string) {
     },
     staleTime: 15_000,
     enabled: !!occupant,
+  });
+}
+
+/**
+ * Exact slot totals for this chain: how many exist, how many are occupied.
+ *
+ * Deliberately NOT derived from `useSlots()`. That returns a PAGE — 100 rows by
+ * default — so counting occupancy from its items produces a number that is
+ * really "occupied within the first hundred", which read as a protocol-wide
+ * figure and silently capped at the page size. Sitting next to a genuine global
+ * total it also failed to add up, which is what gave it away.
+ *
+ * Two `totalCount` reads instead, with `limit: 1` so the server counts without
+ * shipping rows. Both come from the same table through the same filter, so the
+ * three numbers always reconcile — vacant is derived, never counted separately.
+ */
+export function useSlotCounts() {
+  const { chainId } = useChain();
+  const client = useSlotsClient();
+
+  return useQuery({
+    queryKey: ["slot-counts", chainId],
+    queryFn: async () => {
+      const [all, occupied] = await Promise.all([
+        client.getSlots({ limit: 1 }),
+        // biome-ignore lint/suspicious/noExplicitAny: generated filter type
+        client.getSlots({ limit: 1, where: { isOccupied: true } as any }),
+      ]);
+      const total = all.slots.totalCount ?? 0;
+      const occ = occupied.slots.totalCount ?? 0;
+      return { total, occupied: occ, vacant: Math.max(0, total - occ) };
+    },
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
   });
 }
 
