@@ -178,8 +178,18 @@ export interface SlotsClientConfig {
   walletClient?: WalletClient;
   /** Ponder GraphQL endpoint. Defaults to {@link DEFAULT_API_URL}. */
   apiUrl?: string;
-  /** Sent as a bearer token, for a deployment behind auth. */
-  apiKey?: string;
+  /**
+   * Extra request headers.
+   *
+   * There is no `apiKey` shorthand: ponder serves the GraphQL API without
+   * authentication, so a key bought nothing and — passed through
+   * `NEXT_PUBLIC_*` — shipped a credential to the browser for no reason. The
+   * shorthand was inherited from The Graph's gateway, which does reject
+   * unauthenticated queries.
+   *
+   * Put a deployment behind auth yourself and the header still goes here:
+   * `headers: { Authorization: \`Bearer ${token}\` }`.
+   */
   headers?: Record<string, string>;
 }
 
@@ -226,11 +236,7 @@ export class SlotsClient {
     // routing decision, so there is nothing to resolve per chainId.
     const url = config.apiUrl || DEFAULT_API_URL;
 
-    const headers: Record<string, string> = { ...config.headers };
-    if (config.apiKey) {
-      headers["Authorization"] = `Bearer ${config.apiKey}`;
-    }
-    this.gqlClient = new GraphQLClient(url, { headers });
+    this.gqlClient = new GraphQLClient(url, { headers: { ...config.headers } });
     this.sdk = getSdk(this.gqlClient);
 
     this.modules = {

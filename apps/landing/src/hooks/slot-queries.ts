@@ -4,7 +4,7 @@ import {
   type SlotsChain,
 } from "@0xslots/sdk";
 import { queryOptions } from "@tanstack/react-query";
-import { INDEXER_API_KEY, indexerUrlFor } from "@/lib/indexer";
+import { indexerUrlFor } from "@/lib/indexer";
 
 /**
  * Create a SlotsClient for a chain. Works server-side and client-side.
@@ -19,7 +19,6 @@ export function createServerSlotsClient(chainId: SlotsChain) {
   return createSlotsClient({
     chainId,
     apiUrl: indexerUrlFor(chainId),
-    apiKey: INDEXER_API_KEY,
   });
 }
 

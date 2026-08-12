@@ -8,7 +8,7 @@ import {
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useChain } from "@/context/chain";
-import { INDEXER_API_KEY, indexerUrlFor } from "@/lib/indexer";
+import { indexerUrlFor } from "@/lib/indexer";
 import {
   slotActivityQueryOptions,
   slotQueryOptions,
@@ -25,7 +25,6 @@ export function useSlotsClient() {
       createSlotsClient({
         chainId,
         apiUrl: indexerUrlFor(chainId),
-        apiKey: INDEXER_API_KEY,
       }),
     [chainId],
   );

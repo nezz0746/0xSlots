@@ -13,8 +13,14 @@ const chainId =
 export const slotsClient = createSlotsClient({
   chainId,
   apiUrl: process.env.PONDER_URL || DEFAULT_API_URL,
-  // Only needed if the deployment sits behind auth. The Graph gateway's
-  // mandatory bearer token is gone with it: an unauthenticated ponder answers
-  // normally rather than returning an `errors` payload.
-  apiKey: process.env.PONDER_API_KEY,
+  // No key: ponder serves the GraphQL API unauthenticated. If this deployment
+  // ever sits behind auth, pass the header directly —
+  // `headers: { Authorization: \`Bearer ${token}\` }`.
+  ...(process.env.PONDER_API_KEY
+    ? {
+        headers: {
+          Authorization: `Bearer ${process.env.PONDER_API_KEY}`,
+        },
+      }
+    : {}),
 });

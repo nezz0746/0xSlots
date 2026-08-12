@@ -4,7 +4,7 @@ import { type SlotsChain, SlotsClient } from "@0xslots/sdk";
 import { useMemo } from "react";
 import { usePublicClient, useWalletClient } from "wagmi";
 import { useChain } from "@/context/chain";
-import { INDEXER_API_KEY, indexerUrlFor } from "@/lib/indexer";
+import { indexerUrlFor } from "@/lib/indexer";
 
 /**
  * Returns a unified SlotsClient wired to the current chain.
@@ -22,7 +22,6 @@ export function useSlotsClient(): SlotsClient {
         publicClient: publicClient ?? undefined,
         walletClient: walletClient ?? undefined,
         apiUrl: indexerUrlFor(chainId),
-        apiKey: INDEXER_API_KEY,
       }),
     [chainId, publicClient, walletClient],
   );

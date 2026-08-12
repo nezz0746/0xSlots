@@ -20,4 +20,6 @@ export function indexerUrlFor(chainId: number): string {
   return process.env.NEXT_PUBLIC_PONDER_URL || DEFAULT_API_URL;
 }
 
-export const INDEXER_API_KEY = process.env.NEXT_PUBLIC_PONDER_API_KEY;
+// There is deliberately no INDEXER_API_KEY here. Ponder serves the GraphQL API
+// unauthenticated, and a `NEXT_PUBLIC_` key is inlined into the client bundle —
+// so it was a credential handed to every visitor in exchange for nothing.
