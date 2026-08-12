@@ -203,7 +203,7 @@ export async function getOrCreateModule(
     name: "",
     version: "",
     feeBps: 0n,
-    moduleURI: null,
+    metadataURI: null,
     image: null,
     description: null,
     totalFeesCollected: 0n,

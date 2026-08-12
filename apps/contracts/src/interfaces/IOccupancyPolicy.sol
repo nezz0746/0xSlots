@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IModuleMetadata} from "./IModuleMetadata.sol";
 
 /// @notice Everything a policy needs to decide, passed by value so policies
 ///         never have to call back into the slot.
@@ -23,16 +23,15 @@ struct OccupancyContext {
 ///      that reverts BLOCKS the action. A policy may never move funds, change
 ///      the price, or redirect the buyer — it answers yes/no and nothing else.
 ///      `liquidate()` and `release()` are never routed through a policy.
-interface IOccupancyPolicy is IERC165 {
+///      Self-description (`name`, `version`, `metadataURI`) lives in
+///      `IModuleMetadata`, shared with `IUtility` — the two describe themselves
+///      identically even though they behave nothing alike. As with `IUtility`,
+///      inheriting NARROWS this interface's ERC165 id to its own two checks, so
+///      `SlotFactory.setPolicyVerified` asserts both ids.
+interface IOccupancyPolicy is IModuleMetadata {
     /// @notice Revert to block an occupancy transfer.
     function checkBuy(OccupancyContext calldata ctx) external view;
 
     /// @notice Revert to block a self-assessment.
     function checkPriceUpdate(OccupancyContext calldata ctx) external view;
-
-    function name() external view returns (string memory);
-    function version() external view returns (string memory);
-
-    /// @notice Metadata URI (e.g. ipfs://Qm...). May be empty.
-    function policyURI() external view returns (string memory);
 }

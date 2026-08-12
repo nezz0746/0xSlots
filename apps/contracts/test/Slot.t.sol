@@ -11,6 +11,7 @@ import {SlotConfig, SlotInitParams, PendingUpdate, SlotInfo} from "../src/interf
 import {IUtility} from "../src/interfaces/IUtility.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") {
@@ -27,13 +28,13 @@ contract MockModule is IUtility {
     function version() external pure returns (string memory) { return "1.0.0"; }
     function feeBps() external pure returns (uint256) { return 0; }
     function feeRecipient() external view returns (address) { return address(this); }
-    function moduleURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function onTransfer(uint256, address, address) external {}
     function onPriceUpdate(uint256, uint256, uint256) external {}
     function onRelease(uint256, address) external {}
     function onSettle(uint256, address, uint256, uint256) external {}
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IUtility).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IUtility).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 

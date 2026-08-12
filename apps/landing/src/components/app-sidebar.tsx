@@ -1,7 +1,7 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { Check, ChevronDown, PlusIcon, User, Users } from "lucide-react";
+import { Check, ChevronDown, PlusIcon, Scale, User, Users } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
@@ -102,6 +102,20 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              {/* Sits with the sections because it answers the same kind of
+                  question — what a slot's terms can be, alongside what a slot
+                  can do. It is a ROUTE, not a section: it pushes rather than
+                  setting explorer state, so `isActive` reads the path. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/policies")}
+                  onClick={() => push("/policies")}
+                >
+                  <Scale className="size-4" />
+                  <span>Policies</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

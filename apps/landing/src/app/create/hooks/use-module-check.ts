@@ -4,16 +4,31 @@ import { type Abi, type Address, getAddress, isAddress } from "viem";
 import { useReadContracts } from "wagmi";
 
 /**
- * ERC-165 interface ID for ISlotsModule = XOR of selectors of:
- *   name(), version(), onTransfer(uint256,address,address),
- *   onPriceUpdate(uint256,uint256,uint256), onRelease(uint256,address),
- *   feeBps(), feeRecipient(), moduleURI()
+ * ERC-165 id for the utility HOOKS — `type(IUtility).interfaceId`, which is
+ * equal to `type(ISlotsModule).interfaceId` by construction (the alias mirrors
+ * it deliberately; see ISlotsModule.sol).
  *
- * Computed from the canonical interface declared in
- * `apps/contracts/src/interfaces/ISlotsModule.sol`. Matches the value
- * returned by `type(ISlotsModule).interfaceId` in Solidity.
+ * Covers: onTransfer, onPriceUpdate, onRelease, onSettle, feeBps, feeRecipient.
+ *
+ * NOT name/version/metadataURI — those moved to `IModuleMetadata` and an ERC165
+ * id is the XOR of an interface's OWN selectors, so they no longer count toward
+ * this one. That is why there are two ids below, matching the two assertions in
+ * `SlotFactory.setUtilityVerified`.
+ *
+ * ── Keep these in sync with the contracts ──
+ * A hardcoded id silently rots. This one held `0x0871cc1c` — the value from
+ * before `onSettle` was added to the interface — so every genuine utility had
+ * been failing the ERC-165 branch and falling through to "probable" with a
+ * warning, rather than "verified". Recompute with `type(IUtility).interfaceId`
+ * whenever the interface changes.
  */
-export const ISLOTS_MODULE_INTERFACE_ID = "0x0871cc1c" as `0x${string}`;
+export const IUTILITY_INTERFACE_ID = "0xe120614a" as `0x${string}`;
+
+/** `type(IModuleMetadata).interfaceId` — name(), version(), metadataURI(). */
+export const IMODULE_METADATA_INTERFACE_ID = "0x51eed0df" as `0x${string}`;
+
+/** @deprecated Use {@link IUTILITY_INTERFACE_ID}. */
+export const ISLOTS_MODULE_INTERFACE_ID = IUTILITY_INTERFACE_ID;
 
 const moduleProbeAbi = [
   {
@@ -82,7 +97,17 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
             address: checksummed,
             abi: moduleProbeAbi,
             functionName: "supportsInterface",
-            args: [ISLOTS_MODULE_INTERFACE_ID],
+            args: [IUTILITY_INTERFACE_ID],
+            chainId,
+          },
+          // Second id, mirroring `SlotFactory.setUtilityVerified`. Passing only
+          // the hooks id would call a utility "verified" here that the factory
+          // then refuses, which is a worse answer than "probable".
+          {
+            address: checksummed,
+            abi: moduleProbeAbi,
+            functionName: "supportsInterface",
+            args: [IMODULE_METADATA_INTERFACE_ID],
             chainId,
           },
           {
@@ -107,19 +132,26 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
   });
 
   const result: ModuleCheckData | null = (() => {
-    if (!checksummed || !data || data.length < 3) return null;
+    if (!checksummed || !data || data.length < 4) return null;
 
-    const supports = data[0];
-    const nameRes = data[1];
-    const versionRes = data[2];
-    if (!supports || !nameRes || !versionRes) return null;
+    const supportsHooks = data[0];
+    const supportsMetadata = data[1];
+    const nameRes = data[2];
+    const versionRes = data[3];
+    if (!supportsHooks || !supportsMetadata || !nameRes || !versionRes)
+      return null;
 
     const name =
       nameRes.status === "success" ? (nameRes.result as string) : null;
     const version =
       versionRes.status === "success" ? (versionRes.result as string) : null;
+    // Both, because the factory demands both. Either one alone advertises a
+    // utility this app would call verified and the chain would reject.
     const isErc165Module =
-      supports.status === "success" && supports.result === true;
+      supportsHooks.status === "success" &&
+      supportsHooks.result === true &&
+      supportsMetadata.status === "success" &&
+      supportsMetadata.result === true;
 
     let status: ModuleCheckStatus;
     if (isErc165Module) {
@@ -129,9 +161,9 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
     } else if (
       name === null &&
       version === null &&
-      supports.status !== "success"
+      supportsHooks.status !== "success"
     ) {
-      // All three reverted → likely no code (or non-contract returning empty data)
+      // Everything reverted → likely no code (or non-contract returning empty data)
       status = "no-code";
     } else {
       status = "invalid";

@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "../interfaces/IModuleMetadata.sol";
 
 /// @title MinimumTenurePolicy
 /// @notice An occupant cannot be bought out for `tenureSeconds` after acquiring.
@@ -71,10 +72,12 @@ contract MinimumTenurePolicy is IOccupancyPolicy {
 
     function name() external pure returns (string memory) { return "MinimumTenurePolicy"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId
+            || id == type(IModuleMetadata).interfaceId
+            || id == type(IERC165).interfaceId;
     }
 
     /// @dev Rounds UP, mirroring `Slot._minDepositFor`. Truncating divided the

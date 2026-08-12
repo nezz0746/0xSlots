@@ -10,6 +10,7 @@ import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import {IUtility} from "../src/interfaces/IUtility.sol";
+import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
 
 contract TAMockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") { _mint(msg.sender, 1_000_000 ether); }
@@ -38,12 +39,12 @@ contract LedgerModule is IUtility {
     function version() external pure returns (string memory) { return "1.0.0"; }
     function feeBps() external pure returns (uint256) { return 0; }
     function feeRecipient() external view returns (address) { return address(this); }
-    function moduleURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function onTransfer(uint256, address, address) external override {}
     function onPriceUpdate(uint256, uint256, uint256) external override {}
     function onRelease(uint256, address) external override {}
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IUtility).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IUtility).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -57,12 +58,12 @@ contract RevertingModule is IUtility {
     function version() external pure returns (string memory) { return "1.0.0"; }
     function feeBps() external pure returns (uint256) { return 0; }
     function feeRecipient() external view returns (address) { return address(this); }
-    function moduleURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function onTransfer(uint256, address, address) external override {}
     function onPriceUpdate(uint256, uint256, uint256) external override {}
     function onRelease(uint256, address) external override {}
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IUtility).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IUtility).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 

@@ -22,7 +22,7 @@ query GetModules($limit: Int, $where: moduleFilter) {
       name
       version
       feeBps
-      moduleURI
+      metadataURI
       image
       description
       totalFeesCollected

@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../interfaces/IOccupancyPolicy.sol";
 import {Slot} from "../Slot.sol";
+import {IModuleMetadata} from "../interfaces/IModuleMetadata.sol";
 
 /// @title MinimumPricePolicy
 /// @notice A reserve price: nobody may declare below `minPrice` on this slot.
@@ -93,9 +94,11 @@ contract MinimumPricePolicy is IOccupancyPolicy {
 
     function name() external pure returns (string memory) { return "MinimumPricePolicy"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId
+            || id == type(IModuleMetadata).interfaceId
+            || id == type(IERC165).interfaceId;
     }
 }

@@ -587,7 +587,7 @@ export const SlotFactoryAbi = [
         internalType: "uint256",
       },
       {
-        name: "moduleURI",
+        name: "metadataURI",
         type: "string",
         indexed: false,
         internalType: "string",
@@ -624,7 +624,7 @@ export const SlotFactoryAbi = [
         internalType: "string",
       },
       {
-        name: "policyURI",
+        name: "metadataURI",
         type: "string",
         indexed: false,
         internalType: "string",

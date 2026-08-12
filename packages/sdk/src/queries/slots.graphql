@@ -37,7 +37,7 @@ fragment SlotFields on slot {
     name
     version
     feeBps
-    moduleURI
+    metadataURI
     image
     description
     totalFeesCollected

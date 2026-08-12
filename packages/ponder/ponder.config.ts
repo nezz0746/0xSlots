@@ -106,7 +106,7 @@ const SLOT_DEPLOYED_LEGACY_EVENT = parseAbiItem(
 );
 
 const MODULE_VERIFIED_EVENT = parseAbiItem(
-  "event ModuleVerified(address indexed module, bool verified, string name, string version, uint256 feeBps, string moduleURI)",
+  "event ModuleVerified(address indexed module, bool verified, string name, string version, uint256 feeBps, string metadataURI)",
 );
 
 // Collectives. One signature, one source — none of the dual-era complication

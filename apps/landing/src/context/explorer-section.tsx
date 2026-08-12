@@ -1,6 +1,6 @@
 "use client";
 
-import { FileBox, LandPlot, List, type LucideIcon, User } from "lucide-react";
+import { LandPlot, List, type LucideIcon, Puzzle, User } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -22,7 +22,14 @@ export interface ExplorerSection {
 export const EXPLORER_SECTIONS: ExplorerSection[] = [
   { id: "slots", label: "Slots", icon: LandPlot },
   { id: "recipients", label: "Recipients", icon: User },
-  { id: "modules", label: "Modules", icon: FileBox },
+  // Label says Utilities, id stays `modules`. The id is URL-facing
+  // (`?section=modules`) and keys `SECTION_CONTENT` on the explorer, so
+  // renaming it would break every shared link for a word change. The contracts
+  // did NOT make the same trade for the metadata getter: `moduleURI()` and
+  // `policyURI()` became one `IModuleMetadata.metadataURI()`, accepting a wire
+  // break because every deployed value was empty and the utilities are
+  // upgradeable proxies. A URL is not, which is why this id stays.
+  { id: "modules", label: "Utilities", icon: Puzzle },
   { id: "events", label: "Events", icon: List },
 ];
 

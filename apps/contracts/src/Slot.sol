@@ -787,7 +787,7 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
             try mod.feeRecipient() returns (address r) {
                 info.utilityFeeRecipient = r;
             } catch {}
-            try mod.moduleURI() returns (string memory u) {
+            try mod.metadataURI() returns (string memory u) {
                 info.utilityURI = u;
             } catch {}
         }

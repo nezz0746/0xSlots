@@ -13,6 +13,7 @@ import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
 import {MinimumTenurePolicy} from "../src/policies/MinimumTenurePolicy.sol";
+import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") { _mint(msg.sender, 1_000_000 ether); }
@@ -26,9 +27,9 @@ contract DenyAllPolicy is IOccupancyPolicy {
     function checkPriceUpdate(OccupancyContext calldata) external pure { revert Denied(); }
     function name() external pure returns (string memory) { return "DenyAll"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -39,9 +40,9 @@ contract DenyPriceUpdatePolicy is IOccupancyPolicy {
     function checkPriceUpdate(OccupancyContext calldata) external pure { revert NoReprice(); }
     function name() external pure returns (string memory) { return "DenyReprice"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -53,9 +54,9 @@ contract AllowAllPolicy is IOccupancyPolicy {
     function checkPriceUpdate(OccupancyContext calldata) external pure {}
     function name() external pure returns (string memory) { return "AllowAll"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 

@@ -161,7 +161,7 @@ ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {
   // Optional IPFS metadata fetch
   let image: string | null = null;
   let description: string | null = null;
-  const uri = event.args.moduleURI;
+  const uri = event.args.metadataURI;
   if (uri && uri.length > 0) {
     const json = await tryFetchIpfsJson(uri);
     if (json) {
@@ -184,7 +184,7 @@ ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {
       name: event.args.name,
       version: event.args.version,
       feeBps: event.args.feeBps,
-      moduleURI: uri ?? null,
+      metadataURI: uri ?? null,
       image,
       description,
       totalFeesCollected: 0n,
@@ -195,7 +195,7 @@ ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {
       name: event.args.name,
       version: event.args.version,
       feeBps: event.args.feeBps,
-      moduleURI: uri ?? null,
+      metadataURI: uri ?? null,
       image,
       description,
     });

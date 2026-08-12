@@ -147,7 +147,7 @@ export const module = onchainTable(
     name: t.text().notNull(),
     version: t.text().notNull(),
     feeBps: t.bigint().notNull(),
-    moduleURI: t.text(),
+    metadataURI: t.text(),
     image: t.text(),
     description: t.text(),
     totalFeesCollected: t.bigint().notNull(),
