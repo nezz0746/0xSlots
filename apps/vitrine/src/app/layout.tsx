@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     template: `%s — ${siteTitle}`,
   },
   description:
-    "Name your price. Pay tax on it. Anyone can buy it from you at that price, any time. Immutable, modular collective-ownership slots on Base, denominated in any ERC-20.",
+    "Name your price and pay a small tax on it. Anyone can buy it from you at that price, any time — so nothing sits idle and everything stays honestly valued. Collectives let a group share what those assets earn and govern them together. On Base, in any ERC-20.",
   alternates: { canonical: "/" },
   icons: { icon: "/mark.svg" },
   openGraph: {
@@ -49,13 +49,13 @@ export const metadata: Metadata = {
     url: "/",
     title: `${siteTitle} — ${tagline}`,
     description:
-      "Name your price. Pay tax on it. Anyone can buy it from you at that price, any time.",
+      "Name your price and pay a small tax on it. Anyone can buy it at that price, any time. Collectives let a group share the income and govern together.",
   },
   twitter: {
     card: "summary_large_image",
     title: `${siteTitle} — ${tagline}`,
     description:
-      "Name your price. Pay tax on it. Anyone can buy it from you at that price, any time.",
+      "Name your price and pay a small tax on it. Anyone can buy it at that price, any time. Collectives let a group share the income and govern together.",
   },
 };
 

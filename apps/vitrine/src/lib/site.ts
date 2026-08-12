@@ -3,7 +3,11 @@ export const siteUrl = "https://0xslots.org";
 
 export const title = "0xSlots";
 
-export const tagline = "Property you cannot hoard";
+/**
+ * One line, in plain words. Feeds the page title, OG and Twitter cards, so it
+ * is the sentence most people see before they ever reach the site.
+ */
+export const tagline = "Making collective ownership easy to use";
 
 /**
  * The studio that builds and writes for 0xSlots. Articles live in its Payload
