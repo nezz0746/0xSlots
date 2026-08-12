@@ -8,7 +8,8 @@
     "codegen": "ponder codegen",
     "serve": "ponder serve",
     "typecheck": "tsc --noEmit",
-    "dev:index": "./scripts/dev-index.sh"
+    "dev:index": "./scripts/dev-index.sh",
+    "build": "ponder codegen"
   },
   "dependencies": {
     "@0xslots/contracts": "workspace:*",
