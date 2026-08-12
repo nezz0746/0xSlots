@@ -210,11 +210,16 @@ const toTransport = (url: string): Transport =>
  * ── Spending Alchemy only on the backfill ────────────────────────────────────
  *
  * Ponder has no per-phase transport hook, so this cannot be expressed in
- * config. It is an operational sequence instead: deploy with Alchemy alone and
- * let the historical sync finish, then set PONDER_PUBLIC_RPCS=1 (or point
- * PONDER_RPC_URL_* at public endpoints) and redeploy against the SAME schema.
- * History already lives in Postgres, so the second boot does not refetch it,
- * and steady state is block polling — which the public endpoints serve fine.
+ * config. It is an operational sequence instead: deploy with Alchemy alone, let
+ * the historical sync finish, then set PONDER_PUBLIC_RPCS=1 and redeploy.
+ *
+ * What that saves is narrower than it first looks. The RPC cache lives in its
+ * own `ponder_sync` schema, keyed by chain rather than by app, so a new app
+ * schema replays cached ranges from Postgres instead of the provider — but the
+ * indexing functions still re-run, and any source or range that was not cached
+ * before (a newly added contract, an earlier startBlock) is real RPC work at
+ * whatever endpoints are configured at that moment. Verify with
+ * `select count(*) from ponder_sync.logs`.
  */
 function rpcPool(
   label: "base" | "base_sepolia",

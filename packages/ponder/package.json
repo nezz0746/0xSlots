@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "ponder start",
+    "start": "./scripts/start.sh",
     "codegen": "ponder codegen",
     "serve": "ponder serve",
     "typecheck": "tsc --noEmit",

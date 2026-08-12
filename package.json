@@ -19,7 +19,7 @@
     "dev:api": "turbo dev --filter=api",
     "build:api": "turbo build --filter=api",
     "build:ponder": "turbo build --filter=@0xslots/ponder",
-    "start:ponder": "pnpm --filter @0xslots/ponder exec ponder start --schema ${DATABASE_SCHEMA:-public}",
+    "start:ponder": "pnpm --filter @0xslots/ponder start",
     "serve:ponder": "pnpm --filter @0xslots/ponder exec ponder serve --schema ${DATABASE_SCHEMA:-public}",
     "start:api": "turbo start --filter=api",
     "lint": "turbo lint",
