@@ -477,8 +477,29 @@ export class SlotsClient {
   getAccount(variables: Gen.GetAccountQueryVariables) {
     return this.query("getAccount", () => this.sdk.GetAccount(variables));
   }
+  /**
+   * Accounts across every chain, with totals summed across every chain.
+   *
+   * `account` has no `chainId`, so this cannot be narrowed to one network and
+   * `slotCount` / `occupiedCount` on the rows it returns are protocol-wide.
+   * Anything rendering a single chain wants {@link getAccountChains}.
+   */
   getAccounts(variables?: Gen.GetAccountsQueryVariables) {
     return this.query("getAccounts", () => this.sdk.GetAccounts(variables));
+  }
+  /**
+   * Recipient/occupant counts scoped to one chain.
+   *
+   * `chainId` is injected the same way every other list query gets it, so the
+   * default is the client's chain and callers opt out by passing their own.
+   */
+  getAccountChains(variables?: Gen.GetAccountChainsQueryVariables) {
+    return this.query("getAccountChains", () =>
+      this.sdk.GetAccountChains({
+        ...variables,
+        where: { chainId: this.chainId, ...(variables?.where ?? {}) },
+      }),
+    );
   }
   /** An account plus its slots, as recipient and as occupant. */
   getAccountWithSlots(variables: Gen.GetAccountWithSlotsQueryVariables) {

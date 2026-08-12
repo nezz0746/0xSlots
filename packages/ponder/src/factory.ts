@@ -8,6 +8,7 @@ import {
 } from "ponder:schema";
 import type { Hex } from "viem";
 import {
+  bumpAccountChain,
   evtId,
   getOrCreateAccount,
   getOrCreateCurrency,
@@ -67,11 +68,15 @@ async function recordSlotDeployed(
   // Currency
   const cur = await getOrCreateCurrency(context, event.args.currency);
 
-  // Recipient account
+  // Recipient account. The total and the per-chain count move together —
+  // see `bumpAccountChain`; the pair is only meaningful while it agrees.
   const recipient = await getOrCreateAccount(context, event.args.recipient);
   await context.db
     .update(account, { id: recipient.id })
     .set((row) => ({ slotCount: row.slotCount + 1 }));
+  await bumpAccountChain(context, event.args.recipient, chainId, {
+    slotCount: 1,
+  });
 
   // Optional module
   if (moduleAddr !== ZERO_ADDR) {

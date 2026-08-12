@@ -21,6 +21,17 @@ export const accountType = onchainEnum("account_type", [
 // Cross-chain identity tables (no chainId — same address = same entity)
 // ──────────────────────────────────────────
 
+/**
+ * An address, once, across every chain.
+ *
+ * Deliberately NOT chain-scoped: an address is the same person on base and
+ * base-sepolia, and `accountSlot` / the event tables all reference it by bare
+ * address. Chain-scoping the primary key would move every one of those.
+ *
+ * The consequence is that `slotCount` and `occupiedCount` here are TOTALS
+ * across all chains, and are only meaningful as such. Anything rendering a
+ * single chain must read `accountChain` instead — see the note there.
+ */
 export const account = onchainTable("account", (t) => ({
   id: t.hex().primaryKey(),
   type: accountType().notNull(),
@@ -29,6 +40,56 @@ export const account = onchainTable("account", (t) => ({
   metadataUpdateCount: t.bigint().notNull(),
   totalHoldTime: t.bigint().notNull(),
 }));
+
+/**
+ * The same counters, per chain.
+ *
+ * Exists because `account` has no `chainId` and cannot gain one cheaply, which
+ * made a whole screen quietly wrong: the explorer's recipient list read
+ * `accounts` unfiltered, so on base it listed base-sepolia's recipients with
+ * their base-sepolia slot counts. Clicking one opened a recipient page that
+ * correctly filters slots by chain and therefore found none — zeros everywhere
+ * and an empty table, for a recipient the list had just advertised as holding
+ * 133 slots.
+ *
+ * Additive on purpose. Chain-scoping `account.id` would have been the other
+ * fix and would have moved every table that references an account by address.
+ * This leaves all of that alone and gives per-chain readers somewhere correct
+ * to read from.
+ *
+ * Maintained in lockstep with the totals above, at exactly the same three
+ * sites: `factory.ts` when a recipient gains a slot, and `slot.ts` when an
+ * occupant arrives or leaves. If one moves without the other they drift
+ * silently, which is the failure mode this table exists to end.
+ */
+export const accountChain = onchainTable(
+  "account_chain",
+  (t) => ({
+    account: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    /// Slots on THIS chain where the account is the recipient.
+    slotCount: t.integer().notNull(),
+    /// Slots on THIS chain the account currently OCCUPIES.
+    /// @dev Not the companion of `slotCount` — that is `occupiedAsRecipient`.
+    ///      These two describe different roles and pairing them as a ratio is a
+    ///      category error, however much they look like a pair.
+    occupiedCount: t.integer().notNull(),
+    /// Of this account's RECIPIENT slots, how many are currently occupied.
+    /// @dev The one that pairs with `slotCount`, and the only honest numerator
+    ///      for an occupancy percentage. Previously the explorer derived this by
+    ///      fetching up to 500 of the account's slots and counting the occupied
+    ///      ones client-side — correct but capped, and wrong past 500.
+    occupiedAsRecipient: t.integer().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.account, table.chainId] }),
+    chainIdx: index().on(table.chainId),
+    accountIdx: index().on(table.account),
+    // The explorer lists recipients per chain ordered by size, so the sort
+    // column is indexed alongside the filter.
+    slotCountIdx: index().on(table.slotCount),
+  }),
+);
 
 export const currency = onchainTable("currency", (t) => ({
   id: t.hex().primaryKey(),
@@ -859,6 +920,15 @@ export const accountRelations = relations(account, ({ many }) => ({
   // at — a slot points at an account twice, for different reasons.
   slotsAsRecipient: many(slot, { relationName: "recipient" }),
   slotsAsOccupant: many(slot, { relationName: "occupant" }),
+  /// One row per chain this account has ever held or received a slot on.
+  chains: many(accountChain),
+}));
+
+export const accountChainRelations = relations(accountChain, ({ one }) => ({
+  accountRef: one(account, {
+    fields: [accountChain.account],
+    references: [account.id],
+  }),
 }));
 
 export const accountSlotRelations = relations(accountSlot, ({ one }) => ({

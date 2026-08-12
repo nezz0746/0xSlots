@@ -72,37 +72,32 @@ export function RecipientsTable() {
           </TableHeader>
           <TableBody>
             {paged.map((a) => {
-              // Counted from the slots this account RECEIVES from — not from
-              // `account.occupiedCount`, which looks like the right column and
-              // is not: that one is incremented on the BUYER (src/slot.ts) and
-              // means "slots this account occupies". Pairing it with
-              // `slotCount`, which is incremented on the RECIPIENT
-              // (src/factory.ts), would put two different roles in one ratio and
-              // read as occupancy.
+              // Both indexed, both scoped to the active chain, and both about
+              // the RECIPIENT role — `occupiedAsRecipient` is the companion of
+              // `slotCount`, not `occupiedCount` (which counts slots this
+              // account OCCUPIES and belongs to a different question entirely).
               //
-              // The list is capped at 500 by the query fragment, so a recipient
-              // holding more than that would under-report here. The largest on
-              // record is ~133. If that ceiling is ever approached, the fix is an
-              // indexed counter on `account` maintained alongside `slotCount`,
-              // not a bigger page.
-              const occupied = (a.slotsAsRecipient?.items ?? []).filter(
-                (s) => s.occupant != null,
-              ).length;
+              // This replaces counting a 500-row page client-side, so it no
+              // longer caps, and it no longer sums across chains.
+              const occupied = a.occupiedAsRecipient;
               const total = a.slotCount;
               const pct = total > 0 ? (occupied / total) * 100 : 0;
 
               return (
                 <TableRow
-                  key={a.id}
+                  key={a.account}
                   className="cursor-pointer"
                   onClick={() => {
-                    push(`/recipient/${a.id}`);
+                    push(`/recipient/${a.account}`);
                   }}
                 >
                   <TableCell>
                     <span className="inline-flex items-center gap-1.5">
-                      <AccountTypeIcon type={a.type} className="h-3 w-3" />
-                      <EnsAddress address={a.id} />
+                      <AccountTypeIcon
+                        type={a.accountRef?.type ?? "EOA"}
+                        className="h-3 w-3"
+                      />
+                      <EnsAddress address={a.account} />
                     </span>
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-xs">

@@ -1,5 +1,11 @@
 import type { Context } from "ponder:registry";
-import { account, accountSlot, currency, module } from "ponder:schema";
+import {
+  account,
+  accountChain,
+  accountSlot,
+  currency,
+  module,
+} from "ponder:schema";
 import { type Address, getAddress, type Hex, toFunctionSelector } from "viem";
 import { ERC20Abi } from "../abis";
 
@@ -57,6 +63,52 @@ export async function getOrCreateAccount(
     metadataUpdateCount: 0n,
     totalHoldTime: 0n,
   });
+}
+
+/**
+ * Move an account's per-chain counters.
+ *
+ * The chain-scoped mirror of the totals on `account`. Callers bump both in the
+ * same breath — see the three sites in `factory.ts` and `slot.ts` — because the
+ * pair only means anything while it agrees.
+ *
+ * Upserts rather than assuming a row: an account can be a recipient on a chain
+ * it has never occupied anything on, and vice versa, so whichever counter moves
+ * first creates the row.
+ *
+ * `Math.max(0, …)` on the decrement is a floor, not a fix. It cannot trigger
+ * while inserts and deletes stay paired, and if it ever did, a stuck zero is a
+ * far better failure than a negative count rendering as "-1 occupied".
+ */
+export async function bumpAccountChain(
+  ctx: Context,
+  addressRaw: Hex,
+  chainId: number,
+  delta: {
+    slotCount?: number;
+    occupiedCount?: number;
+    occupiedAsRecipient?: number;
+  },
+) {
+  const acct = lower(addressRaw);
+  const slotDelta = delta.slotCount ?? 0;
+  const occDelta = delta.occupiedCount ?? 0;
+  const recOccDelta = delta.occupiedAsRecipient ?? 0;
+
+  await ctx.db
+    .insert(accountChain)
+    .values({
+      account: acct,
+      chainId,
+      slotCount: Math.max(0, slotDelta),
+      occupiedCount: Math.max(0, occDelta),
+      occupiedAsRecipient: Math.max(0, recOccDelta),
+    })
+    .onConflictDoUpdate((row) => ({
+      slotCount: Math.max(0, row.slotCount + slotDelta),
+      occupiedCount: Math.max(0, row.occupiedCount + occDelta),
+      occupiedAsRecipient: Math.max(0, row.occupiedAsRecipient + recOccDelta),
+    }));
 }
 
 export async function getOrCreateAccountSlot(

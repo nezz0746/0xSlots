@@ -2,7 +2,6 @@ fragment AccountFields on account {
   id
   type
   slotCount
-  occupiedCount
   metadataUpdateCount
   totalHoldTime
   # Bounded on purpose. The subgraph exposed these as unbounded @derivedFrom
@@ -86,6 +85,58 @@ query GetAccountWithSlots($id: String!, $limit: Int, $chainId: Int) {
       price
       deposit
       occupiedSince
+    }
+  }
+}
+
+# ── Per-chain recipient counts ───────────────────────────────────────────────
+#
+# `account` has no `chainId` — one row per address, totals summed across every
+# chain — so `GetAccounts` cannot answer "who receives on THIS chain". It used
+# to be asked to anyway, and the explorer's recipient list showed base-sepolia's
+# recipients while base was selected, with their base-sepolia counts.
+#
+# `accountChain` is the chain-scoped mirror. `accountRef` is included so one
+# request still yields the address type (EOA / SPLIT / …) the list renders.
+fragment AccountChainFields on accountChain {
+  account
+  chainId
+  # Slots where this account is the RECIPIENT, and how many of those are
+  # currently occupied. These two form the occupancy ratio.
+  slotCount
+  occupiedAsRecipient
+  # Slots this account OCCUPIES. A different role entirely — pairing it with
+  # `slotCount` puts two roles in one ratio and reads as occupancy.
+  occupiedCount
+  accountRef {
+    id
+    type
+  }
+}
+
+query GetAccountChains(
+  $limit: Int
+  $offset: Int
+  $after: String
+  $orderBy: String
+  $orderDirection: String
+  $where: accountChainFilter
+) {
+  accountChains(
+    limit: $limit
+    offset: $offset
+    after: $after
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...AccountChainFields
     }
   }
 }

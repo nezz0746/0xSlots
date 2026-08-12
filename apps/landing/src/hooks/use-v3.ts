@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  type AccountFieldsFragment,
+  type AccountChainFieldsFragment,
   createSlotsClient,
   type SlotFieldsFragment,
 } from "@0xslots/sdk";
@@ -259,19 +259,33 @@ export function useRecentEvents() {
   });
 }
 
+/**
+ * Recipients on the ACTIVE chain, largest first.
+ *
+ * Reads `accountChain`, not `account`. The `account` table has no `chainId` —
+ * one row per address with counts summed across every network — so this list
+ * used to show base-sepolia's recipients while base was selected, each labelled
+ * with its base-sepolia slot count. Clicking one opened a recipient page that
+ * does filter by chain, found nothing, and rendered zeros throughout.
+ *
+ * `accountRef` rides along so the row still gets the address type (EOA, SPLIT,
+ * contract) without a second request.
+ */
 export function useAccounts() {
   const { chainId } = useChain();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["accounts", chainId],
+    queryKey: ["account-chains", chainId],
     queryFn: async () => {
-      const { accounts } = await client.getAccounts({
+      const { accountChains } = await client.getAccountChains({
         limit: 100,
         orderBy: "slotCount" as any,
         orderDirection: "desc" as any,
+        // chainId is injected by the client; this only drops the addresses
+        // that receive nothing here.
         where: { slotCount_gt: 0 } as any,
       });
-      return accounts.items as AccountFieldsFragment[];
+      return accountChains.items as AccountChainFieldsFragment[];
     },
     staleTime: 15_000,
   });

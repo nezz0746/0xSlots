@@ -31,6 +31,7 @@ import type { Hex } from "viem";
 import type ponderConfig from "../ponder.config";
 import type * as ponderSchema from "../ponder.schema";
 import {
+  bumpAccountChain,
   evtId,
   getOrCreateAccount,
   getOrCreateAccountSlot,
@@ -75,14 +76,26 @@ async function loadSlot(context: Context, addr: Hex) {
   return row;
 }
 
+/**
+ * @param recipient The slot's recipient, so their `occupiedAsRecipient` can
+ *        fall with the occupancy. Passed in rather than re-read: every caller
+ *        already holds the slot row.
+ */
 async function clearOccupant(
   context: Context,
   slotAddr: Hex,
   prevOccupant: Hex,
   blockTime: bigint,
+  recipient: Hex,
 ) {
   const prev = lower(prevOccupant);
   if (prev === ZERO_ADDR) return;
+
+  // The slot just became vacant, so its recipient holds one fewer occupied
+  // slot. Tracked here rather than counted at read time, which capped at 500.
+  await bumpAccountChain(context, recipient, context.chain.id, {
+    occupiedAsRecipient: -1,
+  });
 
   const accSlot = await context.db.find(accountSlot, {
     account: prev,
@@ -105,6 +118,9 @@ async function clearOccupant(
     occupiedCount: row.occupiedCount - 1,
     totalHoldTime: row.totalHoldTime + held,
   }));
+  await bumpAccountChain(context, prev, context.chain.id, {
+    occupiedCount: -1,
+  });
 }
 
 /** Occupancy cleared the same way by both release and liquidation. */
@@ -124,13 +140,29 @@ onSlot("Bought", async ({ event, context }) => {
   const s = await loadSlot(context, slotAddr);
 
   if (s.occupant) {
-    await clearOccupant(context, slotAddr, s.occupant, event.block.timestamp);
+    await clearOccupant(
+      context,
+      slotAddr,
+      s.occupant,
+      event.block.timestamp,
+      s.recipient,
+    );
   }
 
   const buyer = await getOrCreateAccount(context, event.args.buyer, true);
   await context.db
     .update(account, { id: buyer.id })
     .set((row) => ({ occupiedCount: row.occupiedCount + 1 }));
+  await bumpAccountChain(context, event.args.buyer, chainId, {
+    occupiedCount: 1,
+  });
+  // …and the RECIPIENT now has one more of their slots occupied. A different
+  // account and a different column from the line above: the buyer occupies, the
+  // recipient collects. `clearOccupant` above already decremented this if the
+  // slot was being taken from someone, so a hand-over nets to zero.
+  await bumpAccountChain(context, s.recipient, chainId, {
+    occupiedAsRecipient: 1,
+  });
 
   await getOrCreateAccountSlot(
     context,
@@ -177,7 +209,13 @@ onSlot("Released", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
   if (s.occupant) {
-    await clearOccupant(context, slotAddr, s.occupant, event.block.timestamp);
+    await clearOccupant(
+      context,
+      slotAddr,
+      s.occupant,
+      event.block.timestamp,
+      s.recipient,
+    );
   }
   await context.db.update(slot, { id: slotAddr }).set({
     ...VACANT,
@@ -201,7 +239,13 @@ onSlot("Liquidated", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
   if (s.occupant) {
-    await clearOccupant(context, slotAddr, s.occupant, event.block.timestamp);
+    await clearOccupant(
+      context,
+      slotAddr,
+      s.occupant,
+      event.block.timestamp,
+      s.recipient,
+    );
   }
   await context.db.update(slot, { id: slotAddr }).set({
     ...VACANT,
