@@ -353,6 +353,14 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/**
+ * The variant-prefixed `w-auto` is what actually does the work here. Separator
+ * sets `data-[orientation=horizontal]:w-full`, and tailwind-merge keys classes
+ * by variant — so a bare `w-auto` does not displace it and both survive. The
+ * rule then renders at width:100% *plus* `mx-2`, i.e. 16px wider than its
+ * parent, which SidebarContent (overflow-auto) turns into a horizontal
+ * scrollbar.
+ */
 function SidebarSeparator({
   className,
   ...props
@@ -361,7 +369,10 @@ function SidebarSeparator({
     <Separator
       data-slot="sidebar-separator"
       data-sidebar="separator"
-      className={cn("mx-2 w-auto bg-sidebar-border", className)}
+      className={cn(
+        "mx-2 w-auto data-[orientation=horizontal]:w-auto bg-sidebar-border",
+        className,
+      )}
       {...props}
     />
   );

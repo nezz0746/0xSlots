@@ -133,13 +133,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AppSidebar />
 
         <SidebarInset className="min-h-svh flex flex-col">
-          {/* Sticky rather than fixed, so it spans the content column beside
+          {/* Chrome only — the account menu, and the logo on small screens
+              where there is no sidebar to hold it. Everything a page has to
+              say about itself belongs in its own PageHeader, below this.
+
+              Sticky rather than fixed, so it spans the content column beside
               the sidebar instead of overlapping it. */}
-          {/* Mobile only. On desktop the logo lives in the sidebar and the
-              wallet moved into PageHeader, which left this band holding a
-              single button across a full-width strip — 57px of every viewport
-              spent on nothing. */}
-          <nav className="md:hidden sticky top-0 z-50 bg-background flex items-center justify-between p-2 border-b">
+          <nav className="sticky top-0 z-50 bg-background flex items-center justify-between p-2 border-b">
             {/* The sidebar carries the logo on desktop. */}
             <div className="flex flex-row items-center gap-6 md:hidden">
               {logo}

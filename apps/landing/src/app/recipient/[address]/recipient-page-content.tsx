@@ -62,7 +62,7 @@ export function RecipientPageContent({ address }: { address: string }) {
 
   return (
     <div className="min-h-screen">
-      <PageHeader>
+      <PageHeader maxWidth="max-w-6xl">
         <div className="flex items-center gap-4">
           {ensAvatar ? (
             <img
@@ -128,7 +128,7 @@ export function RecipientPageContent({ address }: { address: string }) {
         </div>
       </PageHeader>
 
-      <div className="max-w-6xl mx-auto p-2 md:p-4">
+      <div className="max-w-6xl mx-auto px-3 md:px-5 py-2 md:py-4">
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-6">
           <StatCard

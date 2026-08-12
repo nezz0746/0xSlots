@@ -21,6 +21,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -33,6 +34,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
+import {
+  EXPLORER_SECTIONS,
+  useExplorerSection,
+} from "@/context/explorer-section";
 import { NavLink, useNavigation } from "@/context/navigation";
 import { EXTERNAL_LINKS } from "@/lib/external-links";
 
@@ -40,6 +45,16 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { push, isPending } = useNavigation();
   const { chainId, setChain } = useChain();
+  const { section, setSection } = useExplorerSection();
+
+  const onExplorer = pathname === "/";
+
+  const selectSection = (id: string) => {
+    setSection(id);
+    // Sections live on the explorer, so jump back there when selected from
+    // elsewhere in the app.
+    if (!onExplorer) push("/");
+  };
 
   return (
     <Sidebar
@@ -67,15 +82,32 @@ export function AppSidebar() {
         </Button>
       </SidebarHeader>
 
-      {/* Routes only.
-       *
-       * The explorer's sections used to live here too, and that was the wrong
-       * home for them: they are a filter over one page's content, not a place
-       * to go. Hoisting them into the chrome made a page-local choice look
-       * like site navigation, and left the page with no header of its own.
-       * They are back in the page, where the selection they drive is visible.
-       */}
       <SidebarContent>
+        {/* Sections read as destinations here, and the selection stays visible
+            while you scroll a long table — which a strip pinned above the rows
+            does not do. Below md there is no sidebar, so the page renders the
+            same sections as a tab strip driving this same state. */}
+        <SidebarGroup>
+          <SidebarGroupLabel>Explore</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {EXPLORER_SECTIONS.map(({ id, label, icon: Icon }) => (
+                <SidebarMenuItem key={id}>
+                  <SidebarMenuButton
+                    isActive={onExplorer && section === id}
+                    onClick={() => selectSection(id)}
+                  >
+                    <Icon className="size-4" />
+                    <span>{label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator />
+
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>

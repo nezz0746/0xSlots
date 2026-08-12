@@ -214,7 +214,7 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader>
+      <PageHeader maxWidth="max-w-6xl">
         <div>
           <NavLink
             href="/"
@@ -233,7 +233,7 @@ export default function ProfilePage() {
         </div>
       </PageHeader>
 
-      <div className="max-w-6xl mx-auto p-2 md:p-6">
+      <div className="max-w-6xl mx-auto px-3 md:px-5 py-2 md:py-6">
         {!isConnected || !address ? (
           <div className="rounded-lg border p-12 text-center">
             <p className="text-sm text-muted-foreground">

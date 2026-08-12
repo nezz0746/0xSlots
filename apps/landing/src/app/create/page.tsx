@@ -278,7 +278,7 @@ export default function CreatePage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader>
+      <PageHeader maxWidth="max-w-6xl">
         <div>
           <h1 className="text-xl font-bold tracking-tight leading-tight">
             Create Slot
@@ -289,7 +289,7 @@ export default function CreatePage() {
         </div>
       </PageHeader>
 
-      <div className="max-w-6xl mx-auto px-2 md:px-6 py-4 md:py-8 pb-24 lg:pb-8">
+      <div className="max-w-6xl mx-auto px-3 md:px-5 py-4 md:py-8 pb-24 lg:pb-8">
         <Form {...form}>
           <form
             id="create-slot-form"
