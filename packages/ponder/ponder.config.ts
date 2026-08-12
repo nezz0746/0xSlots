@@ -196,6 +196,8 @@ const PUBLIC_RPCS: Record<string, string[]> = {
 
 const USE_PUBLIC_RPCS = process.env.PONDER_PUBLIC_RPCS === "1";
 
+console.log(`USE_PUBLIC_RPCS: ${USE_PUBLIC_RPCS}`);
+
 const toTransport = (url: string): Transport =>
   url.startsWith("ws") ? webSocket(url) : http(url);
 

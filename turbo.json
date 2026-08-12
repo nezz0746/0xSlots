@@ -3,9 +3,7 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "outputs": [
         ".next/**",
         "!.next/cache/**",
@@ -13,37 +11,24 @@
         "out/**",
         "dist/**"
       ],
-      "passThroughEnv": [
-        "ALCHEMY_KEY",
-        "CHAIN_ID"
-      ]
+      "passThroughEnv": ["ALCHEMY_KEY", "CHAIN_ID", "PONDER_PUBLIC_RPCS"]
     },
     "dev": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
     "start": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true,
-      "passThroughEnv": [
-        "ALCHEMY_KEY",
-        "CHAIN_ID"
-      ]
+      "passThroughEnv": ["ALCHEMY_KEY", "CHAIN_ID", "PONDER_PUBLIC_RPCS"]
     },
     "lint": {},
     "@0xslots/chain#dev:local": {
       "cache": false,
       "persistent": true,
-      "with": [
-        "@0xslots/ponder#dev:index",
-        "landing#dev"
-      ]
+      "with": ["@0xslots/ponder#dev:index", "landing#dev"]
     },
     "@0xslots/ponder#dev:index": {
       "cache": false,
