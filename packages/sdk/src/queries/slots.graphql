@@ -1,13 +1,25 @@
-fragment SlotFields on Slot {
+# Ponder-native slot queries.
+#
+# Shape differences from the subgraph these replace:
+#   * plural fields return { items, totalCount, pageInfo } instead of a bare list
+#   * `first`/`skip` are `limit`/`offset`, plus cursor `after`/`before`
+#   * foreign keys are scalar columns; the joined row is the `*Ref` sibling
+#     (`module` is an address, `moduleRef` is the row)
+#   * every row carries `chainId`, because one deployment indexes every chain
+#   * there is no `block:` argument — ponder has no time-travel query
+
+fragment SlotFields on slot {
   id
+  chainId
   recipient
-  recipientAccount {
+  recipientAccountRef {
     id
     type
     slotCount
     occupiedCount
   }
-  currency {
+  currency
+  currencyRef {
     id
     name
     symbol
@@ -18,47 +30,48 @@ fragment SlotFields on Slot {
   mutableModule
   mutablePolicy
   taxPercentage
-  module {
+  module
+  moduleRef {
     id
     verified
     name
     version
     feeBps
-    moduleURI
+    metadataURI
     image
     description
     totalFeesCollected
   }
   occupant
-  occupantAccount {
+  occupantAccountRef {
     id
     type
     slotCount
     occupiedCount
   }
   isOccupied
+  occupiedSince
   price
   deposit
   collectedTax
+  taxPaidTotal
   totalCollected
   liquidationBountyBps
   minDepositSeconds
 
   # Occupancy layer.
-  # `occupant` above is safe to render directly: epoch scheduling was removed in
-  # v4, so a buy is indexed the moment it lands.
-  #
-  # The subgraph still exposes pendingBuyer/pendingEffectiveAt/pendingPrice/
-  # pendingDeposit and they are still indexed — dropping them from the schema
-  # would force a destructive resync for no gain — but they are permanently
-  # zero and nothing should read them. Not selected here.
-  #
-  # pendingPolicy/hasPendingPolicy are unrelated and still live: they describe a
-  # queued POLICY change, which is a different mechanism.
   occupancyPolicy
-  occupiedSince
+
+  # Pending updates, one per dimension. NULL means nothing is queued — which is
+  # NOT the zero address: "remove the utility" and "drop the policy" are both
+  # changes someone deliberately queued. The subgraph's `hasPendingPolicy`
+  # boolean is gone; `pendingPolicy != null` says the same thing.
+  pendingTaxPercentage
+  taxProposedAt
+  pendingUtility
+  utilityProposedAt
   pendingPolicy
-  hasPendingPolicy
+  policyProposedAt
 
   createdAt
   createdTx
@@ -66,103 +79,121 @@ fragment SlotFields on Slot {
 }
 
 query GetSlots(
-  $first: Int!
-  $skip: Int
-  $orderBy: Slot_orderBy
-  $orderDirection: OrderDirection
-  $where: Slot_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $after: String
+  $before: String
+  $orderBy: String
+  $orderDirection: String
+  $where: slotFilter
 ) {
   slots(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
+    after: $after
+    before: $before
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    ...SlotFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+    items {
+      ...SlotFields
+    }
   }
 }
 
-query GetSlot($id: ID!, $block: Block_height) {
-  slot(id: $id, block: $block) {
+query GetSlot($id: String!) {
+  slot(id: $id) {
     ...SlotFields
   }
 }
 
 query GetSlotsByRecipient(
-  $recipient: Bytes!
-  $first: Int!
-  $skip: Int
-  $orderBy: Slot_orderBy
-  $orderDirection: OrderDirection
-  $block: Block_height
+  $recipient: String!
+  $chainId: Int
+  $limit: Int
+  $offset: Int
 ) {
   slots(
-    first: $first
-    skip: $skip
-    orderBy: $orderBy
-    orderDirection: $orderDirection
-    where: { recipient: $recipient }
-    block: $block
+    where: { recipient: $recipient, chainId: $chainId }
+    limit: $limit
+    offset: $offset
+    orderBy: "createdAt"
+    orderDirection: "desc"
   ) {
-    ...SlotFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...SlotFields
+    }
   }
 }
 
 query GetSlotsByOccupant(
-  $occupant: Bytes!
-  $first: Int!
-  $skip: Int
-  $orderBy: Slot_orderBy
-  $orderDirection: OrderDirection
-  $block: Block_height
+  $occupant: String!
+  $chainId: Int
+  $limit: Int
+  $offset: Int
 ) {
   slots(
-    first: $first
-    skip: $skip
-    orderBy: $orderBy
-    orderDirection: $orderDirection
-    where: { occupant: $occupant }
-    block: $block
+    where: { occupant: $occupant, chainId: $chainId }
+    limit: $limit
+    offset: $offset
+    orderBy: "occupiedSince"
+    orderDirection: "desc"
   ) {
-    ...SlotFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...SlotFields
+    }
   }
 }
 
-fragment SlotMetadataFields on MetadataSlot {
-  id
-  uri
-  rawJson
-  adType
-  updatedBy
-  updateCount
-  createdAt
-  createdTx
-  updatedAt
-  updatedTx
-}
-
 query GetSlotsWithMetadata(
-  $first: Int!
-  $skip: Int
-  $orderBy: Slot_orderBy
-  $orderDirection: OrderDirection
-  $where: Slot_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: slotFilter
 ) {
   slots(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    ...SlotFields
-    metadata {
-      ...SlotMetadataFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...SlotFields
+      metadata {
+        id
+        uri
+        cid
+        rawJson
+        adType
+        updatedBy
+        updateCount
+        updatedAt
+      }
     }
   }
 }

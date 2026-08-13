@@ -5,7 +5,9 @@
       "label": "Dev: Landing",
       "type": "shell",
       "command": "pnpm",
-      "args": ["dev:landing"],
+      "args": [
+        "dev:landing"
+      ],
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -26,7 +28,9 @@
       "label": "Dev: API",
       "type": "shell",
       "command": "pnpm",
-      "args": ["dev:api"],
+      "args": [
+        "dev:api"
+      ],
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -47,7 +51,9 @@
       "label": "Dev: MCP",
       "type": "shell",
       "command": "pnpm",
-      "args": ["dev:mcp"],
+      "args": [
+        "dev:mcp"
+      ],
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -68,7 +74,9 @@
       "label": "Dev: All",
       "type": "shell",
       "command": "pnpm",
-      "args": ["dev:all"],
+      "args": [
+        "dev:all"
+      ],
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -86,7 +94,10 @@
     },
     {
       "label": "Dev: Landing + API",
-      "dependsOn": ["Dev: Landing", "Dev: API"],
+      "dependsOn": [
+        "Dev: Landing",
+        "Dev: API"
+      ],
       "dependsOrder": "parallel",
       "problemMatcher": [],
       "icon": {
@@ -98,7 +109,11 @@
       "label": "Ngrok Tunnel",
       "type": "shell",
       "command": "ngrok",
-      "args": ["start", "--all", "--config=./ngrok.yml"],
+      "args": [
+        "start",
+        "--all",
+        "--config=./ngrok.yml"
+      ],
       "isBackground": true,
       "presentation": {
         "reveal": "always",

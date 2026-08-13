@@ -5,7 +5,7 @@ import { Check, ChevronDown, Menu, User } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SubgraphStatus } from "@/components/subgraph-status";
+import { IndexerStatus } from "@/components/indexer-status";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const logo = (
     <NavLink
-      href="/"
+      href="/app"
       className="text-2xl flex flex-row gap-1.5 items-center font-black tracking-tighter"
     >
       <Image
@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => push("/profile")}>
+        <DropdownMenuItem onClick={() => push("/app/profile")}>
           <User className="size-4" />
           My Slots
         </DropdownMenuItem>
@@ -116,7 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     >
       {chainSelector}
       <div className="flex items-center gap-2">
-        <SubgraphStatus />
+        <IndexerStatus />
       </div>
     </nav>
   );
@@ -133,9 +133,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AppSidebar />
 
         <SidebarInset className="min-h-svh flex flex-col">
-          {/* Sticky rather than fixed, so it spans the content column beside
+          {/* Chrome only — the account menu, and the logo on small screens
+              where there is no sidebar to hold it. Everything a page has to
+              say about itself belongs in its own PageHeader, below this.
+
+              Sticky rather than fixed, so it spans the content column beside
               the sidebar instead of overlapping it. */}
-          <nav className="sticky top-0 z-50 bg-background flex items-center justify-between p-2 md:px-6 md:py-3 border-b">
+          <nav className="sticky top-0 z-50 bg-background flex items-center justify-between p-2 border-b">
             {/* The sidebar carries the logo on desktop. */}
             <div className="flex flex-row items-center gap-6 md:hidden">
               {logo}

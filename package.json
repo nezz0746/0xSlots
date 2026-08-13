@@ -5,17 +5,20 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "dev:landing": "turbo dev --filter=landing",
-    "dev:vitrine": "turbo dev --filter=vitrine",
+    "dev:local": "turbo run dev:local",
+    "dev:local:chain": "turbo run dev:local --filter=@0xslots/chain",
     "dev:mcp": "turbo dev --filter=@0xslots/mcp",
     "dev:nft": "turbo dev --filter=nft",
     "dev:all": "turbo dev --filter=landing --filter=@0xslots/mcp",
     "build:landing": "turbo build --filter=landing",
-    "build:vitrine": "turbo build --filter=vitrine",
     "build:docs": "turbo build --filter=docs",
     "start:landing": "turbo start --filter=landing",
     "start:docs": "turbo start --filter=docs",
     "dev:api": "turbo dev --filter=api",
     "build:api": "turbo build --filter=api",
+    "build:ponder": "turbo build --filter=@0xslots/ponder",
+    "start:ponder": "pnpm --filter @0xslots/ponder start",
+    "serve:ponder": "pnpm --filter @0xslots/ponder exec ponder serve --schema ${DATABASE_SCHEMA:-public}",
     "start:api": "turbo start --filter=api",
     "lint": "turbo lint",
     "check": "biome check .",
@@ -42,7 +45,12 @@
       "graphql-request": "$graphql-request",
       "graphql": "$graphql",
       "d3-path": "3.1.0"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "es5-ext",
+      "vue-demi"
+    ]
   },
   "dependencies": {
     "wagmi": "3.5.0",

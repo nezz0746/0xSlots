@@ -12,3 +12,9 @@
 [submodule "apps/contracts/lib/openzeppelin-contracts-upgradeable"]
 	path = apps/contracts/lib/openzeppelin-contracts-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable
+[submodule "apps/contracts/lib/splits-contracts-monorepo"]
+	path = apps/contracts/lib/splits-contracts-monorepo
+	url = https://github.com/0xSplits/splits-contracts-monorepo
+[submodule "apps/contracts/lib/solady"]
+	path = apps/contracts/lib/solady
+	url = https://github.com/Vectorized/solady

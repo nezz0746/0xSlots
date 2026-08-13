@@ -7,8 +7,8 @@ import { Callout } from 'vocs'
 | Contract | Address |
 |---|---|
 | SlotFactory | `0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e` |
-| MinimumTenurePolicyFactory | `0xE322cDADB8fd511788F0fA25BffD794b7A946125` |
-| MinimumPricePolicyFactory | `0xF1cA0Fe72269AaEf1E5e34bfF484269f18e1b777` |
+| MinimumTenurePolicyFactory | `0x6C90Ca1A6ac6bBC0e4B48cc3CF589F6A3c2b30a5` |
+| MinimumPricePolicyFactory | `0xFA64C88960c0aaC55279d42131A5B7fB57e0Ff1A` |
 | FeedPostModule | `0xe92BE44E3D77be84E2aC4D6da9FFDaC0FCa67f72` |
 | FeedRouter | `0xCfFA953EfC77591463a9560211bC783b5aaF3A4a` |
 | FeedSocialGroup | `0x5b524d7A1E7449963c42aEaFfAE751573e22F314` |
@@ -18,17 +18,41 @@ import { Callout } from 'vocs'
 | Contract | Address |
 |---|---|
 | SlotFactory | `0x6D87C1647f228Baf8DE0374FCd7FdEBF6900fdFF` |
-| MinimumTenurePolicyFactory | `0x51650AB1c3aBc6614A38c622A322535b16cD764e` |
-| MinimumPricePolicyFactory | `0x83d86EDBC62187180A4f94A3099a98ABaa1dfe0c` |
+| SlotCollectiveFactory | `0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d` |
+| MinimumTenurePolicyFactory | `0x2a399E4D93d9b7Ffa8367894A39859013B214E4a` |
+| MinimumPricePolicyFactory | `0x958088c4Afb2cf3E4c7C23560B57fCb64dfC6551` |
 | BatchCollector | `0xd3c7090C2F89c5132C3f91DD1da4bCffEAe10e13` |
 | FeedPostModule | `0x17b663b7C779B64f339ab916aB734A6a4f0b075E` |
 | FeedRouter | `0x93E67283Cbb4bE7b86FeBbb9620e72777715C710` |
+| FeedSocialGroup | `0xC664a125F58cEc92d041c73c58388e58b7b5fE5D` |
 | FeedHub | `0xE4c0c374E3233b5174a1600AF1321cDa9b6B5cF8` |
 | ERC721Slots | `0x65e88189ac09527c5F7da0296ef33C77E5a6BE27` |
 
+[Collectives](/concepts/collectives) are Base Sepolia only for now — `base` is
+deliberately absent from `slotCollectiveFactoryAddress`, and the app derives its
+"not deployed here" message straight from those keys.
+
+## Local anvil — 31337
+
+`pnpm dev:local` at the repo root starts a chain, deploys the protocol and runs
+an indexer against it. Both addresses are **pinned** — they survive edits to the
+Solidity, which a plain CREATE2 would not, since CREATE2 hashes the init code
+and so moves whenever the contract changes. See `LocalBootstrap.sol`.
+
+| Contract | Address |
+|---|---|
+| SlotFactory | `0x78F614D6e3489a90BD2584D2ab1D90F5C35722F6` |
+| SlotCollectiveFactory | `0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d` |
+
+`CHAINS` filters anvil out unless `NODE_ENV === "development"`. Bundlers inline
+`NODE_ENV`, so a production build drops the entry at compile time rather than
+shipping a chain option pointing at nobody's localhost. The address table itself
+is unconditional — it is only data, and a consumer that knows it wants the local
+factory can still ask for it by id.
+
 <Callout type="warning">
 Use the SlotFactory listed here and nothing else. A slot created through a
-factory the subgraph does not index is **invisible to every consumer** — and it
+factory the indexer does not watch is **invisible to every consumer** — and it
 fails silently, because the transaction itself succeeds.
 </Callout>
 
@@ -47,6 +71,29 @@ for (const factory of POLICY_FACTORIES[chainId] ?? []) {
 }
 ```
 
+`POLICY_FACTORIES` holds **more than the two current factories**. A policy is
+immutable and lives at a CREATE2 address derived from its init code, so every
+redeploy of a factory strands the policies the previous one minted at addresses
+only that older factory can claim. Superseded factories therefore stay in the
+list, ordered current-first, so existing slots keep resolving:
+
+| chain | superseded factory | why it moved |
+|---|---|---|
+| base | `0xE322cDADB8fd511788F0fA25BffD794b7A946125` | Tenure, pre-metadata-rename |
+| base | `0xe218F2e710D2B686fD4524236F3B79EC06E92091` | Price, pre-metadata-rename |
+| base | `0xF1cA0Fe72269AaEf1E5e34bfF484269f18e1b777` | Price, pre-native-ETH floors |
+| base-sepolia | `0x51650AB1c3aBc6614A38c622A322535b16cD764e` | Tenure, pre-metadata-rename |
+| base-sepolia | `0x6a1F9D1F78CD63cd969d500994CB333027A22844` | Price, pre-metadata-rename |
+| base-sepolia | `0x83d86EDBC62187180A4f94A3099a98ABaa1dfe0c` | Price, pre-native-ETH floors |
+
+<Callout type="warning">
+**Create** policies only through `MINIMUM_TENURE_POLICY_FACTORY` /
+`MINIMUM_PRICE_POLICY_FACTORY` — the current entries in the tables above. A
+policy minted by a superseded factory is a pre-rename policy, which the upgraded
+`SlotFactory` will not verify. Resolution and creation are different questions,
+which is why they read from different exports.
+</Callout>
+
 Factories predating `IPolicyFactory` are deliberately absent from that list.
 They have no `verify()`, so slots still pointing at their policies read as
 unrecognised — the honest answer rather than a guess.
@@ -57,6 +104,8 @@ unrecognised — the honest answer rather than a guess.
 import {
   slotAbi,
   slotFactoryAbi,
+  slotCollectiveAbi,
+  slotCollectiveFactoryAbi,
   metadataModuleAbi,
   minimumTenurePolicyFactoryAbi,
 } from "@0xslots/contracts";
@@ -65,7 +114,11 @@ import {
 Addresses are exported too, so you rarely need to hardcode one:
 
 ```ts
-import { getSlotsHubAddress, POLICY_FACTORIES } from "@0xslots/contracts";
+import {
+  getSlotsHubAddress,
+  slotCollectiveFactoryAddress,
+  POLICY_FACTORIES,
+} from "@0xslots/contracts";
 
 const factory = getSlotsHubAddress(8453);
 ```

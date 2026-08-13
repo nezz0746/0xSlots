@@ -1,18 +1,20 @@
 {
   "name": "@0xslots/ponder",
-  "version": "0.0.8",
+  "version": "0.0.12",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "ponder start",
+    "start": "./scripts/start.sh",
     "codegen": "ponder codegen",
     "serve": "ponder serve",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:index": "./scripts/dev-index.sh",
+    "build": "ponder codegen"
   },
   "dependencies": {
     "@0xslots/contracts": "workspace:*",
     "hono": "^4.6.13",
-    "ponder": "0.16.6",
+    "ponder": "0.17.6",
     "viem": "^2.21.0"
   },
   "devDependencies": {

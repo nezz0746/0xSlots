@@ -1,4 +1,9 @@
-schema: https://api.studio.thegraph.com/query/958/0-x-slots-base-sepolia/version/latest
+# Schema source is a RUNNING ponder instance, not a hosted subgraph.
+#
+# `pnpm dev:local` (repo root) brings one up on :42069 against anvil; any ponder
+# deployment serves the same schema, since it is generated from
+# packages/ponder/ponder.schema.ts rather than authored.
+schema: ${PONDER_GRAPHQL_URL:http://localhost:42069/graphql}
 documents: ./src/queries/**/*.graphql
 generates:
   ./src/generated/graphql.ts:
@@ -13,4 +18,5 @@ generates:
       enumsAsTypes: true
       scalars:
         BigInt: string
-        Bytes: string
+        # ponder exposes `_meta { status }` as an opaque JSON blob keyed by chain
+        JSON: unknown

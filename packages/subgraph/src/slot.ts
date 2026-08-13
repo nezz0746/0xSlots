@@ -13,6 +13,7 @@ import {
   ModuleUpdateProposedEvent,
   OperatorSetEvent,
   PendingUpdateCancelledEvent,
+  PendingUpdateEvent,
   PolicyUpdateAppliedEvent,
   PolicyUpdateProposedEvent,
   PriceUpdatedEvent,
@@ -21,6 +22,7 @@ import {
   ReleasedEvent,
   SettledEvent,
   Slot,
+  TaxPaidEvent,
   SlotOperator,
   SlotRefund,
   TaxCollectedEvent,
@@ -45,10 +47,14 @@ import {
   RefundCredited,
   Released,
   Settled,
+  TaxPaid,
   SlotConfiguredV3,
   TaxCollected,
   TaxUpdateProposed,
   TransferScheduled,
+  UpdateApplied,
+  UpdateCancelled,
+  UpdateProposed,
   Withdrawn,
 } from "../generated/templates/Slot/Slot";
 import {
@@ -184,6 +190,7 @@ export function handleReleased(event: Released): void {
   slot.price = BigInt.zero();
   slot.deposit = BigInt.zero();
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.occupiedSince = BigInt.zero();
   // A scheduled transfer deliberately SURVIVES vacancy: release/liquidate
   // before the boundary leave the slot empty, and the transfer still lands at
@@ -233,6 +240,7 @@ export function handleLiquidated(event: Liquidated): void {
   slot.price = BigInt.zero();
   slot.deposit = BigInt.zero();
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.occupiedSince = BigInt.zero();
   // A scheduled transfer deliberately SURVIVES vacancy: release/liquidate
   // before the boundary leave the slot empty, and the transfer still lands at
@@ -337,9 +345,74 @@ export function handleSettled(event: Settled): void {
   ev.save();
 }
 
+/**
+ * `TaxPaid` — the authoritative per-address tax ledger.
+ *
+ * Emitted immediately after `Settled`, in the same transaction, carrying the
+ * payer that `Settled` omits. `handleSettled` already attributes to
+ * `slot.occupant`, which is correct only because `_settle()` runs before
+ * occupancy is reassigned — an implicit ordering assumption with nothing
+ * checking it. This handler does not re-add the amount (that would double
+ * count); it records the authoritative event, keeps the per-slot denominator,
+ * and repairs the attribution if the inference ever disagreed.
+ */
+export function handleTaxPaid(event: TaxPaid): void {
+  const slot = getSlot(event.address);
+  const payer = event.params.occupant;
+  const amount = event.params.taxPaid;
+
+  // Only grows — `collectedTax` is drained by `collect()`, so it cannot serve
+  // as the denominator for a historical share.
+  slot.taxPaidTotal = slot.taxPaidTotal.plus(amount);
+  slot.updatedAt = event.block.timestamp;
+  slot.save();
+
+  const inferred = slot.occupant;
+  const matched =
+    inferred !== null && Address.fromBytes(inferred as Bytes).equals(payer);
+
+  const payerAS = getOrCreateAccountSlot(
+    payer,
+    event.address,
+    event.block.timestamp,
+  );
+
+  if (!matched) {
+    // handleSettled credited the wrong account this transaction. Move it,
+    // rather than letting the two sources drift apart silently.
+    if (inferred !== null) {
+      const wrongAS = getOrCreateAccountSlot(
+        Address.fromBytes(inferred as Bytes),
+        event.address,
+        event.block.timestamp,
+      );
+      wrongAS.taxPaid = wrongAS.taxPaid.minus(amount);
+      wrongAS.save();
+    }
+    payerAS.taxPaid = payerAS.taxPaid.plus(amount);
+  }
+
+  payerAS.lastInteractedAt = event.block.timestamp;
+  payerAS.save();
+
+  const ev = new TaxPaidEvent(evtId(event.transaction.hash, event.logIndex));
+  ev.slot = slot.id;
+  ev.account = getOrCreateAccount(payer).id;
+  ev.accountSlot = payerAS.id;
+  ev.currency = slot.currency;
+  ev.taxOwed = event.params.taxOwed;
+  ev.taxPaid = amount;
+  ev.matchedOccupant = matched;
+  ev.timestamp = event.block.timestamp;
+  ev.blockNumber = event.block.number;
+  ev.tx = event.transaction.hash;
+  ev.save();
+}
+
 export function handleTaxCollected(event: TaxCollected): void {
   const slot = getSlot(event.address);
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.totalCollected = slot.totalCollected.plus(event.params.amount);
   slot.updatedAt = event.block.timestamp;
   slot.save();
@@ -374,7 +447,7 @@ export function handleModuleUpdateProposed(event: ModuleUpdateProposed): void {
     evtId(event.transaction.hash, event.logIndex),
   );
   ev.slot = event.address.toHexString();
-  ev.newModule = event.params.newModule;
+  ev.newModule = event.params.newUtility;
   ev.timestamp = event.block.timestamp;
   ev.blockNumber = event.block.number;
   ev.tx = event.transaction.hash;
@@ -397,7 +470,7 @@ export function handlePendingUpdateCancelled(
 export function handlePendingUpdateApplied(event: PendingUpdateApplied): void {
   const slot = getSlot(event.address);
   slot.taxPercentage = event.params.newTaxPercentage;
-  const moduleAddr = event.params.newModule;
+  const moduleAddr = event.params.newUtility;
   if (moduleAddr.equals(Address.zero())) {
     slot.module = null;
   } else {
@@ -407,6 +480,148 @@ export function handlePendingUpdateApplied(event: PendingUpdateApplied): void {
   }
   slot.updatedAt = event.block.timestamp;
   slot.save();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// PER-KIND PENDING UPDATES
+//
+// A slot holds at most one queued change per dimension — tax, utility, policy
+// — and each can be proposed, cancelled and applied on its own. These three
+// handlers own the pending fields on Slot and append to PendingUpdateEvent.
+//
+// The LIVE values (taxPercentage, module, occupancyPolicy) are deliberately
+// not written here: PendingUpdateApplied and PolicyUpdateApplied fire in the
+// same transaction and already own that write. These only record what is
+// queued, and clear it once it is not.
+//
+// This also fixes a stale flag. `handlePendingUpdateCancelled` only ever
+// inserted an event row — it never cleared `pendingPolicy` / `hasPendingPolicy`
+// — so a cancelled policy proposal went on being reported as pending forever.
+// `cancelPendingUpdates` now emits a per-kind UpdateCancelled for each
+// dimension it drops, so the clear below covers the blanket cancel too.
+// ──────────────────────────────────────────────────────────────────────────
+
+const KIND_TAX = 0;
+const KIND_UTILITY = 1;
+
+/** The bytes32 an update event carries, read back as an address. */
+function valueAsAddress(value: Bytes): Address {
+  return Address.fromBytes(Bytes.fromUint8Array(value.subarray(12)));
+}
+
+/**
+ * The bytes32 an update event carries, read back as a number.
+ *
+ * It arrives big-endian; `BigInt.fromUnsignedBytes` reads little-endian. The
+ * copy matters: `reverse()` is in-place, and the very same `Bytes` is stored
+ * verbatim on the event afterwards.
+ */
+function valueAsBigInt(value: Bytes): BigInt {
+  return BigInt.fromUnsignedBytes(Bytes.fromUint8Array(value.slice(0).reverse()));
+}
+
+/** Clear the pending fields for one dimension. */
+function clearPending(slot: Slot, kind: i32): void {
+  if (kind == KIND_TAX) {
+    slot.pendingTaxPercentage = null;
+    slot.taxProposedAt = null;
+  } else if (kind == KIND_UTILITY) {
+    slot.pendingUtility = null;
+    slot.utilityProposedAt = null;
+  } else {
+    slot.pendingPolicy = null;
+    slot.hasPendingPolicy = false;
+    slot.policyProposedAt = null;
+  }
+}
+
+function recordPendingUpdate(
+  slotId: string,
+  kind: i32,
+  action: string,
+  value: Bytes | null,
+  txHash: Bytes,
+  logIndex: BigInt,
+  timestamp: BigInt,
+  blockNumber: BigInt,
+): void {
+  const ev = new PendingUpdateEvent(evtId(txHash, logIndex));
+  ev.slot = slotId;
+  ev.kind = kind;
+  ev.action = action;
+  ev.value = value;
+  ev.timestamp = timestamp;
+  ev.blockNumber = blockNumber;
+  ev.tx = txHash;
+  ev.save();
+}
+
+export function handleUpdateProposed(event: UpdateProposed): void {
+  const slot = getSlot(event.address);
+  const kind = event.params.kind;
+  const value = event.params.value;
+  const proposedAt = event.params.proposedAt;
+
+  if (kind == KIND_TAX) {
+    slot.pendingTaxPercentage = valueAsBigInt(value);
+    slot.taxProposedAt = proposedAt;
+  } else if (kind == KIND_UTILITY) {
+    slot.pendingUtility = valueAsAddress(value);
+    slot.utilityProposedAt = proposedAt;
+  } else {
+    slot.pendingPolicy = valueAsAddress(value);
+    slot.hasPendingPolicy = true;
+    slot.policyProposedAt = proposedAt;
+  }
+  slot.updatedAt = event.block.timestamp;
+  slot.save();
+
+  recordPendingUpdate(
+    slot.id,
+    kind,
+    "proposed",
+    value,
+    event.transaction.hash,
+    event.logIndex,
+    event.block.timestamp,
+    event.block.number,
+  );
+}
+
+export function handleUpdateCancelled(event: UpdateCancelled): void {
+  const slot = getSlot(event.address);
+  clearPending(slot, event.params.kind);
+  slot.updatedAt = event.block.timestamp;
+  slot.save();
+
+  recordPendingUpdate(
+    slot.id,
+    event.params.kind,
+    "cancelled",
+    null,
+    event.transaction.hash,
+    event.logIndex,
+    event.block.timestamp,
+    event.block.number,
+  );
+}
+
+export function handleUpdateApplied(event: UpdateApplied): void {
+  const slot = getSlot(event.address);
+  clearPending(slot, event.params.kind);
+  slot.updatedAt = event.block.timestamp;
+  slot.save();
+
+  recordPendingUpdate(
+    slot.id,
+    event.params.kind,
+    "applied",
+    event.params.value,
+    event.transaction.hash,
+    event.logIndex,
+    event.block.timestamp,
+    event.block.number,
+  );
 }
 
 export function handleLiquidationBountyUpdated(
@@ -420,7 +635,7 @@ export function handleLiquidationBountyUpdated(
 
 export function handleModuleFeePaid(event: ModuleFeePaid): void {
   const slot = getSlot(event.address);
-  const moduleId = event.params.module.toHexString();
+  const moduleId = event.params.utility.toHexString();
   const mod = Module.load(moduleId);
   if (mod) {
     mod.totalFeesCollected = mod.totalFeesCollected.plus(event.params.amount);

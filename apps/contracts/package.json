@@ -1,0 +1,9 @@
+{
+  "name": "@0xslots/chain",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Foundry project. Carries no JS dependencies — this manifest exists so the local anvil chain is a workspace member turbo can schedule alongside the indexer and the app.",
+  "scripts": {
+    "dev:local": "./scripts/dev-chain.sh"
+  }
+}

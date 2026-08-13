@@ -21,7 +21,7 @@ export function ModulesTable() {
 
   if (isLoading) return <TableSkeleton rows={3} />;
   if (!modules || modules.length === 0)
-    return <TableEmpty message="No modules found" />;
+    return <TableEmpty message="No utilities found" />;
 
   return (
     <div>

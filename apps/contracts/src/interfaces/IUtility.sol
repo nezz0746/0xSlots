@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IModuleMetadata} from "./IModuleMetadata.sol";
 
 /// @title IUtility — what holding a slot grants
 /// @notice The utility is one of a slot's two pluggable contracts, and the two
@@ -15,15 +15,21 @@ import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @dev Formerly `ISlotsModule`. The interface NAME is source-level and free to
 ///      change; the function SIGNATURES below are wire-frozen — deployed
 ///      utilities (FeedPostModule, MetadataModule on Base) implement them, and
-///      deployed slots call them by selector. That is why `moduleURI()` keeps
-///      its historical name here: renaming it would change the selector the
-///      slot staticcalls, and every already-deployed utility would silently
-///      stop reporting metadata.
-interface IUtility is IERC165 {
-  function name() external view returns (string memory);
-
-  function version() external view returns (string memory);
-
+///      deployed slots call them by selector.
+///
+///      Self-description (`name`, `version`, `metadataURI`) moved to
+///      `IModuleMetadata`, shared with `IOccupancyPolicy`. That inheritance
+///      NARROWS this interface's ERC165 id, and the narrowing is the point: an
+///      id is the XOR of an interface's OWN selectors and ignores inherited
+///      ones, so `type(IUtility).interfaceId` now means exactly "implements
+///      the utility hooks" and `type(IModuleMetadata).interfaceId` means
+///      "describes itself". `SlotFactory.setUtilityVerified` asserts BOTH —
+///      checking only the first would accept a contract with no name.
+///
+///      This changed the id, so utilities compiled against the previous
+///      interface no longer verify. They are UUPS proxies and were upgraded in
+///      place; see IModuleMetadata for why that break was taken deliberately.
+interface IUtility is IModuleMetadata {
   function onTransfer(uint256 slotId, address from, address to) external;
 
   function onPriceUpdate(
@@ -68,8 +74,4 @@ interface IUtility is IERC165 {
 
   /// @notice Address that receives utility fees (EOA, multisig, Splits, etc.)
   function feeRecipient() external view returns (address);
-
-  /// @notice Utility metadata URI (e.g. ipfs://Qm... pointing to JSON with image, description)
-  /// @dev Wire-frozen under its historical name — see the interface-level note.
-  function moduleURI() external view returns (string memory);
 }

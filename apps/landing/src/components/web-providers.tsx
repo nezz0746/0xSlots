@@ -23,9 +23,9 @@ export function WebProviders({ children }: { children: ReactNode }) {
           <ChainProvider>
             <SplitsProvider>
               <SplitsClientSync />
-              <TooltipProvider>
-                <NavigationProvider>{children}</NavigationProvider>
-              </TooltipProvider>
+                <TooltipProvider>
+                  <NavigationProvider>{children}</NavigationProvider>
+                </TooltipProvider>
             </SplitsProvider>
           </ChainProvider>
         </RainbowKitProvider>

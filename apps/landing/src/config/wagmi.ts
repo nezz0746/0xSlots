@@ -11,6 +11,7 @@ import {
   zerionWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig } from "wagmi";
+import { anvilConnectors } from "@/config/anvil-connectors";
 import { alchemyKey } from "@/constants";
 
 const transports = alchemyTransports(
@@ -39,10 +40,14 @@ const connectors = connectorsForWallets(
   },
 );
 
+// Local click-to-send accounts, development only. `NODE_ENV` is inlined by the
+// bundler, so a production build drops both the connectors and the module.
+const isDev = process.env.NODE_ENV === "development";
+
 export const config = createConfig({
   chains: appChains,
   transports,
-  connectors,
+  connectors: isDev ? [...connectors, ...anvilConnectors] : connectors,
   ssr: false,
 });
 

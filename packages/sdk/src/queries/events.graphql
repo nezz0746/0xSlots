@@ -1,676 +1,658 @@
-# ── Currency fragment ──
+# ── Shared fragments ──
 
-fragment CurrencyFields on Currency {
+fragment CurrencyFields on currency {
   id
   name
   symbol
   decimals
 }
 
-# ── Global (explorer) ──
+# ── Single-type event feeds ──
 
 query GetSlotDeployedEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: SlotDeployedEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: SlotDeployedEvent_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $after: String
+  $orderBy: String
+  $orderDirection: String
+  $where: slotDeployedEventFilter
 ) {
   slotDeployedEvents(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
+    after: $after
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    id
-    slot {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
       id
+      chainId
+      slot
+      recipient
+      currency
+      currencyRef {
+        ...CurrencyFields
+      }
+      manager
+      mutableTax
+      mutableModule
+      mutablePolicy
+      taxPercentage
+      module
+      occupancyPolicy
+      liquidationBountyBps
+      minDepositSeconds
+      deployer
+      timestamp
+      blockNumber
+      tx
     }
-    recipient
-    currency {
-      ...CurrencyFields
-    }
-    manager
-    mutableTax
-    mutableModule
-    taxPercentage
-    module
-    liquidationBountyBps
-    minDepositSeconds
-    deployer
-    timestamp
-    blockNumber
-    tx
   }
 }
-
-query GetRecentEvents(
-  $first: Int!
-  $skip: Int
-  $whereDeployed: SlotDeployedEvent_filter
-  $whereBought: BoughtEvent_filter
-  $whereReleased: ReleasedEvent_filter
-  $whereLiquidated: LiquidatedEvent_filter
-  $wherePriceUpdated: PriceUpdatedEvent_filter
-  $whereDeposited: DepositedEvent_filter
-  $whereWithdrawn: WithdrawnEvent_filter
-  $whereTaxCollected: TaxCollectedEvent_filter
-  $whereTaxUpdateProposed: TaxUpdateProposedEvent_filter
-  $whereModuleUpdateProposed: ModuleUpdateProposedEvent_filter
-  $wherePendingUpdateCancelled: PendingUpdateCancelledEvent_filter
-) {
-  slotDeployedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereDeployed
-  ) {
-    id
-    slot {
-      id
-    }
-    recipient
-    currency {
-      ...CurrencyFields
-    }
-    deployer
-    timestamp
-    tx
-  }
-  boughtEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereBought
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    buyer
-    previousOccupant
-    price
-    selfAssessedPrice
-    deposit
-    timestamp
-    tx
-  }
-  releasedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereReleased
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    occupant
-    refund
-    timestamp
-    tx
-  }
-  liquidatedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereLiquidated
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    liquidator
-    occupant
-    bounty
-    timestamp
-    tx
-  }
-  priceUpdatedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $wherePriceUpdated
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    oldPrice
-    newPrice
-    timestamp
-    tx
-  }
-  depositedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereDeposited
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    depositor
-    amount
-    timestamp
-    tx
-  }
-  withdrawnEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereWithdrawn
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    occupant
-    amount
-    timestamp
-    tx
-  }
-  taxCollectedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereTaxCollected
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    recipient
-    amount
-    timestamp
-    tx
-  }
-  taxUpdateProposedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereTaxUpdateProposed
-  ) {
-    id
-    slot {
-      id
-    }
-    newPercentage
-    timestamp
-    tx
-  }
-  moduleUpdateProposedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $whereModuleUpdateProposed
-  ) {
-    id
-    slot {
-      id
-    }
-    newModule
-    timestamp
-    tx
-  }
-  pendingUpdateCancelledEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: $wherePendingUpdateCancelled
-  ) {
-    id
-    slot {
-      id
-    }
-    timestamp
-    tx
-  }
-}
-
-# ── Per-slot events ──
 
 query GetBoughtEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: BoughtEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: BoughtEvent_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $after: String
+  $orderBy: String
+  $orderDirection: String
+  $where: boughtEventFilter
 ) {
   boughtEvents(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
+    after: $after
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    id
-    slot {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
       id
+      chainId
+      slot
+      currency
+      currencyRef {
+        ...CurrencyFields
+      }
+      buyer
+      previousOccupant
+      price
+      deposit
+      selfAssessedPrice
+      timestamp
+      blockNumber
+      tx
     }
-    currency {
-      ...CurrencyFields
-    }
-    buyer
-    previousOccupant
-    price
-    deposit
-    selfAssessedPrice
-    timestamp
-    blockNumber
-    tx
   }
 }
 
 query GetReleasedEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: ReleasedEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: ReleasedEvent_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: releasedEventFilter
 ) {
   releasedEvents(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    id
-    slot {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
       id
+      chainId
+      slot
+      currency
+      currencyRef {
+        ...CurrencyFields
+      }
+      occupant
+      refund
+      timestamp
+      blockNumber
+      tx
     }
-    currency {
-      ...CurrencyFields
-    }
-    occupant
-    refund
-    timestamp
-    blockNumber
-    tx
   }
 }
 
 query GetLiquidatedEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: LiquidatedEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: LiquidatedEvent_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: liquidatedEventFilter
 ) {
   liquidatedEvents(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    id
-    slot {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
       id
+      chainId
+      slot
+      currency
+      currencyRef {
+        ...CurrencyFields
+      }
+      liquidator
+      occupant
+      bounty
+      timestamp
+      blockNumber
+      tx
     }
-    currency {
-      ...CurrencyFields
-    }
-    liquidator
-    occupant
-    bounty
-    timestamp
-    blockNumber
-    tx
-  }
-}
-
-query GetSettledEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: SettledEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: SettledEvent_filter
-  $block: Block_height
-) {
-  settledEvents(
-    first: $first
-    skip: $skip
-    orderBy: $orderBy
-    orderDirection: $orderDirection
-    where: $where
-    block: $block
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    taxOwed
-    taxPaid
-    depositRemaining
-    timestamp
-    blockNumber
-    tx
-  }
-}
-
-query GetTaxCollectedEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: TaxCollectedEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: TaxCollectedEvent_filter
-  $block: Block_height
-) {
-  taxCollectedEvents(
-    first: $first
-    skip: $skip
-    orderBy: $orderBy
-    orderDirection: $orderDirection
-    where: $where
-    block: $block
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    recipient
-    amount
-    timestamp
-    blockNumber
-    tx
-  }
-}
-
-query GetDepositedEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: DepositedEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: DepositedEvent_filter
-  $block: Block_height
-) {
-  depositedEvents(
-    first: $first
-    skip: $skip
-    orderBy: $orderBy
-    orderDirection: $orderDirection
-    where: $where
-    block: $block
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    depositor
-    amount
-    timestamp
-    blockNumber
-    tx
-  }
-}
-
-query GetWithdrawnEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: WithdrawnEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: WithdrawnEvent_filter
-  $block: Block_height
-) {
-  withdrawnEvents(
-    first: $first
-    skip: $skip
-    orderBy: $orderBy
-    orderDirection: $orderDirection
-    where: $where
-    block: $block
-  ) {
-    id
-    slot {
-      id
-    }
-    currency {
-      ...CurrencyFields
-    }
-    occupant
-    amount
-    timestamp
-    blockNumber
-    tx
   }
 }
 
 query GetPriceUpdatedEvents(
-  $first: Int!
-  $skip: Int
-  $orderBy: PriceUpdatedEvent_orderBy
-  $orderDirection: OrderDirection
-  $where: PriceUpdatedEvent_filter
-  $block: Block_height
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: priceUpdatedEventFilter
 ) {
   priceUpdatedEvents(
-    first: $first
-    skip: $skip
+    limit: $limit
+    offset: $offset
     orderBy: $orderBy
     orderDirection: $orderDirection
     where: $where
-    block: $block
   ) {
-    id
-    slot {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
       id
+      chainId
+      slot
+      currency
+      oldPrice
+      newPrice
+      timestamp
+      blockNumber
+      tx
     }
-    currency {
-      ...CurrencyFields
-    }
-    oldPrice
-    newPrice
-    timestamp
-    blockNumber
-    tx
   }
 }
 
-# ── Per-slot activity (all event types) ──
-
-query GetSlotActivity($slotId: String!, $first: Int!, $skip: Int) {
-  boughtEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+query GetDepositedEvents(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: depositedEventFilter
+) {
+  depositedEvents(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
   ) {
-    id
-    currency {
-      ...CurrencyFields
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
     }
-    buyer
-    previousOccupant
-    price
-    selfAssessedPrice
-    deposit
-    timestamp
-    tx
+    items {
+      id
+      chainId
+      slot
+      currency
+      depositor
+      amount
+      timestamp
+      blockNumber
+      tx
+    }
+  }
+}
+
+query GetWithdrawnEvents(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: withdrawnEventFilter
+) {
+  withdrawnEvents(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      id
+      chainId
+      slot
+      currency
+      occupant
+      amount
+      timestamp
+      blockNumber
+      tx
+    }
+  }
+}
+
+query GetSettledEvents(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: settledEventFilter
+) {
+  settledEvents(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      id
+      chainId
+      slot
+      currency
+      taxOwed
+      taxPaid
+      depositRemaining
+      timestamp
+      blockNumber
+      tx
+    }
+  }
+}
+
+# Per-address tax attribution. `taxPaid` is the figure that means money moved —
+# it is capped by the remaining deposit, so it falls short of `taxOwed` when an
+# occupant is going insolvent. `matchedOccupant` is a tripwire: false means the
+# payer disagreed with the occupant on record.
+query GetTaxPaidEvents(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: taxPaidEventFilter
+) {
+  taxPaidEvents(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      id
+      chainId
+      slot
+      currency
+      occupant
+      taxOwed
+      taxPaid
+      matchedOccupant
+      timestamp
+      blockNumber
+      tx
+    }
+  }
+}
+
+query GetTaxCollectedEvents(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: taxCollectedEventFilter
+) {
+  taxCollectedEvents(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      id
+      chainId
+      slot
+      currency
+      recipient
+      amount
+      timestamp
+      blockNumber
+      tx
+    }
+  }
+}
+
+# ── Refund credits ──
+#
+# A refund that could not be pushed and was credited for later claim instead.
+# A non-zero `balance` means the slot owes someone money.
+
+query GetSlotRefunds($limit: Int, $where: slotRefundFilter) {
+  slotRefunds(where: $where, limit: $limit) {
+    totalCount
+    items {
+      slot
+      account
+      chainId
+      currency
+      credited
+      claimed
+      balance
+      updatedAt
+    }
+  }
+}
+
+# ── Operators ──
+
+query GetSlotOperators($limit: Int, $where: slotOperatorFilter) {
+  slotOperators(where: $where, limit: $limit) {
+    totalCount
+    items {
+      slot
+      occupant
+      operator
+      chainId
+      approved
+      updatedAt
+    }
+  }
+}
+
+# ── Cross-type feeds ──
+#
+# Ponder resolves every root field in one round trip, same as the subgraph did.
+# There is still no cross-type ordering: the caller merges and sorts by
+# timestamp.
+
+query GetRecentEvents($limit: Int, $chainId: Int) {
+  slotDeployedEvents(
+    limit: $limit
+    where: { chainId: $chainId }
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      chainId
+      slot
+      recipient
+      deployer
+      timestamp
+      tx
+    }
+  }
+  boughtEvents(
+    limit: $limit
+    where: { chainId: $chainId }
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      chainId
+      slot
+      buyer
+      previousOccupant
+      price
+      selfAssessedPrice
+      deposit
+      timestamp
+      tx
+    }
   }
   releasedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+    limit: $limit
+    where: { chainId: $chainId }
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    currency {
-      ...CurrencyFields
+    items {
+      id
+      chainId
+      slot
+      occupant
+      refund
+      timestamp
+      tx
     }
-    occupant
-    refund
-    timestamp
-    tx
   }
   liquidatedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+    limit: $limit
+    where: { chainId: $chainId }
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    currency {
-      ...CurrencyFields
+    items {
+      id
+      chainId
+      slot
+      liquidator
+      occupant
+      bounty
+      timestamp
+      tx
     }
-    liquidator
-    occupant
-    bounty
-    timestamp
-    tx
   }
   priceUpdatedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+    limit: $limit
+    where: { chainId: $chainId }
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    currency {
-      ...CurrencyFields
+    items {
+      id
+      chainId
+      slot
+      oldPrice
+      newPrice
+      timestamp
+      tx
     }
-    oldPrice
-    newPrice
-    timestamp
-    tx
-  }
-  depositedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
-  ) {
-    id
-    currency {
-      ...CurrencyFields
-    }
-    depositor
-    amount
-    timestamp
-    tx
-  }
-  withdrawnEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
-  ) {
-    id
-    currency {
-      ...CurrencyFields
-    }
-    occupant
-    amount
-    timestamp
-    tx
   }
   taxCollectedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+    limit: $limit
+    where: { chainId: $chainId }
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    currency {
-      ...CurrencyFields
+    items {
+      id
+      chainId
+      slot
+      recipient
+      amount
+      timestamp
+      tx
     }
-    recipient
-    amount
-    timestamp
-    tx
   }
-  taxUpdateProposedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+}
+
+query GetSlotActivity($slot: String!, $limit: Int) {
+  boughtEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    newPercentage
-    timestamp
-    tx
+    items {
+      id
+      buyer
+      previousOccupant
+      price
+      selfAssessedPrice
+      deposit
+      timestamp
+      tx
+    }
   }
-  moduleUpdateProposedEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+  releasedEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    newModule
-    timestamp
-    tx
+    items {
+      id
+      occupant
+      refund
+      timestamp
+      tx
+    }
   }
-  pendingUpdateCancelledEvents(
-    first: $first
-    skip: $skip
-    orderBy: timestamp
-    orderDirection: desc
-    where: { slot: $slotId }
+  liquidatedEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
   ) {
-    id
-    timestamp
-    tx
+    items {
+      id
+      liquidator
+      occupant
+      bounty
+      timestamp
+      tx
+    }
+  }
+  priceUpdatedEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      oldPrice
+      newPrice
+      timestamp
+      tx
+    }
+  }
+  depositedEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      depositor
+      amount
+      timestamp
+      tx
+    }
+  }
+  withdrawnEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      occupant
+      amount
+      timestamp
+      tx
+    }
+  }
+  taxPaidEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      occupant
+      taxOwed
+      taxPaid
+      matchedOccupant
+      timestamp
+      tx
+    }
+  }
+  taxCollectedEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      recipient
+      amount
+      timestamp
+      tx
+    }
+  }
+  pendingUpdateEvents(
+    where: { slot: $slot }
+    limit: $limit
+    orderBy: "timestamp"
+    orderDirection: "desc"
+  ) {
+    items {
+      id
+      kind
+      action
+      value
+      timestamp
+      tx
+    }
   }
 }

@@ -87,9 +87,14 @@ export function usePostTxRefresh() {
       while (Date.now() < deadline) {
         try {
           const { _meta } = await slotsClient.getMeta();
-          if (BigInt(_meta?.block?.number ?? 0) >= blockNumber) break;
+          // `status` is keyed by ponder's own chain label, which this app does
+          // not know, so the entry is matched on its numeric id instead.
+          const chain = Object.values(_meta?.status ?? {}).find(
+            (c) => c?.id === slotsClient.getChainId(),
+          );
+          if (BigInt(chain?.block?.number ?? 0) >= blockNumber) break;
         } catch {
-          break; // subgraph unreachable — refresh anyway and let queries retry
+          break; // indexer unreachable — refresh anyway and let queries retry
         }
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       }

@@ -21,12 +21,5 @@
   "devDependencies": {
     "typescript": "^5.7.0"
   },
-  "packageManager": "pnpm@10.33.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "es5-ext",
-      "vue-demi"
-    ]
-  }
+  "packageManager": "pnpm@10.33.0"
 }

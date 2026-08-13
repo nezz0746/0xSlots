@@ -16,15 +16,20 @@ import {
   SlotRemoved,
 } from "../generated/templates/Feed/Feed";
 import { getOrCreateAccount, getOrCreateCurrency } from "./helpers";
-import { extractCid, resolveContent } from "./metadata";
+import { resolveInlineContent, spawnIpfsContent } from "./metadata";
 
 /**
- * Resolve a Feed's `metadataURI` JSON and populate its metadata fields.
- * Reuses metadata.ts's resolveContent/extractCid idiom (inline JSON vs
- * bare-CID vs ipfs:// → ipfs.cat), then pulls name/description/image/
- * banner/externalLink off the parsed object.
- * If metadataURI is empty or unresolvable, metadata fields stay null and
- * displayName falls back to onchainName.
+ * Resolve a Feed's `metadataURI` and populate its metadata fields.
+ *
+ * Inline JSON is parsed here, as before. An IPFS URI is no longer fetched
+ * inline — `spawnIpfsContent` starts a file data source and the parsed values
+ * land on `feed.metadata` instead, so the fields below stay null for it.
+ *
+ * That has a visible consequence for `displayName`, which is computed at the
+ * bottom of this function: a feed whose metadata is on IPFS resolves to its
+ * onchain name, and nothing can revise that later because a file data source
+ * is forbidden from writing to this entity. Consumers should prefer
+ * `metadata { name }` and fall back to `displayName`.
  */
 export function applyFeedMetadata(feed: Feed, metadataURI: string): void {
   feed.metadataName = null;
@@ -34,10 +39,14 @@ export function applyFeedMetadata(feed: Feed, metadataURI: string): void {
   feed.externalLink = null;
   feed.metadataRaw = null;
   feed.metadataCid = null;
+  feed.metadata = null;
 
   if (metadataURI.length > 0) {
-    feed.metadataCid = extractCid(metadataURI);
-    const content = resolveContent(metadataURI);
+    const cid = spawnIpfsContent(metadataURI);
+    feed.metadataCid = cid;
+    feed.metadata = cid;
+
+    const content = resolveInlineContent(metadataURI);
     if (content) {
       feed.metadataRaw = content;
       const result = json.try_fromString(content);
@@ -176,6 +185,7 @@ export function handleSlotAdded(event: SlotAdded): void {
     slot.price = BigInt.zero();
     slot.deposit = BigInt.zero();
     slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
     slot.totalCollected = BigInt.zero();
     slot.createdAt = event.block.timestamp;
     slot.createdTx = event.transaction.hash;

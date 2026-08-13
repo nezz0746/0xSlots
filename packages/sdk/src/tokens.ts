@@ -53,6 +53,27 @@ export const NATIVE_CURRENCY: TokenInfo = {
  * The first token in each array is the default.
  */
 export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
+  [SlotsChain.ANVIL]: [
+    {
+      // LocalToken, deployed by apps/contracts/script/SeedLocal.s.sol.
+      //
+      // Plain CREATE, so the address derives from (deployer, nonce) and is
+      // independent of the contract's bytecode — it survives edits to the
+      // Solidity, and moves whenever the deployer's nonce count changes. That
+      // nonce is shared with DeployLocal, which runs first: adding a contract
+      // THERE moves this address too. SeedLocal asserts the value so drift
+      // fails the seed loudly instead of leaving the app pointed at nothing —
+      // when it fires, update both this and EXPECTED_LOCAL_TOKEN.
+      address: "0x9A676e781A523b5d0C0e43731313A708CB607508",
+      name: "0xSlots Test USD",
+      symbol: "USDX",
+      decimals: 18,
+      // Unpermissioned `mint(address,uint256)` — the faucet button works as-is.
+      faucet: true,
+      logo: "usdc",
+    },
+    NATIVE_CURRENCY,
+  ],
   [SlotsChain.BASE_SEPOLIA]: [
     // Default: mintable, so a new testnet user can create AND buy a slot
     // without leaving the app. Shared with the Feed app, so balances carry

@@ -1,0 +1,172 @@
+import { Callout } from 'vocs'
+
+# Collectives
+
+A slot names two addresses at creation and never lets go of either: `recipient`,
+which money flows to, and `manager`, which may propose tax, utility and
+occupancy-policy changes. The protocol
+[keeps them separate on purpose](/concepts/slots) — "receives money" and "has
+admin powers" are different jobs.
+
+A **collective** is for the case where you want them to be the same address
+anyway, without collapsing them into one person. It is a 0xSplits PushSplit
+wearing a role-gated control panel: point a slot's `recipient` *and*
+`config.manager` at one and tax accrues there, `distribute()` fans it out over
+the split, and each of the slot's three governable dimensions sits behind its own
+role.
+
+Deployed on Base Sepolia only for now — see [Deployments](/deployments).
+
+## Roles
+
+| Role | May |
+|---|---|
+| `TAX_MANAGER_ROLE` | Change the tax rate, and the liquidation bounty with it |
+| `POLICY_MANAGER_ROLE` | Change the occupancy policy — who may hold the slot |
+| `UTILITY_MANAGER_ROLE` | Change the utility — what holding the slot grants |
+| `SPLIT_MANAGER_ROLE` | Rewrite the split itself, and pause distribution |
+| `DEFAULT_ADMIN_ROLE` | All of the above, plus granting and revoking roles |
+
+The bounty sits under the tax role rather than its own because it is the same
+kind of lever: what a slot costs to hold and what it pays to evict are one
+economic policy, set by one hand.
+
+`DEFAULT_ADMIN_ROLE` administers the other roles but, in OpenZeppelin's model,
+does not implicitly hold them. Every relay is gated `onlyRoleOrAdmin` so the
+admin is not locked out of its own contract until it has granted itself all four.
+
+## Governing slots
+
+Every relay takes the slot as an argument, so **one collective can be recipient
+and manager for a whole collection of slots** — tax from all of them pools in one
+place and distributes over one split.
+
+```solidity
+function proposeTaxUpdate(IManagedSlot slot, uint256 newPct) external;
+function proposeUtilityUpdate(IManagedSlot slot, address newUtility) external;
+function proposePolicyUpdate(IManagedSlot slot, address newPolicy) external;
+function setLiquidationBounty(IManagedSlot slot, uint256 newBps) external;
+
+function cancelTaxUpdate(IManagedSlot slot) external;
+function cancelUtilityUpdate(IManagedSlot slot) external;
+function cancelPolicyUpdate(IManagedSlot slot) external;
+function cancelPendingUpdates(IManagedSlot slot) external;  // admin only
+```
+
+Roles are global across every slot the contract manages: a `TAX_MANAGER_ROLE`
+holder holds it everywhere. There is no registry of "slots I manage" — it would
+buy nothing, since a call to a slot that has not named this contract as its
+manager simply reverts with `NotManager()` on the far side.
+
+### Events, and why they duplicate the slot's
+
+The slot's own propose events carry **no proposer**. From the slot side, who
+pulled the lever is simply absent — and an indexer cannot recover it from
+`transaction.from` either. That works only while the role holder is an EOA, and
+breaks in exactly the cases this contract exists to serve: a Safe holding a role
+reports whichever owner executed, and a bundled or AA call reports the bundler.
+
+```solidity
+event UpdateRelayed(address indexed slot, address indexed by, UpdateKind indexed kind, bytes32 value);
+event UpdateCancelRelayed(address indexed slot, address indexed by, UpdateKind indexed kind);
+event PendingUpdatesCancelled(address indexed slot, address indexed by);
+event LiquidationBountyRelayed(address indexed slot, address indexed by, uint256 newBps);
+```
+
+`value` is the proposed value widened to 32 bytes — raw basis points for `Tax`,
+the left-padded address for `Utility` and `Policy` — matching how the slot's own
+[`UpdateProposed`](/reference/slot) carries it, so both sides of the relay speak
+one vocabulary.
+
+## Money
+
+```solidity
+function sweep(IManagedSlot[] calldata slots) external;  // permissionless
+function distribute(...) external;                       // from PushSplit
+function setSplit(SplitV2Lib.Split calldata split) external;  // SPLIT_MANAGER_ROLE
+function setPaused(bool paused) external;                     // SPLIT_MANAGER_ROLE
+```
+
+`sweep` pulls revenue from many slots into the collective, ready to distribute.
+It is permissionless and safe to be: `collect()` is unpermissioned on the slot
+and always pays that slot's own recipient, and `claim(address)` cannot be
+redirected — it pays the account named, which here is always the collective. A
+keeper calling it can move money toward the split and nowhere else.
+
+Each leg is individually try/caught, because both revert in ordinary conditions —
+`collect()` on `NothingToCollect`, `claim()` on `NothingToClaim`. Without that,
+one empty slot in the array would sink the whole sweep.
+
+`sweep` only moves tax onto the collective's balance. `distribute()` stays a
+separate call because it needs the full `Split` struct as calldata to check
+against `splitHash`.
+
+<Callout type="warning">
+**Ownership is bound to the contract itself and can never move.**
+`transferOwnership` reverts with `OwnershipIsSelfBound()`.
+
+This is load-bearing, not hygiene. `SplitWalletV2` inherits `Wallet`, which
+exposes `execCalls` — an arbitrary-call multicall gated on `msg.sender == owner`.
+It is not `virtual`, so it cannot be overridden away. With a human owner, that
+function would defeat every role above it: the owner would call
+`execCalls([{ to: slot, data: proposeTaxUpdate(9999) }])` and bypass
+`TAX_MANAGER_ROLE` entirely. Pinning the owner is the only lever that seals it.
+
+The owner-gated functions that *are* wanted — `setSplit`, `setPaused` — are
+re-exposed behind `SPLIT_MANAGER_ROLE`, which works because splits' own
+`onlyOwner` already admits `address(this)`.
+</Callout>
+
+## SlotCollectiveFactory
+
+Deploying a collective by hand means getting a warehouse address, a validated
+split, four role arrays and a self-bound owner right in a single constructor
+call, on every chain, every time. The factory mints them instead, from one
+implementation:
+
+```solidity
+function createManager(
+    SplitV2Lib.Split calldata split,
+    SlotCollective.InitialRoles calldata roles
+) external returns (address manager);
+
+function managerCount() external view returns (uint256);
+function upgradeBeacon(address newImplementation) external;  // admin
+function transferAdmin(address newAdmin) external;           // admin
+```
+
+It also records provenance — the check a slot creator needs before naming an
+address as both `recipient` and `manager` — and keeps deployed managers in order
+so a UI can enumerate without reading logs.
+
+UUPS proxy for the factory, `UpgradeableBeacon` for the collectives, matching
+`SlotFactory` one layer down. A second pattern for the same job would mean two
+upgrade runbooks and two sets of assumptions about who can move what.
+
+<Callout type="warning">
+**The beacon means something different here than it does for slots.** A slot
+holds a deposit; a collective holds *revenue* and is the named recipient of every
+slot pointed at it. One `upgradeBeacon` call rewrites the code of every
+collective on the chain at once — so whoever holds `admin` can, in one
+transaction, change how every collective distributes money that is not theirs.
+
+That is the same authority the slot beacon already carries, which is why it is a
+considered trade rather than an oversight. If collectives are ever handed to
+third parties, the honest answer may be immutable clones (EIP-1167) with no
+beacon at all.
+</Callout>
+
+### Why collectives are proxies at all
+
+`SplitWalletV2` keeps `SPLITS_WAREHOUSE`, `NATIVE_TOKEN` and `FACTORY` in
+`immutable`s, which live in the implementation's runtime bytecode and are read
+correctly through a delegatecall. The first two are chain-wide constants and want
+to be shared. The third would have been a problem — it gates the inherited
+`initialize` on `msg.sender == FACTORY` — except `initializeManager` does that
+work itself and never touches it.
+
+## Next
+
+- [How a slot works](/concepts/slots) — the four roles a slot knows about
+- [Slot reference](/reference/slot) — the manager surface a collective relays to
+- [Deployments](/deployments) — where collectives exist

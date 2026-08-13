@@ -1,5 +1,11 @@
 import type { Context } from "ponder:registry";
-import { account, accountSlot, currency, module } from "ponder:schema";
+import {
+  account,
+  accountChain,
+  accountSlot,
+  currency,
+  module,
+} from "ponder:schema";
 import { type Address, getAddress, type Hex, toFunctionSelector } from "viem";
 import { ERC20Abi } from "../abis";
 
@@ -59,6 +65,52 @@ export async function getOrCreateAccount(
   });
 }
 
+/**
+ * Move an account's per-chain counters.
+ *
+ * The chain-scoped mirror of the totals on `account`. Callers bump both in the
+ * same breath — see the three sites in `factory.ts` and `slot.ts` — because the
+ * pair only means anything while it agrees.
+ *
+ * Upserts rather than assuming a row: an account can be a recipient on a chain
+ * it has never occupied anything on, and vice versa, so whichever counter moves
+ * first creates the row.
+ *
+ * `Math.max(0, …)` on the decrement is a floor, not a fix. It cannot trigger
+ * while inserts and deletes stay paired, and if it ever did, a stuck zero is a
+ * far better failure than a negative count rendering as "-1 occupied".
+ */
+export async function bumpAccountChain(
+  ctx: Context,
+  addressRaw: Hex,
+  chainId: number,
+  delta: {
+    slotCount?: number;
+    occupiedCount?: number;
+    occupiedAsRecipient?: number;
+  },
+) {
+  const acct = lower(addressRaw);
+  const slotDelta = delta.slotCount ?? 0;
+  const occDelta = delta.occupiedCount ?? 0;
+  const recOccDelta = delta.occupiedAsRecipient ?? 0;
+
+  await ctx.db
+    .insert(accountChain)
+    .values({
+      account: acct,
+      chainId,
+      slotCount: Math.max(0, slotDelta),
+      occupiedCount: Math.max(0, occDelta),
+      occupiedAsRecipient: Math.max(0, recOccDelta),
+    })
+    .onConflictDoUpdate((row) => ({
+      slotCount: Math.max(0, row.slotCount + slotDelta),
+      occupiedCount: Math.max(0, row.occupiedCount + occDelta),
+      occupiedAsRecipient: Math.max(0, row.occupiedAsRecipient + recOccDelta),
+    }));
+}
+
 export async function getOrCreateAccountSlot(
   ctx: Context,
   accountAddr: Hex,
@@ -96,27 +148,90 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
   let decimals = 18;
 
   if (id !== ZERO_ADDR) {
-    try {
-      const checksum = getAddress(id);
-      const abi = ERC20Abi as unknown as readonly unknown[];
-      const [n, s, d] = await ctx.client.multicall({
-        allowFailure: true,
-        contracts: [
-          { address: checksum, abi, functionName: "name" },
-          { address: checksum, abi, functionName: "symbol" },
-          { address: checksum, abi, functionName: "decimals" },
-        ],
-      });
-      if (n.status === "success" && typeof n.result === "string")
-        name = n.result;
-      if (s.status === "success" && typeof s.result === "string")
-        symbol = s.result;
-      if (d.status === "success") {
-        if (typeof d.result === "number") decimals = d.result;
-        else if (typeof d.result === "bigint") decimals = Number(d.result);
+    const checksum = getAddress(id);
+    const abi = ERC20Abi as unknown as readonly unknown[];
+
+    const take = (
+      n: unknown,
+      s: unknown,
+      d: unknown,
+    ): { any: boolean } => {
+      let any = false;
+      if (typeof n === "string") {
+        name = n;
+        any = true;
       }
-    } catch {
-      // leave defaults (e.g. chain has no Multicall3 deployment)
+      if (typeof s === "string") {
+        symbol = s;
+        any = true;
+      }
+      if (typeof d === "number") {
+        decimals = d;
+        any = true;
+      } else if (typeof d === "bigint") {
+        decimals = Number(d);
+        any = true;
+      }
+      return { any };
+    };
+
+    // Ask only if the chain actually declares Multicall3.
+    //
+    // Letting the call fail and catching it is not equivalent: ponder retries a
+    // failed `context.client` action with backoff before the error surfaces
+    // here, so on a bare anvil — which has no Multicall3 — every new currency
+    // logged a warning and turned a 5ms block into a 630ms one. The retries are
+    // pure waste when the answer is knowable up front.
+    const hasMulticall3 = Boolean(
+      (
+        ctx.client as {
+          chain?: { contracts?: { multicall3?: { address?: string } } };
+        }
+      ).chain?.contracts?.multicall3?.address,
+    );
+
+    let resolved = false;
+    if (hasMulticall3) {
+      try {
+        const [n, s, d] = await ctx.client.multicall({
+          allowFailure: true,
+          contracts: [
+            { address: checksum, abi, functionName: "name" },
+            { address: checksum, abi, functionName: "symbol" },
+            { address: checksum, abi, functionName: "decimals" },
+          ],
+        });
+        resolved = take(
+          n.status === "success" ? n.result : undefined,
+          s.status === "success" ? s.result : undefined,
+          d.status === "success" ? d.result : undefined,
+        ).any;
+      } catch {
+        // Declared but unreachable — fall through to the individual reads.
+      }
+    }
+
+    // Fall back to three plain eth_calls. Three round trips instead of one is a
+    // fine trade for a row written once per currency, and it is the difference
+    // between a named token and a bare address on any chain without Multicall3.
+    if (!resolved) {
+      const read = async (functionName: string) => {
+        try {
+          return await ctx.client.readContract({
+            address: checksum,
+            abi,
+            functionName,
+          });
+        } catch {
+          return undefined;
+        }
+      };
+      const [n, s, d] = await Promise.all([
+        read("name"),
+        read("symbol"),
+        read("decimals"),
+      ]);
+      take(n, s, d);
     }
   }
 
@@ -140,7 +255,7 @@ export async function getOrCreateModule(
     name: "",
     version: "",
     feeBps: 0n,
-    moduleURI: null,
+    metadataURI: null,
     image: null,
     description: null,
     totalFeesCollected: 0n,

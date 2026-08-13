@@ -1,3 +1,5 @@
+import { Callout } from 'vocs'
+
 # SlotsClient
 
 The main entry point for interacting with 0xSlots. [Source](https://github.com/nezz0746/0xSlots/blob/main/packages/sdk/src/client.ts)
@@ -8,35 +10,115 @@ The main entry point for interacting with 0xSlots. [Source](https://github.com/n
 import { SlotsClient, SlotsChain } from "@0xslots/sdk";
 
 const client = new SlotsClient({
-  chainId: SlotsChain.BASE,       // BASE (8453) or BASE_SEPOLIA (84532)
-  publicClient,                    // viem PublicClient
-  walletClient,                    // viem WalletClient (for writes)
-  subgraphApiKey,                  // optional — Bearer token
+  chainId: SlotsChain.BASE,  // BASE (8453), BASE_SEPOLIA (84532), ANVIL (31337)
+  publicClient,              // viem PublicClient
+  walletClient,              // viem WalletClient (for writes)
+  apiUrl,                    // optional — defaults to DEFAULT_API_URL
+  headers,                   // optional — extra request headers
 });
 ```
 
-## Subgraph Queries
+<Callout type="warning">
+`chainId` no longer selects an endpoint. One [indexer](/indexer) deployment holds
+every chain, so this is a `where: { chainId }` filter merged into every list
+query. Every read method applies it for you — an unfiltered query returns base
+and base-sepolia rows interleaved, which is worse than an error because it looks
+like a result. Passing `chainId` explicitly in `where` still wins, for the rare
+cross-chain read.
+</Callout>
+
+### Endpoints
 
 ```ts
-const { slots } = await client.getSlots({ first: 10, skip: 0 });
+import { DEFAULT_API_URL, LOCAL_API_URL } from "@0xslots/sdk";
+```
+
+`DEFAULT_API_URL` is the hosted indexer, used when `apiUrl` is omitted.
+`LOCAL_API_URL` (`http://localhost:42069/graphql`) is what `pnpm dev:local`
+starts, for chain 31337.
+
+### There is no `apiKey`
+
+The indexer serves GraphQL unauthenticated, so a key bought nothing — and
+consumers wired it through `NEXT_PUBLIC_*`, which Next inlines into the client
+bundle. The option was removed rather than ignored. If you have put your own
+deployment behind auth, `headers` carries it and is now the only path:
+
+```ts
+new SlotsClient({
+  chainId,
+  apiUrl,
+  headers: { Authorization: `Bearer ${token}` },
+});
+```
+
+## Indexer queries
+
+```ts
+const { slots } = await client.getSlots({ limit: 10 });
 const { slot } = await client.getSlot({ id: "0x..." });
 const { slots } = await client.getSlotsByRecipient({ recipient: "0x..." });
 const { slots } = await client.getSlotsByOccupant({ occupant: "0x..." });
 const { factory } = await client.getFactory();
-const { modules } = await client.getModules({ first: 10 });
+const { modules } = await client.getModules({ limit: 10 });
 const activity = await client.getSlotActivity({ slot: "0x..." });
-const events = await client.getRecentEvents({ first: 20 });
+const events = await client.getRecentEvents({ limit: 20 });
 ```
 
-## RPC Reads
+### Result shape
+
+Lists return `{ items, totalCount, pageInfo }` — not a bare array. Callers that
+iterated a response directly need `.items`; the failure mode is
+`object is not iterable` at the call site.
+
+```ts
+const { items, totalCount, pageInfo } = (await client.getSlots({ limit: 10 })).slots;
+```
+
+Pagination is `limit` with either `offset` or the `after` / `before` cursors from
+`pageInfo`. The subgraph's `first` / `skip` are gone, as is its `block:`
+time-travel argument, which has no equivalent.
+
+### Accounts
+
+`getAccounts` returns protocol-wide totals; `getAccountChains` returns the same
+counters **scoped to one chain**. Reach for the second whenever you are showing a
+per-chain view — an account has no `chainId`, so the unscoped list will happily
+show one chain's recipients with another chain's counts.
+
+```ts
+const { accounts } = await client.getAccounts({ limit: 20 });
+const { accountChains } = await client.getAccountChains({ limit: 20 });
+// accountChain: { slotCount, occupiedCount, occupiedAsRecipient }
+```
+
+`occupiedAsRecipient` is the only honest numerator for an occupancy percentage:
+`occupiedCount` counts slots the account *occupies*, `slotCount` counts slots
+where it is the *recipient*. They describe different roles, and pairing them as a
+ratio is a category error however much they look like a pair.
+
+### Indexing status
+
+```ts
+const { _meta } = await client.getMeta();  // { status: Record<string, ChainStatus> }
+```
+
+There is no `hasIndexingErrors` counterpart: the indexer stops rather than
+serving stale rows behind a flag, so an erroring indexer is a failed request, not
+a `true` here.
+
+## RPC reads
 
 ```ts
 const info = await client.getSlotInfo("0x...");
-// Returns: recipient, currency, occupant, price, deposit, taxPercentage,
-//   taxOwed, secondsUntilLiquidation, insolvent, pendingTax, pendingModule, ...
+// recipient, currency, occupant, price, deposit, taxPercentage, taxOwed,
+// secondsUntilLiquidation, insolvent, occupancyPolicy, pending updates, and
+// taxProposedAt / utilityProposedAt / policyProposedAt
+
+const infos = await client.getSlotsInfo(["0x...", "0x..."]);  // multicall
 ```
 
-## Write Methods
+## Write methods
 
 All return `Promise<Hash>`. ERC-20 approval is handled automatically.
 
@@ -44,23 +126,76 @@ All return `Promise<Hash>`. ERC-20 approval is handled automatically.
 // Factory
 await client.createSlot({ recipient, currency, config, initParams });
 await client.createSlots({ ...params, count: 5n });
+await client.collectAll([slotA, slotB]);
 
 // Slot interactions
-await client.buy({ slot, depositAmount, selfAssessedPrice });
+await client.buy({ slot, account, depositAmount, selfAssessedPrice });
 await client.selfAssess(slot, newPrice);
 await client.topUp(slot, amount);
 await client.withdraw(slot, amount);
 await client.release(slot);
 await client.collect(slot);
 await client.liquidate(slot);
+```
 
-// Manager
+`buy` takes an `account` — who becomes occupant. It need not be the signer, so
+you can buy on someone's behalf.
+
+### Field names
+
+`SlotConfig` and `SlotInitParams` renamed `mutableModule` → `mutableUtility` and
+`module` → `utility` to match the contracts. **The SDK accepts either and
+normalises**, so most consumers need no change:
+
+```ts
+const config = { mutableTax: true, mutableUtility: false, mutablePolicy: false, manager };
+const initParams = { taxPercentage: 100n, utility: ZERO_ADDRESS, /* ... */ };
+```
+
+If you build the tuple yourself and pass it straight to viem, you must use the
+new spelling. viem encodes a struct argument **by component name**, so the old
+keys encode nothing at all — a silent zero address rather than an error.
+
+### Manager operations
+
+A slot holds at most one pending update per kind — three in total — and each is
+proposed, inspected and cancelled independently.
+
+```ts
+import { UpdateKind } from "@0xslots/sdk";  // Tax = 0, Utility = 1, Policy = 2
+
 await client.proposeTaxUpdate(slot, newPct);
-await client.proposeModuleUpdate(slot, newModule);
-await client.cancelPendingUpdates(slot);
-await client.setLiquidationBounty(slot, newBps);
+await client.proposeUtilityUpdate(slot, newUtility);
+await client.proposePolicyUpdate(slot, newPolicy);
 
-// Multicall
+await client.cancelPendingUpdate(slot, UpdateKind.Policy);  // one dimension
+await client.cancelPendingUpdates(slot);                    // all three
+
+await client.setLiquidationBounty(slot, newBps);
+```
+
+`proposeModuleUpdate` still exists as a deprecated alias for
+`proposeUtilityUpdate`. The enum values mirror the Solidity enum and go on the
+wire — do not reorder them.
+
+### Policy helpers
+
+Policies are minted per set of terms at a CREATE2 address, so you can compute one
+before it exists:
+
+```ts
+const policy = await client.predictTenurePolicy(7n * 24n * 3600n);
+if (!(await client.isTenurePolicyDeployed(7n * 24n * 3600n))) {
+  await client.deployTenurePolicy(7n * 24n * 3600n);
+}
+
+await client.predictPricePolicy(currency, minPrice);
+await client.deployPricePolicy(currency, minPrice);
+```
+
+### Multicall
+
+```ts
 await client.multicall(slot, [
   { functionName: "selfAssess", args: [newPrice] },
   { functionName: "topUp", args: [amount] },
@@ -70,7 +205,24 @@ await client.multicall(slot, [
 ## Modules
 
 ```ts
-await client.modules.metadata.getSlots({ first: 10 });
+await client.modules.metadata.getSlots({ limit: 10 });
 await client.modules.metadata.getURI(moduleAddress, slotAddress);
 await client.modules.metadata.updateMetadata(moduleAddress, slotAddress, "ipfs://...");
+
+// FeedModuleClient — buy-and-post in one transaction, plus social-group writes
+await client.modules.feed.buyAndPost(/* ... */);
+await client.modules.feed.socialGroupPost(slot, "ipfs://...");
 ```
+
+<Callout type="warning">
+`module.moduleURI` is now `module.metadataURI`, following the
+[`IModuleMetadata`](/reference/modules) rename on the contracts. The column moved
+in `GetModules` and in the `SlotFields` fragment — so `getSlots`,
+`getSlotsWithMetadata`, `getSlot` and everything built on it.
+
+There is no compatibility window in either direction: the indexer serves exactly
+one schema, and GraphQL rejects the whole document on an unknown field. An older
+SDK against the new indexer returns an **empty list**, not a missing field — a
+slots table that simply renders nothing. Upgrade the SDK and the indexer
+together.
+</Callout>

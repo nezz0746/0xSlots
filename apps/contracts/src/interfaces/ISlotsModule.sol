@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IModuleMetadata} from "./IModuleMetadata.sol";
 
 /// @title ISlotsModule — deprecated name for `IUtility`
 /// @notice Kept so utilities that `import {ISlotsModule}` keep compiling. New
@@ -18,11 +18,7 @@ import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///      deployed on Base computed at their own compile time.
 ///
 ///      Delete in the next major version.
-interface ISlotsModule is IERC165 {
-  function name() external view returns (string memory);
-
-  function version() external view returns (string memory);
-
+interface ISlotsModule is IModuleMetadata {
   function onTransfer(uint256 slotId, address from, address to) external;
 
   function onPriceUpdate(
@@ -43,6 +39,4 @@ interface ISlotsModule is IERC165 {
   function feeBps() external view returns (uint256);
 
   function feeRecipient() external view returns (address);
-
-  function moduleURI() external view returns (string memory);
 }

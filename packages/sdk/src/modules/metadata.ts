@@ -102,11 +102,11 @@ export class MetadataModuleClient {
   /** Get all metadata slots for a given recipient. */
   getSlotsByRecipient(
     ...args: Parameters<
-      ReturnType<typeof getSdk>["GetMetadataSlotsByRecipient"]
+      ReturnType<typeof getSdk>["GetMetadataSlotsBySlots"]
     >
   ) {
     return this.query("metadata.getSlotsByRecipient", () =>
-      this.sdk.GetMetadataSlotsByRecipient(...args),
+      this.sdk.GetMetadataSlotsBySlots(...args),
     );
   }
 

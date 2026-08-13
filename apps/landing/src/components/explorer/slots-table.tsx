@@ -270,7 +270,7 @@ export function SlotsTable() {
             <DropdownMenuSeparator />
 
             {/* Module filters */}
-            <DropdownMenuLabel className="text-xs">Module</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs">Utility</DropdownMenuLabel>
             {modules?.map((m) => (
               <DropdownMenuCheckboxItem
                 key={m.id}
@@ -287,7 +287,7 @@ export function SlotsTable() {
             ))}
             {(!modules || modules.length === 0) && (
               <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                No modules found
+                No utilities found
               </p>
             )}
           </DropdownMenuContent>
@@ -335,7 +335,7 @@ export function SlotsTable() {
                   </span>
                 </TableHead>
                 <TableHead className="text-right">Price / Tax</TableHead>
-                <TableHead>Module</TableHead>
+                <TableHead>Utility</TableHead>
                 <TableHead>Flags</TableHead>
                 <TableHead className="text-right">Created</TableHead>
               </TableRow>
@@ -345,7 +345,7 @@ export function SlotsTable() {
                 <SlotRow
                   key={slot.id}
                   slot={slot}
-                  onSelect={(id) => push(`/slots/${id}`)}
+                  onSelect={(id) => push(`/app/slots/${id}`)}
                 />
               ))}
             </TableBody>

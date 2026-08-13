@@ -64,8 +64,14 @@ not own. It is declared by the module and visible before anyone commits.
 
 ## Writing one
 
-Any contract implementing `ISlotsModule`. No registry, no permission — pass its
-address at slot creation.
+Any contract implementing `IUtility` — the interface formerly called
+`ISlotsModule`, kept as an alias so existing utilities keep compiling. No
+registry, no permission: pass its address at slot creation.
+
+You also need [`IModuleMetadata`](/reference/modules) — `name`, `version`,
+`metadataURI` — which `IUtility` inherits. Verification checks both ERC-165 ids
+separately, so a utility that implements the hooks but cannot describe itself
+will not verify.
 
 The factory can mark a module **verified**, which is a curation signal in the
 explorer, not a security boundary. Unverified modules work identically.

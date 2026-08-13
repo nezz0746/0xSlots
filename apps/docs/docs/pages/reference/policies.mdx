@@ -1,3 +1,5 @@
+import { Callout } from 'vocs'
+
 # Occupancy policies
 
 See [Occupancy](/concepts/occupancy) for why these exist and when to use each.
@@ -5,15 +7,18 @@ See [Occupancy](/concepts/occupancy) for why these exist and when to use each.
 ## IOccupancyPolicy
 
 ```solidity
-interface IOccupancyPolicy is IERC165 {
+interface IOccupancyPolicy is IModuleMetadata {
     function checkBuy(OccupancyContext calldata ctx) external view;
     function checkPriceUpdate(OccupancyContext calldata ctx) external view;
-
-    function name() external view returns (string memory);
-    function version() external view returns (string memory);
-    function policyURI() external view returns (string memory);
 }
 ```
+
+Self-description — `name`, `version`, `metadataURI` — lives in
+[`IModuleMetadata`](/reference/modules), shared with `IUtility`. The two describe
+themselves identically even though they behave nothing alike, so `policyURI()` and
+`moduleURI()` were unified into one `metadataURI()`. As with `IUtility`,
+inheriting **narrows** this interface's ERC-165 id to its own two checks, and
+`SlotFactory.setPolicyVerified` asserts both ids.
 
 Both checks are `view` and return nothing. **Revert to block; return to allow.**
 A policy answers yes or no and does nothing else — it can never move funds,
@@ -72,6 +77,23 @@ for (factory of factoriesForChain(chainId))
 
 Adding a policy kind is "deploy a factory, list its address" — no change to
 verification logic anywhere.
+
+<Callout type="warning">
+**A policy is immutable, so new bytecode means a new address for every set of
+terms.** Its address is a CREATE2 hash of the init code, so redeploying a factory
+does not migrate anything — it strands every policy the previous one minted at an
+address only that older factory can claim.
+
+This is why `POLICY_FACTORIES` is a *list*, ordered current-first, and why
+resolution and creation read from different exports. Create through
+`MINIMUM_TENURE_POLICY_FACTORY` / `MINIMUM_PRICE_POLICY_FACTORY`; resolve through
+the list. See [Deployments](/deployments) for the current and superseded
+addresses.
+
+Slots already pointing at a pre-rename policy are unaffected — `Slot` only ever
+calls `checkBuy` and `checkPriceUpdate`, neither of which changed. Only
+re-verification would revert.
+</Callout>
 
 <div />
 

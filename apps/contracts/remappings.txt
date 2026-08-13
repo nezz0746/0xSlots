@@ -2,3 +2,5 @@ forge-std/=lib/forge-std/src/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 @openzeppelin-upgradeable/contracts/=lib/openzeppelin-contracts-upgradeable/contracts/
 prb/test/=lib/prb-test/src/
+solady/=lib/solady/src/
+splits-v2/=lib/splits-contracts-monorepo/packages/splits-v2/src/

@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -146,7 +147,7 @@ contract NativeEthTest is Test {
 
     function test_createSlot_rejectsCodelessCurrency() public {
         address notAToken = makeAddr("notAToken");
-        vm.expectRevert(Slot.InvalidCurrency.selector);
+        vm.expectRevert(InvalidCurrency.selector);
         factory.createSlot(recipient, IERC20(notAToken), _config(), _init());
     }
 
@@ -169,11 +170,11 @@ contract NativeEthTest is Test {
         vm.deal(alice, 5 ether);
 
         vm.prank(alice);
-        vm.expectRevert(Slot.InvalidValue.selector);
+        vm.expectRevert(InvalidValue.selector);
         slot.buy{value: 0.5 ether}(alice, 1 ether, 10 ether); // too little
 
         vm.prank(alice);
-        vm.expectRevert(Slot.InvalidValue.selector);
+        vm.expectRevert(InvalidValue.selector);
         slot.buy{value: 2 ether}(alice, 1 ether, 10 ether);   // too much
     }
 
@@ -182,7 +183,7 @@ contract NativeEthTest is Test {
         vm.deal(alice, 1 ether);
 
         vm.prank(alice);
-        vm.expectRevert(Slot.InvalidValue.selector);
+        vm.expectRevert(InvalidValue.selector);
         slot.buy{value: 1 wei}(alice, 1 ether, 10 ether);
     }
 
@@ -204,7 +205,7 @@ contract NativeEthTest is Test {
 
         vm.deal(bob, 2 ether);
         vm.prank(bob);
-        vm.expectRevert(Slot.InvalidValue.selector);
+        vm.expectRevert(InvalidValue.selector);
         slot.topUp{value: 1 ether}(2 ether);
     }
 
@@ -328,7 +329,7 @@ contract NativeEthTest is Test {
 
         // A contract that burns ALL gas can never receive ETH by any mechanism.
         // claim() reverts rather than silently zeroing the credit.
-        vm.expectRevert(Slot.TransferFailed.selector);
+        vm.expectRevert(TransferFailed.selector);
         slot.claim(address(burner));
 
         assertGt(slot.withdrawableOf(address(burner)), 0, "credit must survive");

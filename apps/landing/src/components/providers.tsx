@@ -45,9 +45,9 @@ function MiniAppProviders({ children }: { children: ReactNode }) {
         <ChainProvider>
           <SplitsProvider>
             <SplitsClientSync />
-            <TooltipProvider>
-              <NavigationProvider>{children}</NavigationProvider>
-            </TooltipProvider>
+              <TooltipProvider>
+                <NavigationProvider>{children}</NavigationProvider>
+              </TooltipProvider>
           </SplitsProvider>
         </ChainProvider>
       </QueryClientProvider>

@@ -1,0 +1,170 @@
+import { Callout } from 'vocs'
+
+# Indexer
+
+Slot deployments, ownership transitions and tax events are indexed by
+[Ponder](https://ponder.sh) and served as GraphQL. This is what
+[`SlotsClient`](/sdk/client) reads.
+
+## Endpoint
+
+| | |
+|---|---|
+| Hosted | `https://0xslots-production.up.railway.app/graphql` |
+| Local | `http://localhost:42069/graphql` (`pnpm dev:local`) |
+
+Both are exported as `DEFAULT_API_URL` and `LOCAL_API_URL` from `@0xslots/sdk`.
+
+<Callout type="warning">
+**One deployment holds every chain.** A subgraph is one deployment per network,
+so the chain used to be a property of the endpoint. Here it is a
+`where: { chainId }` filter on the query.
+
+An unfiltered list returns base and base-sepolia rows interleaved — a
+plausible-looking result that is quietly wrong, which is worse than an error.
+`SlotsClient` merges the filter into every list query for you; if you query the
+endpoint directly, apply it yourself.
+</Callout>
+
+The API is served **unauthenticated**. There is no key to pass, and the SDK
+dropped its `apiKey` option accordingly — see [SlotsClient](/sdk/client).
+
+## Shape
+
+Four differences from the subgraph this replaces:
+
+- Plural fields return `{ items, totalCount, pageInfo }`, not a bare list.
+- Pagination is `limit` with `offset`, or the `after` / `before` cursors from
+  `pageInfo`. `first` / `skip` are gone.
+- Foreign keys are scalar columns; the joined row is the `*Ref` sibling —
+  `module` is an address, `moduleRef` is the row.
+- There is no `block:` argument. Ponder has no time-travel query.
+
+Every chain-scoped row carries `chainId`.
+
+## Key entities
+
+| Entity | Key fields |
+|---|---|
+| `slot` | `id`, `chainId`, `recipient`, `currency`, `occupant`, `isOccupied`, `price`, `deposit`, `taxPercentage`, `collectedTax`, `taxPaidTotal`, `totalCollected`, `occupancyPolicy`, `createdAt` |
+| `account` | `id`, `type` (EOA/CONTRACT/DELEGATED/SPLIT), `slotCount`, `occupiedCount`, `totalHoldTime` |
+| `accountChain` | `account`, `chainId`, `slotCount`, `occupiedCount`, `occupiedAsRecipient` |
+| `currency` | `id`, `name`, `symbol`, `decimals` |
+| `module` | `id`, `name`, `version`, `verified`, `feeBps`, `metadataURI`, `image`, `description` |
+| `metadataSlot` | `id`, `uri`, `cid`, `rawJson`, `adType`, `updatedBy`, `updateCount` |
+
+`slot` also carries its pending updates, so "what is queued right now" no longer
+needs an RPC call per slot: `pendingTaxPercentage`, `pendingUtility`,
+`pendingPolicy` and a `*ProposedAt` for each.
+
+<Callout type="warning">
+`NULL` on a pending column means **nothing is queued**. It is not interchangeable
+with the zero address, which is a real proposed value for both address
+dimensions — "remove the utility" and "drop the occupancy policy" are changes
+someone deliberately queued.
+</Callout>
+
+### `account` vs `accountChain`
+
+`account` has no `chainId` and holds protocol-wide totals. `accountChain` holds
+the same counters per chain, and is what a per-chain view must read — otherwise a
+recipient list on base shows base-sepolia's recipients with their base-sepolia
+counts, and clicking through opens a page that correctly filters by chain and
+finds nothing.
+
+`occupiedCount` counts slots the account **occupies**; `slotCount` counts slots
+where it is the **recipient**. They describe different roles. The one that pairs
+with `slotCount` is `occupiedAsRecipient` — the only honest numerator for an
+occupancy percentage.
+
+### `module.metadataURI`
+
+Formerly `moduleURI`, following the
+[`IModuleMetadata`](/reference/modules) rename on the contracts. The indexer
+serves exactly one schema and GraphQL rejects a document containing an unknown
+field, so an SDK on the other spelling gets an **empty list** rather than a
+missing field. Deploy the indexer and publish the SDK together.
+
+## Example queries
+
+### List slots
+
+```graphql
+{
+  slots(
+    where: { chainId: 8453 }
+    orderBy: "createdAt"
+    orderDirection: "desc"
+    limit: 10
+  ) {
+    items {
+      id
+      recipient
+      occupant
+      isOccupied
+      price
+      deposit
+      taxPercentage
+      currencyRef { symbol decimals }
+      moduleRef { name verified metadataURI }
+      createdAt
+    }
+    totalCount
+    pageInfo { hasNextPage endCursor }
+  }
+}
+```
+
+### Slot activity
+
+```graphql
+query GetSlotActivity($slot: String!) {
+  boughtEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
+    items { buyer price selfAssessedPrice timestamp }
+  }
+  releasedEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
+    items { occupant refund timestamp }
+  }
+  liquidatedEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
+    items { liquidator bounty timestamp }
+  }
+}
+```
+
+**SDK equivalent:** `await client.getSlotActivity({ slot: "0x..." })`
+
+### Recipients on one chain
+
+```graphql
+query GetAccountChains($chainId: Int!) {
+  accountChains(
+    where: { chainId: $chainId }
+    orderBy: "slotCount"
+    orderDirection: "desc"
+    limit: 20
+  ) {
+    items { account slotCount occupiedAsRecipient }
+    totalCount
+  }
+}
+```
+
+**SDK equivalent:** `await client.getAccountChains({ limit: 20 })`
+
+## Indexing status
+
+```graphql
+{ _meta { status } }
+```
+
+`status` is keyed by chain and carries the latest indexed block. There is no
+`hasIndexingErrors` counterpart — the indexer stops rather than serving stale
+rows behind a flag, so an erroring indexer is a failed request, not a `true`
+here.
+
+**SDK equivalent:** `await client.getMeta()`
+
+## The subgraph
+
+`packages/subgraph` still exists and still deploys, but it is no longer what the
+SDK queries. Treat the endpoints above as the read path.

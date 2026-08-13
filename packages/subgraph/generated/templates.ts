@@ -67,3 +67,13 @@ export class Feed extends DataSourceTemplate {
     DataSourceTemplate.createWithContext("Feed", [address.toHex()], context);
   }
 }
+
+export class IpfsContent extends DataSourceTemplate {
+  static create(cid: string): void {
+    DataSourceTemplate.create("IpfsContent", [cid]);
+  }
+
+  static createWithContext(cid: string, context: DataSourceContext): void {
+    DataSourceTemplate.createWithContext("IpfsContent", [cid], context);
+  }
+}

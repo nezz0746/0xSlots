@@ -5,11 +5,13 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams, PendingUpdate, SlotInfo} from "../src/interfaces/ISlot.sol";
 import {IUtility} from "../src/interfaces/IUtility.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") {
@@ -26,13 +28,13 @@ contract MockModule is IUtility {
     function version() external pure returns (string memory) { return "1.0.0"; }
     function feeBps() external pure returns (uint256) { return 0; }
     function feeRecipient() external view returns (address) { return address(this); }
-    function moduleURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function onTransfer(uint256, address, address) external {}
     function onPriceUpdate(uint256, uint256, uint256) external {}
     function onRelease(uint256, address) external {}
     function onSettle(uint256, address, uint256, uint256) external {}
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IUtility).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IUtility).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -211,7 +213,7 @@ contract SlotV3Test is Test {
 
         vm.startPrank(alice);
         token.approve(address(slot), 200 ether);
-        vm.expectRevert(Slot.CannotBuyFromYourself.selector);
+        vm.expectRevert(CannotBuyFromYourself.selector);
         slot.buy(alice, 10 ether, 100 ether);
         vm.stopPrank();
     }
@@ -221,7 +223,7 @@ contract SlotV3Test is Test {
 
         vm.startPrank(alice);
         token.approve(address(slot), 1 ether);
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         slot.buy(alice, 1, 100 ether); // 1 wei deposit for 100 ETH price = way below min
         vm.stopPrank();
     }
@@ -251,7 +253,7 @@ contract SlotV3Test is Test {
         _buySlot(slot, alice, 10 ether, 100 ether);
 
         vm.prank(bob);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         slot.release();
     }
 
@@ -274,7 +276,7 @@ contract SlotV3Test is Test {
         _buySlot(slot, alice, 10 ether, 100 ether);
 
         vm.prank(alice);
-        vm.expectRevert(Slot.InvalidPrice.selector);
+        vm.expectRevert(InvalidPrice.selector);
         slot.selfAssess(0);
     }
 
@@ -337,7 +339,7 @@ contract SlotV3Test is Test {
         _buySlot(slot, alice, 10 ether, 100 ether);
 
         vm.prank(liquidator);
-        vm.expectRevert(Slot.NotInsolvent.selector);
+        vm.expectRevert(NotInsolvent.selector);
         slot.liquidate();
     }
 
@@ -375,7 +377,7 @@ contract SlotV3Test is Test {
         _buySlot(slot, alice, 10 ether, 100 ether);
 
         vm.prank(alice);
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         slot.withdraw(10 ether); // Would leave 0, below minimum
     }
 
@@ -461,11 +463,11 @@ contract SlotV3Test is Test {
 
         // manager is address(0) on immutable slots, so any caller gets NotManager
         vm.prank(alice);
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         slot.proposeTaxUpdate(200);
 
         vm.prank(alice);
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         slot.proposeUtilityUpdate(makeAddr("module"));
     }
 
@@ -473,7 +475,7 @@ contract SlotV3Test is Test {
         Slot slot = _createDefaultSlot();
 
         vm.prank(alice);
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         slot.proposeTaxUpdate(200);
     }
 
@@ -494,7 +496,7 @@ contract SlotV3Test is Test {
         Slot slot = _createDefaultSlot();
 
         vm.prank(alice);
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         slot.setLiquidationBounty(1000);
     }
 
@@ -595,7 +597,7 @@ contract SlotV3Test is Test {
 
         address eoa = makeAddr("noCodeModule");
         vm.prank(manager);
-        vm.expectRevert(Slot.InvalidModule_NoCode.selector);
+        vm.expectRevert(InvalidModule_NoCode.selector);
         slot.proposeUtilityUpdate(eoa);
     }
 

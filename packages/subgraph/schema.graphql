@@ -70,6 +70,10 @@ type Slot @entity(immutable: false) {
   price: BigInt!
   deposit: BigInt!
   collectedTax: BigInt!
+  """Total tax ever paid into this slot, summed from TaxPaid.
+  The denominator for an account's share; unlike collectedTax it
+  only grows, since collecting drains the balance but not history."""
+  taxPaidTotal: BigInt!
   totalCollected: BigInt!
 
   # ── v3 occupancy layer ───────────────────────────────────────────────────
@@ -95,9 +99,28 @@ type Slot @entity(immutable: false) {
   pendingPrice: BigInt
   pendingDeposit: BigInt
 
-  # Pending manager-proposed policy swap (applies on next ownership transition)
+  # ── Pending manager-proposed updates, one per dimension ──────────────────
+  #
+  # A slot holds at most three queued changes — tax, utility, policy — and all
+  # of them apply together on the next ownership transition. Each can be
+  # proposed and cancelled independently.
+  #
+  # NULL means nothing is queued for that dimension. That is NOT the same as
+  # the zero address, which is a real proposed value for the two address
+  # dimensions: "remove the utility" and "drop the occupancy policy" are both
+  # changes someone deliberately queued. Read the value, not its truthiness.
+  #
+  # The `*ProposedAt` stamps are what separate a change queued last week from
+  # one queued moments before a buy — a distinction a buyer needs and the
+  # `has*` flags cannot express. Null when nothing is queued; also null for
+  # the handful of updates queued before the contract recorded the time.
   pendingPolicy: Bytes
   hasPendingPolicy: Boolean!
+  policyProposedAt: BigInt
+  pendingTaxPercentage: BigInt
+  taxProposedAt: BigInt
+  pendingUtility: Bytes
+  utilityProposedAt: BigInt
 
   createdAt: BigInt!
   createdTx: Bytes!
@@ -121,6 +144,41 @@ type Slot @entity(immutable: false) {
   metadataUpdates: [MetadataUpdatedEvent!]! @derivedFrom(field: "slot")
 }
 
+"""
+The parsed contents of one IPFS file, keyed by its CID.
+
+Fetched by a `file/ipfs` data source rather than inline in a chain handler, so
+this entity is subject to that mechanism's rules: it is IMMUTABLE, it is
+written only by `handleIpfsContent`, and no chain-based handler can read it.
+Chain entities point AT it by CID — writing a reference is just writing an id,
+which is allowed and is the pattern the file-data-source guide recommends.
+
+One entity type for every metadata file the protocol indexes — module,
+slot ad, feed — because they are all the same shape of JSON and a CID is a CID.
+A consumer selects the fields its own file is expected to carry and ignores
+the rest.
+
+**It appears asynchronously.** The chain handler that spawns the fetch commits
+in its own block; this row shows up whenever Graph Node manages to retrieve the
+file, which may be several blocks later or — if the CID is unpinned and
+unreachable — never. A query that follows the link immediately after an update
+can legitimately find nothing there. That is the trade the migration makes: the
+old `ipfs.cat` blocked the handler and returned null on timeout, silently
+recording "no metadata" forever.
+"""
+type IpfsContent @entity(immutable: true) {
+  id: ID! # the CID, exactly as handed to the file data source
+  "Raw file bytes as a UTF-8 string. Null when the file is not valid JSON."
+  json: String
+  name: String
+  description: String
+  image: String
+  banner: String
+  externalLink: String
+  "The `type` field, used by ad metadata — banner, native, video."
+  adType: String
+}
+
 type Module @entity(immutable: false) {
   id: ID! # module address
   factory: Factory!
@@ -129,8 +187,12 @@ type Module @entity(immutable: false) {
   version: String!
   feeBps: BigInt!
   moduleURI: String
-  image: String
-  description: String
+  """
+  Parsed `moduleURI` contents. Replaces the former `image` and `description`
+  fields, which were populated by a blocking `ipfs.cat` in the chain handler.
+  Null until the file is fetched, and for a `moduleURI` that is not IPFS.
+  """
+  metadata: IpfsContent
   totalFeesCollected: BigInt!
   feePayments: [ModuleFeePaidEvent!]! @derivedFrom(field: "module")
 }
@@ -144,8 +206,14 @@ type MetadataSlot @entity(immutable: false) {
   slot: Slot!
   uri: String!
   cid: String # IPFS CID extracted from uri (null for inline JSON or non-IPFS URIs)
-  rawJson: String # full JSON content (from IPFS or inline), null if fetch failed
-  adType: String # parsed "type" field from JSON (e.g. "banner", "native", "video")
+  # `rawJson` and `adType` are now INLINE-ONLY. A `uri` that is literal JSON is
+  # not a file and needs no fetching, so it is still parsed here in the chain
+  # handler. An IPFS `uri` leaves both null and populates `content` instead.
+  # Read them as `content { json adType }` first, then fall back to these.
+  rawJson: String
+  adType: String
+  "Parsed contents of `cid`. Null for inline JSON, and until the file arrives."
+  content: IpfsContent
   updatedBy: Bytes! # last address that set the URI
   updateCount: BigInt! # total number of URI changes
   createdAt: BigInt!
@@ -161,8 +229,11 @@ type MetadataUpdatedEvent @entity(immutable: true) {
   updatedBy: Bytes! # raw address that set the URI (V1: tx.from, V2: event.updatedBy param)
   uri: String!
   cid: String # IPFS CID extracted from uri (null for inline JSON or non-IPFS URIs)
-  rawJson: String # full JSON content (from IPFS or inline), null if fetch failed
-  adType: String # parsed "type" field from JSON
+  # Inline-only, as on MetadataSlot above. IPFS content lives under `content`.
+  rawJson: String
+  adType: String
+  "Parsed contents of `cid`. Null for inline JSON, and until the file arrives."
+  content: IpfsContent
   timestamp: BigInt!
   blockNumber: BigInt!
   tx: Bytes!
@@ -273,6 +344,33 @@ type SettledEvent @entity(immutable: true) {
   tx: Bytes!
 }
 
+"""
+One tax payment, attributed to the address that paid it.
+
+`SettledEvent` carries the same amounts but not the payer, so it cannot be
+reduced to a per-address ledger. This can, and it is the contract's own
+statement rather than an inference from event ordering.
+"""
+type TaxPaidEvent @entity(immutable: true) {
+  id: ID!
+  slot: Slot!
+  account: Account!
+  accountSlot: AccountSlot!
+  currency: Currency!
+  taxOwed: BigInt!
+  """Actually taken from the deposit. Diverges from taxOwed when the occupant
+  went insolvent, since the charge is capped at the remaining deposit — this is
+  the figure to use for contribution accounting, never taxOwed."""
+  taxPaid: BigInt!
+  """False when the payer disagreed with the occupant the subgraph had on
+  record. Always false today; a true value means the ordering assumption behind
+  the pre-TaxPaid attribution has broken and older totals are suspect."""
+  matchedOccupant: Boolean!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  tx: Bytes!
+}
+
 type TaxCollectedEvent @entity(immutable: true) {
   id: ID!
   slot: Slot!
@@ -322,6 +420,34 @@ type PendingUpdateCancelledEvent @entity(immutable: true) {
   tx: Bytes!
 }
 
+"""
+Every propose, cancel and apply, tagged with the dimension it touched.
+
+One entity rather than three because the contract emits one event shape for
+all of it. The older per-domain events cannot be reduced into pending state:
+PendingUpdateApplied carries both tax and utility on every apply — filling the
+unchanged one in from current state, so a reader sees a utility "change" to
+the value it already had — and PendingUpdateCancelled carries nothing at all.
+Those are kept for historical continuity; this is the one to query.
+"""
+type PendingUpdateEvent @entity(immutable: true) {
+  id: ID!
+  slot: Slot!
+  "0 = tax, 1 = utility, 2 = policy. Matches the Solidity enum."
+  kind: Int!
+  "proposed | cancelled | applied"
+  action: String!
+  """
+  The proposed value, widened to 32 bytes: raw basis points for tax, the
+  left-padded address for utility and policy. Null on a cancel — nothing was
+  set, only cleared.
+  """
+  value: Bytes
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  tx: Bytes!
+}
+
 # ──────────────────────────────────────────
 # FeedHub / Feed (beacon-proxy feeds, each with its own slots)
 # ──────────────────────────────────────────
@@ -341,7 +467,9 @@ type Feed @entity(immutable: false) {
   metadataURI: String!
   recipient: Bytes!
   slotCount: BigInt!
-  # resolved from metadataURI JSON:
+  # Resolved from metadataURI JSON, INLINE ONLY — an IPFS metadataURI populates
+  # `metadata` instead, because the file is now fetched asynchronously and a
+  # file data source cannot write back to this entity.
   metadataName: String
   description: String
   image: String
@@ -349,7 +477,17 @@ type Feed @entity(immutable: false) {
   externalLink: String
   metadataRaw: String
   metadataCid: String
-  displayName: String! # metadataName ?? onchainName
+  "Parsed contents of `metadataCid`. Null for inline JSON, and until it arrives."
+  metadata: IpfsContent
+  """
+  `metadataName ?? onchainName`, resolved when the event was handled.
+
+  For a feed whose metadataURI is IPFS this is now always `onchainName`: the
+  name lives in a file that had not been fetched yet, and the file data source
+  is forbidden from updating this entity afterwards. Prefer
+  `metadata { name }` and fall back to this.
+  """
+  displayName: String!
   createdAt: BigInt!
   createdTx: Bytes!
   updatedAt: BigInt!

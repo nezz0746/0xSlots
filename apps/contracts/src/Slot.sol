@@ -6,9 +6,14 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IUtility} from "./interfaces/IUtility.sol";
 import {IOccupancyPolicy, OccupancyContext} from "./interfaces/IOccupancyPolicy.sol";
-import {SlotConfig, SlotInitParams, PendingUpdate, SlotInfo, ISlotEvents, EVT_BOUGHT, EVT_RELEASED, EVT_LIQUIDATED, EVT_PRICE_UPDATED, EVT_DEPOSITED, EVT_WITHDRAWN, EVT_TAX_COLLECTED, EVT_SETTLED} from "./interfaces/ISlot.sol";
+import {SlotConfig, SlotInitParams, PendingUpdate, PendingPolicyUpdate, PendingTransfer, UpdateKind, SlotInfo, ISlotEvents, EVT_BOUGHT, EVT_RELEASED, EVT_LIQUIDATED, EVT_PRICE_UPDATED, EVT_DEPOSITED, EVT_WITHDRAWN, EVT_TAX_COLLECTED, EVT_SETTLED} from "./interfaces/ISlot.sol";
+// Errors live in their own file so the contract body reads as behaviour. They
+// are file-level (free) declarations — importing them makes the bare names
+// available to `revert`, and the selectors are unchanged. See `SlotErrors.sol`.
+import "./interfaces/SlotErrors.sol";
 import {SlotFactory} from "./SlotFactory.sol";
 
 /// @title Slot — Immutable & modular Harberger-taxed slot
@@ -26,38 +31,6 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
 
     uint256 public constant BASIS_POINTS = 10_000;
     uint256 public constant MONTH = 30 days;
-
-    // ═══════════════════════════════════════════════════════════
-    // ERRORS
-    // ═══════════════════════════════════════════════════════════
-
-    error NotManager();
-    error NotOccupant();
-    error CannotBuyFromYourself();
-    error InvalidPrice();
-    error InvalidTaxPercentage();
-    error InsufficientDeposit();
-    error NotInsolvent();
-    error NothingToCollect();
-
-    error TaxNotMutable();
-    error ModuleNotMutable();
-    error NoPendingUpdate();
-    error InvalidLiquidationBounty();
-    error InvalidRecipient();
-    error InvalidCurrency();
-    error InvalidModule_NoCode();
-    error PolicyNotMutable();
-    error NotFactory();
-    error NothingToClaim();
-
-    /// @notice `msg.value` did not match what this slot's currency mode expects.
-    /// @dev Native slots require exact value; ERC-20 slots require none. The
-    ///      ERC-20 direction is what stops ETH being stranded in a token slot.
-    error InvalidValue();
-
-    /// @notice An uncapped native send failed in `withdraw` or `claim`.
-    error TransferFailed();
 
     // ═══════════════════════════════════════════════════════════
     // STORAGE — KEEP ORDER, APPEND ONLY
@@ -96,30 +69,23 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     /// @dev INERT — held an epoch length when a buy could be deferred to a
     ///      clock boundary. Nothing reads it; `initialize` cannot set it and
     ///      `SlotFactory` rejects a non-zero value. Six slots still carry one.
-    uint64 public epochSeconds;     // slot 15, offset 20
-    uint256 public occupiedSince;   // slot 16
+    uint64 public epochSeconds; // slot 15, offset 20
+    uint256 public occupiedSince; // slot 16
 
-    struct PendingPolicyUpdate {
-        address newPolicy;
-        bool hasPolicyUpdate;
-    }
+    // struct PendingPolicyUpdate — declared in interfaces/ISlot.sol
     PendingPolicyUpdate public pendingPolicyUpdate; // slot 17
 
     /// @dev INERT — held a committed-but-not-yet-effective transfer. Every
     ///      outstanding one was drained before the code that completed them was
     ///      removed, so all four slots are permanently zero.
     ///
-    ///      Deleting them would shift `isOperator` (22) and `withdrawableOf`
-    ///      (23) on every live proxy, silently voiding operator approvals and
-    ///      unclaimed refunds. Guarded by
+    ///      Occupies slots 18-21: `buyer`+`effectiveAt` packed in slot 18,
+    ///      `deposit` 19, `newPrice` 20, `pricePaid` 21. Deleting the field would
+    ///      shift `isOperator` (22) and `withdrawableOf` (23) on every live proxy,
+    ///      silently voiding operator approvals and unclaimed refunds. Guarded by
     ///      `test_StorageLayout_SurvivesDrainRemoval`.
-    struct PendingTransfer {
-        address buyer;       // slot 18, offset 0
-        uint96 effectiveAt;  // slot 18, offset 20
-        uint256 deposit;     // slot 19
-        uint256 newPrice;    // slot 20
-        uint256 pricePaid;   // slot 21
-    }
+    ///
+    ///      struct PendingTransfer — declared in interfaces/ISlot.sol.
     PendingTransfer public pendingTransfer;
 
     /// @notice occupant => operator => approved. Keyed by occupant so approvals
@@ -134,6 +100,20 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     ///      and the price paid. Crediting instead keeps the slot fully
     ///      functional and the blocked party whole once they can receive again.
     mapping(address => uint256) public withdrawableOf; // slot 23
+
+    /// @notice When each pending update was queued, as a unix timestamp.
+    /// @dev Appended at the end of the layout, and all three packed into ONE
+    ///      fresh slot. Slot 13 has ten spare bytes and could have held two of
+    ///      them, but a third would have spilled into slot 14 and shifted every
+    ///      variable after it on 237 live proxies. Not worth one slot of gas.
+    ///
+    ///      Cleared back to zero whenever the matching update applies or is
+    ///      cancelled, so a non-zero value always means "pending since". The
+    ///      converse does not hold: an update queued before this upgrade reads
+    ///      zero while its `has*` flag is set. Read the pair, not the timestamp.
+    uint64 public taxProposedAt; // slot 24, offset 0
+    uint64 public utilityProposedAt; // slot 24, offset 8
+    uint64 public policyProposedAt; // slot 24, offset 16
 
     // ═══════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -166,14 +146,17 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         // other address must actually be a contract: a codeless non-zero
         // currency used to pass this check and produce a slot whose every
         // transfer silently no-ops.
-        if (address(_currency) != address(0) && address(_currency).code.length == 0)
-            revert InvalidCurrency();
+        if (
+            address(_currency) != address(0) &&
+            address(_currency).code.length == 0
+        ) revert InvalidCurrency();
         if (_init.taxPercentage == 0) revert InvalidTaxPercentage();
         if (_init.liquidationBountyBps > BASIS_POINTS)
             revert InvalidLiquidationBounty();
-        if (_init.occupancyPolicy != address(0) &&
-            _init.occupancyPolicy.code.length == 0)
-            revert InvalidModule_NoCode();
+        if (
+            _init.occupancyPolicy != address(0) &&
+            _init.occupancyPolicy.code.length == 0
+        ) revert InvalidModule_NoCode();
 
         recipient = _recipient;
         currency = _currency;
@@ -211,7 +194,8 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     ///      against the correct (incoming) occupant.
     modifier onlyOccupantOrOperator() {
         address occ = occupant();
-        if (msg.sender != occ && !isOperator[occ][msg.sender]) revert NotOccupant();
+        if (msg.sender != occ && !isOperator[occ][msg.sender])
+            revert NotOccupant();
         _;
     }
 
@@ -302,10 +286,22 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
             abi.encodeCall(IUtility.onTransfer, (0, prev, account))
         );
 
-        emit Bought(account, prev, currentPrice, depositAmount, selfAssessedPrice);
+        emit Bought(
+            account,
+            prev,
+            currentPrice,
+            depositAmount,
+            selfAssessedPrice
+        );
         _emitProtocolEvent(
             EVT_BOUGHT,
-            abi.encode(account, prev, currentPrice, depositAmount, selfAssessedPrice)
+            abi.encode(
+                account,
+                prev,
+                currentPrice,
+                depositAmount,
+                selfAssessedPrice
+            )
         );
     }
 
@@ -356,7 +352,9 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
     }
 
     /// @notice Occupant (or an approved operator) self-assesses a new price
-    function selfAssess(uint256 newPrice) external nonReentrant onlyOccupantOrOperator {
+    function selfAssess(
+        uint256 newPrice
+    ) external nonReentrant onlyOccupantOrOperator {
         if (newPrice == 0) revert InvalidPrice();
 
         // Settle first: materialises any matured transfer, so the guard below
@@ -528,8 +526,14 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
 
         pendingUpdate.newTaxPercentage = newPct;
         pendingUpdate.hasTaxUpdate = true;
+        taxProposedAt = uint64(block.timestamp);
 
         emit TaxUpdateProposed(newPct);
+        emit UpdateProposed(
+            UpdateKind.Tax,
+            bytes32(newPct),
+            uint64(block.timestamp)
+        );
     }
 
     /// @notice Propose a new utility (applied on next ownership transition)
@@ -540,8 +544,14 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
 
         pendingUpdate.newUtility = newUtility;
         pendingUpdate.hasUtilityUpdate = true;
+        utilityProposedAt = uint64(block.timestamp);
 
         emit ModuleUpdateProposed(newUtility);
+        emit UpdateProposed(
+            UpdateKind.Utility,
+            _asValue(newUtility),
+            uint64(block.timestamp)
+        );
     }
 
     /// @notice Deprecated name for `proposeUtilityUpdate`. Kept so the selector
@@ -561,18 +571,74 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
             revert InvalidModule_NoCode();
         pendingPolicyUpdate.newPolicy = newPolicy;
         pendingPolicyUpdate.hasPolicyUpdate = true;
+        policyProposedAt = uint64(block.timestamp);
+
         emit PolicyUpdateProposed(newPolicy);
+        emit UpdateProposed(
+            UpdateKind.Policy,
+            _asValue(newPolicy),
+            uint64(block.timestamp)
+        );
     }
 
-    /// @notice Cancel all pending updates
+    /// @notice Cancel the pending update for ONE dimension, leaving the others.
+    ///
+    /// @dev The reason this exists is `SlotCollective`, where tax, utility and
+    ///      policy are three separate roles. While cancelling was all-or-nothing
+    ///      the manager had to gate it on `DEFAULT_ADMIN_ROLE` — a tax manager
+    ///      retracting their own proposal would otherwise have destroyed the
+    ///      policy manager's queued one. So a role holder could propose but not
+    ///      take it back, and the only address that could was the one the role
+    ///      split exists to avoid needing.
+    ///
+    ///      Gated on the same mutability flag as the matching `propose`. That is
+    ///      belt-and-braces — an immutable dimension can never hold a pending
+    ///      update to cancel — but it keeps one rule per dimension rather than
+    ///      two, so a future flag change cannot leave the pair disagreeing.
+    function cancelPendingUpdate(UpdateKind kind) external onlyManager {
+        if (kind == UpdateKind.Tax) {
+            if (!mutableTax) revert TaxNotMutable();
+            if (!pendingUpdate.hasTaxUpdate) revert NoPendingUpdate();
+            pendingUpdate.newTaxPercentage = 0;
+            pendingUpdate.hasTaxUpdate = false;
+            taxProposedAt = 0;
+        } else if (kind == UpdateKind.Utility) {
+            if (!mutableUtility) revert ModuleNotMutable();
+            if (!pendingUpdate.hasUtilityUpdate) revert NoPendingUpdate();
+            pendingUpdate.newUtility = address(0);
+            pendingUpdate.hasUtilityUpdate = false;
+            utilityProposedAt = 0;
+        } else {
+            if (!mutablePolicy) revert PolicyNotMutable();
+            if (!pendingPolicyUpdate.hasPolicyUpdate) revert NoPendingUpdate();
+            delete pendingPolicyUpdate;
+            policyProposedAt = 0;
+        }
+
+        emit UpdateCancelled(kind);
+    }
+
+    /// @notice Cancel every pending update at once.
+    /// @dev Kept as the blunt instrument beside `cancelPendingUpdate`. Emits a
+    ///      per-kind `UpdateCancelled` for each one it actually drops, so an
+    ///      indexer following only the per-kind log never misses a clear.
     function cancelPendingUpdates() external onlyManager {
-        if (
-            !pendingUpdate.hasTaxUpdate &&
-            !pendingUpdate.hasUtilityUpdate &&
-            !pendingPolicyUpdate.hasPolicyUpdate
-        ) revert NoPendingUpdate();
+        bool hadTax = pendingUpdate.hasTaxUpdate;
+        bool hadUtility = pendingUpdate.hasUtilityUpdate;
+        bool hadPolicy = pendingPolicyUpdate.hasPolicyUpdate;
+
+        if (!hadTax && !hadUtility && !hadPolicy) revert NoPendingUpdate();
+
         delete pendingUpdate;
         delete pendingPolicyUpdate;
+        taxProposedAt = 0;
+        utilityProposedAt = 0;
+        policyProposedAt = 0;
+
+        if (hadTax) emit UpdateCancelled(UpdateKind.Tax);
+        if (hadUtility) emit UpdateCancelled(UpdateKind.Utility);
+        if (hadPolicy) emit UpdateCancelled(UpdateKind.Policy);
+
         emit PendingUpdateCancelled();
     }
 
@@ -631,6 +697,41 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         return pendingUpdate;
     }
 
+    /// @notice The pending update for one dimension, in the shape the per-kind
+    ///         events use.
+    /// @dev Reaches across both storage structs so a caller can ask about any
+    ///      kind uniformly. `getPendingUpdate()` still returns the raw
+    ///      tax-and-utility struct and has no policy equivalent — this is the
+    ///      one that covers all three.
+    /// @return isSet Whether anything is queued for `kind`.
+    /// @return value The proposed value: raw basis points for `Tax`, the
+    ///         left-padded address for `Utility` and `Policy`.
+    /// @return proposedAt When it was queued. Zero with `isSet` true means it
+    ///         predates the timestamp being recorded.
+    function pendingUpdateOf(
+        UpdateKind kind
+    ) external view returns (bool isSet, bytes32 value, uint64 proposedAt) {
+        if (kind == UpdateKind.Tax) {
+            return (
+                pendingUpdate.hasTaxUpdate,
+                bytes32(pendingUpdate.newTaxPercentage),
+                taxProposedAt
+            );
+        }
+        if (kind == UpdateKind.Utility) {
+            return (
+                pendingUpdate.hasUtilityUpdate,
+                _asValue(pendingUpdate.newUtility),
+                utilityProposedAt
+            );
+        }
+        return (
+            pendingPolicyUpdate.hasPolicyUpdate,
+            _asValue(pendingPolicyUpdate.newPolicy),
+            policyProposedAt
+        );
+    }
+
     // ── deprecated getters ──────────────────────────────────────
     // The storage moved to clearer names (`utility`, `mutableUtility`); these
     // keep the selectors that deployed callers and old ABIs hold. Remove in
@@ -674,11 +775,21 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         // ABI-decode failures from empty returndata).
         if (utility != address(0) && utility.code.length > 0) {
             IUtility mod = IUtility(utility);
-            try mod.name() returns (string memory n) { info.utilityName = n; } catch {}
-            try mod.version() returns (string memory v) { info.utilityVersion = v; } catch {}
-            try mod.feeBps() returns (uint256 f) { info.utilityFeeBps = f; } catch {}
-            try mod.feeRecipient() returns (address r) { info.utilityFeeRecipient = r; } catch {}
-            try mod.moduleURI() returns (string memory u) { info.utilityURI = u; } catch {}
+            try mod.name() returns (string memory n) {
+                info.utilityName = n;
+            } catch {}
+            try mod.version() returns (string memory v) {
+                info.utilityVersion = v;
+            } catch {}
+            try mod.feeBps() returns (uint256 f) {
+                info.utilityFeeBps = f;
+            } catch {}
+            try mod.feeRecipient() returns (address r) {
+                info.utilityFeeRecipient = r;
+            } catch {}
+            try mod.metadataURI() returns (string memory u) {
+                info.utilityURI = u;
+            } catch {}
         }
 
         info.hasPendingTax = pendingUpdate.hasTaxUpdate;
@@ -690,6 +801,10 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         info.occupiedSince = occupiedSince;
         info.hasPendingPolicy = pendingPolicyUpdate.hasPolicyUpdate;
         info.pendingPolicy = pendingPolicyUpdate.newPolicy;
+
+        info.taxProposedAt = taxProposedAt;
+        info.utilityProposedAt = utilityProposedAt;
+        info.policyProposedAt = policyProposedAt;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -701,17 +816,18 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         uint256 newPrice,
         uint256 depositAmount
     ) internal view returns (OccupancyContext memory) {
-        return OccupancyContext({
-            slot: address(this),
-            caller: msg.sender,
-            account: account,
-            occupant: occupant(),
-            occupiedSince: occupiedSince,
-            taxPercentage: taxPercentage,
-            currentPrice: price(),
-            newPrice: newPrice,
-            depositAmount: depositAmount
-        });
+        return
+            OccupancyContext({
+                slot: address(this),
+                caller: msg.sender,
+                account: account,
+                occupant: occupant(),
+                occupiedSince: occupiedSince,
+                taxPercentage: taxPercentage,
+                currentPrice: price(),
+                newPrice: newPrice,
+                depositAmount: depositAmount
+            });
     }
 
     /// @dev Accrue tax for the current occupant up to `upTo`.
@@ -724,7 +840,8 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         }
 
         uint256 elapsed = upTo - lastSettled;
-        uint256 owed = (_price * taxPercentage * elapsed) / (MONTH * BASIS_POINTS);
+        uint256 owed = (_price * taxPercentage * elapsed) /
+            (MONTH * BASIS_POINTS);
 
         uint256 paid;
         if (owed >= _deposit) {
@@ -759,9 +876,12 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
 
     function _applyPendingUpdates() internal {
         if (pendingPolicyUpdate.hasPolicyUpdate) {
-            occupancyPolicy = pendingPolicyUpdate.newPolicy;
-            emit PolicyUpdateApplied(pendingPolicyUpdate.newPolicy);
+            address newPolicy = pendingPolicyUpdate.newPolicy;
+            occupancyPolicy = newPolicy;
             delete pendingPolicyUpdate;
+            policyProposedAt = 0;
+            emit PolicyUpdateApplied(newPolicy);
+            emit UpdateApplied(UpdateKind.Policy, _asValue(newPolicy));
         }
 
         if (!pendingUpdate.hasTaxUpdate && !pendingUpdate.hasUtilityUpdate)
@@ -770,13 +890,23 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         uint256 newTax = taxPercentage;
         address newMod = utility;
 
+        // The per-kind events fire only for what actually changed, which is the
+        // distinction `PendingUpdateApplied` cannot draw: it carries both
+        // fields on every apply, filling the unchanged one in from current
+        // state, so a reader sees a utility "change" to the value it already
+        // had. Both are emitted — the flat one for existing indexers, the
+        // per-kind ones for anything that needs to know what moved.
         if (pendingUpdate.hasTaxUpdate) {
             newTax = pendingUpdate.newTaxPercentage;
             taxPercentage = newTax;
+            taxProposedAt = 0;
+            emit UpdateApplied(UpdateKind.Tax, bytes32(newTax));
         }
         if (pendingUpdate.hasUtilityUpdate) {
             newMod = pendingUpdate.newUtility;
             utility = newMod;
+            utilityProposedAt = 0;
+            emit UpdateApplied(UpdateKind.Utility, _asValue(newMod));
         }
 
         delete pendingUpdate;
@@ -784,11 +914,19 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         emit PendingUpdateApplied(newTax, newMod);
     }
 
+    /// @dev Widens an address to the `bytes32` the per-kind events carry, so
+    ///      one event shape can describe a rate and two contract addresses.
+    function _asValue(address a) private pure returns (bytes32) {
+        return bytes32(uint256(uint160(a)));
+    }
+
     function _minDepositFor(uint256 price_) internal view returns (uint256) {
         if (minDepositSeconds == 0) return 0;
         return
-            (price_ * taxPercentage * minDepositSeconds) /
-            (MONTH * BASIS_POINTS);
+            Math.ceilDiv(
+                price_ * taxPercentage * minDepositSeconds,
+                MONTH * BASIS_POINTS
+            );
     }
 
     function _enforceMinDeposit(

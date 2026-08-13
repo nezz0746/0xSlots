@@ -27,14 +27,14 @@ export function SlotRow({
   onSelect: (id: string) => void;
 }) {
   const occupant = slot.occupant ?? null;
-  const account = slot.occupantAccount;
+  const account = slot.occupantAccountRef;
 
   return (
     <TableRow className="cursor-pointer" onClick={() => onSelect(slot.id)}>
       <TableCell>
         <span className="inline-flex items-center gap-1.5">
           <AccountTypeIcon
-            type={slot.recipientAccount.type}
+            type={slot.recipientAccountRef?.type ?? "EOA"}
             className="h-3 w-3"
           />
           <EnsAddress address={slot.recipient} />
@@ -61,11 +61,11 @@ export function SlotRow({
       <TableCell className="text-right text-xs whitespace-nowrap">
         <span className="font-bold">
           {occupant
-            ? formatPrice(slot.price, slot.currency.decimals ?? 18)
+            ? formatPrice(slot.price, slot.currencyRef?.decimals ?? 18)
             : "0"}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
-          {slot.currency.symbol}
+          {slot.currencyRef?.symbol}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
           ({Number(slot.taxPercentage) / 100}%/mo)
@@ -74,7 +74,7 @@ export function SlotRow({
 
       <TableCell className="text-xs text-muted-foreground">
         {slot.module
-          ? `${slot.module.name || truncateAddress(slot.module.id)}${slot.module.verified ? " ✓" : ""}`
+          ? `${slot.moduleRef?.name || truncateAddress(slot.moduleRef?.id ?? slot.module ?? "")}${slot.moduleRef?.verified ? " ✓" : ""}`
           : "—"}
       </TableCell>
 

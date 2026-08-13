@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { base, baseSepolia } from "viem/chains";
+import { anvil, base, baseSepolia } from "viem/chains";
 
 /**
  * SlotsHub contract addresses by chain ID.
@@ -12,6 +12,31 @@ import { base, baseSepolia } from "viem/chains";
 export const slotFactoryAddress = {
   [base.id]: "0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e",
   [baseSepolia.id]: "0x6D87C1647f228Baf8DE0374FCd7FdEBF6900fdFF",
+  // Local anvil, pinned by apps/contracts/script/DeployLocal.s.sol. The address
+  // survives edits to Slot.sol and friends — see LocalBootstrap.sol for why a
+  // plain CREATE2 would not. Listed unconditionally because it is only data;
+  // whether the chain is OFFERED is decided by `CHAINS` in ./index.ts.
+  [anvil.id]: "0x78F614D6e3489a90BD2584D2ab1D90F5C35722F6",
+} as const;
+
+/**
+ * SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon.
+ *
+ * A collective fills BOTH of a slot's named addresses: `recipient` (tax flows to
+ * it) and `manager` (it may propose tax / utility / policy changes).
+ *
+ * This table is the single source of truth for whether collectives exist on a
+ * chain: `CollectiveUnavailable` in the app derives its "not deployed here, try
+ * X" message straight from these keys, so shipping to a new chain is one entry
+ * and every screen updates with it.
+ *
+ * base is deliberately absent — not yet deployed there.
+ */
+export const slotCollectiveFactoryAddress = {
+  // Deployed 2026-08-12, block 45393270. Beacon-backed, admin is the deployer.
+  [baseSepolia.id]: "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d",
+  // Local anvil, pinned by `apps/contracts/script/DeployLocal.s.sol` step 7.
+  [anvil.id]: "0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d",
 } as const;
 
 export const batchCollectorAddress = {
@@ -84,8 +109,14 @@ export function getSupportedChainIds(): SupportedChainId[] {
 export const MINIMUM_TENURE_POLICY_FACTORY: Partial<
   Record<number, `0x${string}`>
 > = {
-  [baseSepolia.id]: "0x51650AB1c3aBc6614A38c622A322535b16cD764e",
-  [base.id]: "0xE322cDADB8fd511788F0fA25BffD794b7A946125",
+  // Redeployed with the IModuleMetadata rename (`policyURI()` →
+  // `metadataURI()`). A policy is not upgradeable and its address is a CREATE2
+  // hash of the INIT CODE, so new bytecode necessarily means a new factory AND
+  // new addresses for every duration it predicts. Pointing creation at the old
+  // factory would mint a pre-rename policy that the upgraded SlotFactory then
+  // refuses to verify — which is why this moved rather than being left alone.
+  [baseSepolia.id]: "0x2a399E4D93d9b7Ffa8367894A39859013B214E4a",
+  [base.id]: "0x6C90Ca1A6ac6bBC0e4B48cc3CF589F6A3c2b30a5",
 };
 
 /**
@@ -98,13 +129,12 @@ export const MINIMUM_PRICE_POLICY_FACTORY: Partial<
   Record<number, `0x${string}`>
 > = {
   // Redeployed 2026-08-08 to accept `address(0)` — a floor denominated in
-  // native ETH. The factory is not upgradeable, so this is new bytecode at a
-  // new address, and every policy it predicts moved with it. Floors made by
-  // the previous factories (0x83d86EDB… / 0xF1cA0Fe7…) still work on the slots
-  // using them, but no longer verify here; they are named from the SDK's
-  // vouched list instead.
-  [baseSepolia.id]: "0x6a1F9D1F78CD63cd969d500994CB333027A22844",
-  [base.id]: "0xe218F2e710D2B686fD4524236F3B79EC06E92091",
+  // native ETH — and again with the IModuleMetadata rename. The factory is not
+  // upgradeable, so each is new bytecode at a new address, and every policy it
+  // predicts moved with it. Floors made by the earlier factories still work on
+  // the slots using them; they resolve through POLICY_FACTORIES below.
+  [baseSepolia.id]: "0x958088c4Afb2cf3E4c7C23560B57fCb64dfC6551",
+  [base.id]: "0xFA64C88960c0aaC55279d42131A5B7fB57e0Ff1A",
 };
 
 /**
@@ -122,12 +152,20 @@ export const MINIMUM_PRICE_POLICY_FACTORY: Partial<
 export const POLICY_FACTORIES: Partial<
   Record<number, readonly `0x${string}`[]>
 > = {
+  // Current first — resolution stops at the first factory that claims a policy,
+  // so the one minting new policies should not sit behind three dead ones.
   [baseSepolia.id]: [
-    "0x51650AB1c3aBc6614A38c622A322535b16cD764e", // MinimumTenurePolicyFactory
-    "0x83d86EDBC62187180A4f94A3099a98ABaa1dfe0c", // MinimumPricePolicyFactory
+    "0x2a399E4D93d9b7Ffa8367894A39859013B214E4a", // MinimumTenurePolicyFactory (current)
+    "0x958088c4Afb2cf3E4c7C23560B57fCb64dfC6551", // MinimumPricePolicyFactory  (current)
+    "0x51650AB1c3aBc6614A38c622A322535b16cD764e", // Tenure, pre-metadata-rename
+    "0x6a1F9D1F78CD63cd969d500994CB333027A22844", // Price, pre-metadata-rename
+    "0x83d86EDBC62187180A4f94A3099a98ABaa1dfe0c", // Price, pre-native-ETH floors
   ],
   [base.id]: [
-    "0xE322cDADB8fd511788F0fA25BffD794b7A946125", // MinimumTenurePolicyFactory
-    "0xF1cA0Fe72269AaEf1E5e34bfF484269f18e1b777", // MinimumPricePolicyFactory
+    "0x6C90Ca1A6ac6bBC0e4B48cc3CF589F6A3c2b30a5", // MinimumTenurePolicyFactory (current)
+    "0xFA64C88960c0aaC55279d42131A5B7fB57e0Ff1A", // MinimumPricePolicyFactory  (current)
+    "0xE322cDADB8fd511788F0fA25BffD794b7A946125", // Tenure, pre-metadata-rename
+    "0xe218F2e710D2B686fD4524236F3B79EC06E92091", // Price, pre-metadata-rename
+    "0xF1cA0Fe72269AaEf1E5e34bfF484269f18e1b777", // Price, pre-native-ETH floors
   ],
 };

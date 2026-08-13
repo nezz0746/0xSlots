@@ -7,6 +7,7 @@ import {UUPSUpgradeable} from "@openzeppelin-upgradeable/contracts/proxy/utils/U
 import {OwnableUpgradeable} from "@openzeppelin-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
 import {EVT_FEED_METADATA_UPDATED, EVT_FEED_METADATA_CLEARED} from "../FeedRouter.sol";
+import {IModuleMetadata} from "../interfaces/IModuleMetadata.sol";
 
 interface IFeedRouter {
     function emitEvent(address slot, uint8 eventType, bytes calldata data) external;
@@ -133,7 +134,7 @@ contract FeedPostModule is
     }
 
     /// @notice Module metadata URI
-    function moduleURI() external pure override returns (string memory) {
+    function metadataURI() external pure override returns (string memory) {
         return "";
     }
 
@@ -152,6 +153,7 @@ contract FeedPostModule is
     ) external pure override returns (bool) {
         return
             interfaceId == type(IUtility).interfaceId ||
+            interfaceId == type(IModuleMetadata).interfaceId ||
             interfaceId == type(IERC165).interfaceId;
     }
 

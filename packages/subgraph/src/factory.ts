@@ -3,8 +3,6 @@ import {
   BigInt,
   DataSourceContext,
   ethereum,
-  ipfs,
-  json,
   log,
 } from "@graphprotocol/graph-ts";
 import {
@@ -24,6 +22,7 @@ import {
   getOrCreateCurrency,
   getOrCreateModule,
 } from "./helpers";
+import { spawnIpfsContent } from "./metadata";
 
 function getOrCreateFactory(address: string): Factory {
   let factory = Factory.load(address);
@@ -51,6 +50,9 @@ export function handleSlotDeployedLegacy(event: SlotDeployed): void {
     event.params.recipient,
     event.params.currency,
     event.params.config.mutableTax,
+    // The legacy tuple predates the utility/module rename and is kept in the
+    // ABI verbatim, so it still carries the old component names. Only the
+    // current-signature handler below reads `mutableUtility`.
     event.params.config.mutableModule,
     false,
     event.params.config.manager,
@@ -70,11 +72,11 @@ export function handleSlotDeployed(event: SlotDeployed1): void {
     event.params.recipient,
     event.params.currency,
     event.params.config.mutableTax,
-    event.params.config.mutableModule,
+    event.params.config.mutableUtility,
     event.params.config.mutablePolicy,
     event.params.config.manager,
     event.params.initParams.taxPercentage,
-    event.params.initParams.module,
+    event.params.initParams.utility,
     event.params.initParams.liquidationBountyBps,
     event.params.initParams.minDepositSeconds,
     event.params.initParams.occupancyPolicy
@@ -132,6 +134,7 @@ function _record(
   slot.price = BigInt.zero();
   slot.deposit = BigInt.zero();
   slot.collectedTax = BigInt.zero();
+  slot.taxPaidTotal = BigInt.zero();
   slot.totalCollected = BigInt.zero();
 
   // The policy now arrives in this event. Legacy slots pass address(0), which
@@ -188,7 +191,7 @@ function _record(
 }
 
 export function handleModuleVerified(event: ModuleVerified): void {
-  const id = event.params.module.toHexString();
+  const id = event.params.utility.toHexString();
   let module = Module.load(id);
   const wasVerified = module ? module.verified : false;
   if (!module) {
@@ -203,27 +206,15 @@ export function handleModuleVerified(event: ModuleVerified): void {
 
   const uri = event.params.moduleURI;
   module.moduleURI = uri;
-  if (uri.length > 0) {
-    let hash: string | null = null;
-    if (uri.startsWith("ipfs://")) {
-      hash = uri.slice(7);
-    } else if (uri.startsWith("Qm") || uri.startsWith("bafy")) {
-      hash = uri;
-    }
-    if (hash) {
-      const data = ipfs.cat(hash);
-      if (data) {
-        const result = json.try_fromString(data.toString());
-        if (!result.isError) {
-          const obj = result.value.toObject();
-          const img = obj.get("image");
-          if (img && !img.isNull()) module.image = img.toString();
-          const desc = obj.get("description");
-          if (desc && !desc.isNull()) module.description = desc.toString();
-        }
-      }
-    }
-  }
+
+  // Hand the CID to a file data source instead of fetching it here. This
+  // handler no longer blocks on IPFS, and an unreachable file gets retried
+  // rather than being recorded once as "this module has no image".
+  //
+  // The link is set immediately even though the row does not exist yet —
+  // writing a reference is writing an id, and the entity appears under it when
+  // the fetch lands.
+  module.metadata = spawnIpfsContent(uri);
 
   module.save();
 
@@ -236,9 +227,9 @@ export function handleModuleVerified(event: ModuleVerified): void {
   ) {
     log.info("Creating template for module {} at address {}", [
       event.params.name,
-      event.params.module.toHexString(),
+      event.params.utility.toHexString(),
     ]);
-    MetadataModuleTemplate.create(event.params.module);
+    MetadataModuleTemplate.create(event.params.utility);
   }
 
   // Also start indexing FeedPostModule instances
@@ -248,9 +239,9 @@ export function handleModuleVerified(event: ModuleVerified): void {
     event.params.name == "FeedPostModule"
   ) {
     log.info("Creating FeedPostModule template at address {}", [
-      event.params.module.toHexString(),
+      event.params.utility.toHexString(),
     ]);
-    FeedPostModuleTemplate.create(event.params.module);
+    FeedPostModuleTemplate.create(event.params.utility);
   }
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  type AccountFieldsFragment,
+  type AccountChainFieldsFragment,
   createSlotsClient,
   type SlotFieldsFragment,
 } from "@0xslots/sdk";
@@ -13,6 +13,7 @@ import {
   slotQueryOptions,
   slotsByRecipientQueryOptions,
 } from "@/hooks/slot-queries";
+import { indexerUrlFor } from "@/lib/indexer";
 
 // Re-export the slot type for convenience
 export type { SlotFieldsFragment as V3Slot } from "@0xslots/sdk";
@@ -23,7 +24,7 @@ export function useSlotsClient() {
     () =>
       createSlotsClient({
         chainId,
-        subgraphApiKey: process.env.NEXT_PUBLIC_SUBGRAPH_API_KEY,
+        apiUrl: indexerUrlFor(chainId),
       }),
     [chainId],
   );
@@ -75,13 +76,13 @@ export function useSlots(
     queryKey: ["slots", chainId, filters, sort, pagination],
     queryFn: async () => {
       const { slots } = await client.getSlots({
-        first: pagination?.first ?? 100,
-        skip: pagination?.skip ?? 0,
+        limit: pagination?.first ?? 100,
+        offset: pagination?.skip ?? 0,
         where: where as any,
         orderBy: (sort?.orderBy ?? "createdAt") as any,
         orderDirection: (sort?.orderDirection ?? "desc") as any,
       });
-      return slots as SlotFieldsFragment[];
+      return slots.items as SlotFieldsFragment[];
     },
     staleTime: 15_000,
     placeholderData: keepPreviousData,
@@ -112,12 +113,46 @@ export function useSlotsByOccupant(occupant: string) {
     queryFn: async () => {
       const { slots } = await client.getSlotsByOccupant({
         occupant: occupant.toLowerCase(),
-        first: 100,
+        limit: 100,
       });
-      return slots as SlotFieldsFragment[];
+      return slots.items as SlotFieldsFragment[];
     },
     staleTime: 15_000,
     enabled: !!occupant,
+  });
+}
+
+/**
+ * Exact slot totals for this chain: how many exist, how many are occupied.
+ *
+ * Deliberately NOT derived from `useSlots()`. That returns a PAGE — 100 rows by
+ * default — so counting occupancy from its items produces a number that is
+ * really "occupied within the first hundred", which read as a protocol-wide
+ * figure and silently capped at the page size. Sitting next to a genuine global
+ * total it also failed to add up, which is what gave it away.
+ *
+ * Two `totalCount` reads instead, with `limit: 1` so the server counts without
+ * shipping rows. Both come from the same table through the same filter, so the
+ * three numbers always reconcile — vacant is derived, never counted separately.
+ */
+export function useSlotCounts() {
+  const { chainId } = useChain();
+  const client = useSlotsClient();
+
+  return useQuery({
+    queryKey: ["slot-counts", chainId],
+    queryFn: async () => {
+      const [all, occupied] = await Promise.all([
+        client.getSlots({ limit: 1 }),
+        // biome-ignore lint/suspicious/noExplicitAny: generated filter type
+        client.getSlots({ limit: 1, where: { isOccupied: true } as any }),
+      ]);
+      const total = all.slots.totalCount ?? 0;
+      const occ = occupied.slots.totalCount ?? 0;
+      return { total, occupied: occ, vacant: Math.max(0, total - occ) };
+    },
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -127,8 +162,8 @@ export function useFactory() {
   return useQuery({
     queryKey: ["factory", chainId],
     queryFn: async () => {
-      const { factories } = await client.getFactory();
-      return factories[0] ?? null;
+      const { factorys } = await client.getFactory();
+      return factorys.items[0] ?? null;
     },
     staleTime: 30_000,
   });
@@ -140,8 +175,8 @@ export function useModules() {
   return useQuery({
     queryKey: ["modules", chainId],
     queryFn: async () => {
-      const { modules } = await client.getModules({ first: 100 });
-      return modules;
+      const { modules } = await client.getModules({ limit: 100 });
+      return modules.items;
     },
     staleTime: 30_000,
   });
@@ -154,12 +189,12 @@ export function useSlotPurchases(slotId: string) {
     queryKey: ["slot-purchases", chainId, slotId],
     queryFn: async () => {
       const { boughtEvents } = await client.getBoughtEvents({
-        first: 50,
+        limit: 50,
         where: { slot: slotId.toLowerCase() },
         orderBy: "timestamp" as any,
         orderDirection: "desc" as any,
       });
-      return boughtEvents;
+      return boughtEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotId,
@@ -173,12 +208,12 @@ export function useSlotsettlements(slotId: string) {
     queryKey: ["slot-settlements", chainId, slotId],
     queryFn: async () => {
       const { settledEvents } = await client.getSettledEvents({
-        first: 50,
+        limit: 50,
         where: { slot: slotId.toLowerCase() },
         orderBy: "timestamp" as any,
         orderDirection: "desc" as any,
       });
-      return settledEvents;
+      return settledEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotId,
@@ -192,12 +227,12 @@ export function useSlotTaxCollections(slotId: string) {
     queryKey: ["slot-tax-collections", chainId, slotId],
     queryFn: async () => {
       const { taxCollectedEvents } = await client.getTaxCollectedEvents({
-        first: 50,
+        limit: 50,
         where: { slot: slotId.toLowerCase() },
         orderBy: "timestamp" as any,
         orderDirection: "desc" as any,
       });
-      return taxCollectedEvents;
+      return taxCollectedEvents.items;
     },
     staleTime: 10_000,
     enabled: !!slotId,
@@ -218,25 +253,39 @@ export function useRecentEvents() {
   return useQuery({
     queryKey: ["recent-events", chainId],
     queryFn: async () => {
-      return client.getRecentEvents({ first: 100 });
+      return client.getRecentEvents({ limit: 100 });
     },
     staleTime: 10_000,
   });
 }
 
+/**
+ * Recipients on the ACTIVE chain, largest first.
+ *
+ * Reads `accountChain`, not `account`. The `account` table has no `chainId` —
+ * one row per address with counts summed across every network — so this list
+ * used to show base-sepolia's recipients while base was selected, each labelled
+ * with its base-sepolia slot count. Clicking one opened a recipient page that
+ * does filter by chain, found nothing, and rendered zeros throughout.
+ *
+ * `accountRef` rides along so the row still gets the address type (EOA, SPLIT,
+ * contract) without a second request.
+ */
 export function useAccounts() {
   const { chainId } = useChain();
   const client = useSlotsClient();
   return useQuery({
-    queryKey: ["accounts", chainId],
+    queryKey: ["account-chains", chainId],
     queryFn: async () => {
-      const { accounts } = await client.getAccounts({
-        first: 100,
+      const { accountChains } = await client.getAccountChains({
+        limit: 100,
         orderBy: "slotCount" as any,
         orderDirection: "desc" as any,
+        // chainId is injected by the client; this only drops the addresses
+        // that receive nothing here.
         where: { slotCount_gt: 0 } as any,
       });
-      return accounts as AccountFieldsFragment[];
+      return accountChains.items as AccountChainFieldsFragment[];
     },
     staleTime: 15_000,
   });

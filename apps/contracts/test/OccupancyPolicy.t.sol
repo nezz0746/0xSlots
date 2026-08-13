@@ -6,11 +6,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Slot} from "../src/Slot.sol";
+import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
 import {MinimumTenurePolicy} from "../src/policies/MinimumTenurePolicy.sol";
+import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") { _mint(msg.sender, 1_000_000 ether); }
@@ -24,9 +27,9 @@ contract DenyAllPolicy is IOccupancyPolicy {
     function checkPriceUpdate(OccupancyContext calldata) external pure { revert Denied(); }
     function name() external pure returns (string memory) { return "DenyAll"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -37,9 +40,9 @@ contract DenyPriceUpdatePolicy is IOccupancyPolicy {
     function checkPriceUpdate(OccupancyContext calldata) external pure { revert NoReprice(); }
     function name() external pure returns (string memory) { return "DenyReprice"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -51,9 +54,9 @@ contract AllowAllPolicy is IOccupancyPolicy {
     function checkPriceUpdate(OccupancyContext calldata) external pure {}
     function name() external pure returns (string memory) { return "AllowAll"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId || id == type(IERC165).interfaceId;
     }
 }
 
@@ -193,7 +196,7 @@ contract OccupancyPolicyTest is Test {
     function test_ProposePolicyUpdate_RevertsWhenNotMutable() public {
         address s = factory.createSlot(recipient, IERC20(address(token)), _immutableConfig(), _init());
         DenyAllPolicy policy = new DenyAllPolicy();
-        vm.expectRevert(Slot.NotManager.selector);
+        vm.expectRevert(NotManager.selector);
         Slot(s).proposePolicyUpdate(address(policy));
     }
 
@@ -203,8 +206,11 @@ contract OccupancyPolicyTest is Test {
     }
 
     /// 1% monthly on 100 ether over 7 days = 100e18 * 100 * 604800 / (2592000 * 10000)
+    /// @dev Rounds UP, mirroring `Slot._minDepositFor`. This helper doubles as
+    ///      the expected core floor, so a truncating copy here would assert a
+    ///      floor one wei below the one the contract actually enforces.
     function _tenureCost(uint256 price_, uint256 tenure) internal pure returns (uint256) {
-        return (price_ * 100 * tenure) / (30 days * 10_000);
+        return Math.ceilDiv(price_ * 100 * tenure, 30 days * 10_000);
     }
 
     function test_Tenure_BlocksBuyInsideWindow() public {
@@ -268,7 +274,7 @@ contract OccupancyPolicyTest is Test {
         token.approve(s, type(uint256).max);
         Slot(s).buy(alice, need, 100 ether);
         // The core floor is the only thing stopping a full withdrawal.
-        vm.expectRevert(Slot.InsufficientDeposit.selector);
+        vm.expectRevert(InsufficientDeposit.selector);
         Slot(s).withdraw(need);
         Slot(s).withdraw(need - floor);
         vm.stopPrank();
@@ -404,7 +410,7 @@ contract OccupancyPolicyTest is Test {
         vm.stopPrank();
 
         vm.prank(agent);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         Slot(s).withdraw(1 ether);
     }
 
@@ -419,7 +425,7 @@ contract OccupancyPolicyTest is Test {
         vm.stopPrank();
 
         vm.prank(agent);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         Slot(s).release();
     }
 
@@ -435,7 +441,7 @@ contract OccupancyPolicyTest is Test {
         vm.stopPrank();
 
         vm.prank(agent);
-        vm.expectRevert(Slot.NotOccupant.selector);
+        vm.expectRevert(NotOccupant.selector);
         Slot(s).selfAssess(150 ether);
     }
 }

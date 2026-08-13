@@ -1,14 +1,13 @@
+import { Callout } from 'vocs'
+
 # Utility modules
 
 See [Utility modules](/concepts/modules) for what these are for.
 
-## ISlotsModule
+## IUtility
 
 ```solidity
-interface ISlotsModule is IERC165 {
-    function name() external view returns (string memory);
-    function version() external view returns (string memory);
-
+interface IUtility is IModuleMetadata {
     function onTransfer(uint256 slotId, address from, address to) external;
     function onPriceUpdate(uint256 slotId, uint256 oldPrice, uint256 newPrice) external;
     function onRelease(uint256 slotId, address from) external;
@@ -21,12 +20,71 @@ interface ISlotsModule is IERC165 {
 
     function feeBps() external view returns (uint256);
     function feeRecipient() external view returns (address);
-    function moduleURI() external view returns (string memory);
 }
 ```
 
 `slotId` is always `0` — one slot is one contract, so the calling slot is
 identified by `msg.sender`. Key your state off that.
+
+`ISlotsModule` is the former name, kept so existing utilities keep compiling. It
+is declared in full rather than as `interface ISlotsModule is IUtility {}` — an
+ERC-165 id is the XOR of an interface's **own** selectors and ignores inherited
+ones, so the empty-inheriting version would compute `0x00000000` and fail
+verification despite every function being correct. New code should implement
+`IUtility`; the two are ABI-identical.
+
+## IModuleMetadata
+
+How both of a slot's pluggable contracts describe themselves. `moduleURI()` on
+utilities and `policyURI()` on policies returned the same kind of string for the
+same reason, so they are now one function on one shared interface:
+
+```solidity
+interface IModuleMetadata is IERC165 {
+    function name() external view returns (string memory);
+    function version() external view returns (string memory);
+    function metadataURI() external view returns (string memory);
+}
+```
+
+This is metadata, not protocol. Nothing in `Slot` branches on it — the URI is
+read once at verification time and surfaced to indexers and UIs. A utility whose
+`metadataURI()` reverts is still a working utility; `Slot._utilityURI` swallows
+the failure.
+
+<Callout type="warning">
+**`moduleURI()` was removed, not aliased.** That is a wire break in both
+directions: `Slot` staticcalls the getter by selector, so an un-upgraded
+implementer stops reporting a URI, and the ERC-165 id changed (see below) so it
+no longer verifies either.
+
+It was taken deliberately after checking the live deployments — every deployed
+utility and policy returned `""`, so no metadata was actually lost. Utilities are
+UUPS proxies and were upgraded in place, keeping their addresses. Policies are
+immutable and were [redeployed](/deployments).
+</Callout>
+
+### ERC-165 ids
+
+Moving `name` / `version` / `metadataURI` to a parent **narrows** each child's id,
+and the narrowing is the point: `IUtility`'s id now means exactly "implements the
+utility hooks" and `IModuleMetadata`'s means "describes itself".
+
+| interface | id | covers |
+|---|---|---|
+| `IUtility` | `0xe120614a` | the six hooks |
+| `IOccupancyPolicy` | `0xd8a073cb` | `checkBuy`, `checkPriceUpdate` |
+| `IModuleMetadata` | `0x51eed0df` | `name`, `version`, `metadataURI` |
+
+`SlotFactory.setUtilityVerified` and `setPolicyVerified` assert **both** ids.
+Checking one alone would verify a contract that cannot describe itself — and the
+event they emit immediately reads all three fields. Anything hardcoding the old
+single id must move to checking both, or it will call a contract verified that
+the chain then rejects.
+
+Event *signatures* are unchanged — parameter names are not part of a topic0 — so
+log decoding keeps working. Only the field label moved, plus the function
+selector on the contracts themselves.
 
 ## Hooks
 

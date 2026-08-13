@@ -1,11 +1,20 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { Check, ChevronDown, PlusIcon, User } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  FlaskConical,
+  PlusIcon,
+  Scale,
+  User,
+  Users,
+} from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-
-import { SubgraphStatus } from "@/components/subgraph-status";
+import { DevAccountSwitcher } from "@/components/dev-account-switcher";
+import { DevTimeWarp } from "@/components/dev-time-warp";
+import { IndexerStatus } from "@/components/indexer-status";
 import { TestnetFaucet } from "@/components/testnet-faucet";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +36,11 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
 import {
   EXPLORER_SECTIONS,
@@ -47,7 +61,7 @@ export function AppSidebar() {
     setSection(id);
     // Sections live on the explorer, so jump back there when selected from
     // elsewhere in the app.
-    if (!onExplorer) push("/");
+    if (!onExplorer) push("/app");
   };
 
   return (
@@ -57,7 +71,7 @@ export function AppSidebar() {
     >
       <SidebarHeader className="p-4 gap-4">
         <NavLink
-          href="/"
+          href="/app"
           className="text-xl flex flex-row gap-1.5 items-center font-black tracking-tighter"
         >
           <Image
@@ -70,13 +84,17 @@ export function AppSidebar() {
           0xSlots
         </NavLink>
 
-        <Button size="sm" className="w-full" onClick={() => push("/create")}>
+        <Button size="sm" className="w-full" onClick={() => push("/app/create")}>
           <PlusIcon className="size-4" />
           Create Slot
         </Button>
       </SidebarHeader>
 
       <SidebarContent>
+        {/* Sections read as destinations here, and the selection stays visible
+            while you scroll a long table — which a strip pinned above the rows
+            does not do. Below md there is no sidebar, so the page renders the
+            same sections as a tab strip driving this same state. */}
         <SidebarGroup>
           <SidebarGroupLabel>Explore</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -92,6 +110,32 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              {/* Sits with the sections because it answers the same kind of
+                  question — what a slot's terms can be, alongside what a slot
+                  can do. It is a ROUTE, not a section: it pushes rather than
+                  setting explorer state, so `isActive` reads the path. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/policies")}
+                  onClick={() => push("/app/policies")}
+                >
+                  <Scale className="size-4" />
+                  <span>Policies</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* A sandbox, not a product surface — hence the dashed styling
+                  and the honest label. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/lab")}
+                  onClick={() => push("/app/lab")}
+                >
+                  <FlaskConical className="size-4" />
+                  <span>Lab</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -104,10 +148,19 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === "/profile"}
-                  onClick={() => push("/profile")}
+                  onClick={() => push("/app/profile")}
                 >
                   <User className="size-4" />
                   <span>My Slots</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/collectives")}
+                  onClick={() => push("/app/collectives")}
+                >
+                  <Users className="size-4" />
+                  <span>My Collectives</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -116,24 +169,42 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="gap-3">
-        <SidebarMenu>
+        {/* One row of icons rather than three full-width rows. These are
+            off-app destinations, not navigation — they should read as a
+            footer, and spelling out "Docs / GitHub / Telegram" gave them the
+            same visual weight as the sections above. The name survives as a
+            tooltip and as the accessible label. */}
+        <div className="flex items-center gap-1 px-2">
           {EXTERNAL_LINKS.map(({ label, href, icon: Icon }) => (
-            <SidebarMenuItem key={label}>
-              <SidebarMenuButton asChild size="sm">
-                <a href={href} target="_blank" rel="noopener noreferrer">
+            <Tooltip key={label}>
+              <TooltipTrigger asChild>
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={label}
+                  className="flex size-7 items-center justify-center text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                >
                   <Icon className="size-4" />
-                  <span>{label}</span>
                 </a>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+              </TooltipTrigger>
+              <TooltipContent side="top">{label}</TooltipContent>
+            </Tooltip>
           ))}
-        </SidebarMenu>
+        </div>
 
         <SidebarSeparator />
 
         {/* Renders only on chains with a mintable currency, so it disappears
             on mainnet without needing a testnet check here. */}
         <TestnetFaucet />
+
+        {/* Local chain only — both return null everywhere else. */}
+        <DevAccountSwitcher />
+        <DevTimeWarp />
+
+        {/* Sits directly above the chain picker: both choose WHERE the app
+            reads from, and both are persisted per browser. */}
 
         <div className="flex items-center justify-between px-2 pb-1">
           <DropdownMenu>
@@ -157,7 +228,7 @@ export function AppSidebar() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <SubgraphStatus />
+          <IndexerStatus />
         </div>
       </SidebarFooter>
     </Sidebar>

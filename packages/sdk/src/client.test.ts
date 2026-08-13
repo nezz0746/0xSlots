@@ -32,7 +32,7 @@ function harness(reads: Record<string, unknown>) {
 
   const client = new SlotsClient({
     chainId: SlotsChain.BASE,
-    subgraphUrl: "http://localhost/never-called",
+    apiUrl: "http://localhost/never-called",
     publicClient: {
       readContract,
       waitForTransactionReceipt: vi.fn(async () => ({ status: "success" })),
@@ -48,7 +48,9 @@ function harness(reads: Record<string, unknown>) {
 }
 
 const approvals = (writeContract: ReturnType<typeof vi.fn>) =>
-  writeContract.mock.calls.filter((c: any[]) => c[0].functionName === "approve");
+  writeContract.mock.calls.filter(
+    (c: any[]) => c[0].functionName === "approve",
+  );
 
 const sent = (writeContract: ReturnType<typeof vi.fn>, name: string) =>
   writeContract.mock.calls.find((c: any[]) => c[0].functionName === name)?.[0];

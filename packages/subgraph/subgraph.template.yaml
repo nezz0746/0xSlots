@@ -1,6 +1,8 @@
-specVersion: 1.0.0
-features:
-  - ipfsOnEthereumContracts
+specVersion: 1.3.0
+# `ipfsOnEthereumContracts` is gone with the last `ipfs.cat` call. That feature
+# flag exists to declare that chain handlers block on IPFS — which made the
+# subgraph non-deterministic, since whether a fetch timed out depended on the
+# indexer. File data sources replace it and need no flag.
 indexerHints:
   prune: auto
 schema:
@@ -8,7 +10,7 @@ schema:
 dataSources:
   - kind: ethereum
     name: SlotFactory
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{factoryAddress}}"
       abi: SlotFactory
@@ -21,6 +23,7 @@ dataSources:
         - Factory
         - Slot
         - Module
+        - IpfsContent
       abis:
         - name: SlotFactory
           file: ./abis/SlotFactory.json
@@ -47,7 +50,7 @@ dataSources:
       file: ./src/factory.ts
   - kind: ethereum
     name: SlotFactory2
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{factory2Address}}"
       abi: SlotFactory
@@ -60,6 +63,7 @@ dataSources:
         - Factory
         - Slot
         - Module
+        - IpfsContent
       abis:
         - name: SlotFactory
           file: ./abis/SlotFactory.json
@@ -86,7 +90,7 @@ dataSources:
       file: ./src/factory.ts
   - kind: ethereum
     name: ERC721SlotsFactory
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{erc721FactoryAddress}}"
       abi: ERC721SlotsFactory
@@ -108,7 +112,7 @@ dataSources:
       file: ./src/erc721slots-factory.ts
   - kind: ethereum
     name: FeedHub
-    network: {{network}}
+    network: "{{network}}"
     source:
       address: "{{feedHubAddress}}"
       abi: FeedHub
@@ -133,7 +137,7 @@ dataSources:
 templates:
   - kind: ethereum
     name: Slot
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: Slot
     mapping:
@@ -149,8 +153,10 @@ templates:
         - DepositedEvent
         - WithdrawnEvent
         - SettledEvent
+        - TaxPaidEvent
         - TaxCollectedEvent
         - ModuleFeePaidEvent
+        - PendingUpdateEvent
       abis:
         - name: Slot
           file: ./abis/Slot.json
@@ -171,6 +177,11 @@ templates:
           handler: handleWithdrawn
         - event: Settled(uint256,uint256,uint256)
           handler: handleSettled
+        # Emitted immediately after Settled and carries WHO paid, which Settled
+        # does not. Attribution below is the contract's own statement rather
+        # than an inference from occupancy ordering.
+        - event: TaxPaid(indexed address,uint256,uint256)
+          handler: handleTaxPaid
         - event: TaxCollected(indexed address,uint256)
           handler: handleTaxCollected
         - event: TaxUpdateProposed(uint256)
@@ -194,6 +205,15 @@ templates:
           handler: handlePolicyUpdateProposed
         - event: PolicyUpdateApplied(address)
           handler: handlePolicyUpdateApplied
+        # Per-kind pending updates. These carry the dimension, so unlike the
+        # five events above them they can be reduced into "what is queued on
+        # this slot right now".
+        - event: UpdateProposed(indexed uint8,bytes32,uint64)
+          handler: handleUpdateProposed
+        - event: UpdateCancelled(indexed uint8)
+          handler: handleUpdateCancelled
+        - event: UpdateApplied(indexed uint8,bytes32)
+          handler: handleUpdateApplied
         - event: RefundCredited(indexed address,uint256)
           handler: handleRefundCredited
         - event: RefundClaimed(indexed address,uint256)
@@ -201,7 +221,7 @@ templates:
       file: ./src/slot.ts
   - kind: ethereum
     name: MetadataModule
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: MetadataModule
     mapping:
@@ -211,6 +231,7 @@ templates:
       entities:
         - MetadataSlot
         - MetadataUpdatedEvent
+        - IpfsContent
       abis:
         - name: MetadataModule
           file: ./abis/MetadataModule.json
@@ -220,7 +241,7 @@ templates:
       file: ./src/metadata.ts
   - kind: ethereum
     name: FeedPostModule
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: FeedPostModule
     mapping:
@@ -230,6 +251,7 @@ templates:
       entities:
         - MetadataSlot
         - MetadataUpdatedEvent
+        - IpfsContent
       abis:
         - name: FeedPostModule
           file: ./abis/FeedPostModule.json
@@ -243,7 +265,7 @@ templates:
       file: ./src/metadata.ts
   - kind: ethereum
     name: ERC721Slots
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: ERC721Slots
     mapping:
@@ -262,7 +284,7 @@ templates:
       file: ./src/erc721slots.ts
   - kind: ethereum
     name: Feed
-    network: {{network}}
+    network: "{{network}}"
     source:
       abi: Feed
     mapping:
@@ -272,6 +294,7 @@ templates:
       entities:
         - Feed
         - Slot
+        - IpfsContent
         - FeedNameUpdatedEvent
         - FeedMetadataURIUpdatedEvent
         - FeedRecipientUpdatedEvent
@@ -292,3 +315,25 @@ templates:
         - event: SlotRemoved(indexed address)
           handler: handleSlotRemoved
       file: ./src/feed.ts
+  # ── File data source: IPFS metadata ──────────────────────────────────────
+  #
+  # Spawned by name from the chain handlers above (`IpfsContent.create(cid)`),
+  # once per CID. Graph Node fetches the file out of band and retries until it
+  # succeeds, then calls the handler — so an unreachable CID no longer records
+  # itself as "no metadata" the way a timed-out `ipfs.cat` did.
+  #
+  # `abis` is required by graph-cli even though a file data source cannot call
+  # a contract. Any ABI satisfies it; this is the smallest one in the repo.
+  - kind: file/ipfs
+    name: IpfsContent
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - IpfsContent
+      abis:
+        - name: ERC20
+          file: ./abis/ERC20.json
+      handler: handleIpfsContent
+      file: ./src/ipfs-content.ts

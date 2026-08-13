@@ -2,7 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IOccupancyPolicy, OccupancyContext} from "../interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "../interfaces/IModuleMetadata.sol";
 
 /// @title MinimumTenurePolicy
 /// @notice An occupant cannot be bought out for `tenureSeconds` after acquiring.
@@ -70,17 +72,25 @@ contract MinimumTenurePolicy is IOccupancyPolicy {
 
     function name() external pure returns (string memory) { return "MinimumTenurePolicy"; }
     function version() external pure returns (string memory) { return "1.0.0"; }
-    function policyURI() external pure returns (string memory) { return ""; }
+    function metadataURI() external pure returns (string memory) { return ""; }
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId || id == type(IERC165).interfaceId;
+        return id == type(IOccupancyPolicy).interfaceId
+            || id == type(IModuleMetadata).interfaceId
+            || id == type(IERC165).interfaceId;
     }
 
+    /// @dev Rounds UP, mirroring `Slot._minDepositFor`. Truncating divided the
+    ///      pre-payment in the buyer's favour, and below a threshold price it
+    ///      truncated to zero outright — a tenure-protected slot could be taken
+    ///      with no pre-payment at all and then held for the whole window. The
+    ///      threshold is in RAW UNITS, so what it is worth depends on the
+    ///      currency's decimals, which this policy never sees.
     function _taxFor(
         uint256 price_,
         uint256 taxPercentage,
         uint256 seconds_
     ) internal pure returns (uint256) {
-        return (price_ * taxPercentage * seconds_) / (MONTH * BASIS_POINTS);
+        return Math.ceilDiv(price_ * taxPercentage * seconds_, MONTH * BASIS_POINTS);
     }
 }

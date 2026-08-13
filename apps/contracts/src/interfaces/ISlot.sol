@@ -90,6 +90,19 @@ struct SlotInfo {
     uint256 occupiedSince;
     bool hasPendingPolicy;
     address pendingPolicy;
+    // When each pending update was queued, as a unix timestamp.
+    //
+    // A buyer cannot tell a routine change queued last week from one timed
+    // against the transaction they are about to send, and those deserve very
+    // different treatment in a UI. The `has*` flags above say only THAT
+    // something is pending; these say how long it has been true.
+    //
+    // Zero means nothing is pending for that kind — or, for the handful of
+    // updates queued before this field existed, that the time is unknown.
+    // Read them together with the matching `has*` flag to tell those apart.
+    uint64 taxProposedAt;
+    uint64 utilityProposedAt;
+    uint64 policyProposedAt;
 }
 
 /// @notice Pending update for tax or utility (applied on next ownership transition)
@@ -98,6 +111,48 @@ struct PendingUpdate {
     address newUtility;
     bool hasTaxUpdate;
     bool hasUtilityUpdate;
+}
+
+/// @notice A queued occupancy-policy swap, applied on the next transition.
+/// @dev Its own struct rather than a field on `PendingUpdate` because it lands
+///      at a different storage offset (see `Slot`), fixed on every live proxy.
+///      The two fields pack into one slot.
+struct PendingPolicyUpdate {
+    address newPolicy;
+    bool hasPolicyUpdate;
+}
+
+/// @notice INERT — a committed-but-not-yet-effective transfer, retained only to
+///         hold its storage offsets.
+/// @dev Every outstanding transfer was drained before the code that completed
+///      them was removed, so all five fields are permanently zero on every live
+///      proxy. The type cannot be dropped: doing so would shift `isOperator` and
+///      `withdrawableOf` on every proxy, voiding operator approvals and unclaimed
+///      refunds. Guarded by `test_StorageLayout_SurvivesDrainRemoval`. The field
+///      order and packing (`buyer`+`effectiveAt` share one slot) are load-bearing
+///      and must not change.
+struct PendingTransfer {
+    address buyer;
+    uint96 effectiveAt;
+    uint256 deposit;
+    uint256 newPrice;
+    uint256 pricePaid;
+}
+
+/// @notice Which of a slot's three governable dimensions a pending update targets.
+/// @dev The storage behind them is still two structs — `PendingUpdate` carries
+///      tax and utility, `PendingPolicyUpdate` carries policy — because those
+///      offsets are fixed on every live proxy. This enum is the vocabulary the
+///      API and the logs speak in, so callers address one dimension at a time
+///      without knowing which struct it happens to live in.
+///
+///      A slot holds at most one pending update per kind: three in total,
+///      last-write-wins within a kind. There is deliberately no queue — ordering
+///      semantics and unbounded apply-time gas buy nothing here.
+enum UpdateKind {
+    Tax,
+    Utility,
+    Policy
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -168,6 +223,34 @@ interface ISlotEvents {
     event PendingUpdateCancelled();
 
     event PendingUpdateApplied(uint256 newTaxPercentage, address newUtility);
+
+    // ── per-kind pending-update log ──────────────────────────────
+    //
+    // One shape for all three dimensions, replacing five events that between
+    // them could not answer "what is pending right now, and what changed".
+    //
+    // `PendingUpdateApplied` emits BOTH tax and utility on every apply, filling
+    // in the current value for whichever did not change — so a reader cannot
+    // tell "utility became X" from "utility was already X". `PendingUpdateCancelled`
+    // carries nothing at all, and policy has its own separate pair. Reducing
+    // that into per-slot pending state is not possible from the logs alone.
+    //
+    // Emitted ALONGSIDE the five originals rather than replacing them.
+    // Changing an existing event's signature changes its topic0 and splits
+    // historical indexing across two shapes — the same reasoning that made
+    // `TaxPaid` a new event above.
+    //
+    // `value` is the proposed value widened to 32 bytes: the raw basis points
+    // for `Tax`, the left-padded address for `Utility` and `Policy`.
+
+    /// @notice A pending update was queued for `kind`, replacing any it held.
+    event UpdateProposed(UpdateKind indexed kind, bytes32 value, uint64 proposedAt);
+
+    /// @notice A pending update for `kind` was dropped without ever applying.
+    event UpdateCancelled(UpdateKind indexed kind);
+
+    /// @notice A pending update for `kind` took effect at an ownership transition.
+    event UpdateApplied(UpdateKind indexed kind, bytes32 value);
 
     event LiquidationBountyUpdated(uint256 newBps);
 

@@ -51,7 +51,7 @@
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -161,7 +161,7 @@
             "internalType": "uint256"
           },
           {
-            "name": "newModule",
+            "name": "newUtility",
             "type": "address",
             "internalType": "address"
           },
@@ -171,7 +171,7 @@
             "internalType": "bool"
           },
           {
-            "name": "hasModuleUpdate",
+            "name": "hasUtilityUpdate",
             "type": "bool",
             "internalType": "bool"
           }
@@ -211,7 +211,12 @@
             "internalType": "bool"
           },
           {
-            "name": "mutableModule",
+            "name": "mutableUtility",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mutablePolicy",
             "type": "bool",
             "internalType": "bool"
           },
@@ -231,7 +236,7 @@
             "internalType": "uint256"
           },
           {
-            "name": "module",
+            "name": "utility",
             "type": "address",
             "internalType": "address"
           },
@@ -261,6 +266,11 @@
             "internalType": "uint256"
           },
           {
+            "name": "lastSettled",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
             "name": "secondsUntilLiquidation",
             "type": "uint256",
             "internalType": "uint256"
@@ -271,27 +281,27 @@
             "internalType": "bool"
           },
           {
-            "name": "moduleName",
+            "name": "utilityName",
             "type": "string",
             "internalType": "string"
           },
           {
-            "name": "moduleVersion",
+            "name": "utilityVersion",
             "type": "string",
             "internalType": "string"
           },
           {
-            "name": "moduleFeeBps",
+            "name": "utilityFeeBps",
             "type": "uint256",
             "internalType": "uint256"
           },
           {
-            "name": "moduleFeeRecipient",
+            "name": "utilityFeeRecipient",
             "type": "address",
             "internalType": "address"
           },
           {
-            "name": "moduleURI",
+            "name": "utilityURI",
             "type": "string",
             "internalType": "string"
           },
@@ -306,12 +316,12 @@
             "internalType": "uint256"
           },
           {
-            "name": "hasPendingModule",
+            "name": "hasPendingUtility",
             "type": "bool",
             "internalType": "bool"
           },
           {
-            "name": "pendingModule",
+            "name": "pendingUtility",
             "type": "address",
             "internalType": "address"
           },
@@ -319,11 +329,6 @@
             "name": "occupancyPolicy",
             "type": "address",
             "internalType": "address"
-          },
-          {
-            "name": "epochSeconds",
-            "type": "uint256",
-            "internalType": "uint256"
           },
           {
             "name": "occupiedSince",
@@ -339,6 +344,21 @@
             "name": "pendingPolicy",
             "type": "address",
             "internalType": "address"
+          },
+          {
+            "name": "taxProposedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "utilityProposedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "policyProposedAt",
+            "type": "uint64",
+            "internalType": "uint64"
           }
         ]
       }
@@ -724,7 +744,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "newModule",
+        "name": "newUtility",
         "type": "address",
         "internalType": "address"
       },
@@ -734,7 +754,7 @@
         "internalType": "bool"
       },
       {
-        "name": "hasModuleUpdate",
+        "name": "hasUtilityUpdate",
         "type": "bool",
         "internalType": "bool"
       }
@@ -759,7 +779,7 @@
     "name": "proposeModuleUpdate",
     "inputs": [
       {
-        "name": "newModule",
+        "name": "newUtility",
         "type": "address",
         "internalType": "address"
       }
@@ -907,7 +927,7 @@
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -1066,7 +1086,7 @@
     "name": "ModuleFeePaid",
     "inputs": [
       {
-        "name": "module",
+        "name": "utility",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1091,7 +1111,7 @@
     "name": "ModuleUpdateProposed",
     "inputs": [
       {
-        "name": "newModule",
+        "name": "newUtility",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -1135,7 +1155,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "newModule",
+        "name": "newUtility",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -1392,6 +1412,31 @@
   },
   {
     "type": "event",
+    "name": "TaxPaid",
+    "inputs": [
+      {
+        "name": "occupant",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "taxOwed",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "taxPaid",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TaxUpdateProposed",
     "inputs": [
       {
@@ -1588,6 +1633,374 @@
   {
     "type": "error",
     "name": "TransferPending",
+    "inputs": []
+  },
+  {
+    "type": "function",
+    "name": "cancelPendingUpdate",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "internalType": "enum UpdateKind"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "_recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_currency",
+        "type": "address",
+        "internalType": "contract IERC20"
+      },
+      {
+        "name": "_config",
+        "type": "tuple",
+        "internalType": "struct SlotConfig",
+        "components": [
+          {
+            "name": "mutableTax",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mutableUtility",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mutablePolicy",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "manager",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "_init",
+        "type": "tuple",
+        "internalType": "struct SlotInitParams",
+        "components": [
+          {
+            "name": "taxPercentage",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "utility",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "liquidationBountyBps",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "minDepositSeconds",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "occupancyPolicy",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "_factory",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "mutablePolicy",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "mutableUtility",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingUpdateOf",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "internalType": "enum UpdateKind"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isSet",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "value",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "proposedAt",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "policyProposedAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposeUtilityUpdate",
+    "inputs": [
+      {
+        "name": "newUtility",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "taxProposedAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "utility",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "utilityProposedAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "SlotCreated",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "currency",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "config",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct SlotConfig",
+        "components": [
+          {
+            "name": "mutableTax",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mutableUtility",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mutablePolicy",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "manager",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "initParams",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct SlotInitParams",
+        "components": [
+          {
+            "name": "taxPercentage",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "utility",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "liquidationBountyBps",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "minDepositSeconds",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "occupancyPolicy",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UpdateApplied",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum UpdateKind"
+      },
+      {
+        "name": "value",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UpdateCancelled",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum UpdateKind"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UpdateProposed",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum UpdateKind"
+      },
+      {
+        "name": "value",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "proposedAt",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InvalidValue",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TransferFailed",
     "inputs": []
   }
 ]

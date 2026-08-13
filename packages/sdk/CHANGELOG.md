@@ -1,5 +1,307 @@
 # @0xslots/sdk
 
+## 0.26.0
+
+### Minor Changes
+
+- 2c425eb: Add `getAccountChains` — recipient counts scoped to one chain.
+
+  `account` has no `chainId`. It is one row per address, with `slotCount` and
+  `occupiedCount` summed across every network, so `getAccounts` cannot answer
+  "who receives on THIS chain" and never could. Asking it anyway is what made the
+  explorer list base-sepolia's recipients while base was selected, each labelled
+  with its base-sepolia slot count — and clicking one opened a recipient page
+  that does filter by chain, found nothing, and rendered zeros throughout.
+
+  `getAccountChains` reads the new `accountChain` table instead. `chainId` is
+  injected the same way every other list query gets it, so the default is the
+  client's chain and callers opt out by passing their own `where`.
+
+  Three counters, and the distinction between them is the point:
+
+  - `slotCount` — slots on this chain where the account is the **recipient**
+  - `occupiedAsRecipient` — how many of those are currently occupied
+  - `occupiedCount` — slots on this chain the account **occupies**
+
+  The first two form an occupancy ratio. The third describes a different role and
+  must never be paired with `slotCount`, however much the names suggest
+  otherwise — that mistake has now been made twice against this data.
+
+  `occupiedAsRecipient` also replaces counting a 500-row page client-side, so the
+  number no longer caps at 500 and no longer sums across chains.
+
+  Nothing is removed. `getAccounts` still returns protocol-wide totals for
+  callers that want them; its docblock now says so.
+
+  Requires an indexer carrying the `accountChain` table — deploy ponder before
+  upgrading, or the query resolves against a schema that has no such field.
+
+## 0.25.0
+
+### Minor Changes
+
+- c86e1cc: **Breaking:** `module.moduleURI` is now `module.metadataURI`.
+
+  Regenerated against the indexer after `IUtility.moduleURI()` and
+  `IOccupancyPolicy.policyURI()` were unified into
+  `IModuleMetadata.metadataURI()`. The column follows the contract, so every
+  query selecting it moved: `GetModules`, and `SlotFields` — which means `getSlots`,
+  `getSlotsWithMetadata`, `getSlot` and everything else built on that fragment.
+
+  ```diff
+  - slot.moduleRef?.moduleURI
+  + slot.moduleRef?.metadataURI
+  ```
+
+  ### Upgrade this in lockstep with the indexer
+
+  There is no compatibility window in either direction, because ponder serves
+  exactly one schema:
+
+  - An **older SDK against the new indexer** fails every affected query with
+    `Cannot query field "moduleURI" on type "module"`. GraphQL rejects the whole
+    document, so the result is not a missing field — it is an empty list. A slots
+    table simply renders nothing.
+  - A **newer SDK against an older indexer** fails the same way in reverse.
+
+  Deploy the indexer and publish this together. The symptom, if they drift, is an
+  explorer with no rows rather than a visible error.
+
+### Patch Changes
+
+- Updated dependencies [1fde28a]
+  - @0xslots/contracts@0.20.0
+
+## 0.24.0
+
+### Minor Changes
+
+- 53dad09: **Breaking:** remove `apiKey` from `SlotsClientConfig`.
+
+  Ponder serves the GraphQL API unauthenticated. The endpoint answers `200` with
+  no `Authorization` header and `200` with a deliberately invalid bearer token —
+  the header is not checked at all, so the key never bought anything.
+
+  It was inherited from The Graph's gateway, which does reject unauthenticated
+  queries, and it survived the migration untouched because nothing failed when it
+  stopped mattering.
+
+  Worse than dead weight: consumers wired it through `NEXT_PUBLIC_*`, and Next
+  inlines those into the client bundle. That published a billable gateway
+  credential to every visitor in exchange for nothing.
+
+  `useSlotsClient(chainId, apiKey)` loses its second parameter for the same reason.
+
+  ### Migration
+
+  Drop the option:
+
+  ```diff
+    new SlotsClient({
+      chainId,
+      apiUrl,
+  -   apiKey: process.env.NEXT_PUBLIC_PONDER_API_KEY,
+    })
+  ```
+
+  If you have put your own deployment behind auth, `headers` still carries it —
+  that path is unchanged and now the only one:
+
+  ```ts
+  new SlotsClient({
+    chainId,
+    apiUrl,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  ```
+
+  Any key that was exposed through a `NEXT_PUBLIC_` var is worth rotating: it has
+  been readable in the deployed bundle for as long as it was set.
+
+## 0.23.0
+
+### Minor Changes
+
+- 7f8f2a7: **Breaking:** read from the ponder API instead of the subgraph.
+
+  Every read path now targets one ponder deployment. The subgraph package still
+  exists, but it is no longer what the SDK queries.
+
+  ### Configuration
+
+  `SlotsClientConfig.subgraphUrl` → `apiUrl`, `subgraphApiKey` → `apiKey`.
+  `SUBGRAPH_URLS`, `STUDIO_SUBGRAPH_URLS`, `SubgraphSource`, `subgraphUrlFor` and
+  `SubgraphMeta` are gone; `DEFAULT_API_URL`, `LOCAL_API_URL` and `IndexerMeta`
+  replace them.
+
+  `chainId` changes meaning. It used to pick an endpoint — one subgraph per chain.
+  One ponder deployment holds every chain, so it is now a `where: { chainId }`
+  filter that the client merges into every list query. That merge is not optional:
+  omitting it does not fail, it silently returns rows from every chain at once,
+  which is worse than an error because it looks like a result.
+
+  ### Result shape
+
+  Reads return `{ items, totalCount, pageInfo }` rather than a bare array.
+  Pagination is `limit` with either `offset` or the `after`/`before` cursors from
+  `pageInfo`; `first`/`skip` are gone, as is the subgraph's `block:` time-travel
+  argument, which ponder has no equivalent for.
+
+  Callers that iterated a response directly need `.items` — the failure mode is
+  `object is not iterable` at the call site.
+
+  ### New surface
+
+  - `SlotsChain.ANVIL` (31337) for local development, with a `CHAIN_TOKENS` entry
+    for the mintable `USDX` test token that `SeedLocal.s.sol` deploys.
+  - Feed types, now that feeds are indexed: metadata resolved from the URI rather
+    than left null. The subgraph could not do this — File Data Sources fetch
+    asynchronously and cannot write back to the entity that spawned them, so every
+    IPFS-hosted feed had a null name and a `displayName` stuck on the on-chain one.
+  - Tax attribution, operators, policy updates and refunds, matching the events the
+    contracts already emitted but nothing indexed.
+
+  ### Fixed
+
+  `useSlotOnChain` no longer calls ERC-20 methods on `address(0)` for native-currency
+  slots. It did, and the failed reads fell back to `?? 6` decimals and `?? "USDC"` —
+  so half an ETH rendered as "500.00B USDC". Native slots now resolve through
+  `NATIVE_CURRENCY`, and formatting uses the token's real decimals.
+
+### Patch Changes
+
+- Updated dependencies [7f8f2a7]
+  - @0xslots/contracts@0.19.0
+
+## 0.22.0
+
+### Minor Changes
+
+- 27fb24f: Choose which subgraph deployment to read with a flag rather than a URL.
+
+  `SubgraphSource` is a new export — `Network` for the decentralized network through `gateway.thegraph.com`, `Studio` for the development deployment. `SlotsClientConfig` takes it as `subgraphSource`, and `subgraphUrlFor(chainId, source)` resolves one to an endpoint. The Studio endpoints ship here as `STUDIO_SUBGRAPH_URLS`, alongside the gateway ones that were already exported.
+
+  Studio exists in this package because of a gap the gateway has: a freshly published subgraph is not served there until an indexer allocates to it and syncs from `startBlock` — hours for these — and until then the gateway answers `subgraph not found: no allocations`. Studio serves a deployment as soon as it has indexed, so it is how a mapping or schema change gets exercised before the network catches up. It is rate-limited and a development surface; the default is unchanged and nothing switches to it on its own.
+
+  Both endpoint maps living together is the point. The Studio slugs are NOT symmetrical — `0-xslots-base` but `0-x-slots-base-sepolia` — and cannot be derived from the chain, so every consumer that hand-wrote them was one transcription away from a silent failure: Studio answers an unknown slug with HTTP 200 and a `{"message":"Not found"}` body, which no status check catches. Consumers now carry a two-value flag instead of a pair of URLs.
+
+  `subgraphApiKey` is withheld when this client resolves a Studio endpoint itself. The key authenticates against the gateway and is meaningless to Studio, so sending it would put a gateway credential in a request that has no use for it. An explicit `subgraphUrl` still receives the key — the caller named that endpoint and this package cannot tell what it is.
+
+  `subgraphUrl` is unchanged and still wins over `subgraphSource`, so a local graph-node or a pinned deployment ID works exactly as before.
+
+## 0.21.0
+
+### Minor Changes
+
+- 0d4fc48: Address a slot's three pending updates one at a time, and finish the utility rename on the read and write paths.
+
+  `UpdateKind` is a new export — `Tax`, `Utility`, `Policy`, numbered to match the Solidity enum. It is the argument to `cancelPendingUpdate(slot, kind)`, which retracts one queued change and leaves the others standing. `cancelPendingUpdates(slot)` still exists and still drops all three; prefer the singular unless clearing everyone's queued work is genuinely what you mean. `useSlotAction` exposes both, and labels each cancel per dimension so a pending spinner lands on the row that is actually in flight rather than on all three at once.
+
+  `proposePolicyUpdate(slot, newPolicy)` is new. The occupancy policy has been proposable on-chain since policies existed, but this client never offered it, so the one update that decides whether a slot can be taken from you was unreachable through the SDK. `proposeUtilityUpdate` joins it as the canonical name for `proposeModuleUpdate`, which is deprecated and now forwards to the same place.
+
+  `SlotOnChain` gains `taxProposedAt`, `utilityProposedAt` and `policyProposedAt`. A `has*` flag says only THAT something is queued; these say how long it has been true, which is what separates a change queued last week from one queued against a transaction that is already in flight. Zero alongside a set flag means the slot predates the contract recording it — read the pair, never the timestamp alone.
+
+  **Renames, with a bridge.** `SlotOnChain.module`, `mutableModule`, `hasPendingModule` and `pendingModule` are now `utility`, `mutableUtility`, `hasPendingUtility` and `pendingUtility`. The old names remain as deprecated aliases filled from the same source, mirroring the deprecated `module()` and `mutableModule()` getters the contract itself still ships, so existing code keeps working for one release.
+
+  The write path could not be bridged with an alias, and this is worth knowing even if you never touched these types. `SlotConfig` and `SlotInitParams` are encoded by viem BY COMPONENT NAME, and both this package and the checked-in ABIs still used `mutableModule` / `module` after the contracts had renamed those components. The two were wrong in the same direction, so they agreed with each other and disagreed with the chain; correcting either one alone would have started silently creating slots with a zero utility and a dropped `mutablePolicy` flag. `createSlot` and `createSlots` now build the tuple explicitly through a normaliser that accepts either spelling, so a caller on the old names is unaffected and a missing field is a type error here rather than a zero address on-chain.
+
+  **This version requires the upgraded `Slot` implementation.** `getSlotInfo` grew three fields, and reading a slot that has not been upgraded does not throw — because the tuple carries strings, the three extra reads land on tail bytes and return plausible-looking garbage for the timestamps while every other field decodes correctly. Base and Base Sepolia are both upgraded; point this at a fork or a chain that is not, and pending-update timestamps are meaningless rather than absent.
+
+### Patch Changes
+
+- Updated dependencies [0d4fc48]
+  - @0xslots/contracts@0.18.0
+
+## 0.20.1
+
+### Patch Changes
+
+- Updated dependencies [4c4a412]
+  - @0xslots/contracts@0.17.0
+
+## 0.20.0
+
+### Minor Changes
+
+- ea74fab: Offer native ETH as a slot currency, and pay for native slots by value rather than by approval.
+
+  `NATIVE_CURRENCY`, `NATIVE_CURRENCY_ADDRESS` and `isNativeCurrency` are new exports. The sentinel is `address(0)`, which is sound rather than arbitrary: `Slot.initialize` rejected it outright before native support existed, so no slot predating that change can be holding it. `isNativeCurrency` accepts `undefined` deliberately — every call site in an app holds a possibly-unloaded address, and making each one guard separately is how one gets missed.
+
+  ETH is appended last on both Base chains rather than inserted first, the same rule already applied to WETH: `getDefaultToken` returns index 0, so USDC stays the default and an untouched create form still produces exactly the slot it did before.
+
+  Writes are the substantive change. `buy` and `topUp` both routed through a single private helper that read the slot's currency and approved it — which reverts against `address(0)`, so every native write failed. That helper now branches: native attaches `value` and never reads or grants an allowance, while the ERC-20 arm is unchanged, post-approval polling for node lag included. `buy` needed no new arithmetic, since the price-plus-deposit figure it already computed for the approval is exactly the `msg.value` the contract requires. The helper is renamed `withPayment`, having stopped being about allowances; it is private, so nothing downstream moves.
+
+  `VouchedPolicy` gains `superseded`. Redeploying the price policy factory left the two mainnet USDC floors derivable no longer — the current factory predicts different addresses, so the provenance check correctly refuses them — while the slots using them still need a label. Marking them keeps `getVouchedPolicy` naming them and drops them from `vouchedPoliciesForChain` and `searchVouchedPolicies`, so a picker is not offered the same floor twice at two addresses.
+
+  The package also gains its first tests. They cover only the payment branch, which is the one place a silent mistake sends real funds the wrong way and the one place neither the type checker nor any other check in the repo can see.
+
+### Patch Changes
+
+- Updated dependencies [ea74fab]
+  - @0xslots/contracts@0.16.0
+
+## 0.19.0
+
+### Minor Changes
+
+- 6ec2208: Offer WETH as a slot currency on Base and Base Sepolia, and name each token's logo.
+
+  `WETH` is the OP-stack predeploy at `0x4200000000000000000000000000000000000006` — the same address on both chains. It is appended last on each chain rather than inserted first, so `getDefaultToken` keeps returning USDC (and Feed USDC on testnet) and an untouched create form still produces exactly the slot it did before.
+
+  It is also the first 18-decimal currency the protocol has offered. Nothing needed changing for that — a price floor already converts with the selected token's own decimals, and `MinimumPricePolicy` reverts `WrongCurrency` on a mismatched pairing — but the path now actually gets exercised rather than only ever seeing 6-decimal USDC.
+
+  `TokenInfo` gains an optional `logo` holding a slug (`"usdc"`, `"weth"`) rather than a URL or a path. This package is published and has more than one consumer: a path would encode one app's asset layout into shared data, and a URL would put a third-party host into every consumer's render path.
+
+## 0.18.1
+
+### Patch Changes
+
+- 8d11d57: Wire up the Base mainnet policy factories.
+
+  `MinimumTenurePolicyFactory` at `0xE322cDADB8fd511788F0fA25BffD794b7A946125` and `MinimumPricePolicyFactory` at `0xF1cA0Fe72269AaEf1E5e34bfF484269f18e1b777`, added to the per-chain maps and to `POLICY_FACTORIES` so `resolvePolicy` can verify against them.
+
+  Without these the SDK could not even address a policy factory on mainnet, so choosing a minimum tenure on the create form threw before building a transaction.
+
+  The five starter policies they deployed — 1h/1d/7d tenures and $1/$10 USDC floors — are listed as vouched so the "Verified policy" picker has something to offer on mainnet. All five are derivable on-chain and do not need the entries to be named; this is the editorial list, not a naming fallback.
+
+  `VouchedPolicy` gains optional `minPrice` and `currency`, and `resolvePolicy` forwards them. It checks the vouched list first and returns without touching the network, so a listed policy previously came back thinner than the same policy derived — losing exactly the fields a price floor is made of.
+
+- 33a9279: Report pre-flight failures in the policy create flows instead of failing silently.
+
+  `createSlotWithTenure` and `createSlotWithPriceFloor` read the policy factory before offering any transaction — to predict the CREATE2 address and check whether that policy already exists. Those reads sat outside `exec`, the only place with a `catch` and an `onError`, and the call site does not await the returned promise. So on a chain with no policy factory deployed the read threw into an unhandled rejection: the Create button stayed enabled, clicking it did nothing, and no error appeared anywhere.
+
+  Both now route through a `preflight` helper that reports through `onError` exactly as a failed transaction does. A chain without a policy factory is a configuration fact worth stating, not a mystery.
+
+- Updated dependencies [8d11d57]
+  - @0xslots/contracts@0.15.1
+
+## 0.18.0
+
+### Minor Changes
+
+- df9932d: Occupancy policies, and a resolver that only names a policy it can actually vouch for.
+
+  **New `policies` module.** `resolvePolicy`, `getVouchedPolicy`, `vouchedPoliciesForChain`, `searchVouchedPolicies`, plus the `ResolvedPolicy`, `VouchedPolicy`, `VouchedPolicyEntry`, `PolicyKindId` and `PolicyImpact` types.
+
+  The raw registry is deliberately **not** exported. Resolution walks `IPolicyFactory.verify()` on each known factory, so a policy's name is a claim the chain confirms rather than a lookup in a hardcoded table. Two consequences worth knowing: a policy made by a superseded factory resolves to its bare address — the honest answer, not a bug — and every accessor is chain-scoped, because without that a Sepolia policy would have been confidently named on mainnet.
+
+  **New client methods** for the two term-policy factories: `predictTenurePolicy`, `isTenurePolicyDeployed`, `deployTenurePolicy`, and the `predict`/`is…Deployed`/`deploy` trio for price floors. Policies are content-addressed via CREATE2, so their terms _are_ their address and `predict` is exact.
+
+  **New actions** on `useSlotAction`: `createSlotWithTenure` and `createSlotWithPriceFloor`. Each wraps deploy-then-create and waits for the policy to land before creating — a rejected or reverted policy deploy bails rather than failing the create a second time, more confusingly. Two transactions only the first time anyone uses a given set of terms; afterwards the policy already exists and it is one.
+
+  Also exports `formatDuration` and `getFaucetToken`.
+
+  **Breaking, though nothing is removed.** The whole surface above is additive; what breaks is underneath:
+
+  - `SlotOnChain` follows `getSlotInfo` and gains `mutablePolicy`, `lastSettled`, `occupancyPolicy`, `occupiedSince`, `hasPendingPolicy`, `pendingPolicy`. Widened, not reshaped — but exhaustive handling of the object needs updating.
+  - Slot queries now request occupancy fields, so **a subgraph that has not been redeployed with the occupancy schema will error** rather than return partial data. Deploy and sync the subgraph before shipping this.
+  - Depends on `@0xslots/contracts` at the matching version, where `SlotConfig` and `SlotInitParams` changed tuple shape under unchanged function names. That break produces no type error — see that package's notes.
+
+### Patch Changes
+
+- Updated dependencies [df9932d]
+  - @0xslots/contracts@0.15.0
+
 ## 0.17.5
 
 ### Patch Changes

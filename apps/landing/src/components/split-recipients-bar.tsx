@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { splitsSupported } from "@/lib/splits-support";
 import { truncateAddress } from "@/utils";
 
 const COLORS = [
@@ -73,6 +74,19 @@ export function SplitBar({ recipients }: { recipients: SplitBarRecipient[] }) {
 // ─── Fetching wrapper (for on-chain splits) ──────────────────────────────────
 
 export function SplitRecipientsBar({
+  chainId,
+  splitAddress,
+}: {
+  chainId: number;
+  splitAddress: string;
+}) {
+  // Same reason as SplitsClientSync: the hook throws rather than returning
+  // empty on a chain splits does not know.
+  if (!splitsSupported(chainId)) return null;
+  return <Bar chainId={chainId} splitAddress={splitAddress} />;
+}
+
+function Bar({
   chainId,
   splitAddress,
 }: {

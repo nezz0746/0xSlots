@@ -4,10 +4,17 @@ import { APP_URL } from "@/constants";
 /**
  * Farcaster miniapp manifest.
  *
- * `accountAssociation` must be generated for your domain at:
+ * TODO — RE-SIGN THE ACCOUNT ASSOCIATION.
+ *
+ * The `accountAssociation` below is a signature bound to a domain. Its payload
+ * decodes to {"domain":"app.0xslots.org"}, signed by fid 1733, and the app now
+ * serves from 0xslots.org — so it will NOT verify.
+ *
+ * It cannot be regenerated in code. Re-sign for `0xslots.org` with fid 1733 at:
  *   https://farcaster.xyz/~/developers/mini-apps/manifest
  *
- * Replace the placeholder values below once you have them.
+ * The stale value is left in place deliberately rather than blanked: a wrong
+ * association fails verification loudly, an empty one looks intentional.
  */
 export function GET() {
   return NextResponse.json({
@@ -22,7 +29,8 @@ export function GET() {
       version: "1",
       name: "0xSlots",
       iconUrl: `${APP_URL}/logo.png`,
-      homeUrl: APP_URL,
+      // The explorer, not the marketing page.
+      homeUrl: `${APP_URL}/app`,
       imageUrl: `${APP_URL}/api/og`,
       buttonTitle: "Explore",
       splashImageUrl: `${APP_URL}/logo.png`,

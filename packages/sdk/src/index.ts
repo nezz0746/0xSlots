@@ -9,8 +9,11 @@ export {
   SlotsChain,
   SlotsClient,
   type SlotsClientConfig,
-  SUBGRAPH_URLS,
-  type SubgraphMeta,
+  type ChainStatus,
+  DEFAULT_API_URL,
+  LOCAL_API_URL,
+  type IndexerMeta,
+  UpdateKind,
 } from "./client";
 // Errors
 export { SlotsError } from "./errors";

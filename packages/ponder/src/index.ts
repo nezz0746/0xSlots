@@ -1,4 +1,5 @@
 import "./factory";
 import "./slot";
 import "./metadata";
-import "./erc721";
+import "./feed";
+import "./collective";

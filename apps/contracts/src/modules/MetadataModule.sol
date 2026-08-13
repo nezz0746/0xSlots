@@ -6,6 +6,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {UUPSUpgradeable} from "@openzeppelin-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin-upgradeable/contracts/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin-upgradeable/contracts/proxy/utils/Initializable.sol";
+import {IModuleMetadata} from "../interfaces/IModuleMetadata.sol";
 
 /// @title MetadataModule
 /// @notice UUPS-upgradeable module that stores a URI per slot. Only the slot's occupant can update.
@@ -74,7 +75,7 @@ contract MetadataModule is
     }
 
     /// @notice Module metadata URI
-    function moduleURI() external pure override returns (string memory) {
+    function metadataURI() external pure override returns (string memory) {
         return "";
     }
 
@@ -93,6 +94,7 @@ contract MetadataModule is
     ) external pure override returns (bool) {
         return
             interfaceId == type(IUtility).interfaceId ||
+            interfaceId == type(IModuleMetadata).interfaceId ||
             interfaceId == type(IERC165).interfaceId;
     }
 

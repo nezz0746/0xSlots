@@ -9,7 +9,7 @@ export const useTunnel = process.env.NEXT_PUBLIC_USE_TUNNEL === "true";
 
 export const APP_URL = useTunnel
   ? "https://really-intense-guppy.ngrok-free.app"
-  : (process.env.NEXT_PUBLIC_APP_URL ?? "https://app.0xslots.org");
+  : (process.env.NEXT_PUBLIC_APP_URL ?? "https://0xslots.org");
 
 export const AD_SLOTS: Partial<Record<SlotsChain, string[]>> = {
   // Slot addresses will be provided — using placeholders

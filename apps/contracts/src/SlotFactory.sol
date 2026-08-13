@@ -10,6 +10,7 @@ import {Slot} from "./Slot.sol";
 import {SlotConfig, SlotInitParams, ISlotEvents} from "./interfaces/ISlot.sol";
 import {IUtility} from "./interfaces/IUtility.sol";
 import {IOccupancyPolicy} from "./interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "./interfaces/IModuleMetadata.sol";
 
 /// @title SlotFactory — Deploy Harberger-taxed slots via Beacon Proxy
 /// @notice UUPS-upgradeable factory. All slots delegate to a shared beacon.
@@ -52,7 +53,7 @@ contract SlotFactory is UUPSUpgradeable {
         string name,
         string version,
         uint256 feeBps,
-        string moduleURI
+        string metadataURI
     );
     event AdminTransferred(
         address indexed previousAdmin,
@@ -173,10 +174,18 @@ contract SlotFactory is UUPSUpgradeable {
         // meaningless. IUtility's id equals the historical ISlotsModule id
         // (same selectors), which is what deployed utilities answer to.
         IUtility mod = IUtility(_utility);
-        // Verify it implements the interface
+        // Both ids, because an ERC165 id covers only an interface's OWN
+        // selectors: `IUtility` inherits its name/version/metadataURI from
+        // `IModuleMetadata`, so its own id no longer says anything about them.
+        // Checking one alone would verify a utility that cannot describe
+        // itself — and this event immediately reads all three.
         require(
             mod.supportsInterface(type(IUtility).interfaceId),
             "not IUtility"
+        );
+        require(
+            mod.supportsInterface(type(IModuleMetadata).interfaceId),
+            "not IModuleMetadata"
         );
         verifiedUtilities[_utility] = verified;
         emit ModuleVerified(
@@ -185,7 +194,7 @@ contract SlotFactory is UUPSUpgradeable {
             mod.name(),
             mod.version(),
             mod.feeBps(),
-            mod.moduleURI()
+            mod.metadataURI()
         );
     }
 
@@ -224,18 +233,23 @@ contract SlotFactory is UUPSUpgradeable {
         bool verified,
         string name,
         string version,
-        string policyURI
+        string metadataURI
     );
 
     /// @notice Mark an occupancy policy verified/unverified (admin only)
     function setPolicyVerified(address _policy, bool verified) external onlyAdmin {
         IOccupancyPolicy p = IOccupancyPolicy(_policy);
+        // See `setUtilityVerified` — same two-id reasoning.
         require(
             p.supportsInterface(type(IOccupancyPolicy).interfaceId),
             "not IOccupancyPolicy"
         );
+        require(
+            p.supportsInterface(type(IModuleMetadata).interfaceId),
+            "not IModuleMetadata"
+        );
         verifiedPolicies[_policy] = verified;
-        emit PolicyVerified(_policy, verified, p.name(), p.version(), p.policyURI());
+        emit PolicyVerified(_policy, verified, p.name(), p.version(), p.metadataURI());
     }
 
     // ═══════════════════════════════════════════════════════════

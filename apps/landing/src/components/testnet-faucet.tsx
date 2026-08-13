@@ -2,7 +2,7 @@
 
 import { getFaucetToken } from "@0xslots/sdk";
 import { Loader2 } from "lucide-react";
-import { erc20Abi, formatUnits, parseUnits } from "viem";
+import { erc20Abi, parseUnits } from "viem";
 import {
   useAccount,
   useReadContract,
@@ -11,6 +11,7 @@ import {
 } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
+import { formatBalance } from "@/utils";
 
 const FAUCET_ABI = [
   {
@@ -67,7 +68,7 @@ export function TestnetFaucet() {
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-muted-foreground">
           {balance !== undefined
-            ? `${formatUnits(balance, token.decimals)} ${token.symbol}`
+            ? `${formatBalance(balance, token.decimals)} ${token.symbol}`
             : token.symbol}
         </span>
         <Button

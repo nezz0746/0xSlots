@@ -57,6 +57,7 @@ export default defineConfig({
         { text: "How a slot works", link: "/concepts/slots" },
         { text: "Occupancy", link: "/concepts/occupancy" },
         { text: "Utility modules", link: "/concepts/modules" },
+        { text: "Collectives", link: "/concepts/collectives" },
       ],
     },
     {
@@ -80,8 +81,8 @@ export default defineConfig({
       link: "/deployments",
     },
     {
-      text: "Subgraph",
-      link: "/subgraph",
+      text: "Indexer",
+      link: "/indexer",
     },
   ],
 });
