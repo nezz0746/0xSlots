@@ -9,10 +9,18 @@ Creates a memoized `SlotsClient` from wagmi's public and wallet clients.
 ```tsx
 import { useSlotsClient } from "@0xslots/sdk/react";
 
-const client = useSlotsClient();                          // connected chain
-const client = useSlotsClient(SlotsChain.BASE);           // override chain
-const client = useSlotsClient(SlotsChain.BASE, "api-key"); // with subgraph key
+const client = useSlotsClient();                 // connected chain
+const client = useSlotsClient(SlotsChain.BASE);  // override chain
 ```
+
+The hook takes **one** parameter. The old second argument was a subgraph API
+key; the indexer serves GraphQL unauthenticated, and passing the key through
+`NEXT_PUBLIC_*` published a credential to every visitor in exchange for nothing.
+It resolves the factory address from the chain and throws if there is none.
+
+For a client against a non-default endpoint — a local indexer, or your own
+deployment behind auth — construct `SlotsClient` directly and memoize it
+yourself; the hook always uses `DEFAULT_API_URL`.
 
 ---
 
@@ -25,7 +33,10 @@ import { useSlotAction } from "@0xslots/sdk/react";
 
 const {
   buy, selfAssess, topUp, withdraw, release, collect, liquidate,
-  createSlot, proposeTaxUpdate, proposeModuleUpdate, updateMetadata,
+  createSlot, createSlots, createSlotWithTenure, createSlotWithPriceFloor,
+  proposeTaxUpdate, proposeUtilityUpdate, proposePolicyUpdate,
+  cancelPendingUpdate, cancelPendingUpdates, setLiquidationBounty,
+  updateMetadata,
   exec,          // generic executor
   busy,          // isPending || isConfirming
   isPending,     // wallet interaction in progress
@@ -36,6 +47,18 @@ const {
   onSuccess: (label, hash) => console.log(`${label}: ${hash}`),
   onError: (label, error) => console.error(`${label}: ${error}`),
 });
+```
+
+`proposeModuleUpdate` is still returned, as a deprecated alias for
+`proposeUtilityUpdate`.
+
+`cancelPendingUpdate(slot, kind)` retracts one of a slot's three governable
+dimensions; `cancelPendingUpdates(slot)` retracts all of them.
+
+```tsx
+import { UpdateKind } from "@0xslots/sdk";  // Tax = 0, Utility = 1, Policy = 2
+
+await cancelPendingUpdate(slot, UpdateKind.Tax);
 ```
 
 ---

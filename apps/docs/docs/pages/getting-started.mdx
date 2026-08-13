@@ -35,13 +35,20 @@ const walletClient = createWalletClient({
 const client = new SlotsClient({ chainId: SlotsChain.BASE, publicClient, walletClient });
 ```
 
+`chainId` is a filter on the query, not a choice of endpoint — one
+[indexer](/indexer) deployment serves every chain. See
+[SlotsClient](/sdk/client) for why that matters.
+
 ## Read Slots
 
 ```ts
-const { slots } = await client.getSlots({ first: 10 });
+const { items, totalCount } = (await client.getSlots({ limit: 10 })).slots;
 const { slot } = await client.getSlot({ id: "0x..." });
 const info = await client.getSlotInfo("0x..."); // direct RPC read
 ```
+
+Lists return `{ items, totalCount, pageInfo }` rather than a bare array, and
+paginate with `limit` plus `offset` or a `pageInfo` cursor.
 
 ## Write Actions
 
@@ -49,8 +56,10 @@ const info = await client.getSlotInfo("0x..."); // direct RPC read
 import { parseEther } from "viem";
 
 // Buy a slot (ERC-20 approval handled automatically)
+// `account` is who becomes occupant — it need not be the signer
 await client.buy({
   slot: "0x...",
+  account: "0x...",
   depositAmount: parseEther("1"),
   selfAssessedPrice: parseEther("10"),
 });

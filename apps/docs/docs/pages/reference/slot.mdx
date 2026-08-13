@@ -64,14 +64,58 @@ Only available for whatever was declared mutable at creation.
 
 ```solidity
 function proposeTaxUpdate(uint256 newPct) external;
-function proposeModuleUpdate(address newModule) external;
+function proposeUtilityUpdate(address newUtility) external;
 function proposePolicyUpdate(address newPolicy) external;
-function cancelPendingUpdates() external;
 function setLiquidationBounty(uint256 newBps) external;
 ```
 
 Changes are **proposed, not applied**. They take effect at the next occupancy
 change, so the terms cannot shift under someone mid-tenancy.
+
+`proposeModuleUpdate` remains as a deprecated alias for `proposeUtilityUpdate`.
+
+### Pending updates, one dimension at a time
+
+A slot has always held up to three queued changes — tax, utility, occupancy
+policy — but they could once only be cancelled as a set, and the log could not
+say which one had moved. Each is now addressed independently:
+
+```solidity
+enum UpdateKind { Tax, Utility, Policy }   // 0, 1, 2
+
+function cancelPendingUpdate(UpdateKind kind) external;  // one dimension
+function cancelPendingUpdates() external;                // all three
+function pendingUpdateOf(UpdateKind kind)
+    external view returns (bool isSet, bytes32 value, uint64 proposedAt);
+
+function taxProposedAt() external view returns (uint64);
+function utilityProposedAt() external view returns (uint64);
+function policyProposedAt() external view returns (uint64);
+```
+
+`pendingUpdateOf` reads one kind uniformly across both storage structs — tax and
+utility live in `PendingUpdate`, policy in `PendingPolicyUpdate`.
+
+Three events carry the same shape, where `value` is the proposed value widened to
+32 bytes — the raw integer for `Tax`, the left-padded address for `Utility` and
+`Policy`:
+
+```solidity
+event UpdateProposed(UpdateKind indexed kind, bytes32 value, uint64 proposedAt);
+event UpdateCancelled(UpdateKind indexed kind);
+event UpdateApplied(UpdateKind indexed kind, bytes32 value);
+```
+
+These are **additions, not replacements**. `TaxUpdateProposed`,
+`ModuleUpdateProposed`, `PolicyUpdateProposed`, `PendingUpdateCancelled`,
+`PendingUpdateApplied` and `PolicyUpdateApplied` all still fire — changing an
+existing event's signature changes its topic0 and splits historical indexing
+across two shapes.
+
+What the new ones add is what the old ones structurally cannot express.
+`PendingUpdateApplied` carries **both** tax and utility on every apply, filling
+the unchanged one in from current state, so a reader sees a utility "change" to
+the value it already had. `UpdateApplied` fires only for what actually moved.
 
 ## Reading state
 

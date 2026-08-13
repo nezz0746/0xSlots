@@ -98,9 +98,14 @@ leaving. `liquidate()` and `release()` never consult one.
 | **Recipient** | at creation, forever | Receive tax. Nothing else |
 | **Manager** | at creation | Propose changes, only to what was declared mutable |
 
-A slot is immutable by default. `mutableTax`, `mutableModule` and
+A slot is immutable by default. `mutableTax`, `mutableUtility` and
 `mutablePolicy` are three separate promises, and a manager only exists if at
 least one is true.
+
+Recipient and manager are different jobs on purpose — "receives money" and "has
+admin powers" should not be the same authority. When you *do* want one address
+doing both, without collapsing it into one person, that is what a
+[collective](/concepts/collectives) is for.
 
 ---
 

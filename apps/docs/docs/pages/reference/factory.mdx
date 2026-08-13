@@ -1,3 +1,5 @@
+import { Callout } from 'vocs'
+
 # SlotFactory
 
 Deploys slots as BeaconProxies sharing one implementation. Addresses are
@@ -27,10 +29,10 @@ What, if anything, a manager may change later.
 
 ```solidity
 struct SlotConfig {
-    bool mutableTax;      // the tax rate
-    bool mutableModule;   // the UTILITY module — what the slot does
-    bool mutablePolicy;   // the OCCUPANCY policy — who may take it, and when
-    address manager;      // address(0) if every flag is false
+    bool mutableTax;       // the tax rate
+    bool mutableUtility;   // the UTILITY — what the slot does
+    bool mutablePolicy;    // the OCCUPANCY policy — who may take it, and when
+    address manager;       // address(0) if every flag is false
 }
 ```
 
@@ -44,7 +46,7 @@ change who is allowed to take it.
 ```solidity
 struct SlotInitParams {
     uint256 taxPercentage;        // basis points per 30 days (100 = 1%)
-    address module;               // utility module, address(0) for none
+    address utility;              // utility contract, address(0) for none
     uint256 liquidationBountyBps; // share of collected tax paid to liquidators
     uint256 minDepositSeconds;    // deposit must cover this much tax
     address occupancyPolicy;      // IOccupancyPolicy, address(0) for instant buy
@@ -53,18 +55,50 @@ struct SlotInitParams {
 
 `minDepositSeconds` is the guard against a buyer declaring a huge price with no
 means to pay for it: the deposit must cover that many seconds of tax at the
-declared price.
+declared price. It rounds **up** — "no deposit required" means
+`minDepositSeconds == 0` and nothing else, in every currency. Integrators
+computing a deposit client-side must round up the same way; a truncating copy
+lands one unit under and reverts.
+
+<Callout type="warning">
+`mutableModule` and `module` are the **old** component names. viem encodes a
+struct argument by component name, so an object still carrying them encodes
+nothing for those fields — a silent zero address rather than an error. The
+`@0xslots/sdk` helpers accept either spelling and normalise, so most consumers
+need no change; anything hand-building the tuple does.
+</Callout>
 
 ## Curation
 
 ```solidity
-function setModuleVerified(address module, bool verified, ...) external; // admin
-function isModuleVerified(address module) external view returns (bool);
-function setPolicyVerified(address policy, bool verified) external;      // admin
+function setUtilityVerified(address utility, bool verified) external;  // admin
+function isUtilityVerified(address utility) external view returns (bool);
+function setPolicyVerified(address policy, bool verified) external;    // admin
+mapping(address => bool) public verifiedPolicies;
 ```
 
-A display signal only. Unverified modules and policies work identically — they
+A display signal only. Unverified utilities and policies work identically — they
 simply carry no endorsement, and the explorer says so.
+
+Both setters assert **two** ERC-165 ids: the behavioural interface (`IUtility` /
+`IOccupancyPolicy`) and `IModuleMetadata`. Checking one alone would verify a
+contract that cannot describe itself, and the events emitted read its name,
+version and `metadataURI` immediately. See
+[ERC-165 ids](/reference/modules#erc-165-ids).
+
+```solidity
+event ModuleVerified(
+    address indexed utility, bool verified,
+    string name, string version, uint256 feeBps, string metadataURI
+);
+event PolicyVerified(
+    address indexed policy, bool verified,
+    string name, string version, string metadataURI
+);
+```
+
+`setModuleVerified`, `isModuleVerified` and `verifiedModules` remain as
+deprecated aliases — the selectors deployed callers and old ABIs still hold.
 
 ## Operations
 
