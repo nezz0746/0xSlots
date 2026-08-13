@@ -55,7 +55,16 @@ export function AppSidebar() {
   const { chainId, setChain } = useChain();
   const { section, setSection } = useExplorerSection();
 
-  const onExplorer = pathname === "/";
+  // The explorer index moved to /app when the marketing site took the root.
+  const onExplorer = pathname === "/app";
+
+  // The Lab is a sandbox, not a product surface — it ships to nobody. Bundlers
+  // inline NODE_ENV, so this whole branch is eliminated at compile time in a
+  // production build rather than shipped and hidden. Same reasoning as `CHAINS`
+  // filtering anvil in @0xslots/contracts, and the dev connectors in
+  // config/wagmi.ts. The /app/lab ROUTE still exists in every environment —
+  // this only removes the way in from the nav.
+  const showLab = process.env.NODE_ENV === "development";
 
   const selectSection = (id: string) => {
     setSection(id);
@@ -117,7 +126,7 @@ export function AppSidebar() {
                   setting explorer state, so `isActive` reads the path. */}
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={pathname.startsWith("/policies")}
+                  isActive={pathname.startsWith("/app/policies")}
                   onClick={() => push("/app/policies")}
                 >
                   <Scale className="size-4" />
@@ -126,16 +135,18 @@ export function AppSidebar() {
               </SidebarMenuItem>
 
               {/* A sandbox, not a product surface — hence the dashed styling
-                  and the honest label. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/lab")}
-                  onClick={() => push("/app/lab")}
-                >
-                  <FlaskConical className="size-4" />
-                  <span>Lab</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                  and the honest label. Development only; see `showLab`. */}
+              {showLab && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/app/lab")}
+                    onClick={() => push("/app/lab")}
+                  >
+                    <FlaskConical className="size-4" />
+                    <span>Lab</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -147,7 +158,7 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={pathname === "/profile"}
+                  isActive={pathname === "/app/profile"}
                   onClick={() => push("/app/profile")}
                 >
                   <User className="size-4" />
@@ -156,7 +167,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={pathname.startsWith("/collectives")}
+                  isActive={pathname.startsWith("/app/collectives")}
                   onClick={() => push("/app/collectives")}
                 >
                   <Users className="size-4" />
