@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatUsd } from "@/hooks/use-usd-price";
 import { cn } from "@/lib/utils";
+import { formatNumber } from "@/utils";
 
 /** Percentage steps, laid out as one continuous scale from cut to raise. */
 const STEPS = [-20, -10, -5, 5, 10, 20] as const;
@@ -9,13 +11,6 @@ const DURATION = 520;
 
 /** Ease-out cubic — fast off the mark, settling into the target. */
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
-
-function format(n: number): string {
-  return n.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
 
 /**
  * A price field that animates between values.
@@ -43,6 +38,7 @@ export function PriceInput({
   symbol,
   disabled,
   hint,
+  toUsd,
 }: {
   value: number;
   onChange: (next: number) => void;
@@ -52,6 +48,12 @@ export function PriceInput({
   symbol: string;
   disabled?: boolean;
   hint?: string;
+  /**
+   * Token amount → USD, or `null` where there is no price (any chain but Base,
+   * or a token Alchemy does not quote). Renders nothing on `null` rather than
+   * printing a zero beside a real figure.
+   */
+  toUsd?: (amount: number) => number | null;
 }) {
   const [display, setDisplay] = useState(value);
   const [raw, setRaw] = useState<string | null>(null);
@@ -140,6 +142,11 @@ export function PriceInput({
   // does nothing. Disabled until there is a price to move.
   const steppable = !disabled && value > 0;
 
+  // Both track `display`, not `value`, so the dollar figure counts up with the
+  // token figure instead of snapping ahead of the tween.
+  const usdPrice = formatUsd(toUsd?.(display) ?? null);
+  const usdPerMonth = formatUsd(toUsd?.(perMonth) ?? null);
+
   const gain = "text-emerald-600 dark:text-emerald-500";
   const loss = "text-red-600 dark:text-red-500";
 
@@ -158,9 +165,12 @@ export function PriceInput({
               flash === "loss" && loss,
             )}
           >
-            {perMonth.toFixed(2)}
+            {formatNumber(perMonth)}
           </span>{" "}
           {symbol}/mo
+          {usdPerMonth && (
+            <span className="text-muted-foreground/70"> ({usdPerMonth})</span>
+          )}
         </span>
       </div>
 
@@ -169,7 +179,7 @@ export function PriceInput({
         <input
           inputMode="decimal"
           disabled={disabled}
-          value={raw ?? format(display)}
+          value={raw ?? formatNumber(display)}
           onFocus={() => setRaw(String(value))}
           onBlur={() => setRaw(null)}
           onChange={(e) => {
@@ -190,6 +200,12 @@ export function PriceInput({
           {symbol}
         </span>
       </div>
+
+      {usdPrice && (
+        <p className="mt-0.5 tabular-nums text-[11px] text-muted-foreground">
+          ≈ {usdPrice}
+        </p>
+      )}
 
       {hint && (
         <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>

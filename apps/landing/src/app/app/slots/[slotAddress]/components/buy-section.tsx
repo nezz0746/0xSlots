@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { DepositChoice } from "@/components/ui/deposit-choice";
 import { PriceInput } from "@/components/ui/price-input";
 import { MONTH_SECONDS } from "@/constants";
+import { useChain } from "@/context/chain";
 import { useSlotAction } from "@/hooks/use-slot-action";
 import type { SlotOnChain } from "@/hooks/use-slot-onchain";
+import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
 import { formatBalance, formatBps, toRawUnits } from "@/utils";
 
 /** Fallback runway unit for a slot that sets no minimum. */
@@ -28,6 +30,15 @@ export function BuySection({
   const symbol = slot.currencySymbol ?? "USDC";
   const { buy, selfAssess, busy } = useSlotAction();
   const { address } = useAccount();
+  const { chainId } = useChain();
+
+  // Base only — see the hook. `toUsd` returns null everywhere else, and every
+  // consumer renders nothing rather than a misleading zero.
+  const { toUsd } = useUsdPrice(slot.currency, chainId);
+
+  /** A summary row's dollar equivalent, from raw units. */
+  const usdOfRaw = (raw: bigint): string | null =>
+    formatUsd(toUsd(Number(formatUnits(raw, decimals))));
 
   const isOccupant =
     !!address &&
@@ -110,6 +121,11 @@ export function BuySection({
   const purchase = isOccupied ? slot.price : 0n;
   const total = purchase + deposit;
 
+  // Computed once each rather than per JSX branch — the rows read them twice.
+  const usdPurchase = usdOfRaw(purchase);
+  const usdDeposit = usdOfRaw(deposit);
+  const usdTotal = usdOfRaw(total);
+
   function handleBuy() {
     if (!address) return;
     buy({
@@ -137,6 +153,7 @@ export function BuySection({
           symbol={symbol}
           disabled={busy}
           hint={`Current: ${formatBalance(slot.price, decimals)} ${symbol}`}
+          toUsd={toUsd}
         />
         <Button
           disabled={busy || priceRaw === slot.price || priceRaw === 0n}
@@ -166,6 +183,7 @@ export function BuySection({
         symbol={symbol}
         disabled={busy}
         hint="Others can force-buy at this price"
+        toUsd={toUsd}
       />
 
       <DepositChoice
@@ -191,6 +209,9 @@ export function BuySection({
             <span className="text-muted-foreground">Purchase</span>
             <span className="tabular-nums">
               {formatBalance(purchase, decimals)} {symbol}
+              {usdPurchase && (
+                <span className="text-muted-foreground/70"> ≈ {usdPurchase}</span>
+              )}
             </span>
           </div>
         )}
@@ -198,12 +219,18 @@ export function BuySection({
           <span className="text-muted-foreground">Deposit</span>
           <span className="tabular-nums">
             {formatBalance(deposit, decimals)} {symbol}
+            {usdDeposit && (
+              <span className="text-muted-foreground/70"> ≈ {usdDeposit}</span>
+            )}
           </span>
         </div>
         <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
           <span>Total</span>
           <span className="tabular-nums">
             {formatBalance(total, decimals)} {symbol}
+            {usdTotal && (
+              <span className="font-normal text-muted-foreground/70"> ≈ {usdTotal}</span>
+            )}
           </span>
         </div>
       </div>

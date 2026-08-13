@@ -147,7 +147,18 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
   let symbol: string | null = null;
   let decimals = 18;
 
-  if (id !== ZERO_ADDR) {
+  if (id === ZERO_ADDR) {
+    // The native-ETH sentinel. There is no contract to ask, so the reads below
+    // are skipped — but skipping them silently left `name` and `symbol` null,
+    // and every consumer rendering `currencyRef.symbol` printed nothing beside
+    // the price. `decimals` only looked handled because 18 is also the generic
+    // default here, not because native was considered.
+    //
+    // Named statically instead. Every chain this indexes is ETH-denominated;
+    // a chain with a different native token would need this keyed by chainId.
+    name = "Ether";
+    symbol = "ETH";
+  } else {
     const checksum = getAddress(id);
     const abi = ERC20Abi as unknown as readonly unknown[];
 

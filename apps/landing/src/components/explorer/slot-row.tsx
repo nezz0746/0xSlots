@@ -1,7 +1,12 @@
 "use client";
 
-import type { SlotFieldsFragment } from "@0xslots/sdk";
+import {
+  isNativeCurrency,
+  NATIVE_CURRENCY,
+  type SlotFieldsFragment,
+} from "@0xslots/sdk";
 import { formatDistanceToNow } from "date-fns";
+import type { Address } from "viem";
 import { AccountTypeIcon } from "@/components/account-type-icon";
 import { EnsAddress } from "@/components/ens-address";
 import { OccupancyPolicyBadge } from "@/components/occupancy-policy-badge";
@@ -28,6 +33,20 @@ export function SlotRow({
 }) {
   const occupant = slot.occupant ?? null;
   const account = slot.occupantAccountRef;
+
+  /**
+   * Native ETH has no ERC-20 to read a symbol from, so the indexer stores null
+   * and this cell rendered blank. The indexer now names it, but that only
+   * applies to rows written after a reindex — existing ones keep their nulls,
+   * so the fallback stays. `NATIVE_CURRENCY` rather than a literal "ETH":
+   * `useSlotOnChain` already resolves native the same way, and one source of
+   * truth beats two.
+   */
+  const currencySymbol =
+    slot.currencyRef?.symbol ??
+    (isNativeCurrency(slot.currency as Address)
+      ? NATIVE_CURRENCY.symbol
+      : null);
 
   return (
     <TableRow className="cursor-pointer" onClick={() => onSelect(slot.id)}>
@@ -65,7 +84,7 @@ export function SlotRow({
             : "0"}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
-          {slot.currencyRef?.symbol}
+          {currencySymbol}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
           ({Number(slot.taxPercentage) / 100}%/mo)
