@@ -19,11 +19,16 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 0xSlots/
 ├── apps/
 │   ├── contracts/       # Foundry smart contracts (Solidity)
-│   └── landing/         # Next.js frontend
+│   ├── landing/         # Next.js app — marketing at /, explorer at /app/*
+│   ├── docs/            # Vocs documentation site
+│   └── api/             # Supporting API
 ├── packages/
 │   ├── contracts/       # Published ABIs & addresses (@0xslots/contracts)
-│   ├── sdk/             # Type-safe subgraph SDK (@0xslots/sdk)
-│   └── subgraph/        # The Graph indexing
+│   ├── sdk/             # Type-safe protocol SDK (@0xslots/sdk)
+│   ├── ponder/          # The indexer the SDK reads (@0xslots/ponder)
+│   ├── subgraph/        # Legacy The Graph indexing
+│   ├── config/          # Shared configuration
+│   └── mcp/             # MCP server
 ```
 
 **Monorepo:** pnpm workspaces + Turborepo
@@ -32,13 +37,27 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 
 | Contract | Purpose |
 |----------|---------|
-| **Slot** | Core primitive — ownership, pricing, deposits, tax, liquidation |
+| **Slot** | Core primitive — occupancy, pricing, deposits, tax, liquidation |
 | **SlotFactory** | UUPS-upgradeable factory deploying Slots via Beacon proxy |
+| **SlotCollective** | Splits payout + role-gated governance for a slot's tax |
+| **SlotCollectiveFactory** | Mints collectives behind one upgradeable beacon |
+| **MetadataModule** | UUPS-upgradeable utility storing metadata per slot |
+| **MinimumTenurePolicy** | Occupancy policy — a minimum holding window |
+| **MinimumPricePolicy** | Occupancy policy — a price floor, per currency |
 | **BatchCollector** | Collect tax from multiple slots in one transaction |
-| **MetadataModule** | UUPS-upgradeable module storing metadata per slot |
-| **ISlotsModule** | Interface for module hooks (onTransfer, onPriceUpdate, onRelease) |
 
-Slots are fully immutable once deployed. Configuration (tax rate, module, manager) is set at creation and optionally mutable by the manager. Modules hook into lifecycle events for extensibility.
+A slot plugs in exactly two things, deliberately asymmetric: a **utility**
+(`IUtility` — what holding it grants, fails open) and an **occupancy policy**
+(`IOccupancyPolicy` — who may hold it, fails closed). Both describe themselves
+through `IModuleMetadata`.
+
+Slots are immutable once deployed. Tax rate, utility and policy are set at
+creation and each is optionally mutable by the manager — three independent flags,
+because they are three different promises. Changes are proposed, not applied:
+they take effect at the next occupancy change, so terms cannot shift under
+someone mid-tenancy.
+
+See [apps/contracts/README.md](apps/contracts/README.md) for the full picture.
 
 **Security:** Audited by K Security (Feb 2026)
 
@@ -48,8 +67,9 @@ Next.js 16 · React 19 · TailwindCSS 4 · wagmi 3 · viem 2 · RainbowKit · sh
 
 | Feature | Description |
 |---------|-------------|
-| **Explorer** | Tabbed dashboard — Recipients, Slots, Modules, Events |
-| **Create Slot** | Multi-step stepper with ENS resolution, currency selection, module picker |
+| **Explorer** | Tabbed dashboard — Slots, Recipients, Utilities, Events |
+| **Collectives** | Create and govern a shared payout + role-gated manager |
+| **Create Slot** | Multi-step stepper with ENS resolution, currency selection, utility and policy pickers |
 | **Slot Detail** | Tabbed view — Details, Activity, Manage. Buy section with deposit slider |
 | **EIP-5792** | Atomic batching (approve + buy in one prompt) when wallet supports it |
 | **Profile** | Slots as recipient & occupant for connected wallet |
@@ -60,33 +80,32 @@ Next.js 16 · React 19 · TailwindCSS 4 · wagmi 3 · viem 2 · RainbowKit · sh
 | Package | Version | Description |
 |---------|---------|-------------|
 | [@0xslots/contracts](https://www.npmjs.com/package/@0xslots/contracts) | [![npm version](https://img.shields.io/npm/v/@0xslots/contracts.svg)](https://www.npmjs.com/package/@0xslots/contracts) | Contract ABIs and addresses for use with viem |
-| [@0xslots/sdk](https://www.npmjs.com/package/@0xslots/sdk) | [![npm version](https://img.shields.io/npm/v/@0xslots/sdk.svg)](https://www.npmjs.com/package/@0xslots/sdk) | Type-safe SDK for querying subgraph data |
+| [@0xslots/sdk](https://www.npmjs.com/package/@0xslots/sdk) | [![npm version](https://img.shields.io/npm/v/@0xslots/sdk.svg)](https://www.npmjs.com/package/@0xslots/sdk) | Type-safe SDK for reads and writes |
 
 ## Deployments
 
-### Base Sepolia (84532) — Testnet v3
+`packages/contracts/src/addresses.ts` is the source of truth — import from
+`@0xslots/contracts` rather than copying an address.
 
-| Contract | Address |
-|----------|---------|
-| SlotFactory | `0x57759A2094cbE24313B826b453d4e7760279f79D` |
-| BatchCollector | `0xDE5B9A3ce6Cbca935E33221909fA261F4EfC4c84` |
-| MetadataModule | `0x6c5A8A7f061bEd94b1b88CFAd4e1a1a8C5c4e527` |
-| Currency | USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) |
+| Contract | Base (8453) | Base Sepolia (84532) |
+|----------|-------------|----------------------|
+| SlotFactory | `0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e` | `0x6D87C1647f228Baf8DE0374FCd7FdEBF6900fdFF` |
+| SlotCollectiveFactory | — | `0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d` |
+| MinimumTenurePolicyFactory | `0x6C90Ca1A6ac6bBC0e4B48cc3CF589F6A3c2b30a5` | `0x2a399E4D93d9b7Ffa8367894A39859013B214E4a` |
+| MinimumPricePolicyFactory | `0xFA64C88960c0aaC55279d42131A5B7fB57e0Ff1A` | `0x958088c4Afb2cf3E4c7C23560B57fCb64dfC6551` |
+| BatchCollector | — | `0xd3c7090C2F89c5132C3f91DD1da4bCffEAe10e13` |
 
-### Arbitrum (42161)
+Local anvil (31337) addresses are pinned by `apps/contracts/script/DeployLocal.s.sol`.
 
-| Contract | Address |
-|----------|---------|
-| SlotsHub (proxy) | `0x774776d0f693eB7718b67f7938541D5bbB5f92D0` |
-| MetadataModule | `0xe96e9105994A8691338eaf0fDc50c02277949521` |
-| Currency | [USND](https://www.nerite.org/) |
+Superseded policy factories stay listed in `POLICY_FACTORIES` so existing
+policies keep resolving — see [the deployments docs](apps/docs/docs/pages/deployments.mdx).
 
-### Subgraphs
+### Indexer
 
-| Network | Endpoint |
-|---------|----------|
-| Arbitrum | `https://api.studio.thegraph.com/query/958/0-x-slots-arb/version/latest` |
-| Base Sepolia | `https://api.studio.thegraph.com/query/958/0-x-slots-base-sepolia/version/latest` |
+Reads come from a [Ponder](https://ponder.sh) deployment — one instance serving
+every chain, which is why `chainId` is a query filter rather than an endpoint.
+See [packages/ponder](packages/ponder/README.md). `packages/subgraph` still
+exists but is no longer what the SDK queries.
 
 ## Development
 
@@ -115,11 +134,12 @@ forge test
 
 ## Built with
 
-Foundry · Solidity · OpenZeppelin · The Graph · Next.js · wagmi · viem · RainbowKit · TailwindCSS · Turborepo
+Foundry · Solidity · OpenZeppelin · 0xSplits · Ponder · Next.js · wagmi · viem · RainbowKit · TailwindCSS · Turborepo
 
 ## Links
 
-- [Website](https://0xslots.vercel.app)
+- [Website](https://0xslots.org)
+- [Docs](https://docs.0xslots.org)
 - [GitHub](https://github.com/adcommune/0xSlots)
 
 ---
