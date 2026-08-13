@@ -267,7 +267,7 @@ function ConnectedMenu({
             sidebar, so it keeps the full menu. */}
         <div className="md:hidden">
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => push("/profile")}>
+            <DropdownMenuItem onClick={() => push("/app/profile")}>
               <User className="size-4" />
               My Slots
             </DropdownMenuItem>

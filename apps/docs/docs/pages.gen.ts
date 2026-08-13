@@ -5,12 +5,14 @@ import type { PathsForPages } from 'waku/router'
 
 // prettier-ignore
 type Page =
+  | { path: '/concepts/collectives'; render: 'static' }
   | { path: '/concepts/modules'; render: 'static' }
   | { path: '/concepts/occupancy'; render: 'static' }
   | { path: '/concepts/slots'; render: 'static' }
   | { path: '/deployments'; render: 'static' }
   | { path: '/getting-started'; render: 'static' }
   | { path: '/'; render: 'static' }
+  | { path: '/indexer'; render: 'static' }
   | { path: '/modules/adland'; render: 'static' }
   | { path: '/overview'; render: 'static' }
   | { path: '/reference/factory'; render: 'static' }
@@ -19,7 +21,6 @@ type Page =
   | { path: '/reference/slot'; render: 'static' }
   | { path: '/sdk/client'; render: 'static' }
   | { path: '/sdk/react'; render: 'static' }
-  | { path: '/subgraph'; render: 'static' }
   | { path: '/vision'; render: 'static' }
 
 // prettier-ignore

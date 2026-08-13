@@ -61,7 +61,7 @@ export function AppSidebar() {
     setSection(id);
     // Sections live on the explorer, so jump back there when selected from
     // elsewhere in the app.
-    if (!onExplorer) push("/");
+    if (!onExplorer) push("/app");
   };
 
   return (
@@ -71,7 +71,7 @@ export function AppSidebar() {
     >
       <SidebarHeader className="p-4 gap-4">
         <NavLink
-          href="/"
+          href="/app"
           className="text-xl flex flex-row gap-1.5 items-center font-black tracking-tighter"
         >
           <Image
@@ -84,7 +84,7 @@ export function AppSidebar() {
           0xSlots
         </NavLink>
 
-        <Button size="sm" className="w-full" onClick={() => push("/create")}>
+        <Button size="sm" className="w-full" onClick={() => push("/app/create")}>
           <PlusIcon className="size-4" />
           Create Slot
         </Button>
@@ -118,7 +118,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname.startsWith("/policies")}
-                  onClick={() => push("/policies")}
+                  onClick={() => push("/app/policies")}
                 >
                   <Scale className="size-4" />
                   <span>Policies</span>
@@ -130,7 +130,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname.startsWith("/lab")}
-                  onClick={() => push("/lab")}
+                  onClick={() => push("/app/lab")}
                 >
                   <FlaskConical className="size-4" />
                   <span>Lab</span>
@@ -148,7 +148,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === "/profile"}
-                  onClick={() => push("/profile")}
+                  onClick={() => push("/app/profile")}
                 >
                   <User className="size-4" />
                   <span>My Slots</span>
@@ -157,7 +157,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname.startsWith("/collectives")}
-                  onClick={() => push("/collectives")}
+                  onClick={() => push("/app/collectives")}
                 >
                   <Users className="size-4" />
                   <span>My Collectives</span>

@@ -46,7 +46,10 @@ function AdCard({
       slot={slot}
       chainId={chainId}
       rpcUrl={rpcUrl}
-      baseLinkUrl={APP_URL}
+      // <Ad> appends /slots/{slot} to this. The explorer moved under /app, so
+      // the base has to carry it or every ad CTA 404s — nothing type-checks
+      // this, so it fails silently.
+      baseLinkUrl={`${APP_URL}/app`}
       auth={isMiniApp ? "farcaster" : "none"}
       className="flex items-center gap-3 rounded-lg border bg-card p-2 cursor-pointer hover:bg-accent/50 transition-colors h-16 md:h-18"
     >

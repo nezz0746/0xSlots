@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import { Toaster } from "sonner";
-
-import { AppShell } from "@/components/app-shell";
-import { Providers } from "@/components/providers";
 
 import "./globals.css";
 import { APP_URL } from "@/constants";
@@ -15,25 +11,16 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "0xSlots — Immutable & Modular Collective Ownership Slots",
-  description:
-    "Immutable & modular collective ownership slots on Ethereum. Perpetual onchain real estate powered by partial common ownership. Any ERC-20.",
-  other: {
-    "fc:miniapp": JSON.stringify({
-      version: "1",
-      imageUrl: `${APP_URL}/api/og`,
-      button: {
-        title: "Open 0xSlots",
-        action: {
-          type: "launch_miniapp",
-          name: "0xSlots",
-          url: APP_URL,
-          splashImageUrl: `${APP_URL}/logo.png`,
-          splashBackgroundColor: "#ffffff",
-        },
-      },
-    }),
+  // Lets every page declare relative canonical/OG urls and have Next resolve
+  // them against the live origin.
+  metadataBase: new URL(APP_URL),
+  title: {
+    default: "0xSlots — Making collective ownership easy to use",
+    // Articles set a bare title; the brand is appended exactly once here.
+    template: "%s — 0xSlots",
   },
+  description:
+    "Name your price and pay a small tax on it. Anyone can buy it from you at that price, any time — so nothing sits idle and everything stays honestly valued. Collectives let a group share what those assets earn and govern them together. On Base, in any ERC-20.",
 };
 
 export default function RootLayout({
@@ -46,10 +33,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrains.variable} font-sans bg-background text-foreground`}
       >
-        <Providers>
-          <Toaster position="bottom-right" richColors />
-          <AppShell>{children}</AppShell>
-        </Providers>
+        {children}
       </body>
     </html>
   );

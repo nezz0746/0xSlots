@@ -345,7 +345,7 @@ export function SlotsTable() {
                 <SlotRow
                   key={slot.id}
                   slot={slot}
-                  onSelect={(id) => push(`/slots/${id}`)}
+                  onSelect={(id) => push(`/app/slots/${id}`)}
                 />
               ))}
             </TableBody>

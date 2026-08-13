@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const logo = (
     <NavLink
-      href="/"
+      href="/app"
       className="text-2xl flex flex-row gap-1.5 items-center font-black tracking-tighter"
     >
       <Image
@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => push("/profile")}>
+        <DropdownMenuItem onClick={() => push("/app/profile")}>
           <User className="size-4" />
           My Slots
         </DropdownMenuItem>

@@ -28,3 +28,16 @@ export function openExternal(href: string, isMiniApp: boolean) {
     window.open(href, "_blank");
   }
 }
+
+/**
+ * Marketing-page destinations. The explorer and create links are INTERNAL now
+ * that both sites share an origin — they were absolute URLs to
+ * app.0xslots.org while vitrine was its own deployment.
+ */
+export const MARKETING_LINKS = {
+  explorer: "/app",
+  create: "/app/create",
+  docs: "https://docs.0xslots.org",
+  github: "https://github.com/adcommune/0xSlots",
+  telegram: "https://t.me/+AQ3SdkC0SCM4NTdk",
+} as const;

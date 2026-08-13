@@ -88,7 +88,7 @@ export function RecipientsTable() {
                   key={a.account}
                   className="cursor-pointer"
                   onClick={() => {
-                    push(`/recipient/${a.account}`);
+                    push(`/app/recipient/${a.account}`);
                   }}
                 >
                   <TableCell>
