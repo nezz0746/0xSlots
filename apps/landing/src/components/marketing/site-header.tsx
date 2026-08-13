@@ -12,7 +12,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur-sm">
       {/* max-w and px both match the hero's content column, so the wordmark
           sits on the same left edge as the headline below it. */}
-      <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4 md:px-6">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 md:px-6">
         {/* The marketing home, not the explorer — the "Open explorer" button
             beside this is the way across. */}
         <Link href="/" className="text-foreground">
