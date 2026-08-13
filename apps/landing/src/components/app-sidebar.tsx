@@ -1,7 +1,15 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { Check, ChevronDown, PlusIcon, Scale, User, Users } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  FlaskConical,
+  PlusIcon,
+  Scale,
+  User,
+  Users,
+} from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
@@ -114,6 +122,18 @@ export function AppSidebar() {
                 >
                   <Scale className="size-4" />
                   <span>Policies</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* A sandbox, not a product surface — hence the dashed styling
+                  and the honest label. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/lab")}
+                  onClick={() => push("/lab")}
+                >
+                  <FlaskConical className="size-4" />
+                  <span>Lab</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
