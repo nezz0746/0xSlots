@@ -60,6 +60,9 @@ const BASE_SLOT_FACTORY_START_BLOCK = 43581441;
 const BASE_SEPOLIA_COLLECTIVE_FACTORY =
   "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d" as const;
 const BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK = 45393270;
+const BASE_COLLECTIVE_FACTORY =
+  "0x9DE033C5E2FAC9e096c91a83635d7a7Cf21b4486" as const;
+const BASE_COLLECTIVE_FACTORY_START_BLOCK = 49962974;
 
 // FeedHub — base-sepolia only.
 //
@@ -336,14 +339,9 @@ const remoteConfig = createConfig({
     },
     // ── Collectives ──────────────────────────────────────────────────────
     //
-    // Live on base-sepolia. NOT deployed on base: that entry is pointed at the
-    // slot factory address, which is valid and simply never emits
-    // `SlotCollectiveDeployed`, so it indexes nothing. The same device the
-    // local config uses for FeedHub, and for the same reason — src/collective.ts
-    // registers its handlers unconditionally, and ponder rejects a handler
-    // whose source is missing.
-    //
-    // When base ships, swap its two entries for the real address and startBlock.
+    // Live on both chains now. Each carries its own start block rather than the
+    // slot factory's — collectives did not exist for the millions of blocks
+    // before, and starting earlier is that many pointless eth_getLogs.
     SlotCollectiveFactory: {
       abi: SlotCollectiveFactoryAbi,
       chain: {
@@ -352,8 +350,8 @@ const remoteConfig = createConfig({
           startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
         },
         base: {
-          address: BASE_SLOT_FACTORY,
-          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
+          address: BASE_COLLECTIVE_FACTORY,
+          startBlock: BASE_COLLECTIVE_FACTORY_START_BLOCK,
         },
       },
     },
@@ -370,11 +368,11 @@ const remoteConfig = createConfig({
         },
         base: {
           address: factory({
-            address: BASE_SLOT_FACTORY,
+            address: BASE_COLLECTIVE_FACTORY,
             event: COLLECTIVE_DEPLOYED_EVENT,
             parameter: "manager",
           }),
-          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
+          startBlock: BASE_COLLECTIVE_FACTORY_START_BLOCK,
         },
       },
     },

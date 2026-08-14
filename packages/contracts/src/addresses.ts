@@ -30,9 +30,14 @@ export const slotFactoryAddress = {
  * X" message straight from these keys, so shipping to a new chain is one entry
  * and every screen updates with it.
  *
- * base is deliberately absent — not yet deployed there.
+ * ADMIN IS STILL THE DEPLOYER EOA on both chains. That key can `upgradeBeacon`
+ * and so replace the logic of every collective at once — see `transferAdmin`,
+ * and the M-2 finding in docs/audits. Move it to a multisig before collectives
+ * hold anything worth taking.
  */
 export const slotCollectiveFactoryAddress = {
+  // Deployed 2026-08-13, block 49962974.
+  [base.id]: "0x9DE033C5E2FAC9e096c91a83635d7a7Cf21b4486",
   // Deployed 2026-08-12, block 45393270. Beacon-backed, admin is the deployer.
   [baseSepolia.id]: "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d",
   // Local anvil, pinned by `apps/contracts/script/DeployLocal.s.sol` step 7.
