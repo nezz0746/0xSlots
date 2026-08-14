@@ -8,7 +8,7 @@ import {
   slotCollective,
 } from "ponder:schema";
 import { type Hex, keccak256, toHex } from "viem";
-import { evtId, getOrCreateAccount, lower } from "./helpers";
+import { evtId, getOrCreateAccount, lower, ZERO_ADDR } from "./helpers";
 
 /**
  * SlotCollective indexing.
@@ -68,23 +68,40 @@ ponder.on(
     await getOrCreateAccount(context, event.args.admin);
     await getOrCreateAccount(context, event.args.deployer);
 
-    await context.db.insert(slotCollective).values({
-      id: lower(event.args.manager),
-      chainId: context.chain.id,
-      admin: lower(event.args.admin),
-      deployer: lower(event.args.deployer),
-      // Filled by the `SplitUpdated` that `initializeManager` emits in this same
-      // transaction. Deliberately not read back with an eth_call: the log is
-      // authoritative and a call would race the handler ordering.
-      splitHash: null,
-      totalAllocation: 0n,
-      distributionIncentive: 0,
-      paused: false,
-      splitRecipientCount: 0,
-      createdAt: event.block.timestamp,
-      createdTx: event.transaction.hash,
-      updatedAt: event.block.timestamp,
-    });
+    // UPSERT, and touching only this event's own fields on conflict.
+    //
+    // `initializeManager` emits `SplitUpdated` from the proxy BEFORE the factory
+    // emits this, in the same transaction — so the split handler usually gets
+    // here first and has already created the row. A plain insert would throw on
+    // that conflict, and overwriting would wipe the split it just wrote.
+    //
+    // Neither handler knows the other's fields, so each writes only what its own
+    // event carries and leaves the rest alone. That makes the pair
+    // order-independent, which is the only safe assumption: ordering across two
+    // sources within one transaction is not guaranteed.
+    await context.db
+      .insert(slotCollective)
+      .values({
+        id: lower(event.args.manager),
+        chainId: context.chain.id,
+        admin: lower(event.args.admin),
+        deployer: lower(event.args.deployer),
+        splitHash: null,
+        totalAllocation: 0n,
+        distributionIncentive: 0,
+        paused: false,
+        splitRecipientCount: 0,
+        createdAt: event.block.timestamp,
+        createdTx: event.transaction.hash,
+        updatedAt: event.block.timestamp,
+      })
+      .onConflictDoUpdate(() => ({
+        admin: lower(event.args.admin),
+        deployer: lower(event.args.deployer),
+        createdAt: event.block.timestamp,
+        createdTx: event.transaction.hash,
+        updatedAt: event.block.timestamp,
+      }));
   },
 );
 
@@ -205,18 +222,43 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
     tx: event.transaction.hash,
   });
 
-  // `initializeManager` emits SplitUpdated in the deploy transaction, and
-  // handler order within a transaction is not guaranteed across sources — so
-  // this tolerates the collective row not existing yet.
-  if (prev) {
-    await context.db.update(slotCollective, { id: collective }).set({
-      splitHash: `0x${version.replace(/^0x/, "").slice(0, 64)}` as Hex,
-      totalAllocation: total,
-      distributionIncentive: incentive,
-      splitRecipientCount: recipients.length,
-      updatedAt: event.block.timestamp,
-    });
-  }
+  // UPSERT rather than update-if-present.
+  //
+  // This used to be `if (prev) { update }`, which looked like tolerance for
+  // out-of-order handlers and was actually silent data loss: `initializeManager`
+  // emits this from the proxy BEFORE the factory emits `SlotCollectiveDeployed`,
+  // so on a fresh collective `prev` is always null and the whole split — hash,
+  // total, incentive, recipient count — was dropped. Every collective indexed
+  // as having zero payees while its recipient rows sat there correctly.
+  //
+  // It compounded: `splitRecipientCount` is what a later `setSplit` uses to
+  // delete the tail when a split shrinks, so a stuck 0 would have left stale
+  // recipients behind forever.
+  //
+  // Deploy-time values are honest here — this fires in the deploy transaction,
+  // so its block and tx ARE the creation ones. `SlotCollectiveDeployed` fills in
+  // admin and deployer whenever it lands.
+  const splitFields = {
+    splitHash: `0x${version.replace(/^0x/, "").slice(0, 64)}` as Hex,
+    totalAllocation: total,
+    distributionIncentive: incentive,
+    splitRecipientCount: recipients.length,
+    updatedAt: event.block.timestamp,
+  };
+
+  await context.db
+    .insert(slotCollective)
+    .values({
+      id: collective,
+      chainId,
+      admin: ZERO_ADDR,
+      deployer: ZERO_ADDR,
+      paused: false,
+      createdAt: event.block.timestamp,
+      createdTx: event.transaction.hash,
+      ...splitFields,
+    })
+    .onConflictDoUpdate(() => splitFields);
 });
 
 ponder.on("SlotCollective:SetPaused", async ({ event, context }) => {
