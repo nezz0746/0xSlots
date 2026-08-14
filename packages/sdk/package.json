@@ -1,6 +1,6 @@
 {
   "name": "@0xslots/sdk",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "description": "Type-safe SDK for the 0xSlots protocol — reads (subgraph) + writes (viem)",
   "author": "Nezz",
   "license": "MIT",
