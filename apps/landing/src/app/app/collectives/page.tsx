@@ -9,6 +9,7 @@ import {
   useCollectiveFactory,
 } from "@/components/collective-unavailable";
 import { CopyAddress } from "@/components/copy-address";
+import { EnsName } from "@/components/ens-name";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableSkeleton } from "@/components/table-states";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,6 @@ import {
 import { NavLink, useNavigation } from "@/context/navigation";
 import { type CollectiveRow, useMyCollectives } from "@/hooks/use-collectives";
 import { cn } from "@/lib/utils";
-import { truncateAddress } from "@/utils";
 
 /**
  * Collectives you have a stake in.
@@ -61,7 +61,9 @@ export default function CollectivesPage() {
           <Button size="sm" asChild>
             <div>
               <PlusIcon className="size-4" />
-              <NavLink href="/app/collectives/create">Create Collective</NavLink>
+              <NavLink href="/app/collectives/create">
+                Create Collective
+              </NavLink>
             </div>
           </Button>
         )}
@@ -157,7 +159,7 @@ function Body({
  */
 function CollectiveListRow({ row }: { row: CollectiveRow }) {
   const { push } = useNavigation();
-  const href = `/collectives/${row.id}`;
+  const href = `/app/collectives/${row.id}`;
 
   return (
     <TableRow
@@ -172,9 +174,9 @@ function CollectiveListRow({ row }: { row: CollectiveRow }) {
           <NavLink
             href={href}
             onClick={(e) => e.stopPropagation()}
-            className="font-mono text-xs hover:underline"
+            className="text-xs hover:underline"
           >
-            {truncateAddress(row.id)}
+            <EnsName address={row.id} />
           </NavLink>
           <CopyAddress address={row.id} showAddress={false} />
         </div>

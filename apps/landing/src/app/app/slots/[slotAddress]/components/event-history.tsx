@@ -53,7 +53,7 @@ export function SlotEventHistory({
               <TableCell className="text-xs">
                 {ev.actor ? (
                   <NavLink
-                    href={`/recipient/${ev.actor}`}
+                    href={`/app/recipient/${ev.actor}`}
                     className="text-primary hover:underline"
                   >
                     {truncateAddress(ev.actor)}

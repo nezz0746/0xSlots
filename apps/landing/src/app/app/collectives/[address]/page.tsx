@@ -80,7 +80,7 @@ export default function CollectivePage() {
             </h1>
             {valid && (
               <div className="text-muted-foreground">
-                <CopyAddress address={address} truncate={false} />
+                <CopyAddress address={address} truncate={false} ens />
               </div>
             )}
           </div>
@@ -108,7 +108,7 @@ export default function CollectivePage() {
       <div className="w-full space-y-4 px-3 py-4 md:px-5">
         {!valid && (
           <Notice title="Not an address">
-            <code className="font-mono">{address}</code> is not a valid address.
+            <span className="break-all">{address}</span> is not a valid address.
           </Notice>
         )}
 
@@ -186,7 +186,7 @@ export default function CollectivePage() {
                         key={`${r.index}-${r.account}`}
                         className="flex items-center justify-between gap-3 px-3 py-2"
                       >
-                        <CopyAddress address={r.account} />
+                        <CopyAddress address={r.account} ens />
                         <div className="flex items-center gap-3">
                           <span className="tabular-nums text-[10px] text-muted-foreground">
                             {r.allocation}
@@ -209,13 +209,13 @@ export default function CollectivePage() {
               </h2>
               <dl className="grid gap-2 border p-3 sm:grid-cols-2">
                 <Fact label="Deployed by">
-                  <CopyAddress address={collective.deployer} />
+                  <CopyAddress address={collective.deployer} ens />
                 </Fact>
                 <Fact
                   label="Founding admin"
                   hint="At deployment. Roles move afterwards — the live answer is above."
                 >
-                  <CopyAddress address={collective.admin} />
+                  <CopyAddress address={collective.admin} ens />
                 </Fact>
               </dl>
             </section>

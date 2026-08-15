@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono, Urbanist } from "next/font/google";
 
 import "./globals.css";
 import { APP_URL } from "@/constants";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+// Urbanist is a variable font, so the whole weight axis arrives in one file —
+// the headline 800s and the 10px muted labels this app leans on cost nothing
+// extra. `--font-sans` in globals.css points here.
+const urbanist = Urbanist({ subsets: ["latin"], variable: "--font-urbanist" });
+
+// `--font-jetbrains`, NOT `--font-mono`. The theme layer defines
+// `--font-mono: var(--font-jetbrains), …`; naming the source the same as the
+// target is a cycle, which CSS resolves by throwing the property away.
 const jetbrains = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-jetbrains",
 });
 
 export const metadata: Metadata = {
@@ -29,10 +36,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body
-        className={`${inter.variable} ${jetbrains.variable} font-sans bg-background text-foreground`}
-      >
+    // Font variables belong on <html>, not <body>. Tailwind's `@theme` emits
+    // `--font-sans: var(--font-urbanist), …` into `:root` — which IS <html> —
+    // so with the source variable one level down the reference resolves to
+    // nothing, `--font-sans` is invalid at computed-value time, and every
+    // `font-sans` element silently falls back to the system stack. That is what
+    // was happening: the app never rendered in its own typeface.
+    <html lang="en" className={`${urbanist.variable} ${jetbrains.variable}`}>
+      <body className="font-sans bg-background text-foreground">
         {children}
       </body>
     </html>

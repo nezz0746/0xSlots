@@ -16,3 +16,6 @@ ngrok.yml
 research
 
 .claude
+# macOS Finder writes these into any directory it displays. Never useful, and
+# they reappear forever if only deleted rather than ignored.
+.DS_Store

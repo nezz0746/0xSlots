@@ -49,7 +49,7 @@ export function EventsTable() {
               </TableCell>
               <TableCell>
                 <NavLink
-                  href={`/slots/${ev.slot}`}
+                  href={`/app/slots/${ev.slot}`}
                   className="text-primary hover:underline"
                 >
                   {truncateAddress(ev.slot ?? "")}
@@ -58,7 +58,7 @@ export function EventsTable() {
               <TableCell>
                 {ev.actor ? (
                   <NavLink
-                    href={`/recipient/${ev.actor}`}
+                    href={`/app/recipient/${ev.actor}`}
                     className="text-primary hover:underline"
                   >
                     {truncateAddress(ev.actor)}

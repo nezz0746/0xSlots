@@ -475,7 +475,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                           value={
                             <span className="flex items-center gap-1.5">
                               <NavLink
-                                href={`/recipient/${slot.recipient}`}
+                                href={`/app/recipient/${slot.recipient}`}
                                 className="text-primary hover:underline"
                               >
                                 <EnsIdentity

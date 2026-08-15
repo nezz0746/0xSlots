@@ -131,7 +131,7 @@ export function CollectiveRoleCard({
                 return (
                   <div key={m.account} className="space-y-1">
                     <div className="flex items-center justify-between gap-1">
-                      <CopyAddress address={m.account} />
+                      <CopyAddress address={m.account} ens />
                       {isAdmin && (
                         <button
                           type="button"
