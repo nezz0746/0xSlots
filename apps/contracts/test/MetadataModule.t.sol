@@ -126,7 +126,7 @@ contract MetadataModuleTest is Test {
     }
 
     function test_version() public view {
-        assertEq(module.version(), "2.0.0");
+        assertEq(module.version(), "2.1.0");
     }
 
     function test_supportsISlotsModule() public view {
