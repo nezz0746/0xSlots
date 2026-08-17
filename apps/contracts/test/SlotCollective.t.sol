@@ -5,7 +5,8 @@ import {Test} from "forge-std/Test.sol";
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {SlotCollective, IManagedSlot} from "../src/SlotCollective.sol";
+import {SlotCollective} from "../src/SlotCollective.sol";
+import {SlotGovernance, IManagedSlot} from "../src/SlotGovernance.sol";
 import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {UpdateKind} from "../src/interfaces/ISlot.sol";
@@ -367,7 +368,7 @@ contract SlotCollectiveTest is Test {
     function test_rejectsZeroAdmin() public {
         SlotCollective.InitialRoles memory r = _roles();
         r.admin = address(0);
-        vm.expectRevert(SlotCollective.AdminRequired.selector);
+        vm.expectRevert(SlotGovernance.AdminRequired.selector);
         factory.createManager(_split(), r);
     }
 
