@@ -14,7 +14,7 @@ import {
   getOrCreateAccount,
   getOrCreateAccountSlot,
   lower,
-  tryFetchIpfsJson,
+  resolveAdJson,
 } from "./helpers";
 
 type MinimalEvent = {
@@ -40,7 +40,7 @@ async function applyMetadataUpdate(
     updatedAt: event.block.timestamp,
   });
 
-  const content = await tryFetchIpfsJson(uri);
+  const content = await resolveAdJson(uri);
   const adType = content ? extractAdType(content) : null;
   const cid = extractCid(uri);
   const updatedBy = lower(updatedByForRow);

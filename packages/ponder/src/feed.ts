@@ -12,7 +12,7 @@ import {
 } from "ponder:schema";
 import { getAddress, type Hex } from "viem";
 import { FeedAbi } from "../abis";
-import { evtId, extractCid, lower, tryFetchIpfsJson, ZERO_ADDR } from "./helpers";
+import { evtId, extractCid, lower, resolveAdJson, ZERO_ADDR } from "./helpers";
 
 /**
  * Feed metadata, resolved from the URI.
@@ -41,7 +41,7 @@ async function resolveMetadata(uri: string) {
   if (!uri) return empty;
 
   const cid = extractCid(uri);
-  const raw = await tryFetchIpfsJson(uri);
+  const raw = await resolveAdJson(uri);
   if (!raw) return { ...empty, metadataCid: cid };
 
   const str = (v: unknown) => (typeof v === "string" ? v : null);

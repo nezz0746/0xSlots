@@ -14,7 +14,7 @@ import {
   getOrCreateCurrency,
   getOrCreateModule,
   lower,
-  tryFetchIpfsJson,
+  resolveAdJson,
   ZERO_ADDR,
 } from "./helpers";
 
@@ -168,7 +168,7 @@ ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {
   let description: string | null = null;
   const uri = event.args.metadataURI;
   if (uri && uri.length > 0) {
-    const json = await tryFetchIpfsJson(uri);
+    const json = await resolveAdJson(uri);
     if (json) {
       try {
         const obj = JSON.parse(json);

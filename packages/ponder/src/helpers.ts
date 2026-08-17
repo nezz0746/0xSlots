@@ -273,7 +273,50 @@ export async function getOrCreateModule(
   });
 }
 
-export async function tryFetchIpfsJson(uri: string): Promise<string | null> {
+/** An ad carried in the URI itself rather than named by it. */
+const INLINE = /^data:application\/json(;[^,]*)?,/i;
+
+/**
+ * A cap on what will be held in memory and written to `rawJson`.
+ *
+ * Generous rather than tight, and deliberately not the 8KB the publish API
+ * enforces: anyone can call `updateMetadata` directly, so this has to cope with
+ * a URI that never went near our API. Too tight a limit here would drop the
+ * `adType` for an ad that renders perfectly well in every client, which is a
+ * worse failure than holding 64KB briefly.
+ */
+const MAX_INLINE_BYTES = 64 * 1024;
+
+/**
+ * The ad's JSON, however the slot happens to carry it.
+ *
+ * Three forms, because the protocol has accumulated three. `ipfs://` names it
+ * and needs a gateway. A bare `{` is raw JSON, which some slots already hold.
+ * And `data:application/json` carries the whole ad inline — the form the
+ * AdLand publish flow now writes, because `tokenURI` is a string the module
+ * stores without inspecting, and an ad of 240 bytes fits in it comfortably.
+ *
+ * Inline resolves with no network call at all. Before this branch existed the
+ * function fell through to `return null`, so an inline ad indexed with no
+ * `rawJson` and no `adType` — and, worse, kept a doomed gateway fetch on the
+ * hot path of every metadata update.
+ */
+export async function resolveAdJson(uri: string): Promise<string | null> {
+  if (INLINE.test(uri)) {
+    try {
+      const comma = uri.indexOf(",");
+      const body = uri.slice(comma + 1);
+      const json = /;base64/i.test(uri.slice(0, comma))
+        ? Buffer.from(body, "base64").toString("utf8")
+        : decodeURIComponent(body);
+      // Checked after decoding, since base64 understates the payload by a third
+      // and the point is to bound what gets stored, not what arrives.
+      return Buffer.byteLength(json) > MAX_INLINE_BYTES ? null : json;
+    } catch {
+      return null;
+    }
+  }
+
   let cid: string | null = null;
   if (uri.startsWith("ipfs://")) cid = uri.slice(7);
   else if (uri.startsWith("Qm") || uri.startsWith("bafy")) cid = uri;
