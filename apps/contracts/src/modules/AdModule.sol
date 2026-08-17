@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {MetadataModule} from "../modules/MetadataModule.sol";
+import {MetadataModule} from "./MetadataModule.sol";
 
 /// @dev The slice of `Slot` a reader needs. `module()` rather than `utility()`:
 ///      the storage variable was renamed and `module()` is the compatibility
@@ -156,6 +156,15 @@ contract AdModule is MetadataModule {
     /// @notice The slot to render when the publisher named none.
     function primary() external view returns (address) {
         return slotOf[PRIMARY];
+    }
+
+    /// @dev Bumped from 2.1.0. Additive — `buyAndUpdate`, `updateMetadata` and
+    ///      `tokenURI` are untouched, so nothing that reads or writes an ad
+    ///      today has to change. The upgrade scripts assert on this to prove
+    ///      the proxy pointer moved; `name()` deliberately does not change,
+    ///      because the SDK verifies identity against it before it will write.
+    function version() external pure override returns (string memory) {
+        return "2.2.0";
     }
 
     // ─── Lens ────────────────────────────────────────────────────────────

@@ -193,7 +193,11 @@ contract MetadataModule is
         return "AdLandModule";
     }
 
-    function version() external pure override returns (string memory) {
+    /// @dev `virtual` so a subclass shipping as the live implementation can
+    ///      state its own version. The upgrade scripts assert on this to prove
+    ///      the proxy pointer actually moved, so it has to be the thing that
+    ///      changes when the implementation does.
+    function version() external pure virtual override returns (string memory) {
         return "2.1.0";
     }
 
