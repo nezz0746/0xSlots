@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
+import { title, description } from "@/constants";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -9,15 +10,13 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "0xSlots",
     url: "/",
-    title: "0xSlots — Making collective ownership easy to use",
-    description:
-      "Name your price and pay a small tax on it. Anyone can buy it at that price, any time. Collectives let a group share the income and govern together.",
+    title,
+    description,
   },
   twitter: {
     card: "summary_large_image",
-    title: "0xSlots — Making collective ownership easy to use",
-    description:
-      "Name your price and pay a small tax on it. Anyone can buy it at that price, any time. Collectives let a group share the income and govern together.",
+    title: title,
+    description: description,
   },
 };
 

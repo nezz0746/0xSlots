@@ -32,8 +32,9 @@ export function Hero() {
               rather than being broken into fixed lines, so the clamp can do its
               job at any width. */}
           <h1 className="mt-5 display text-[clamp(2.1rem,6vw,3.2rem)] max-w-2xl">
-            Making <span className="text-destructive">collective ownership</span>{" "}
-            easy to use
+            Making{" "}
+            <span className="text-destructive">collective ownership</span> easy
+            to use
           </h1>
 
           {/* Plain language, no jargon and no mechanism the reader has to work
@@ -44,17 +45,9 @@ export function Hero() {
             className="mt-7 max-w-xl animate-raise text-lg leading-relaxed text-foreground/80"
             style={{ animationDelay: "420ms" }}
           >
-            Name your price and pay a small tax on it. Anyone can buy it from
-            you at that price, any time — so nothing sits idle and everything
-            stays honestly valued.
-          </p>
-
-          <p
-            className="mt-4 max-w-xl animate-raise text-lg leading-relaxed text-foreground/80"
-            style={{ animationDelay: "480ms" }}
-          >
-            Collectives let a group share what those assets earn and govern them
-            together.
+            Slots are a flexible and composable collective ownership primitive
+            that make it easy for you to experiment with different ways of
+            sharing and governing digital assets.
           </p>
 
           <div

@@ -1,5 +1,10 @@
 import type { SlotsChain } from "@0xslots/sdk";
 
+export const title = "0xSlots — Collective ownership made easy";
+
+export const description =
+  "Slots are a flexible and composable collective ownership primitive that make it easy for you to experiment with different ways of sharing and governing digital assets";
+
 export const alchemyKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
 
 /** 30 days in seconds (used for tax-rate calculations). */

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Urbanist } from "next/font/google";
 
 import "./globals.css";
-import { APP_URL } from "@/constants";
+import { APP_URL, description, title } from "@/constants";
 
 // Urbanist is a variable font, so the whole weight axis arrives in one file —
 // the headline 800s and the 10px muted labels this app leans on cost nothing
@@ -22,12 +22,11 @@ export const metadata: Metadata = {
   // them against the live origin.
   metadataBase: new URL(APP_URL),
   title: {
-    default: "0xSlots — Making collective ownership easy to use",
+    default: title,
     // Articles set a bare title; the brand is appended exactly once here.
     template: "%s — 0xSlots",
   },
-  description:
-    "Name your price and pay a small tax on it. Anyone can buy it from you at that price, any time — so nothing sits idle and everything stays honestly valued. Collectives let a group share what those assets earn and govern them together. On Base, in any ERC-20.",
+  description: description,
 };
 
 export default function RootLayout({
