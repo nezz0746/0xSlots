@@ -1,15 +1,7 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import {
-  Check,
-  ChevronDown,
-  FlaskConical,
-  PlusIcon,
-  Scale,
-  User,
-  Users,
-} from "lucide-react";
+import { Check, ChevronDown, PlusIcon, Scale, User, Users } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
@@ -57,14 +49,6 @@ export function AppSidebar() {
 
   // The explorer index moved to /app when the marketing site took the root.
   const onExplorer = pathname === "/app";
-
-  // The Lab is a sandbox, not a product surface — it ships to nobody. Bundlers
-  // inline NODE_ENV, so this whole branch is eliminated at compile time in a
-  // production build rather than shipped and hidden. Same reasoning as `CHAINS`
-  // filtering anvil in @0xslots/contracts, and the dev connectors in
-  // config/wagmi.ts. The /app/lab ROUTE still exists in every environment —
-  // this only removes the way in from the nav.
-  const showLab = process.env.NODE_ENV === "development";
 
   const selectSection = (id: string) => {
     setSection(id);
@@ -133,20 +117,6 @@ export function AppSidebar() {
                   <span>Policies</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-
-              {/* A sandbox, not a product surface — hence the dashed styling
-                  and the honest label. Development only; see `showLab`. */}
-              {showLab && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={pathname.startsWith("/app/lab")}
-                    onClick={() => push("/app/lab")}
-                  >
-                    <FlaskConical className="size-4" />
-                    <span>Lab</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

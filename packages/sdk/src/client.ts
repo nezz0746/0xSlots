@@ -19,7 +19,7 @@ import {
   zeroAddress as ZERO_ADDRESS,
 } from "viem";
 import { SlotsError } from "./errors";
-import * as Gen from "./generated/graphql";
+import type * as Gen from "./generated/graphql";
 import { getSdk } from "./generated/graphql";
 import { FeedModuleClient } from "./modules/feed";
 import { MetadataModuleClient } from "./modules/metadata";
@@ -537,7 +537,6 @@ export class SlotsClient {
     );
   }
 
-
   // ═══════════════════════════════════════════════════════════════════════════
   // READ — On-chain (RPC)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -836,6 +835,147 @@ export class SlotsClient {
   }
 
   /**
+   * Reprice and top up as one action.
+   *
+   * ── Why these are not two calls ──────────────────────────────────────────
+   *
+   * Because the contract does not treat them as independent. `selfAssess` ends
+   * with `_enforceMinDepositExisting(newPrice)`, so the deposit still standing
+   * after settlement has to cover the minimum at the NEW price. Raising your
+   * valuation — the most ordinary thing an occupant wants to do — therefore
+   * reverts with `InsufficientDeposit` unless the deposit already happened to be
+   * large enough, and the fix is a top-up the caller had no way to know was
+   * needed.
+   *
+   * So the two travel together, in the only order that works: top up, then
+   * reprice. On an ERC-20 slot they go through the slot's own `multicall`, which
+   * delegatecalls each entry in turn — the reprice reads the deposit the top-up
+   * just added, in the same block, with no window for tax to accrue between them
+   * and nothing for a lagging RPC to miss.
+   *
+   * Only the top-up direction has this constraint. Native slots cannot batch a
+   * DEPOSIT: OpenZeppelin's `Multicall.multicall` is not payable, so there is no
+   * value to forward and `topUp` would reject the mismatch. There the two stay
+   * separate transactions, sent in the same order, with the first confirmed
+   * before the second is offered.
+   *
+   * ── Withdrawing runs the other way round ─────────────────────────────────
+   *
+   * `withdraw` settles and then refuses to leave the deposit below the minimum
+   * AT THE CURRENT PRICE — so when it travels with a reprice the reprice has to
+   * go FIRST, or the ceiling is computed against a valuation that is about to
+   * change. Lowering your valuation is exactly what frees deposit to take back,
+   * and doing it in the other order would refuse the withdrawal that the new
+   * valuation permits.
+   *
+   * Neither call is payable, so this direction batches on every slot, native
+   * included.
+   *
+   * A top-up and a withdrawal together are refused rather than netted. They are
+   * opposite intentions and the netting would be silent — a caller asking for
+   * both has a bug, and returning one transaction that does neither is the worst
+   * way to find out.
+   *
+   * @param slot - The slot contract address.
+   * @param params.newPrice - The new self-assessed price, or omitted to leave it.
+   * @param params.topUpAmount - Extra deposit to add first. Zero to add none.
+   * @param params.withdrawAmount - Deposit to take back after. Zero to take none.
+   * @returns The hash of the last transaction sent.
+   * @throws {SlotsError} If nothing was asked for, or both directions were.
+   */
+  async manageTerms(
+    slot: Address,
+    params: {
+      newPrice?: bigint;
+      topUpAmount?: bigint;
+      withdrawAmount?: bigint;
+    },
+  ): Promise<Hash> {
+    const topUpAmount = params.topUpAmount ?? 0n;
+    const withdrawAmount = params.withdrawAmount ?? 0n;
+    const reprice = params.newPrice !== undefined;
+
+    if (topUpAmount > 0n && withdrawAmount > 0n) {
+      throw new SlotsError(
+        "manageTerms",
+        "cannot add and take back deposit in one call",
+      );
+    }
+
+    if (!reprice && topUpAmount <= 0n && withdrawAmount <= 0n) {
+      throw new SlotsError(
+        "manageTerms",
+        "nothing to do — pass a new price, a deposit change, or both",
+      );
+    }
+
+    if (withdrawAmount > 0n) {
+      if (!reprice) return this.withdraw(slot, withdrawAmount);
+
+      // Reprice first — see above. Both calls are plain, so this is one
+      // transaction whatever the slot is priced in.
+      return this.multicall(slot, [
+        { functionName: "selfAssess", args: [params.newPrice!] },
+        { functionName: "withdraw", args: [withdrawAmount] },
+      ]);
+    }
+
+    // One-sided cases are the plain calls, so the batching path only ever runs
+    // when there is something to batch.
+    if (topUpAmount <= 0n) return this.selfAssess(slot, params.newPrice!);
+    if (!reprice) return this.topUp(slot, topUpAmount);
+
+    const currency = await this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "currency",
+    });
+
+    const selfAssessData = encodeFunctionData({
+      abi: slotAbi,
+      functionName: "selfAssess",
+      args: [params.newPrice!],
+    });
+
+    if (isNativeCurrency(currency)) {
+      const topUpTx = await this.wallet.writeContract({
+        address: slot,
+        abi: slotAbi,
+        functionName: "topUp",
+        args: [topUpAmount],
+        value: topUpAmount,
+        account: this.account,
+        chain: this.chain,
+      });
+      // Confirmed before the reprice is sent: `selfAssess` checks the deposit,
+      // and offering it against a top-up still in the mempool is the exact
+      // revert this method exists to prevent.
+      await this.publicClient.waitForTransactionReceipt({ hash: topUpTx });
+      return this.selfAssess(slot, params.newPrice!);
+    }
+
+    await this.ensureAllowance(currency, slot, topUpAmount);
+
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "multicall",
+      args: [
+        [
+          encodeFunctionData({
+            abi: slotAbi,
+            functionName: "topUp",
+            args: [topUpAmount],
+          }),
+          selfAssessData,
+        ],
+      ],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
    * Withdraw from deposit (occupant only). Cannot go below minimum deposit.
    * @param slot - The slot contract address.
    * @param amount - The amount to withdraw (must be > 0).
@@ -894,6 +1034,40 @@ export class SlotsClient {
       address: slot,
       abi: slotAbi,
       functionName: "liquidate",
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WRITE — Factory Admin
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Mark a utility verified or unverified in the factory's registry (factory
+   * admin only).
+   *
+   * The registry is informational: an unverified utility still works, and this
+   * flag blocks nothing. It is the badge the explorer reads.
+   *
+   * Reverts unless the utility answers ERC-165 for BOTH `IUtility` and
+   * `IModuleMetadata` — the factory checks the two separately because an
+   * interface id covers only its own selectors, so the hooks id says nothing
+   * about `name()`/`version()`/`metadataURI()`, which the emitted event reads
+   * immediately. Callers should surface the revert rather than pre-flight it;
+   * the check is cheap on-chain and four extra reads per row is not.
+   *
+   * @param utility - The utility contract address (an ARGUMENT — the call goes
+   *   to the factory).
+   * @param verified - The flag to set.
+   * @returns Transaction hash.
+   */
+  async setUtilityVerified(utility: Address, verified: boolean): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "setUtilityVerified",
+      args: [utility, verified],
       account: this.account,
       chain: this.chain,
     });
@@ -1118,42 +1292,7 @@ export class SlotsClient {
       });
     }
 
-    const allowance = await this.publicClient.readContract({
-      address: currency,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [this.account, spender],
-    });
-
-    if (allowance < amount) {
-      const approveTx = await this.wallet.writeContract({
-        address: currency,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [spender, amount],
-        account: this.account,
-        chain: this.chain,
-      });
-      await this.publicClient.waitForTransactionReceipt({ hash: approveTx });
-
-      // Poll until the allowance is visible on this RPC node (handles node lag).
-      const confirmed = await this.pollUntil(
-        () =>
-          this.publicClient.readContract({
-            address: currency,
-            abi: erc20Abi,
-            functionName: "allowance",
-            args: [this.account, spender],
-          }),
-        (value) => value >= amount,
-      );
-      if (confirmed < amount) {
-        throw new SlotsError(
-          "withPayment",
-          "Approval confirmed but on-chain allowance is still insufficient after retries",
-        );
-      }
-    }
+    await this.ensureAllowance(currency, spender, amount);
 
     return this.wallet.writeContract({
       address: call.to,
@@ -1163,6 +1302,59 @@ export class SlotsClient {
       account: this.account,
       chain: this.chain,
     });
+  }
+
+  /**
+   * Grant `spender` an allowance of at least `amount`, if it does not have one.
+   *
+   * Split out of {@link withPayment} because the batched reprice needs exactly
+   * this and none of the rest: it sends the slot's own `multicall` rather than a
+   * single named function, so it cannot go through a helper whose last act is to
+   * call one.
+   *
+   * Re-approving a spender that already has enough is a wallet confirmation that
+   * buys nothing, which is what the read is for.
+   */
+  private async ensureAllowance(
+    currency: Address,
+    spender: Address,
+    amount: bigint,
+  ): Promise<void> {
+    const allowance = await this.publicClient.readContract({
+      address: currency,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [this.account, spender],
+    });
+    if (allowance >= amount) return;
+
+    const approveTx = await this.wallet.writeContract({
+      address: currency,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, amount],
+      account: this.account,
+      chain: this.chain,
+    });
+    await this.publicClient.waitForTransactionReceipt({ hash: approveTx });
+
+    // Poll until the allowance is visible on this RPC node (handles node lag).
+    const confirmed = await this.pollUntil(
+      () =>
+        this.publicClient.readContract({
+          address: currency,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [this.account, spender],
+        }),
+      (value) => value >= amount,
+    );
+    if (confirmed < amount) {
+      throw new SlotsError(
+        "ensureAllowance",
+        "Approval confirmed but on-chain allowance is still insufficient after retries",
+      );
+    }
   }
 
   /** Poll `check` every `delayMs` until it returns a truthy value or `maxAttempts` is exhausted. */

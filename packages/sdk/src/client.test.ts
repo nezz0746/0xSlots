@@ -1,3 +1,4 @@
+import { getSlotsHubAddress } from "@0xslots/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { SlotsChain, SlotsClient } from "./client";
 import { NATIVE_CURRENCY_ADDRESS } from "./tokens";
@@ -5,6 +6,7 @@ import { NATIVE_CURRENCY_ADDRESS } from "./tokens";
 const SLOT = "0x1111111111111111111111111111111111111111" as const;
 const ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
 const ERC20 = "0x3333333333333333333333333333333333333333" as const;
+const UTILITY = "0x4444444444444444444444444444444444444444" as const;
 
 /**
  * A viem-shaped double. `reads` maps functionName -> value, so a test states
@@ -121,5 +123,31 @@ describe("ERC-20 slots are unchanged", () => {
     });
 
     expect(approvals(writeContract)).toHaveLength(0);
+  });
+});
+
+describe("factory admin", () => {
+  it("setUtilityVerified writes to the factory, not to the utility", async () => {
+    const { client, writeContract } = harness({});
+
+    await client.setUtilityVerified(UTILITY, true);
+
+    const call = sent(writeContract, "setUtilityVerified");
+    // The utility address is an ARGUMENT here, never the target. Sending this
+    // to the utility itself would be a call to a function it does not have —
+    // the revert is silent about which of the two addresses was wrong.
+    expect(call.address).toBe(getSlotsHubAddress(SlotsChain.BASE));
+    expect(call.args).toEqual([UTILITY, true]);
+  });
+
+  it("setUtilityVerified passes the flag through for unverify", async () => {
+    const { client, writeContract } = harness({});
+
+    await client.setUtilityVerified(UTILITY, false);
+
+    expect(sent(writeContract, "setUtilityVerified").args).toEqual([
+      UTILITY,
+      false,
+    ]);
   });
 });

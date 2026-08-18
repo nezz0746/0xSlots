@@ -295,7 +295,14 @@ export function MetadataForm({
             ) : (
               <Accordion type="single" collapsible>
                 {updateHistory.map((event) => (
-                  <AccordionItem key={event.tx} value={event.tx}>
+                  /* `event.id`, not `event.tx`. One transaction can emit
+                     several MetadataUpdated logs — a multicall, or a batch that
+                     touches the same slot twice — and the indexer keys these by
+                     `(txHash, logIndex)` for exactly that reason. Keyed by `tx`,
+                     the duplicates collided: React warned, and because the
+                     accordion also used it as its `value`, opening one row
+                     opened every row that shared its transaction. */
+                  <AccordionItem key={event.id} value={event.id}>
                     <AccordionTrigger className="py-2.5 px-1 text-sm hover:no-underline">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 text-xs shrink-0">

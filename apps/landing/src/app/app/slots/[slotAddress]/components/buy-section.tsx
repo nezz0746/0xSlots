@@ -12,7 +12,7 @@ import { useChain } from "@/context/chain";
 import { useSlotAction } from "@/hooks/use-slot-action";
 import type { SlotOnChain } from "@/hooks/use-slot-onchain";
 import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
-import { formatBalance, formatBps, toRawUnits } from "@/utils";
+import { formatBalance, formatBps } from "@/utils";
 
 /** Fallback runway unit for a slot that sets no minimum. */
 const WEEK = 604_800n;
@@ -52,10 +52,15 @@ export function BuySection({
   //
   // The cost is that the percentage steps have nothing to compound off — 0 x
   // 1.2 is 0 — so PriceInput disables them until a price exists.
+  //
+  // Raw units throughout. This was carried as a JavaScript number and converted
+  // back with `toRawUnits(String(price))`, which is a round trip through a float
+  // for every keystroke and every percentage step — exact for whole USDC and
+  // lossy for anything priced in ETH.
   const startingPrice = useMemo(() => {
-    if (!isOccupied) return 0;
-    return Number(formatUnits(slot.price, decimals));
-  }, [isOccupied, slot.price, decimals]);
+    if (!isOccupied) return 0n;
+    return slot.price;
+  }, [isOccupied, slot.price]);
 
   const [price, setPrice] = useState(startingPrice);
   const [mult, setMult] = useState(1);
@@ -77,7 +82,7 @@ export function BuySection({
     setPrice(startingPrice);
   }, [startingPrice]);
 
-  const updatePrice = (next: number) => {
+  const updatePrice = (next: bigint) => {
     touched.current = true;
     setPrice(next);
   };
@@ -97,7 +102,7 @@ export function BuySection({
       : slot.taxPercentage;
 
   const base = slot.minDepositSeconds > 0n ? slot.minDepositSeconds : WEEK;
-  const priceRaw = toRawUnits(String(price), decimals);
+  const priceRaw = price;
 
   /**
    * Mirrors `Slot._minDepositFor`, including its `ceilDiv`.
@@ -146,9 +151,10 @@ export function BuySection({
     return (
       <div className="space-y-3">
         <PriceInput
-          label="New price"
+          label="Your valuation"
           value={price}
           onChange={updatePrice}
+          decimals={decimals}
           taxBps={effectiveTax}
           symbol={symbol}
           disabled={busy}
@@ -165,7 +171,7 @@ export function BuySection({
               <Loader2 className="size-4 animate-spin mr-2" /> Processing...
             </>
           ) : (
-            "Update Price"
+            "Update valuation"
           )}
         </Button>
       </div>
@@ -176,13 +182,14 @@ export function BuySection({
   return (
     <div className="space-y-3">
       <PriceInput
-        label="Your price"
+        label="Your valuation"
         value={price}
         onChange={updatePrice}
+        decimals={decimals}
         taxBps={effectiveTax}
         symbol={symbol}
         disabled={busy}
-        hint="Others can force-buy at this price"
+        hint="What the next holder pays to take it from you"
         toUsd={toUsd}
       />
 
@@ -210,7 +217,10 @@ export function BuySection({
             <span className="tabular-nums">
               {formatBalance(purchase, decimals)} {symbol}
               {usdPurchase && (
-                <span className="text-muted-foreground/70"> ≈ {usdPurchase}</span>
+                <span className="text-muted-foreground/70">
+                  {" "}
+                  ≈ {usdPurchase}
+                </span>
               )}
             </span>
           </div>
@@ -229,7 +239,10 @@ export function BuySection({
           <span className="tabular-nums">
             {formatBalance(total, decimals)} {symbol}
             {usdTotal && (
-              <span className="font-normal text-muted-foreground/70"> ≈ {usdTotal}</span>
+              <span className="font-normal text-muted-foreground/70">
+                {" "}
+                ≈ {usdTotal}
+              </span>
             )}
           </span>
         </div>

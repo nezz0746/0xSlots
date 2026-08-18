@@ -243,6 +243,24 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
       exec("Top up", () => client.topUp(slot, amount)),
     [exec, client],
   );
+  /**
+   * Reprice and move the deposit together — see `client.manageTerms`.
+   *
+   * One label rather than three because it is one intention: the deposit change
+   * is what the new valuation costs to hold, or what the lower one frees up, not
+   * a separate decision the occupant made.
+   */
+  const manageTerms = useCallback(
+    (
+      slot: Address,
+      params: {
+        newPrice?: bigint;
+        topUpAmount?: bigint;
+        withdrawAmount?: bigint;
+      },
+    ) => exec("Update terms", () => client.manageTerms(slot, params)),
+    [exec, client],
+  );
   const withdraw = useCallback(
     (slot: Address, amount: bigint) =>
       exec("Withdraw", () => client.withdraw(slot, amount)),
@@ -302,6 +320,23 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     [exec, client],
   );
 
+  // Factory admin
+  /**
+   * Flip a utility's verified flag in the factory registry.
+   *
+   * Labelled by direction rather than one "Set verified" for both: the table
+   * that calls this shows a spinner next to the label, and "Set verified"
+   * spinning next to a row you just UNverified reads as the opposite of what
+   * is happening.
+   */
+  const setUtilityVerified = useCallback(
+    (utility: Address, verified: boolean) =>
+      exec(verified ? "Verify utility" : "Unverify utility", () =>
+        client.setUtilityVerified(utility, verified),
+      ),
+    [exec, client],
+  );
+
   // Metadata module
   const updateMetadata = useCallback(
     (moduleAddress: Address, slot: Address, uri: string) =>
@@ -320,6 +355,7 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     buy,
     selfAssess,
     topUp,
+    manageTerms,
     withdraw,
     release,
     collect,
@@ -332,6 +368,7 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     cancelPendingUpdate,
     cancelPendingUpdates,
     setLiquidationBounty,
+    setUtilityVerified,
     updateMetadata,
     // Executor
     exec,

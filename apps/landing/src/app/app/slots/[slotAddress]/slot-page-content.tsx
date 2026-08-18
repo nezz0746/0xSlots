@@ -34,10 +34,16 @@ import {
   Wallet,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { type Address, formatUnits, zeroAddress } from "viem";
+import { useEffect, useState } from "react";
+import { type Address, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
+import { SECTION } from "@/app/app/create/sections";
 import { AccountTypeIcon } from "@/components/account-type-icon";
+import {
+  DetailGroup,
+  DetailRow,
+  MutabilityChip,
+} from "@/components/detail-group";
 import { EnsIdentity } from "@/components/ens-identity";
 import { TenureMeter } from "@/components/occupancy-timeline";
 import { PageHeader } from "@/components/page-header";
@@ -56,6 +62,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Reveal } from "@/components/ui/reveal";
 import {
   Tooltip,
   TooltipContent,
@@ -70,10 +77,8 @@ import {
   slotQueryOptions,
 } from "@/hooks/slot-queries";
 import { useCurrencyBalance } from "@/hooks/use-currency-balance";
-import {
-  formatDuration as formatShortDuration,
-  useNow,
-} from "@/hooks/use-duration";
+import { useNow } from "@/hooks/use-duration";
+import { useLiveAccrual } from "@/hooks/use-live-accrual";
 import { useResolvedPolicy } from "@/hooks/use-resolved-policy";
 import { useSlotAction } from "@/hooks/use-slot-action";
 import { useSlotOnChain } from "@/hooks/use-slot-onchain";
@@ -82,22 +87,14 @@ import {
   formatBalance,
   formatBps,
   formatDuration,
-  toRawUnits,
   truncateAddress,
 } from "@/utils";
-import { PriceInput } from "@/components/ui/price-input";
-import {
-  DetailGroup,
-  DetailRow,
-  MutabilityChip,
-} from "@/components/detail-group";
-import { SECTION } from "@/app/app/create/sections";
 import { BuySection } from "./components/buy-section";
-import { DepositSlider } from "./components/deposit-slider";
 import {
   normalizeSlotActivity,
   SlotEventHistory,
 } from "./components/event-history";
+import { ManageTerms } from "./components/manage-terms";
 import { MetadataForm } from "./components/metadata-form";
 import {
   PendingUpdatesNotice,
@@ -147,7 +144,6 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const { address, isConnected, chainId, chain } = useAccount();
   const { switchChain } = useSwitchChain();
   const {
-    selfAssess,
     release,
     collect,
     liquidate,
@@ -158,11 +154,6 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
     activeAction,
   } = useSlotAction();
   const { data: modules } = useModules();
-  // The occupant's self-assessment, seeded from what they currently declare.
-  // A number rather than a string: PriceInput compounds percentage steps off
-  // it, and re-parsing a formatted string each tap loses precision.
-  const [ownerPrice, setOwnerPrice] = useState(0);
-  const ownerTouched = useRef(false);
   const [newTaxPct, setNewTaxPct] = useState<number | null>(null);
   const [newModule, setNewModule] = useState("");
   const [activeTab, setActiveTab] = useState<"details" | "activity" | "manage">(
@@ -191,17 +182,10 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const decimals = slot?.currencyDecimals ?? 6;
   const symbol = slot?.currencySymbol ?? "USDC";
 
-  /**
-   * Follow the declared price until the occupant edits it.
-   *
-   * The slot is an async read, so seeding once at mount would leave the field
-   * on 0 for anyone whose page painted first.
-   */
-  const ownerPriceSeed = slot ? Number(formatUnits(slot.price, decimals)) : 0;
-  useEffect(() => {
-    if (!ownerTouched.current) setOwnerPrice(ownerPriceSeed);
-  }, [ownerPriceSeed]);
-  const ownerPriceRaw = toRawUnits(String(ownerPrice), decimals);
+  // Tax counted as it accrues rather than as it was last read. Interpolated
+  // from the figures already fetched above, so it costs no extra request — see
+  // the hook. Above the early returns because hooks cannot be conditional.
+  const accrual = useLiveAccrual(slot);
 
   if (isLoading) {
     return (
@@ -237,16 +221,17 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const isOccupant = address?.toLowerCase() === slot.occupant?.toLowerCase();
   const isRecipient = address?.toLowerCase() === slot.recipient.toLowerCase();
   const isManager = address?.toLowerCase() === slot.manager.toLowerCase();
-  const remaining =
-    slot.deposit > slot.taxOwed ? slot.deposit - slot.taxOwed : 0n;
+  const remaining = accrual.remaining > 0n ? accrual.remaining : 0n;
   // collect() settles before flushing, so the amount it actually pays out is
   // the already-settled bucket plus whatever _settle() can still take from the
   // deposit. Gating on collectedTax alone hides the button on any slot that
   // hasn't been touched since occupancy; gating on taxOwed alone hides tax
   // stranded on a vacated slot.
-  const collectable =
-    slot.collectedTax +
-    (slot.taxOwed < slot.deposit ? slot.taxOwed : slot.deposit);
+  //
+  // Off the interpolated accrual, which is already capped at the deposit, so
+  // this figure climbs in step with the tax row above it rather than sitting on
+  // whatever the last read happened to catch.
+  const collectable = slot.collectedTax + accrual.taxOwed;
 
   const hasModule =
     slot.utility != null && slot.utility.toLowerCase() !== zeroAddress;
@@ -500,7 +485,8 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                             </span>
                           }
                         />
-                        {subgraphSlot?.recipientAccountRef?.type === "SPLIT" && (
+                        {subgraphSlot?.recipientAccountRef?.type ===
+                          "SPLIT" && (
                           <SplitRecipientsBar
                             chainId={selectedChainId}
                             splitAddress={slot.recipient}
@@ -848,7 +834,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                   <div className="bg-muted/50 border-b px-3 py-3 flex items-center justify-between">
                     <h2 className="text-sm font-semibold">
                       {isOccupied
-                        ? `Price: ${formatBalance(slot.price, decimals)} ${symbol}`
+                        ? `Valuation: ${formatBalance(slot.price, decimals)} ${symbol}`
                         : "Vacant Slot"}
                     </h2>
                     {role && (
@@ -933,7 +919,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
         <div className="bg-muted/50 border-b px-3 py-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">
             {isOccupied
-              ? `Price: ${formatBalance(slot.price, decimals)} ${symbol}`
+              ? `Valuation: ${formatBalance(slot.price, decimals)} ${symbol}`
               : "Vacant Slot"}
           </h2>
           {role && (
@@ -963,12 +949,20 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                 {formatBalance(slot.deposit, decimals)} {symbol}
               </span>
             </div>
+            {/* These three count rather than sit. The figures come from the
+                interpolation, and the tax row tints for a beat each time it
+                moves — which is what makes it read as accruing rather than as a
+                number that happens to differ from the last time you looked. */}
             <div className="flex justify-between">
               <span className="text-muted-foreground flex items-center gap-1.5">
                 <HandCoins className="size-3" /> Tax Owed
               </span>
-              <span>
-                {formatBalance(slot.taxOwed, decimals)} {symbol}
+              <span
+                className={`tabular-nums transition-colors duration-500 ${
+                  accrual.rising ? "text-emerald-600 dark:text-emerald-500" : ""
+                }`}
+              >
+                {formatBalance(accrual.taxOwed, decimals)} {symbol}
               </span>
             </div>
             <div className="flex justify-between">
@@ -976,7 +970,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                 <Wallet className="size-3" /> Net Balance
               </span>
               <span
-                className={`font-bold ${slot.insolvent ? "text-destructive" : ""}`}
+                className={`tabular-nums font-bold ${accrual.insolvent ? "text-destructive" : ""}`}
               >
                 {formatBalance(remaining, decimals)} {symbol}
               </span>
@@ -986,14 +980,14 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                 <Clock className="size-3" /> Liquidation In
               </span>
               <span
-                className={slot.insolvent ? "text-destructive font-bold" : ""}
+                className={`tabular-nums ${accrual.insolvent ? "text-destructive font-bold" : ""}`}
               >
-                {slot.insolvent
+                {accrual.insolvent
                   ? "NOW"
-                  : formatDuration(Number(slot.secondsUntilLiquidation))}
+                  : formatDuration(Number(accrual.secondsUntilLiquidation))}
               </span>
             </div>
-            {slot.insolvent && (
+            {accrual.insolvent && (
               <div className="rounded border border-destructive bg-destructive/10 text-destructive text-center py-1 text-xs font-bold">
                 INSOLVENT
               </div>
@@ -1053,113 +1047,103 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
 
               {isOccupant && (
                 <div className="space-y-3">
-                  <div className="space-y-2">
-                    <PriceInput
-                      label="New price"
-                      value={ownerPrice}
-                      onChange={(n) => {
-                        ownerTouched.current = true;
-                        setOwnerPrice(n);
-                      }}
-                      taxBps={slot.taxPercentage}
-                      symbol={symbol}
-                      disabled={busy}
-                      hint={`Currently ${formatBalance(slot.price, decimals)} ${symbol} — raising it raises your own bill`}
-                    />
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      disabled={
-                        busy ||
-                        ownerPriceRaw === slot.price ||
-                        ownerPriceRaw === 0n
-                      }
-                      onClick={() =>
-                        selfAssess(slotAddress as Address, ownerPriceRaw)
-                      }
-                    >
-                      {busy && activeAction === "Set price" ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        "Set price"
-                      )}
-                    </Button>
-                  </div>
-
-                  <div className="border-t pt-3">
-                    <DepositSlider
-                      slot={slot}
-                      slotAddress={slotAddress}
-                      walletBalance={walletBalance}
-                    />
-                  </div>
-
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="destructive"
-                        className="w-full"
-                        disabled={busy}
-                      >
-                        {busy && activeAction === "Release slot" ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <>
-                            <ArrowUpFromLine className="size-4 mr-1" /> Release
-                            Slot
-                          </>
-                        )}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Release this slot?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will give up your occupancy and return your
-                          remaining deposit. You lose your position and the slot
-                          becomes claimable by anyone straight away.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => release(slotAddress as Address)}
-                        >
-                          Release
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                  {/* Reprice and the top-up it requires as one submit — see the
+                      component. This was a bare price field over a button that
+                      reverted with `InsufficientDeposit` whenever the new
+                      valuation outgrew the standing deposit, which is most of
+                      the times anyone raises one. */}
+                  <ManageTerms
+                    slot={slot}
+                    slotAddress={slotAddress}
+                    accrual={accrual}
+                    walletBalance={walletBalance}
+                    onDone={refetchSlot}
+                  />
                 </div>
               )}
 
-              {/* collect() is permissionless — anyone can flush settled tax to
-                  the recipient. The label only reflects whether the caller is
-                  the one getting paid. */}
-              {collectable > 0n && (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  disabled={busy}
-                  onClick={() => collect(slotAddress as Address)}
-                >
-                  {busy && activeAction === "Collect tax" ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <>
-                      <HandCoins className="size-4 mr-1" />{" "}
-                      {isRecipient ? "Collect Tax" : "Distribute Tax"} (
-                      {formatBalance(collectable, decimals)} {symbol})
-                    </>
+              {/* Reachable, but not competing with the form.
+                  Both of these were full-width buttons stacked under the terms,
+                  which gave giving up the slot the same weight as repricing it.
+                  Folded behind the same bar the price steps use, they read as
+                  what they are: things you occasionally need, not things the
+                  panel is for. */}
+              {(isOccupant || collectable > 0n) && (
+                <Reveal label="More actions">
+                  {/* collect() is permissionless — anyone can flush settled tax
+                      to the recipient. The label only reflects whether the
+                      caller is the one getting paid. */}
+                  {collectable > 0n && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={() => collect(slotAddress as Address)}
+                    >
+                      {busy && activeAction === "Collect tax" ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <>
+                          <HandCoins className="size-4 mr-1" />{" "}
+                          {isRecipient ? "Collect Tax" : "Distribute Tax"} (
+                          {formatBalance(collectable, decimals)} {symbol})
+                        </>
+                      )}
+                    </Button>
                   )}
-                </Button>
+
+                  {/* Last, and behind a confirmation. It is the one action here
+                      that cannot be undone by doing it again. */}
+                  {isOccupant && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="destructive"
+                          className="w-full"
+                          disabled={busy}
+                        >
+                          {busy && activeAction === "Release slot" ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <>
+                              <ArrowUpFromLine className="size-4 mr-1" />{" "}
+                              Release Slot
+                            </>
+                          )}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Release this slot?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will give up your occupancy and return your
+                            remaining deposit. You lose your position and the
+                            slot becomes claimable by anyone straight away.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => release(slotAddress as Address)}
+                          >
+                            Release
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </Reveal>
               )}
 
               {isOccupied && !isOccupant && (
                 <Button
                   variant="destructive"
                   className="w-full"
-                  disabled={busy || !slot.insolvent}
+                  // The interpolated one, so the button unlocks the moment the
+                  // deposit runs out rather than on the next manual refresh.
+                  disabled={busy || !accrual.insolvent}
                   onClick={() => liquidate(slotAddress as Address)}
                 >
                   {busy && activeAction === "Liquidate" ? (
