@@ -18,10 +18,12 @@ import { APP_URL } from "@/constants";
  */
 export function GET() {
   return NextResponse.json({
-    "accountAssociation;": {
-      "header": "eyJmaWQiOjE3MzMsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHg4ZjE0NDM1NDM4NzAyRjExMTA4OEMxZGMzNkY5NTQ4ODQyNjI5RmU0In0",
-      "payload": "eyJkb21haW4iOiIweHNsb3RzLm9yZyJ9",
-      "signature": "k5KFiNk8BnS3O/pBv/7doo39HyoPQhaizpMTF9K8JKIz/MF+3adTRAweDeRjju1bx5V2hGyS22qyLuKGtC2Pnxw="
+    accountAssociation: {
+      header:
+        "eyJmaWQiOjE3MzMsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHg4ZjE0NDM1NDM4NzAyRjExMTA4OEMxZGMzNkY5NTQ4ODQyNjI5RmU0In0",
+      payload: "eyJkb21haW4iOiIweHNsb3RzLm9yZyJ9",
+      signature:
+        "k5KFiNk8BnS3O/pBv/7doo39HyoPQhaizpMTF9K8JKIz/MF+3adTRAweDeRjju1bx5V2hGyS22qyLuKGtC2Pnxw=",
     },
     miniapp: {
       version: "1",
