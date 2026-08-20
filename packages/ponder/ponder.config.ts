@@ -155,8 +155,8 @@ const slotChildAddress = (
 //   1. PONDER_RPC_URL_BASE / PONDER_RPC_URL_BASE_SEPOLIA — a complete URL.
 //      Preferred for a deployment: paste what the provider gave you and no
 //      secret has to be reassembled here.
-//   2. ALCHEMY_API_KEY (or ALCHEMY_KEY, which is what turbo.json and the rest
-//      of the repo use) — the URL is built around it.
+//   2. COINBASE_API_KEY, else ALCHEMY_API_KEY (or ALCHEMY_KEY, which is what
+//      turbo.json and the rest of the repo use) — the URL is built around it.
 //
 // Missing credentials used to resolve to `.../v2/` and fail on every request
 // with "Must be authenticated!", eight retries per chain, forever. That reads
@@ -189,6 +189,28 @@ const slotChildAddress = (
 
 const ALCHEMY_KEY =
   process.env.ALCHEMY_API_KEY ?? process.env.ALCHEMY_KEY ?? "";
+
+/**
+ * Coinbase Developer Platform, and the one that wins when both are set.
+ *
+ * The key rides in the URL path — it is CDP's *client* key, the one their docs
+ * describe as safe in frontend code — so it needs no header support and slots
+ * into the same URL list as everything else. Documented ceiling is 7,500 BU per
+ * 5 seconds per project, and CDP documents no eth_getLogs limits at all, which
+ * is not the same as having none: the address-list ceiling that publicnode
+ * enforces below was undocumented too. Verify before trusting it as the only
+ * provider on a chain (see the probe recipe in PUBLIC_RPCS).
+ */
+const COINBASE_KEY = process.env.COINBASE_API_KEY ?? "";
+
+/** Per-chain path segment for each paid provider. */
+const PAID_ENDPOINTS: Record<
+  "base" | "base_sepolia",
+  { alchemy: string; coinbase: string }
+> = {
+  base: { alchemy: "base-mainnet", coinbase: "base" },
+  base_sepolia: { alchemy: "base-sepolia", coinbase: "base-sepolia" },
+};
 
 // ALCHEMY_RPS is gone with the `rateLimit()` wrapper it configured. Capping
 // Alchemy never reduced the bill anyway — the credits a backfill costs are set
@@ -251,6 +273,21 @@ const ALCHEMY_KEY =
  * Coinbase's https://sepolia.base.org is excluded for a different reason: its
  * eth_getLogs is broken for some contracts, which is a wrong answer rather
  * than an error.
+ *
+ * ── Vetting a candidate ──────────────────────────────────────────────────────
+ *
+ * Reachability proves nothing here; every endpoint above answers
+ * eth_blockNumber. Ask it for the shape this indexer actually sends — a long
+ * address list — and compare a 25-block window against a 10,000-block one:
+ *
+ *   ADDRS=$(printf '"0x%040d",%.0s' 1 $(seq 1 49))"0x$(printf '%040d' 50)"
+ *   curl -s "$URL" -H 'content-type: application/json' --data @- <<JSON | head -c 300
+ *   {"jsonrpc":"2.0","id":1,"method":"eth_getLogs","params":[{"address":[$ADDRS],
+ *    "fromBlock":"0x2b9c5f8","toBlock":"0x2b9c610"}]}
+ *   JSON
+ *
+ * A JSON-RPC error, an HTTP 403 or a timeout all disqualify it. Anything that
+ * only fails on the wide window is a rate-limit story, not a capability one.
  */
 const PUBLIC_RPCS: Record<string, string[]> = {
   base: [
@@ -295,11 +332,12 @@ const announce = (label: string, urls: string[]) => {
  *      wants.
  *   2. Otherwise Alchemy, plus the public tier when PONDER_PUBLIC_RPCS=1.
  *
- * The paid endpoint goes FIRST. Order is not priority — ponder scores buckets
- * by observed latency — but it decides who serves the opening requests before
- * there is any evidence to score, and starting on the provider that answers
- * everything is the difference between a sync that begins and one that spends
- * its first minute discovering which members are refusing it.
+ * The paid endpoint — Coinbase if its key is set, else Alchemy — goes FIRST.
+ * Order is not priority: ponder scores buckets by observed latency, so this
+ * only decides who serves the opening requests before there is any evidence to
+ * score. Starting on the provider that answers everything is the difference
+ * between a sync that begins and one that spends its first minute discovering
+ * which members are refusing it.
  *
  * ── Spending Alchemy only on the backfill ────────────────────────────────────
  *
@@ -318,7 +356,6 @@ const announce = (label: string, urls: string[]) => {
 function rpcPool(
   label: "base" | "base_sepolia",
   explicit: string | undefined,
-  alchemySubdomain: string,
 ): string[] {
   const explicitUrls = (explicit ?? "")
     .split(",")
@@ -329,9 +366,20 @@ function rpcPool(
     return explicitUrls;
   }
 
+  // Coinbase REPLACES Alchemy rather than outranking it, because ordering here
+  // buys less than it looks like it does: ponder picks buckets by observed
+  // latency, so a pool of [coinbase, alchemy] converges on whichever answers
+  // faster, not on the one named first. Exclusivity is the only way to say
+  // "use Coinbase" and have it hold. To run both as peers instead, make this
+  // an `if` and drop the `else`.
   const pool: string[] = [];
-  if (ALCHEMY_KEY) {
-    pool.push(`https://${alchemySubdomain}.g.alchemy.com/v2/${ALCHEMY_KEY}`);
+  const paid = PAID_ENDPOINTS[label];
+  if (COINBASE_KEY) {
+    pool.push(
+      `https://api.developer.coinbase.com/rpc/v1/${paid.coinbase}/${COINBASE_KEY}`,
+    );
+  } else if (ALCHEMY_KEY) {
+    pool.push(`https://${paid.alchemy}.g.alchemy.com/v2/${ALCHEMY_KEY}`);
   }
   if (USE_PUBLIC_RPCS) {
     pool.push(...(PUBLIC_RPCS[label] ?? []));
@@ -340,9 +388,9 @@ function rpcPool(
   if (pool.length === 0) {
     throw new Error(
       `No RPC endpoint for ${label}. Set PONDER_RPC_URL_${label.toUpperCase()} ` +
-        `to a URL (or a comma-separated list), or ALCHEMY_API_KEY ` +
-        `(ALCHEMY_KEY is also accepted). PONDER_PUBLIC_RPCS=1 adds this ` +
-        `chain's public tier, where it has one.`,
+        `to a URL (or a comma-separated list), or COINBASE_API_KEY, or ` +
+        `ALCHEMY_API_KEY (ALCHEMY_KEY is also accepted). ` +
+        `PONDER_PUBLIC_RPCS=1 adds this chain's public tier, where it has one.`,
     );
   }
   announce(label, pool);
@@ -353,15 +401,11 @@ const remoteConfig = createConfig({
   chains: {
     baseSepolia: {
       id: 84532,
-      rpc: rpcPool(
-        "base_sepolia",
-        process.env.PONDER_RPC_URL_BASE_SEPOLIA,
-        "base-sepolia",
-      ),
+      rpc: rpcPool("base_sepolia", process.env.PONDER_RPC_URL_BASE_SEPOLIA),
     },
     base: {
       id: 8453,
-      rpc: rpcPool("base", process.env.PONDER_RPC_URL_BASE, "base-mainnet"),
+      rpc: rpcPool("base", process.env.PONDER_RPC_URL_BASE),
     },
   },
   contracts: {
