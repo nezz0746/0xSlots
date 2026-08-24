@@ -9,6 +9,7 @@ import {
   SlotAbi,
   SlotCollectiveAbi,
   SlotCollectiveFactoryAbi,
+  SlotDataAbi,
   SlotFactoryAbi,
   slotFactoryLegacyAbi,
 } from "./abis";
@@ -506,6 +507,23 @@ const remoteConfig = createConfig({
       abi: FeedPostModuleAbi,
       chain: slotChildAddress(MODULE_VERIFIED_EVENT, "module"),
     },
+    // ── SlotData ─────────────────────────────────────────────────────────
+    //
+    // No address constant, on any chain, ever — the same `ModuleVerified`
+    // filter that finds the metadata modules finds this one. That is not a
+    // convenience: SlotData is not deployed on base or base-sepolia yet, and
+    // an entry here that named an address would have to be edited and the
+    // indexer redeployed on the day it is. Derived from the factory event, a
+    // verified deployment starts producing rows on its own.
+    //
+    // It shares its address set with `FeedPostModule` above — same filter, same
+    // children — which is fine and is the same arrangement `SlotFactory` and
+    // `SlotFactoryLegacy` already have. The two ABIs share no topic0, so each
+    // source decodes only its own logs.
+    SlotData: {
+      abi: SlotDataAbi,
+      chain: slotChildAddress(MODULE_VERIFIED_EVENT, "module"),
+    },
     FeedHub: {
       abi: FeedHubAbi,
       chain: {
@@ -573,6 +591,13 @@ function buildLocalConfig() {
       },
       FeedPostModule: {
         abi: FeedPostModuleAbi,
+        chain: child(MODULE_VERIFIED_EVENT, "module"),
+      },
+      // DeployLocal step 8 verifies SlotData on the factory, so this derives a
+      // real address locally — unlike the remote chains, where the filter is
+      // correct and simply matches nothing until one is deployed.
+      SlotData: {
+        abi: SlotDataAbi,
         chain: child(MODULE_VERIFIED_EVENT, "module"),
       },
       // Unlike the remote chains, the collective factory IS deployed locally —

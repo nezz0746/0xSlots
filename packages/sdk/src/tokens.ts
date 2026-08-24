@@ -64,7 +64,7 @@ export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
       // THERE moves this address too. SeedLocal asserts the value so drift
       // fails the seed loudly instead of leaving the app pointed at nothing —
       // when it fires, update both this and EXPECTED_LOCAL_TOKEN.
-      address: "0x9A676e781A523b5d0C0e43731313A708CB607508",
+      address: "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
       name: "0xSlots Test USD",
       symbol: "USDX",
       decimals: 18,

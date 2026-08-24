@@ -21,6 +21,7 @@ export { minimumTenurePolicyFactoryAbi } from "./abis/minimumTenurePolicyFactory
 export { policyFactoryAbi } from "./abis/policyFactory";
 export { slotCollectiveAbi } from "./abis/slotCollective";
 export { slotCollectiveFactoryAbi } from "./abis/slotCollectiveFactory";
+export { slotDataAbi } from "./abis/slotData";
 // Re-export addresses and utilities
 export {
   batchCollectorAddress,
@@ -37,6 +38,7 @@ export {
   POLICY_FACTORIES,
   type SupportedChainId,
   slotCollectiveFactoryAddress,
+  slotDataAddress,
   slotFactoryAddress,
 } from "./addresses";
 // Re-export feed events

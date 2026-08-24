@@ -7,135 +7,135 @@
  */
 export const FeedHubAbi = [
   {
-    "type": "event",
-    "name": "FeedCreated",
-    "inputs": [
+    type: "event",
+    name: "FeedCreated",
+    inputs: [
       {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
+        name: "index",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
       },
       {
-        "name": "feed",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        name: "feed",
+        type: "address",
+        indexed: true,
+        internalType: "address",
       },
       {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
+        name: "owner",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
     ],
-    "anonymous": false
-  }
+    anonymous: false,
+  },
 ] as const;
 
 export const FeedAbi = [
   {
-    "type": "function",
-    "name": "feedRecipient",
-    "inputs": [],
-    "outputs": [
+    type: "function",
+    name: "feedRecipient",
+    inputs: [],
+    outputs: [
       {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
+        name: "",
+        type: "address",
+        internalType: "address",
+      },
     ],
-    "stateMutability": "view"
+    stateMutability: "view",
   },
   {
-    "type": "function",
-    "name": "metadataURI",
-    "inputs": [],
-    "outputs": [
+    type: "function",
+    name: "metadataURI",
+    inputs: [],
+    outputs: [
       {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
+        name: "",
+        type: "string",
+        internalType: "string",
+      },
     ],
-    "stateMutability": "view"
+    stateMutability: "view",
   },
   {
-    "type": "function",
-    "name": "name",
-    "inputs": [],
-    "outputs": [
+    type: "function",
+    name: "name",
+    inputs: [],
+    outputs: [
       {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
+        name: "",
+        type: "string",
+        internalType: "string",
+      },
     ],
-    "stateMutability": "view"
+    stateMutability: "view",
   },
   {
-    "type": "event",
-    "name": "MetadataURIUpdated",
-    "inputs": [
+    type: "event",
+    name: "MetadataURIUpdated",
+    inputs: [
       {
-        "name": "uri",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
+        name: "uri",
+        type: "string",
+        indexed: false,
+        internalType: "string",
+      },
     ],
-    "anonymous": false
+    anonymous: false,
   },
   {
-    "type": "event",
-    "name": "NameUpdated",
-    "inputs": [
+    type: "event",
+    name: "NameUpdated",
+    inputs: [
       {
-        "name": "name",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
+        name: "name",
+        type: "string",
+        indexed: false,
+        internalType: "string",
+      },
     ],
-    "anonymous": false
+    anonymous: false,
   },
   {
-    "type": "event",
-    "name": "RecipientUpdated",
-    "inputs": [
+    type: "event",
+    name: "RecipientUpdated",
+    inputs: [
       {
-        "name": "recipient",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
+        name: "recipient",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
     ],
-    "anonymous": false
+    anonymous: false,
   },
   {
-    "type": "event",
-    "name": "SlotAdded",
-    "inputs": [
+    type: "event",
+    name: "SlotAdded",
+    inputs: [
       {
-        "name": "slot",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
+        name: "slot",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
     ],
-    "anonymous": false
+    anonymous: false,
   },
   {
-    "type": "event",
-    "name": "SlotRemoved",
-    "inputs": [
+    type: "event",
+    name: "SlotRemoved",
+    inputs: [
       {
-        "name": "slot",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
+        name: "slot",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
     ],
-    "anonymous": false
-  }
+    anonymous: false,
+  },
 ] as const;

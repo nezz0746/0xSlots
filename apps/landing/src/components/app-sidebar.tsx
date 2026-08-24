@@ -1,7 +1,17 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { Check, ChevronDown, PlusIcon, Scale, User, Users } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Database,
+  LandPlot,
+  PlusIcon,
+  Puzzle,
+  Scale,
+  User,
+  Users,
+} from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
@@ -34,10 +44,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
-import {
-  EXPLORER_SECTIONS,
-  useExplorerSection,
-} from "@/context/explorer-section";
 import { NavLink, useNavigation } from "@/context/navigation";
 import { EXTERNAL_LINKS } from "@/lib/external-links";
 
@@ -45,17 +51,8 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { push, isPending } = useNavigation();
   const { chainId, setChain } = useChain();
-  const { section, setSection } = useExplorerSection();
-
   // The explorer index moved to /app when the marketing site took the root.
   const onExplorer = pathname === "/app";
-
-  const selectSection = (id: string) => {
-    setSection(id);
-    // Sections live on the explorer, so jump back there when selected from
-    // elsewhere in the app.
-    if (!onExplorer) push("/app");
-  };
 
   return (
     <Sidebar
@@ -77,37 +74,45 @@ export function AppSidebar() {
           0xSlots
         </NavLink>
 
-        <Button size="sm" className="w-full" onClick={() => push("/app/create")}>
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={() => push("/app/create")}
+        >
           <PlusIcon className="size-4" />
           Create Slot
         </Button>
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Sections read as destinations here, and the selection stays visible
-            while you scroll a long table — which a strip pinned above the rows
-            does not do. Below md there is no sidebar, so the page renders the
-            same sections as a tab strip driving this same state. */}
+        {/* What the protocol IS, not what is currently in it.
+            Slots, recipients and events left for tabs on the explorer: those
+            three are one dataset sliced three ways, so moving between them is a
+            change of view and a tab says so. What is left here are
+            destinations — the two contracts a slot plugs in, and the explorer
+            itself, which needs a way back now that no section links to it. */}
         <SidebarGroup>
-          <SidebarGroupLabel>Explore</SidebarGroupLabel>
+          <SidebarGroupLabel>Protocol</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {EXPLORER_SECTIONS.map(({ id, label, icon: Icon }) => (
-                <SidebarMenuItem key={id}>
-                  <SidebarMenuButton
-                    isActive={onExplorer && section === id}
-                    onClick={() => selectSection(id)}
-                  >
-                    <Icon className="size-4" />
-                    <span>{label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-
-              {/* Sits with the sections because it answers the same kind of
-                  question — what a slot's terms can be, alongside what a slot
-                  can do. It is a ROUTE, not a section: it pushes rather than
-                  setting explorer state, so `isActive` reads the path. */}
+            <SidebarMenu className="grid grid-cols-2 gap-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={onExplorer}
+                  onClick={() => push("/app")}
+                >
+                  <LandPlot className="size-4" />
+                  <span>Explorer</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/app/utilities")}
+                  onClick={() => push("/app/utilities")}
+                >
+                  <Puzzle className="size-4" />
+                  <span>Utilities</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname.startsWith("/app/policies")}
@@ -123,16 +128,50 @@ export function AppSidebar() {
 
         <SidebarSeparator />
 
+        {/* The third group, and the one that is neither structure nor
+            ownership. Utilities and policies above are what a slot CAN be
+            given; this is what slots are actually carrying — the registry of
+            shapes, and the payloads written against them. It sits on its own
+            because a reader looking for "what is in these slots" was otherwise
+            being sent to a list of contracts. */}
         <SidebarGroup>
+          <SidebarGroupLabel>Data</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="grid grid-cols-2 gap-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/app/data")}
+                  onClick={() => push("/app/data")}
+                >
+                  <Database className="size-4" />
+                  <span>Slot data</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          {/* Labelled now. Unlabelled it read as a continuation of the group
+              above once both became grids — a separator alone is enough to
+              divide a stack of rows, not two blocks of the same shape. The
+              heading also lets the items drop their "My " prefix, which is
+              what "Yours" is already saying and what pushed "My Collectives"
+              past the width of a half-column. */}
+          <SidebarGroupLabel>Yours</SidebarGroupLabel>
+          <SidebarGroupContent>
+            {/* Same grid, so the two groups line up on one column rule rather
+                than reading as two different kinds of list. */}
+            <SidebarMenu className="grid grid-cols-2 gap-1">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === "/app/profile"}
                   onClick={() => push("/app/profile")}
                 >
                   <User className="size-4" />
-                  <span>My Slots</span>
+                  <span>Slots</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -141,7 +180,7 @@ export function AppSidebar() {
                   onClick={() => push("/app/collectives")}
                 >
                   <Users className="size-4" />
-                  <span>My Collectives</span>
+                  <span>Collectives</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

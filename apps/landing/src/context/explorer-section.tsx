@@ -1,6 +1,6 @@
 "use client";
 
-import { LandPlot, List, type LucideIcon, Puzzle, User } from "lucide-react";
+import { LandPlot, List, type LucideIcon, User } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -22,14 +22,15 @@ export interface ExplorerSection {
 export const EXPLORER_SECTIONS: ExplorerSection[] = [
   { id: "slots", label: "Slots", icon: LandPlot },
   { id: "recipients", label: "Recipients", icon: User },
-  // Label says Utilities, id stays `modules`. The id is URL-facing
-  // (`?section=modules`) and keys `SECTION_CONTENT` on the explorer, so
-  // renaming it would break every shared link for a word change. The contracts
-  // did NOT make the same trade for the metadata getter: `moduleURI()` and
-  // `policyURI()` became one `IModuleMetadata.metadataURI()`, accepting a wire
-  // break because every deployed value was empty and the utilities are
-  // upgradeable proxies. A URL is not, which is why this id stays.
-  { id: "modules", label: "Utilities", icon: Puzzle },
+  // Utilities is NOT here any more — it moved to `/app/utilities`. These three
+  // are VIEWS OF THE SAME DATA, which is what makes them tabs: one page, one
+  // set of slots, three ways to slice it. A utility is a different kind of
+  // thing — an entity the protocol has, not a projection of the explorer's
+  // rows — so it reads as a destination and lives in the sidebar with policies.
+  //
+  // A bookmarked `?section=modules` now fails `isValidSection` and falls back
+  // to the default rather than 404ing, which is the right failure but does
+  // silently drop the intent. Worth a redirect if those links are out there.
   { id: "events", label: "Events", icon: List },
 ];
 

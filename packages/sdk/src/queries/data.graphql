@@ -1,0 +1,158 @@
+# SlotData — services, and the payloads written against them.
+#
+# `schema` comes back on every record-bearing query, always alongside the raw
+# `data`. That pairing is the point: the bytes are meaningless without the
+# signature, the signature is a string a stranger typed, and a client that has
+# to make a second round trip to decode what it just fetched will end up
+# hardcoding the schemas it knows instead. Ship them together and third-party
+# decoding stays as cheap as ours.
+
+fragment DataServiceFields on dataService {
+  id
+  chainId
+  module
+  serviceId
+  schema
+  name
+  registrar
+  metadataURI
+  writeCount
+  createdAt
+  createdTx
+}
+
+query GetDataServices(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: dataServiceFilter
+) {
+  dataServices(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...DataServiceFields
+    }
+  }
+}
+
+# `tenancyRef.generation` is what makes a record readable as live or stale, and
+# it is why this asks for a nested object rather than a flag. Staleness is a
+# COMPARISON — the record's generation against the slot's current one — and the
+# indexer deliberately does not collapse it into a boolean, because a `Cleared`
+# would then have to rewrite every record of the ended tenancy. On chain that is
+# one increment; a denormalised flag would make it a loop here for no gain.
+fragment SlotDataRecordFields on slotDataRecord {
+  id
+  chainId
+  module
+  slot
+  generation
+  serviceId
+  data
+  writer
+  writeCount
+  createdAt
+  createdTx
+  updatedAt
+  updatedTx
+  serviceRef {
+    id
+    name
+    schema
+  }
+  tenancyRef {
+    id
+    generation
+  }
+}
+
+query GetSlotDataRecords(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: slotDataRecordFilter
+) {
+  slotDataRecords(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      ...SlotDataRecordFields
+    }
+  }
+}
+
+query GetSlotDataWrites(
+  $limit: Int
+  $offset: Int
+  $orderBy: String
+  $orderDirection: String
+  $where: slotDataWroteEventFilter
+) {
+  slotDataWroteEvents(
+    limit: $limit
+    offset: $offset
+    orderBy: $orderBy
+    orderDirection: $orderDirection
+    where: $where
+  ) {
+    totalCount
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    items {
+      id
+      chainId
+      module
+      slot
+      serviceId
+      writer
+      generation
+      data
+      timestamp
+      blockNumber
+      tx
+      serviceRef {
+        id
+        name
+        schema
+      }
+    }
+  }
+}
+
+query GetSlotDataTenancies($limit: Int, $where: slotDataTenancyFilter) {
+  slotDataTenancys(limit: $limit, where: $where) {
+    totalCount
+    items {
+      id
+      chainId
+      module
+      slot
+      generation
+      clearedAt
+      clearedTx
+    }
+  }
+}

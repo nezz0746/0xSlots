@@ -5,4 +5,5 @@ export { feedRouterAbi } from "./feed-router";
 export { feedSocialGroupAbi } from "./feed-social-group";
 export { minimumTenurePolicyFactoryAbi } from "./minimumTenurePolicyFactory";
 export { slotAbi } from "./slot";
+export { slotDataAbi } from "./slotData";
 export { slotFactoryAbi } from "./slotFactory";

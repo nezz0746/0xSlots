@@ -44,6 +44,23 @@ export const slotCollectiveFactoryAddress = {
   [anvil.id]: "0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d",
 } as const;
 
+/**
+ * SlotData — one utility, any number of services.
+ *
+ * Anvil only. It is not deployed on base or base-sepolia yet, and the absence
+ * is what the app reads to decide whether to offer the screen at all: an entry
+ * appears here on the day one ships, and nothing else has to change.
+ *
+ * The indexer needs no equivalent of this table. It derives SlotData's address
+ * from the factory's `ModuleVerified` event, so it starts indexing a new
+ * deployment without a redeploy of its own — see the note in
+ * `packages/ponder/ponder.config.ts`.
+ */
+export const slotDataAddress = {
+  // Pinned by `apps/contracts/script/DeployLocal.s.sol` step 8.
+  [anvil.id]: "0x7472e63170d9a5EC9484531d6b8133a4b46D4d31",
+} as const;
+
 export const batchCollectorAddress = {
   [baseSepolia.id]: "0xd3c7090C2F89c5132C3f91DD1da4bCffEAe10e13",
 } as const;

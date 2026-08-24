@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {MetadataModule} from "../src/modules/MetadataModule.sol";
+import {SlotData} from "../src/modules/SlotData.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 
 /// Local-only test currency. Freely mintable; never deploy to a real network.
@@ -54,10 +55,11 @@ contract SeedLocal is BaseScript {
      * BOTH constants together.
      */
     address internal constant EXPECTED_LOCAL_TOKEN =
-        0x9A676e781A523b5d0C0e43731313A708CB607508;
+        0x68B1D87F95878fE05B998F19b66F4baba5De1aed;
 
     SlotFactory internal factory;
     MetadataModule internal metadata;
+    SlotData internal slotData;
     LocalToken internal token;
 
     struct Actor {
@@ -126,6 +128,7 @@ contract SeedLocal is BaseScript {
 
         factory = SlotFactory(_readDeployment("SlotFactory"));
         metadata = MetadataModule(_readDeployment("MetadataModule"));
+        slotData = SlotData(_readDeployment("SlotData"));
         console2.log("factory:", address(factory));
 
         // ── Test currency, funded to every actor ─────────────────────────────
@@ -176,6 +179,12 @@ contract SeedLocal is BaseScript {
             _cfg(false, address(0)),
             _init(300, address(0), 1 days)
         );
+        address dataSlot = factory.createSlot(
+            deployer,
+            usdx,
+            _cfg(false, address(0)),
+            _init(600, address(slotData), 2 days)
+        );
         address thin = factory.createSlot(
             deployer,
             usdx,
@@ -189,6 +198,7 @@ contract SeedLocal is BaseScript {
         console2.log("slot eth:     ", ethSlot);
         console2.log("slot withMeta:", withMeta);
         console2.log("slot vacant:  ", vacant, "(left unoccupied)");
+        console2.log("slot data:    ", dataSlot, "(SlotData utility)");
         console2.log("slot thin:    ", thin, "(min deposit - liquidatable soon)");
 
         // ── Occupancy ────────────────────────────────────────────────────────
@@ -197,6 +207,7 @@ contract SeedLocal is BaseScript {
         _buyErc20(actors[4], withMeta, 75 ether, 400, 2 days, 3);
         // Exactly the minimum: one warp past `minDepositSeconds` drains it.
         _buyErc20(actors[1], thin, 500 ether, 2000, 1 hours, 1);
+        _buyErc20(actors[3], dataSlot, 120 ether, 600, 2 days, 3);
 
         // Native: the value must equal deposit exactly on a vacant slot.
         {
@@ -223,9 +234,73 @@ contract SeedLocal is BaseScript {
         );
         vm.stopBroadcast();
 
+        _seedSlotData(dataSlot);
+
         _saveDeployment(address(token), "LocalToken");
 
         console2.log("=== seed complete ===");
+    }
+
+    /**
+     * Services, and one slot carrying two of them at once.
+     *
+     * The point being seeded is the one that separates SlotData from the module
+     * family it replaces: `dataSlot` names ONE utility and still carries both an
+     * ad creative and a feed post, written in a single transaction. Under
+     * `MetadataModule` and `FeedPostModule` that slot would have had to choose,
+     * because a slot holds one `utility` pointer.
+     *
+     * The schemas here are deliberately the two real ones — `MetadataModule`'s
+     * URI and `FeedPostModule`'s text-plus-medias — so the explorer is decoding
+     * shapes that already exist on mainnet rather than invented ones. The third
+     * is registered and left unwritten: a service with no data is the normal
+     * state of the registry and the table should be built to show it.
+     */
+    function _seedSlotData(address dataSlot) internal {
+        vm.startBroadcast(actors[0].pk);
+        uint256 creative = slotData.registerService(
+            "string uri",
+            "creative.v1",
+            ""
+        );
+        uint256 post = slotData.registerService(
+            "string text,string[] medias",
+            "feed.post.v1",
+            ""
+        );
+        slotData.registerService(
+            "string label,address token,uint256 amount",
+            "offer.v1",
+            ""
+        );
+        vm.stopBroadcast();
+
+        console2.log("service creative.v1:  ", creative);
+        console2.log("service feed.post.v1: ", post);
+
+        // One transaction, two services. `actors[3]` occupies `dataSlot` above,
+        // and occupancy is what authorises this — nothing was granted to them.
+        string[] memory medias = new string[](1);
+        medias[0] = "ipfs://bafkreibsvdxwq5vaqfnrlhxsx7dgnnmavgnhtavqf3ykkbjuu4ykccwq7e";
+
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = creative;
+        ids[1] = post;
+
+        bytes[] memory payloads = new bytes[](2);
+        payloads[0] = abi.encode(
+            "ipfs://bafkreibsvdxwq5vaqfnrlhxsx7dgnnmavgnhtavqf3ykkbjuu4ykccwq7e"
+        );
+        payloads[1] = abi.encode(
+            "Two services, one slot, one transaction.",
+            medias
+        );
+
+        vm.startBroadcast(actors[3].pk);
+        slotData.writeMany(dataSlot, ids, payloads);
+        vm.stopBroadcast();
+
+        console2.log("wrote 2 services to", dataSlot);
     }
 
     /// Vacant slot: the buyer owes the deposit only, so approve exactly that.

@@ -18,6 +18,10 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
+    },
+    "./zod": {
+      "types": "./dist/zod.d.ts",
+      "import": "./dist/zod.js"
     }
   },
   "publishConfig": {
@@ -48,13 +52,15 @@
     "@types/react": "^19",
     "tsup": "^8.0.0",
     "typescript": "^5.4.4",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@tanstack/react-query": ">=5",
     "react": ">=18",
     "viem": ">=2",
-    "wagmi": ">=2"
+    "wagmi": ">=2",
+    "zod": ">=4"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -64,6 +70,9 @@
       "optional": true
     },
     "@tanstack/react-query": {
+      "optional": true
+    },
+    "zod": {
       "optional": true
     }
   }

@@ -733,7 +733,6 @@ export const slotRefund = onchainTable(
   }),
 );
 
-
 // ──────────────────────────────────────────
 // Feeds — beacon-proxy collections, each owning a set of slots
 // ──────────────────────────────────────────
@@ -1046,10 +1045,10 @@ export const slotOperatorRelations = relations(slotOperator, ({ one }) => ({
 
 export const slotRefundRelations = relations(slotRefund, ({ one }) => ({
   slotRef: one(slot, { fields: [slotRefund.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [slotRefund.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [slotRefund.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const slotDeployedEventRelations = relations(
@@ -1068,18 +1067,18 @@ export const slotDeployedEventRelations = relations(
 
 export const boughtEventRelations = relations(boughtEvent, ({ one }) => ({
   slotRef: one(slot, { fields: [boughtEvent.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [boughtEvent.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [boughtEvent.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const releasedEventRelations = relations(releasedEvent, ({ one }) => ({
   slotRef: one(slot, { fields: [releasedEvent.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [releasedEvent.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [releasedEvent.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const liquidatedEventRelations = relations(
@@ -1112,34 +1111,34 @@ export const priceUpdatedEventRelations = relations(
 
 export const depositedEventRelations = relations(depositedEvent, ({ one }) => ({
   slotRef: one(slot, { fields: [depositedEvent.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [depositedEvent.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [depositedEvent.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const withdrawnEventRelations = relations(withdrawnEvent, ({ one }) => ({
   slotRef: one(slot, { fields: [withdrawnEvent.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [withdrawnEvent.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [withdrawnEvent.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const settledEventRelations = relations(settledEvent, ({ one }) => ({
   slotRef: one(slot, { fields: [settledEvent.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [settledEvent.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [settledEvent.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const taxPaidEventRelations = relations(taxPaidEvent, ({ one }) => ({
   slotRef: one(slot, { fields: [taxPaidEvent.slot], references: [slot.id] }),
-    currencyRef: one(currency, {
-      fields: [taxPaidEvent.currency],
-      references: [currency.id],
-    }),
+  currencyRef: one(currency, {
+    fields: [taxPaidEvent.currency],
+    references: [currency.id],
+  }),
 }));
 
 export const taxCollectedEventRelations = relations(
@@ -1304,7 +1303,10 @@ export const feedRelations = relations(feed, ({ one, many }) => ({
 export const feedCreatedEventRelations = relations(
   feedCreatedEvent,
   ({ one }) => ({
-    feedRef: one(feed, { fields: [feedCreatedEvent.feed], references: [feed.id] }),
+    feedRef: one(feed, {
+      fields: [feedCreatedEvent.feed],
+      references: [feed.id],
+    }),
   }),
 );
 
@@ -1616,6 +1618,226 @@ export const collectiveDistributionEventRelations = relations(
     collectiveRef: one(slotCollective, {
       fields: [collectiveDistributionEvent.collective],
       references: [slotCollective.id],
+    }),
+  }),
+);
+
+// ──────────────────────────────────────────
+// SlotData
+//
+// One utility carrying any number of services, indexed the way the contract
+// stores it rather than the way a screen wants to read it.
+//
+// The contract keys a payload by `(slot, generation, serviceId)` and ends a
+// tenancy by incrementing the generation — one storage write, no matter how
+// many services were attached, because `onTransfer` runs under the slot's
+// 500k gas cap and a loop there would start failing silently once a slot
+// carried enough services. That is why the tables below keep `generation` in
+// the record's own key instead of deleting rows on `Cleared`: mirroring the
+// contract is the only way "what is live" means the same thing here as it does
+// on chain, and it makes clearing one row's worth of work here too.
+//
+// So a record is LIVE when its `generation` equals its tenancy's. Follow
+// `tenancyRef` and compare — never assume the newest row for a slot is current,
+// because a transfer leaves the old tenancy's rows exactly as they were.
+// ──────────────────────────────────────────
+
+/**
+ * A registered service — a named ABI signature anyone may write against.
+ *
+ * Scoped by `module` as well as chain because registration is permissionless
+ * and ids are per-deployment: service 1 on one SlotData has nothing to do with
+ * service 1 on another. Nothing stops a second deployment existing, and the
+ * ids would collide the moment one did.
+ */
+export const dataService = onchainTable(
+  "data_service",
+  (t) => ({
+    /** `${chainId}-${module}-${serviceId}` */
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    module: t.hex().notNull(),
+    serviceId: t.bigint().notNull(),
+    /**
+     * The ABI signature, e.g. `"string uri"` — `Service.schema` on chain.
+     *
+     * Stored verbatim and never validated. The contract does not check it
+     * either, so a client that decodes against it must expect to fail: this is
+     * a string a stranger typed, and `decodeAbiParameters` throws on anything
+     * that does not match. Rendering raw bytes on that throw is the correct
+     * behaviour, not a fallback.
+     */
+    schema: t.text().notNull(),
+    name: t.text().notNull(),
+    registrar: t.hex().notNull(),
+    metadataURI: t.text().notNull(),
+    /** Writes seen against it, across every slot. */
+    writeCount: t.bigint().notNull(),
+    createdAt: t.bigint().notNull(),
+    createdTx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    moduleIdx: index().on(table.module),
+  }),
+);
+
+/**
+ * Which tenancy a slot is currently on — the row every record is judged against.
+ *
+ * Absent until a slot is first written to or cleared, which reads the same as
+ * generation 0: a slot nobody has attached anything to has no tenancy history
+ * to speak of.
+ */
+export const slotDataTenancy = onchainTable(
+  "slot_data_tenancy",
+  (t) => ({
+    /** `${chainId}-${module}-${slot}` */
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    module: t.hex().notNull(),
+    slot: t.hex().notNull(),
+    generation: t.bigint().notNull(),
+    /** Null until the first `Cleared`. */
+    clearedAt: t.bigint(),
+    clearedTx: t.hex(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+/**
+ * One payload, keyed exactly as the contract keys it.
+ *
+ * `data` is the raw bytes. Decoding belongs to whoever reads it, against
+ * `serviceRef.schema` — doing it here would mean this indexer deciding which
+ * schemas are real, which is the permission the registry exists to not have.
+ */
+export const slotDataRecord = onchainTable(
+  "slot_data_record",
+  (t) => ({
+    /** `${chainId}-${module}-${slot}-${generation}-${serviceId}` */
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    module: t.hex().notNull(),
+    slot: t.hex().notNull(),
+    generation: t.bigint().notNull(),
+    serviceId: t.bigint().notNull(),
+    /** → `dataService.id` */
+    service: t.text().notNull(),
+    /** → `slotDataTenancy.id`. Compare generations to know if this is live. */
+    tenancy: t.text().notNull(),
+    data: t.hex().notNull(),
+    writer: t.hex().notNull(),
+    /** Overwrites within this tenancy. Starts at 1. */
+    writeCount: t.bigint().notNull(),
+    createdAt: t.bigint().notNull(),
+    createdTx: t.hex().notNull(),
+    updatedAt: t.bigint().notNull(),
+    updatedTx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    serviceIdx: index().on(table.service),
+  }),
+);
+
+export const slotDataWroteEvent = onchainTable(
+  "slot_data_wrote_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    module: t.hex().notNull(),
+    slot: t.hex().notNull(),
+    serviceId: t.bigint().notNull(),
+    service: t.text().notNull(),
+    writer: t.hex().notNull(),
+    generation: t.bigint().notNull(),
+    data: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    writerIdx: index().on(table.writer),
+  }),
+);
+
+export const slotDataClearedEvent = onchainTable(
+  "slot_data_cleared_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    module: t.hex().notNull(),
+    slot: t.hex().notNull(),
+    /** The NEW generation — everything below it is now stale. */
+    generation: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+export const dataServiceRelations = relations(dataService, ({ many }) => ({
+  records: many(slotDataRecord),
+  writes: many(slotDataWroteEvent),
+}));
+
+export const slotDataTenancyRelations = relations(
+  slotDataTenancy,
+  ({ one, many }) => ({
+    slotRef: one(slot, {
+      fields: [slotDataTenancy.slot],
+      references: [slot.id],
+    }),
+    records: many(slotDataRecord),
+  }),
+);
+
+export const slotDataRecordRelations = relations(slotDataRecord, ({ one }) => ({
+  serviceRef: one(dataService, {
+    fields: [slotDataRecord.service],
+    references: [dataService.id],
+  }),
+  tenancyRef: one(slotDataTenancy, {
+    fields: [slotDataRecord.tenancy],
+    references: [slotDataTenancy.id],
+  }),
+  slotRef: one(slot, {
+    fields: [slotDataRecord.slot],
+    references: [slot.id],
+  }),
+}));
+
+export const slotDataWroteEventRelations = relations(
+  slotDataWroteEvent,
+  ({ one }) => ({
+    serviceRef: one(dataService, {
+      fields: [slotDataWroteEvent.service],
+      references: [dataService.id],
+    }),
+    slotRef: one(slot, {
+      fields: [slotDataWroteEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const slotDataClearedEventRelations = relations(
+  slotDataClearedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [slotDataClearedEvent.slot],
+      references: [slot.id],
     }),
   }),
 );

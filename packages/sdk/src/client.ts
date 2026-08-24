@@ -23,6 +23,7 @@ import type * as Gen from "./generated/graphql";
 import { getSdk } from "./generated/graphql";
 import { FeedModuleClient } from "./modules/feed";
 import { MetadataModuleClient } from "./modules/metadata";
+import { SlotDataClient } from "./modules/slotData";
 import { isNativeCurrency } from "./native";
 
 // ─── Indexer meta ─────────────────────────────────────────────────────────────
@@ -224,6 +225,7 @@ export class SlotsClient {
   public readonly modules: {
     metadata: MetadataModuleClient;
     feed: FeedModuleClient;
+    slotData: SlotDataClient;
   };
 
   constructor(config: SlotsClientConfig) {
@@ -251,6 +253,10 @@ export class SlotsClient {
         publicClient: config.publicClient,
         walletClient: config.walletClient,
       }),
+      // No sdk and no publicClient: SlotData reads come from the indexer through
+      // the query methods above, and there is no on-chain read this needs that
+      // a log does not already carry.
+      slotData: new SlotDataClient({ walletClient: config.walletClient }),
     };
   }
 
@@ -378,6 +384,50 @@ export class SlotsClient {
   getModules(variables?: Gen.GetModulesQueryVariables) {
     return this.query("getModules", () =>
       this.sdk.GetModules(this.withChain(variables)),
+    );
+  }
+
+  // SlotData queries
+  //
+  // Every one of these is chain-scoped by `withChain` and NOT module-scoped.
+  // One SlotData per chain is the expectation, not a guarantee — the indexer
+  // watches every verified utility — so a caller that must distinguish two
+  // deployments passes `where: { module }` itself. The ids carry the module
+  // address for exactly that case.
+
+  /** Registered services — the ABI signatures anyone may write against. */
+  getDataServices(variables?: Gen.GetDataServicesQueryVariables) {
+    return this.query("getDataServices", () =>
+      this.sdk.GetDataServices(this.withChain(variables)),
+    );
+  }
+
+  /**
+   * Payloads, with their service's schema and their slot's current generation.
+   *
+   * A record is LIVE when `generation` equals `tenancyRef.generation`, and stale
+   * otherwise — a tenancy that ended leaves its rows untouched, because ending
+   * one on chain is a single increment rather than a sweep. Filtering to live
+   * rows is the caller's job and cannot be done in `where`: it is a comparison
+   * between two columns, not a match on one.
+   */
+  getSlotDataRecords(variables?: Gen.GetSlotDataRecordsQueryVariables) {
+    return this.query("getSlotDataRecords", () =>
+      this.sdk.GetSlotDataRecords(this.withChain(variables)),
+    );
+  }
+
+  /** Every write ever, including the ones later overwritten or cleared. */
+  getSlotDataWrites(variables?: Gen.GetSlotDataWritesQueryVariables) {
+    return this.query("getSlotDataWrites", () =>
+      this.sdk.GetSlotDataWrites(this.withChain(variables)),
+    );
+  }
+
+  /** Current generation per slot. Absent means nothing was ever written. */
+  getSlotDataTenancies(variables?: Gen.GetSlotDataTenanciesQueryVariables) {
+    return this.query("getSlotDataTenancies", () =>
+      this.sdk.GetSlotDataTenancies(this.withChain(variables)),
     );
   }
 

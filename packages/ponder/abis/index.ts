@@ -1,11 +1,12 @@
 export { ERC20Abi } from "./ERC20";
-export { FeedAbi, FeedHubAbi } from "./feed";
 export { FeedPostModuleAbi } from "./FeedPostModule";
 export { FeedPostModuleV2Abi } from "./FeedPostModuleV2";
+export { FeedAbi, FeedHubAbi } from "./feed";
 export { slotFactoryLegacyAbi } from "./legacy";
 export { MetadataModuleAbi } from "./MetadataModule";
 export { SlotAbi } from "./Slot";
 export { SlotCollectiveAbi } from "./SlotCollective";
 export { SlotCollectiveFactoryAbi } from "./SlotCollectiveFactory";
+export { SlotDataAbi } from "./SlotData";
 export { SlotFactoryAbi } from "./SlotFactory";
 export { SplitV2Abi } from "./SplitV2";

@@ -6,7 +6,6 @@ import { useAccount } from "wagmi";
 
 import { AdBar } from "@/components/ad-bar";
 import { EventsTable } from "@/components/explorer/events-table";
-import { ModulesTable } from "@/components/explorer/modules-table";
 import { RecipientsTable } from "@/components/explorer/recipients-table";
 import { SlotsTable } from "@/components/explorer/slots-table";
 import { StatsBar } from "@/components/explorer/stats-bar";
@@ -25,7 +24,6 @@ const SECTION_CONTENT: Record<string, () => ReactNode> = {
   events: () => <EventsTable />,
   slots: () => <SlotsTable />,
   recipients: () => <RecipientsTable />,
-  modules: () => <ModulesTable />,
 };
 
 export default function Home() {
@@ -59,10 +57,12 @@ export default function Home() {
 
       <div className="w-full px-3 md:px-5 py-3">
         <AdBar />
-        {/* Desktop navigates sections from the sidebar; below md the strip
-            stays, driving the same selection. */}
+        {/* Tabs at every width now. These three are one page — the same
+            inventory sliced three ways — so moving between them is a change of
+            view, not of destination, and a tab says that where a sidebar entry
+            said the opposite. The sidebar keeps what the protocol IS: its
+            utilities and its policies. */}
         <TabStrip
-          className="md:hidden"
           tabs={EXPLORER_SECTIONS}
           active={section}
           onSelect={setSection}

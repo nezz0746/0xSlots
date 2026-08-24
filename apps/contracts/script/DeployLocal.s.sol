@@ -7,6 +7,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {MetadataModule} from "../src/modules/MetadataModule.sol";
+import {SlotData} from "../src/modules/SlotData.sol";
 import {SlotCollective} from "../src/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
@@ -51,6 +52,7 @@ contract DeployLocal is BaseScript {
     bytes32 internal constant METADATA_SALT = keccak256("0xslots.local.metadata.v1");
     bytes32 internal constant COLLECTIVE_FACTORY_SALT =
         keccak256("0xslots.local.collectivefactory.v1");
+    bytes32 internal constant SLOTDATA_SALT = keccak256("0xslots.local.slotdata.v1");
 
     /// Expected pinned addresses. Zero disables the check (first run).
     address internal constant EXPECTED_FACTORY =
@@ -60,6 +62,8 @@ contract DeployLocal is BaseScript {
     /// Zero until the first run logs it — see the docblock on drift.
     address internal constant EXPECTED_COLLECTIVE_FACTORY =
         0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d;
+    address internal constant EXPECTED_SLOTDATA =
+        0x7472e63170d9a5EC9484531d6b8133a4b46D4d31;
 
     function run() external {
         _deploy();
@@ -158,11 +162,41 @@ contract DeployLocal is BaseScript {
             );
         }
 
+        // 8. SlotData.
+        //
+        // Same proxy-off-a-seed dance as the metadata module, and verified for
+        // the same reason — but the verification matters more here than it does
+        // for a module a slot points at directly. The indexer derives SlotData's
+        // address from the factory's `ModuleVerified` event rather than from a
+        // constant, so an unverified deployment is one the explorer cannot see
+        // at all, whatever is written to it.
+        ERC1967Proxy slotDataProxy = new ERC1967Proxy{salt: SLOTDATA_SALT}(
+            address(bootstrap),
+            seedInit
+        );
+        SlotData slotDataImpl = new SlotData();
+        LocalBootstrap(address(slotDataProxy)).upgradeToAndCall(
+            address(slotDataImpl),
+            abi.encodeCall(SlotData.initialize, (deployer))
+        );
+        factory.setModuleVerified(address(slotDataProxy), true);
+
+        console2.log("SlotData impl:", address(slotDataImpl));
+        console2.log("SlotData proxy:", address(slotDataProxy));
+
+        if (EXPECTED_SLOTDATA != address(0)) {
+            require(
+                address(slotDataProxy) == EXPECTED_SLOTDATA,
+                "slotdata address drifted - see DeployLocal docblock"
+            );
+        }
+
         _saveDeployment(address(factoryProxy), "SlotFactory");
         _saveDeployment(address(metadataProxy), "MetadataModule");
         _saveDeployment(address(slotImpl), "SlotImplementation");
         _saveDeployment(address(collectiveFactoryProxy), "SlotCollectiveFactory");
         _saveDeployment(address(warehouse), "SplitsWarehouse");
+        _saveDeployment(address(slotDataProxy), "SlotData");
 
         console2.log("=== done ===");
     }

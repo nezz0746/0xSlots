@@ -374,6 +374,9 @@ importers:
       vitest:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@20.19.37)(lightningcss@1.32.0)(msw@2.12.14(@types/node@20.19.37)(typescript@5.9.3))(terser@5.49.1)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/subgraph:
     dependencies:

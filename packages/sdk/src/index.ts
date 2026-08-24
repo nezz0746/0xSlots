@@ -1,18 +1,18 @@
 // Unified client (read + write)
 export {
   type BuyParams,
+  type ChainStatus,
   type CreateSlotParams,
   type CreateSlotsParams,
   createSlotsClient,
+  DEFAULT_API_URL,
+  type IndexerMeta,
+  LOCAL_API_URL,
   type SlotConfig,
   type SlotInitParams,
   SlotsChain,
   SlotsClient,
   type SlotsClientConfig,
-  type ChainStatus,
-  DEFAULT_API_URL,
-  LOCAL_API_URL,
-  type IndexerMeta,
   UpdateKind,
 } from "./client";
 // Errors
@@ -22,6 +22,7 @@ export * from "./generated/graphql";
 export { FeedModuleClient } from "./modules/feed";
 // Modules
 export { MetadataModuleClient } from "./modules/metadata";
+export { encodeValues, SlotDataClient } from "./modules/slotData";
 // Occupancy policies — resolve an address into human-readable terms, plus
 // accessors over the hand-vouched list. See ./policies.
 //
@@ -40,6 +41,16 @@ export {
   type VouchedPolicyEntry,
   vouchedPoliciesForChain,
 } from "./policies";
+export {
+  type AbiSchema,
+  type AbiSchemaField,
+  assertSignatureUnchanged,
+  fillOptionals,
+  type JsonSchema,
+  jsonSchemaToAbi,
+  stripOptionals,
+  type ToAbiSchemaOptions,
+} from "./schema/abi-schema";
 // Tokens
 export {
   CHAIN_TOKENS,
