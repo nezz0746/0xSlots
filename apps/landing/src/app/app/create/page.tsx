@@ -59,14 +59,6 @@ export default function CreatePage() {
     mode: "onChange",
   });
 
-  // A tenure or price policy may need deploying first, which the single-slot
-  // helpers handle and the batch path does not. Clamp rather than silently
-  // discard the policy the user just configured.
-  const occupancyConfigured = form.watch("occupancyPolicyMode") !== "none";
-  useEffect(() => {
-    if (occupancyConfigured && slotCount !== 1) setSlotCount(1);
-  }, [occupancyConfigured, slotCount]);
-
   // Only watch what the page itself needs for submission logic
   const watchedRecipientMode = form.watch("recipientMode");
   const watchedRecipient = form.watch("recipient");
@@ -235,7 +227,13 @@ export default function CreatePage() {
     // derived from those terms, so it may not exist yet — these helpers deploy
     // it first when needed, then create. Every other mode already has a
     // concrete address sitting in `initParams.occupancyPolicy`.
-    if (slotCount === 1 && data.occupancyPolicyMode === "tenure") {
+    //
+    // `count` is passed straight through: the policy is one stateless contract
+    // per set of terms, so a batch of slots all point at the same one and the
+    // deploy still happens at most once.
+    const count = BigInt(slotCount);
+
+    if (data.occupancyPolicyMode === "tenure") {
       sdkCreateSlotWithTenure(
         {
           recipient: recipient as Address,
@@ -244,8 +242,9 @@ export default function CreatePage() {
           initParams,
         },
         toSeconds(data.tenureValue, data.tenureUnit),
+        count,
       );
-    } else if (slotCount === 1 && data.occupancyPolicyMode === "price") {
+    } else if (data.occupancyPolicyMode === "price") {
       // The floor is denominated in the slot's own currency, so it converts
       // with THAT token's decimals — 1 USDC is 1e6, 1 WETH is 1e18 — and the
       // policy rejects a mismatched pairing on-chain.
@@ -257,6 +256,7 @@ export default function CreatePage() {
           initParams,
         },
         toRawUnits(data.minPriceValue, currencyDecimals),
+        count,
       );
     } else if (slotCount === 1) {
       sdkCreateSlot({
@@ -271,7 +271,7 @@ export default function CreatePage() {
         currency: currency as Address,
         config,
         initParams,
-        count: BigInt(slotCount),
+        count,
       });
     }
   }

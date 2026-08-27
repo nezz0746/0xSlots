@@ -160,10 +160,15 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
    * Ensure the minimum-tenure policy for `tenureSeconds` exists, then create the
    * slot pointing at it. Two transactions only the first time anyone uses that
    * duration — afterwards the policy already exists and this is a single tx.
+   *
+   * `count` batches through `createSlots` instead. The policy is deployed once
+   * per duration protocol-wide and is stateless, so every slot in the batch can
+   * point at the same address — there is nothing per-slot to deploy.
    */
   const createSlotWithTenure = useCallback(
-    async (params: CreateSlotParams, tenureSeconds: bigint) => {
-      const pre = await preflight("Create slot", async () => ({
+    async (params: CreateSlotParams, tenureSeconds: bigint, count = 1n) => {
+      const label = count > 1n ? "Create slots" : "Create slot";
+      const pre = await preflight(label, async () => ({
         policy: await client.predictTenurePolicy(tenureSeconds),
         exists: await client.isTenurePolicyDeployed(tenureSeconds),
       }));
@@ -177,11 +182,11 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
         // `policy` and would otherwise fail a second time, more confusingly.
         if (!deployed) return undefined;
       }
-      return exec("Create slot", () =>
-        client.createSlot({
-          ...params,
-          initParams: { ...params.initParams, occupancyPolicy: policy },
-        }),
+      const initParams = { ...params.initParams, occupancyPolicy: policy };
+      return exec(label, () =>
+        count > 1n
+          ? client.createSlots({ ...params, initParams, count })
+          : client.createSlot({ ...params, initParams }),
       );
     },
     [client, exec, preflight],
@@ -195,10 +200,14 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
    *
    * `currency` must be the slot's own currency — the policy checks it on every
    * call and reverts `WrongCurrency` otherwise.
+   *
+   * `count` batches through `createSlots`. Every slot in the batch shares the
+   * currency the floor was priced against, so one policy serves all of them.
    */
   const createSlotWithPriceFloor = useCallback(
-    async (params: CreateSlotParams, minPrice: bigint) => {
-      const pre = await preflight("Create slot", async () => ({
+    async (params: CreateSlotParams, minPrice: bigint, count = 1n) => {
+      const label = count > 1n ? "Create slots" : "Create slot";
+      const pre = await preflight(label, async () => ({
         policy: await client.predictPricePolicy(params.currency, minPrice),
         exists: await client.isPricePolicyDeployed(params.currency, minPrice),
       }));
@@ -212,11 +221,11 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
         // at `policy` and would otherwise fail a second time, more confusingly.
         if (!deployed) return undefined;
       }
-      return exec("Create slot", () =>
-        client.createSlot({
-          ...params,
-          initParams: { ...params.initParams, occupancyPolicy: policy },
-        }),
+      const initParams = { ...params.initParams, occupancyPolicy: policy };
+      return exec(label, () =>
+        count > 1n
+          ? client.createSlots({ ...params, initParams, count })
+          : client.createSlot({ ...params, initParams }),
       );
     },
     [client, exec, preflight],
