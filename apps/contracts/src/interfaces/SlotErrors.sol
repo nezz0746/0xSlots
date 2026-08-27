@@ -26,6 +26,13 @@ error NotFactory();
 
 // ── Buy / occupancy ─────────────────────────────────────────
 error CannotBuyFromYourself();
+
+/// @notice `sell()` on a native-ETH slot.
+/// @dev The buyer is not the caller, so there is no `msg.value` to take and no
+///      allowance to pull against. A callback that let the buyer push would
+///      reintroduce exactly the reentrancy surface the pull design removes.
+///      Native slots keep `buy()`.
+error SellNeedsErc20();
 error InvalidPrice();
 error InvalidRecipient();
 error NotInsolvent();

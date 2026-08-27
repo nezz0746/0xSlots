@@ -11,7 +11,16 @@ import { useSlotsClient } from "./use-slots-client";
  * wagmi's own query keys. These read the chain directly, so they are already
  * accurate the moment a receipt lands.
  */
-const ONCHAIN_ROOTS = new Set(["readContract", "readContracts", "balance"]);
+const ONCHAIN_ROOTS = new Set([
+  "readContract",
+  "readContracts",
+  "balance",
+  // Reads the OfferBook with `readContract` under a key of its own, so it is
+  // correct as of the receipt like any other chain read. Left to the default it
+  // was treated as subgraph-derived and made to wait for the indexer, which is
+  // both slower and wrong — the indexer does not index the book at all.
+  "offer-book",
+]);
 
 /**
  * Content-addressed or chain-independent data. No transaction can change these,

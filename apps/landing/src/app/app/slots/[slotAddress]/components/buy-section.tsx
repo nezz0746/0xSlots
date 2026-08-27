@@ -1,9 +1,11 @@
 "use client";
 
+import { offerBookAbi, offerBookAddress } from "@0xslots/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type Address, formatUnits } from "viem";
-import { useAccount } from "wagmi";
+import { type Address, formatUnits, zeroAddress } from "viem";
+import { useAccount, usePublicClient } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { DepositChoice } from "@/components/ui/deposit-choice";
 import { PriceInput } from "@/components/ui/price-input";
@@ -21,16 +23,23 @@ export function BuySection({
   slot,
   slotAddress,
   isOccupied,
+  trailing,
+  onOffered,
 }: {
   slot: SlotOnChain;
   slotAddress: string;
   isOccupied: boolean;
+  /** Sits beside the submit. */
+  trailing?: React.ReactNode;
+  /** Called after a standing offer is posted, so the board can refresh. */
+  onOffered?: () => void;
 }) {
   const decimals = slot.currencyDecimals ?? 6;
   const symbol = slot.currencySymbol ?? "USDC";
-  const { buy, selfAssess, busy } = useSlotAction();
+  const { buy, offer, retireOffer, selfAssess, busy } = useSlotAction();
   const { address } = useAccount();
   const { chainId } = useChain();
+  const publicClient = usePublicClient({ chainId });
 
   // Base only — see the hook. `toUsd` returns null everywhere else, and every
   // consumer renders nothing rather than a misleading zero.
@@ -123,7 +132,59 @@ export function BuySection({
   };
 
   const deposit = depositFor(mult);
-  const purchase = isOccupied ? slot.price : 0n;
+
+  /**
+   * Below the standing price, this form is an offer rather than a purchase.
+   *
+   * The two are the same intent expressed at different numbers: "I value this
+   * at X" either clears the current asking price or it does not. Splitting them
+   * into two forms made the second one look like a different product, when it
+   * is the same decision — and left a visitor who typed a lower number staring
+   * at a Buy button that would have charged them the occupant's price anyway.
+   *
+   * Only for an occupied, ERC-20 slot: a vacant one is bought at your own price
+   * outright, and a native slot cannot be sold into at all — `Slot.sell` pulls
+   * on an allowance and native ETH has none.
+   */
+  const book = offerBookAddress[chainId as keyof typeof offerBookAddress] as
+    | Address
+    | undefined;
+  const canOffer =
+    isOccupied && !!book && slot.currency.toLowerCase() !== zeroAddress;
+  const isOffer = canOffer && priceRaw > 0n && priceRaw < slot.price;
+
+  /**
+   * The bidder's own standing offer, if they have one.
+   *
+   * The book allows exactly one offer per account per slot, so posting again
+   * REPLACES what is there. Naming that on the button is the whole point of
+   * reading this: silently overwriting an offer the visitor forgot about is
+   * the kind of surprise that reads as a lost bid.
+   *
+   * Deliberately a plain `useQuery` under the board's own `offer-book` root
+   * rather than `useReadContract`: wagmi nests `scopeKey` INSIDE a
+   * `["readContract", …]` key, so the board's
+   * `invalidateQueries(["offer-book"])` would sail straight past it and this
+   * button would keep saying "Offer" after the offer landed.
+   */
+  const { data: standing } = useQuery({
+    queryKey: ["offer-book", chainId, slotAddress, "mine", address],
+    enabled: canOffer && !!address && !!book && !!publicClient,
+    queryFn: async () => {
+      if (!publicClient || !book || !address) return undefined;
+      return await publicClient.readContract({
+        address: book,
+        abi: offerBookAbi,
+        functionName: "offerOf",
+        args: [slotAddress as Address, address],
+      });
+    },
+  });
+  const hasStanding = standing?.[0] === true;
+  const standingPrice = hasStanding ? standing[2].price : 0n;
+
+  // An offer pays what you named; a purchase pays what the occupant named.
+  const purchase = isOffer ? priceRaw : isOccupied ? slot.price : 0n;
   const total = purchase + deposit;
 
   // Computed once each rather than per JSX branch — the rows read them twice.
@@ -131,14 +192,65 @@ export function BuySection({
   const usdDeposit = usdOfRaw(deposit);
   const usdTotal = usdOfRaw(total);
 
-  function handleBuy() {
+  /**
+   * Post a standing bid instead of buying.
+   *
+   * Goes through `useSlotAction` exactly like `handleBuy` does, and that is the
+   * fix rather than an incidental tidy-up. Written by hand against
+   * `writeContractAsync` this path had none of what every other button gets:
+   * no toast, so a confirmed offer looked identical to nothing happening; no
+   * shared `busy`, so the button never showed it was working; and — worst — a
+   * rejected or reverted transaction rejected a promise that `void` threw
+   * away, so clicking did nothing at all and said nothing about why.
+   *
+   * The SDK also skips the approval when the existing allowance already covers
+   * the amount, so raising a bid inside an allowance you already granted is one
+   * wallet prompt, not two.
+   */
+  async function handleOffer() {
     if (!address) return;
-    buy({
+    const hash = await offer(
+      slotAddress as Address,
+      priceRaw,
+      deposit,
+      BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60),
+    );
+    // `exec` returns undefined when it already reported a failure.
+    if (hash) onOffered?.();
+  }
+
+  async function handleBuy() {
+    if (!address) return;
+
+    // Captured BEFORE the buy: once it lands the read below is refetched and
+    // this component may already be showing the new occupancy.
+    const standingId = hasStanding ? standing?.[1] : undefined;
+
+    const hash = await buy({
       account: address,
       slot: slotAddress as Address,
       depositAmount: deposit,
       selfAssessedPrice: priceRaw,
     });
+    if (!hash) return;
+
+    /**
+     * Buying out from under your own standing offer retires it.
+     *
+     * Offering 70 and then deciding to just buy at 80 leaves the 70 sitting in
+     * the book. It stops being fillable immediately — you are the occupant now,
+     * and `Slot.sell` refuses `CannotBuyFromYourself` — so it drops off the
+     * board and out of `best`. But dropping off is not the same as being gone:
+     * the day someone buys YOU out, that 70 becomes live again against an
+     * allowance you probably still have standing, and the new occupant can sell
+     * the slot back to you at a price you named in a different market.
+     *
+     * Best-effort, like the retire after a sell: the purchase already
+     * succeeded, and failing here must not report it as failed.
+     */
+    if (standingId === undefined) return;
+    await publicClient?.waitForTransactionReceipt({ hash });
+    await retireOffer(slotAddress as Address, standingId);
   }
 
   function handleSelfAssess() {
@@ -193,6 +305,25 @@ export function BuySection({
         toUsd={toUsd}
       />
 
+      {isOffer && (
+        <p className="rounded border border-dashed px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+          That is below the {formatBalance(slot.price, decimals)} {symbol} the
+          occupant is asking, so this becomes a standing offer rather than a
+          purchase. Your funds stay in your wallet — it costs nothing until they
+          choose to take it.
+          {hasStanding && (
+            <>
+              {" "}
+              This{" "}
+              <strong className="font-medium text-foreground">replaces</strong>{" "}
+              your current offer of {formatBalance(standingPrice, decimals)}{" "}
+              {symbol} — one offer per slot, since both would draw on the same
+              allowance and only one could ever be filled.
+            </>
+          )}
+        </p>
+      )}
+
       <DepositChoice
         label="Deposit"
         base={base}
@@ -213,7 +344,9 @@ export function BuySection({
       <div className="bg-muted/50 p-2.5 space-y-1">
         {isOccupied && (
           <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Purchase</span>
+            <span className="text-muted-foreground">
+              {isOffer ? "You would pay" : "Purchase"}
+            </span>
             <span className="tabular-nums">
               {formatBalance(purchase, decimals)} {symbol}
               {usdPurchase && (
@@ -248,21 +381,30 @@ export function BuySection({
         </div>
       </div>
 
-      <Button
-        disabled={busy || !address || priceRaw === 0n}
-        onClick={handleBuy}
-        className="w-full"
-      >
-        {busy ? (
-          <>
-            <Loader2 className="size-4 animate-spin mr-2" /> Processing...
-          </>
-        ) : isOccupied ? (
-          `Buy @ ${formatBalance(purchase, decimals)} ${symbol}`
-        ) : (
-          "Buy Slot"
-        )}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          disabled={busy || !address || priceRaw === 0n}
+          onClick={() => void (isOffer ? handleOffer() : handleBuy())}
+          variant={isOffer ? "outline" : "default"}
+          className="flex-1"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="size-4 animate-spin mr-2" /> Processing...
+            </>
+          ) : isOffer ? (
+            `${hasStanding ? "Replace offer" : "Offer"} @ ${formatBalance(
+              priceRaw,
+              decimals,
+            )} ${symbol}`
+          ) : isOccupied ? (
+            `Buy @ ${formatBalance(purchase, decimals)} ${symbol}`
+          ) : (
+            "Buy Slot"
+          )}
+        </Button>
+        {trailing}
+      </div>
     </div>
   );
 }

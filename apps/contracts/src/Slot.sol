@@ -305,6 +305,120 @@ contract Slot is ISlotEvents, Initializable, ReentrancyGuard, Multicall {
         );
     }
 
+    /// @notice Hand occupancy to `buyer` at a price the occupant names.
+    ///
+    /// @notice The missing half of `buy()`. `buy` is "anyone may take this at
+    ///         the price the occupant set"; `sell` is "the occupant may give it
+    ///         to anyone at a price they set". Together they are the whole
+    ///         voluntary transfer surface — until now only the first existed,
+    ///         so the only exits were being bought at your own asking price, or
+    ///         walking away with nothing.
+    ///
+    /// @dev ── WHY THIS IS NOT AN OFFER-BOOK FUNCTION ──────────────────────
+    ///      Nothing here knows what an offer book is. A book is simply a
+    ///      `buyer` that has approved this slot, and there may be any number of
+    ///      them, replaceable without touching the core. The same function
+    ///      serves an OTC sale to an EOA and an auction contract.
+    ///
+    ///      ── WHY PULL, NOT A CALLBACK ────────────────────────────────────
+    ///      Payment is pulled on `buyer`'s allowance rather than by calling into
+    ///      them. A callback would hand control to the counterparty in the
+    ///      middle of a transfer — the one place this contract must not yield —
+    ///      and buys nothing: approving is a single transaction a contract does
+    ///      once.
+    ///
+    ///      The allowance is also the buyer's ONLY consent, and it is enough.
+    ///      The occupant chooses `price` and `depositAmount`, but can never take
+    ///      more than the buyer has approved, so a seller naming absurd terms
+    ///      simply reverts.
+    ///
+    ///      ── SELLING LOW IS ALLOWED ──────────────────────────────────────
+    ///      No floor, no slippage guard. The occupant states the price outright
+    ///      rather than accepting a quoted one, so there is nothing to be
+    ///      sandwiched by — and a low price only ever costs the seller.
+    ///
+    /// @param buyer Who receives occupancy. Must have approved this slot for
+    ///        `price + depositAmount`.
+    /// @param price What `buyer` pays the occupant, and the new self-assessed
+    ///        price.
+    /// @param depositAmount Escrow the buyer posts to cover their tax. Named by
+    ///        the seller because the slot needs one, but capped by the buyer's
+    ///        allowance.
+    function sell(
+        address buyer,
+        uint256 price,
+        uint256 depositAmount
+    ) external nonReentrant onlyOccupant {
+        // The buyer is not the caller, so there is no value to attach and no
+        // allowance to pull from. See `SellNeedsErc20`.
+        if (_isNative()) revert SellNeedsErc20();
+
+        if (price == 0) revert InvalidPrice();
+        if (buyer == address(0)) revert InvalidRecipient();
+
+        // Settle first so the policy is asked about current, not stale, state —
+        // and so a matured pending transfer is materialised before we read the
+        // occupant. Identical ordering to `buy()`.
+        _settle();
+
+        if (buyer == _occupant) revert CannotBuyFromYourself();
+
+        // LOAD-BEARING. `sell` transfers occupancy, so it must ask the policy
+        // exactly as `buy` does. Skip it and every occupancy policy silently
+        // becomes a suggestion: a tenure or token-holder policy could be handed
+        // a buyer it would have refused, through a door it never knew existed.
+        if (occupancyPolicy != address(0)) {
+            IOccupancyPolicy(occupancyPolicy).checkBuy(
+                _occupancyCtx(buyer, price, depositAmount)
+            );
+        }
+
+        address prev = _occupant;
+
+        _applyPendingUpdates();
+        _enforceMinDeposit(depositAmount, price);
+
+        // Pull the buyer's side. `prev` is never zero here — `onlyOccupant`
+        // guarantees the slot is occupied — so the buyer always owes the price
+        // as well as the deposit.
+        uint256 owedByBuyer = price + depositAmount;
+        if (owedByBuyer > 0) {
+            currency.safeTransferFrom(buyer, address(this), owedByBuyer);
+        }
+
+        // The seller's side: their escrow back, plus what they just sold for.
+        // Paid after the state writes and never allowed to revert, for the same
+        // reason as `buy()` — a seller the currency refuses must not be able to
+        // fail a transfer they themselves initiated.
+        uint256 proceeds = _deposit + price;
+
+        _occupant = buyer;
+        _price = price;
+        _deposit = depositAmount;
+        occupiedSince = block.timestamp;
+        lastSettled = block.timestamp;
+
+        if (proceeds > 0) _payOrCredit(prev, proceeds);
+
+        _notifyUtility(
+            "onTransfer",
+            abi.encodeCall(IUtility.onTransfer, (0, prev, buyer))
+        );
+
+        // `Bought` as well as `Sold`, deliberately. The occupancy transition IS
+        // a buy and every indexer, subgraph and UI already reads it that way —
+        // emitting only `Sold` would make slots silently vanish from feeds.
+        // `Sold` carries the half that `Bought` cannot express: who initiated.
+        // That is not recoverable from `tx.origin`, which reports a bundler or
+        // a Safe owner rather than the seller.
+        emit Sold(prev, buyer, price, depositAmount);
+        emit Bought(buyer, prev, price, depositAmount, price);
+        _emitProtocolEvent(
+            EVT_BOUGHT,
+            abi.encode(buyer, prev, price, depositAmount, price)
+        );
+    }
+
     /// @notice Occupant releases the slot (voluntary exit)
     function release() external nonReentrant onlyOccupant {
         _settle();

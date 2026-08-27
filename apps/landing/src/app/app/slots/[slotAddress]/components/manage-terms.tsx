@@ -97,6 +97,7 @@ export function ManageTerms({
   accrual,
   walletBalance,
   onDone,
+  trailing,
 }: {
   slot: SlotOnChain;
   slotAddress: string;
@@ -104,6 +105,8 @@ export function ManageTerms({
   accrual: LiveAccrual;
   walletBalance: bigint;
   onDone?: () => void;
+  /** Sits beside the submit — see the note on that row. */
+  trailing?: React.ReactNode;
 }) {
   const decimals = slot.currencyDecimals ?? 6;
   const symbol = slot.currencySymbol ?? "USDC";
@@ -370,6 +373,7 @@ export function ManageTerms({
             "Update terms"
           )}
         </Button>
+        {trailing}
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 import {
   getSlotsHubAddress,
   MINIMUM_PRICE_POLICY_FACTORY,
+  offerBookAbi,
+  offerBookAddress,
   MINIMUM_TENURE_POLICY_FACTORY,
   minimumPricePolicyFactoryAbi,
   minimumTenurePolicyFactoryAbi,
@@ -797,6 +799,115 @@ export class SlotsClient {
       functionName: "buy",
       args: [params.account, params.depositAmount, params.selfAssessedPrice],
     });
+  }
+
+  // ─── Standing offers ────────────────────────────────────────────────────────
+
+  /**
+   * Post a standing offer on a slot, replacing your previous one.
+   *
+   * Goes through {@link ensureAllowance} for the same reason `buy` does: the
+   * allowance is granted to the SLOT, not to the book, because the slot is what
+   * pulls when the occupant sells. Re-approving a spender that already has
+   * enough is a wallet confirmation that buys nothing, so a bidder raising a
+   * bid inside an allowance they already granted signs once, not twice.
+   *
+   * The book itself never checks the allowance — an unfunded offer is legal and
+   * simply never executes. Granting it here is what makes the offer real.
+   *
+   * @throws {SlotsError} On a native slot, which cannot be sold into at all.
+   */
+  async offer(
+    slot: Address,
+    price: bigint,
+    deposit: bigint,
+    expiry: bigint,
+  ): Promise<Hash> {
+    this.assertPositive(price, "price");
+    const book = this.offerBook();
+
+    const currency = await this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "currency",
+    });
+    if (isNativeCurrency(currency)) {
+      throw new SlotsError(
+        "This slot is priced in native ETH. Selling into an offer pulls the " +
+          "bidder's funds on an allowance, and native ETH has none.",
+        "NATIVE_SLOT_HAS_NO_OFFERS",
+      );
+    }
+
+    await this.ensureAllowance(currency, slot, price + deposit);
+
+    return this.wallet.writeContract({
+      address: book,
+      abi: offerBookAbi,
+      functionName: "offer",
+      args: [slot, price, deposit, expiry],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /** Withdraw your standing offer on a slot. */
+  async cancelOffer(slot: Address, id: bigint): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.offerBook(),
+      abi: offerBookAbi,
+      functionName: "cancel",
+      args: [slot, id],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Retire an offer that has been consumed — its bidder now occupies the slot.
+   * Permissionless, so this is cleanup anyone may perform.
+   */
+  async retireOffer(slot: Address, id: bigint): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.offerBook(),
+      abi: offerBookAbi,
+      functionName: "retire",
+      args: [slot, id],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Sell the slot you occupy into a specific bidder's terms.
+   * No allowance of your own is needed: the buyer's is what gets pulled.
+   */
+  async sell(
+    slot: Address,
+    buyer: Address,
+    price: bigint,
+    deposit: bigint,
+  ): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "sell",
+      args: [buyer, price, deposit],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /** The book for this chain, or a clear error naming the chain that lacks one. */
+  private offerBook(): Address {
+    const book = (offerBookAddress as Record<number, Address>)[this.chain.id];
+    if (!book) {
+      throw new SlotsError(
+        `No offer book is deployed on ${this.chain.name}.`,
+        "NO_OFFER_BOOK",
+      );
+    }
+    return book;
   }
 
   /**

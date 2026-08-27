@@ -9,6 +9,7 @@ import {
   ArrowUpFromLine,
   Banknote,
   Check,
+  ChevronDown,
   CircleDollarSign,
   Clock,
   Cog,
@@ -62,7 +63,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Reveal } from "@/components/ui/reveal";
 import {
   Tooltip,
   TooltipContent,
@@ -83,6 +83,7 @@ import { useResolvedPolicy } from "@/hooks/use-resolved-policy";
 import { useSlotAction } from "@/hooks/use-slot-action";
 import { useSlotOnChain } from "@/hooks/use-slot-onchain";
 import { useModules } from "@/hooks/use-v3";
+import { cn } from "@/lib/utils";
 import {
   formatBalance,
   formatBps,
@@ -96,6 +97,7 @@ import {
 } from "./components/event-history";
 import { ManageTerms } from "./components/manage-terms";
 import { MetadataForm } from "./components/metadata-form";
+import { OfferBookPanel } from "./components/offer-book";
 import {
   PendingUpdatesNotice,
   type PendingViewer,
@@ -159,6 +161,10 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   const [activeTab, setActiveTab] = useState<"details" | "activity" | "manage">(
     "details",
   );
+  // Lifted out of `Reveal` because the trigger and the content no longer live
+  // together: the chevron sits beside the primary button, inside BuySection or
+  // ManageTerms, while what it opens renders below both.
+  const [moreOpen, setMoreOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"actions" | "metadata" | null>(
     null,
   );
@@ -232,6 +238,40 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
   // this figure climbs in step with the tax row above it rather than sitting on
   // whatever the last read happened to catch.
   const collectable = slot.collectedTax + accrual.taxOwed;
+
+  // Declared here, well above the helpers it belongs with, because
+  // `renderActionsCard` is a HOISTED function called from the JSX further down
+  // — a const declared beside it would still be in its temporal dead zone when
+  // that call runs, which is a blank error page rather than a type error.
+  //
+  // Whether the chevron is worth showing at all: the same condition the panel
+  // uses, named once so the trigger can never appear over an empty disclosure.
+  const hasMoreActions = isOccupant || collectable > 0n || isOccupied;
+
+  /**
+   * The disclosure, as a square beside the primary button.
+   *
+   * It was a full-width bar under the form, which read as a fourth thing to do
+   * rather than as "there is more". Beside the button it is obviously an
+   * attachment to it, and costs no vertical space at all.
+   */
+  const moreTrigger = (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      aria-expanded={moreOpen}
+      aria-label={moreOpen ? "Hide more actions" : "More actions"}
+      title={moreOpen ? "Hide more actions" : "More actions"}
+      onClick={() => setMoreOpen((v) => !v)}
+      className="shrink-0"
+    >
+      <ChevronDown
+        aria-hidden
+        className={cn("size-4 transition-transform", moreOpen && "rotate-180")}
+      />
+    </Button>
+  );
 
   const hasModule =
     slot.utility != null && slot.utility.toLowerCase() !== zeroAddress;
@@ -356,7 +396,11 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
       </PageHeader>
 
       <div className="w-full px-3 md:px-5 py-3 pb-32 lg:pb-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
+        {/* The valuation column carries a price input, deposit-runway choices,
+            the actions and now the offer board — 320px wrapped every one of
+            them. It grows with the viewport instead, since the left column is
+            prose and tables that reflow happily. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px] gap-6 items-start">
           {/* Left: Tabbed content + mobile slide panel */}
           <div className="relative overflow-hidden">
             {/* Main content — slides left when mobile panel is open */}
@@ -868,8 +912,16 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
           </div>
 
           {/* Right: Actions — desktop only */}
-          <div className="hidden lg:block lg:sticky lg:top-6">
+          <div className="hidden lg:block lg:sticky lg:top-6 space-y-3">
             {renderActionsCard()}
+
+            {/* Directly under the price actions, because that is what it is:
+                another way to move the price. Buying sets it upward, selling
+                into an offer sets it down — reading them apart would hide that
+                they are the same decision. */}
+            {isOccupied && (
+              <OfferBookPanel slot={slot} isOccupant={!!isOccupant} />
+            )}
           </div>
         </div>
       </div>
@@ -1041,6 +1093,8 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                     slot={slot}
                     slotAddress={slotAddress}
                     isOccupied={isOccupied}
+                    trailing={hasMoreActions ? moreTrigger : undefined}
+                    onOffered={refetchSlot}
                   />
                 </>
               )}
@@ -1058,6 +1112,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                     accrual={accrual}
                     walletBalance={walletBalance}
                     onDone={refetchSlot}
+                    trailing={hasMoreActions ? moreTrigger : undefined}
                   />
                 </div>
               )}
@@ -1068,8 +1123,12 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                   Folded behind the same bar the price steps use, they read as
                   what they are: things you occasionally need, not things the
                   panel is for. */}
-              {(isOccupant || collectable > 0n) && (
-                <Reveal label="More actions">
+              {/* Includes the liquidator case: liquidation used to sit outside
+                  this bar as a standing red button, which gave a thing you can
+                  almost never do the loudest slot on the panel. It belongs with
+                  the other occasional actions. */}
+              {hasMoreActions && moreOpen && (
+                <div className="space-y-2 border p-2.5">
                   {/* collect() is permissionless — anyone can flush settled tax
                       to the recipient. The label only reflects whether the
                       caller is the one getting paid. */}
@@ -1134,26 +1193,35 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                       </AlertDialogContent>
                     </AlertDialog>
                   )}
-                </Reveal>
-              )}
 
-              {isOccupied && !isOccupant && (
-                <Button
-                  variant="destructive"
-                  className="w-full"
-                  // The interpolated one, so the button unlocks the moment the
-                  // deposit runs out rather than on the next manual refresh.
-                  disabled={busy || !accrual.insolvent}
-                  onClick={() => liquidate(slotAddress as Address)}
-                >
-                  {busy && activeAction === "Liquidate" ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Flame className="size-4 mr-1" /> Liquidate
-                    </>
+                  {/* Permissionless, but only once the deposit is actually
+                      gone. Disabled rather than hidden while solvent, so the
+                      rule is visible instead of the button being a mystery
+                      that appears one day. */}
+                  {isOccupied && !isOccupant && (
+                    <Button
+                      variant="destructive"
+                      className="w-full"
+                      // The interpolated figure, so it unlocks the moment the
+                      // deposit runs out rather than on the next manual refresh.
+                      disabled={busy || !accrual.insolvent}
+                      onClick={() => liquidate(slotAddress as Address)}
+                      title={
+                        accrual.insolvent
+                          ? "The occupant has run out of deposit"
+                          : "Only once the occupant's deposit runs out"
+                      }
+                    >
+                      {busy && activeAction === "Liquidate" ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Flame className="size-4 mr-1" /> Liquidate
+                        </>
+                      )}
+                    </Button>
                   )}
-                </Button>
+                </div>
               )}
             </>
           )}

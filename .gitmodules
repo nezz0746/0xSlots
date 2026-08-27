@@ -18,3 +18,6 @@
 [submodule "apps/contracts/lib/solady"]
 	path = apps/contracts/lib/solady
 	url = https://github.com/Vectorized/solady
+[submodule "apps/contracts/lib/universal-rewards-distributor"]
+	path = apps/contracts/lib/universal-rewards-distributor
+	url = https://github.com/morpho-org/universal-rewards-distributor

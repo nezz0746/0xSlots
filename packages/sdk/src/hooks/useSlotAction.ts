@@ -279,6 +279,33 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     [exec, client],
   );
 
+  // ─── Standing offers ──────────────────────────────────────────────────────
+  // Routed through `exec` like every other action, which is the whole point:
+  // the label drives the toast, the receipt drives the shared post-transaction
+  // refresh, and a rejected wallet prompt surfaces as an error instead of an
+  // unhandled promise rejection that leaves the button looking dead.
+
+  const offer = useCallback(
+    (slot: Address, price: bigint, deposit: bigint, expiry: bigint) =>
+      exec("Offer", () => client.offer(slot, price, deposit, expiry)),
+    [exec, client],
+  );
+  const cancelOffer = useCallback(
+    (slot: Address, id: bigint) =>
+      exec("Cancel offer", () => client.cancelOffer(slot, id)),
+    [exec, client],
+  );
+  const retireOffer = useCallback(
+    (slot: Address, id: bigint) =>
+      exec("Retire offer", () => client.retireOffer(slot, id)),
+    [exec, client],
+  );
+  const sell = useCallback(
+    (slot: Address, buyer: Address, price: bigint, deposit: bigint) =>
+      exec("Sell slot", () => client.sell(slot, buyer, price, deposit)),
+    [exec, client],
+  );
+
   // Manager
   const proposeTaxUpdate = useCallback(
     (slot: Address, newPct: bigint) =>
@@ -358,6 +385,10 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     manageTerms,
     withdraw,
     release,
+    offer,
+    cancelOffer,
+    retireOffer,
+    sell,
     collect,
     liquidate,
     proposeTaxUpdate,

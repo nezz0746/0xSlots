@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {BaseScript, console2} from "./Base.s.sol";
+import {OfferBook} from "../src/periphery/OfferBook.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../src/Slot.sol";
@@ -59,6 +60,7 @@ contract SeedLocal is BaseScript {
     SlotFactory internal factory;
     MetadataModule internal metadata;
     LocalToken internal token;
+    OfferBook internal offerBook;
 
     struct Actor {
         address addr;
@@ -141,6 +143,20 @@ contract SeedLocal is BaseScript {
             "LocalToken address drifted - update tokens.ts in packages/sdk"
         );
 
+        // The offer book, deliberately deployed AFTER LocalToken.
+        //
+        // It is unpinned — it holds no funds and no slots, and nothing on chain
+        // references it, so a moved address costs a re-read of the deployment
+        // file and nothing else. LocalToken is the opposite: its address is
+        // asserted above and hard-coded in packages/sdk. Deploying the book
+        // earlier consumed a deployer nonce and shifted the pinned contract,
+        // which is exactly backwards. Unpinned things absorb drift; pinned
+        // things must not be made to.
+        vm.startBroadcast(deployerPrivateKey);
+        offerBook = new OfferBook();
+        vm.stopBroadcast();
+        console2.log("OfferBook:", address(offerBook));
+
         IERC20 usdx = IERC20(address(token));
         IERC20 native = IERC20(address(0));
 
@@ -193,6 +209,9 @@ contract SeedLocal is BaseScript {
 
         // ── Occupancy ────────────────────────────────────────────────────────
         _buyErc20(actors[1], prime, 100 ether, 500, 7 days, 3);
+        // actor 3 does not hold `prime` — a bid under actor 1's 100 asking
+        // price, which is the only shape an offer makes sense in.
+        _offer(actors[3], prime, 70 ether, 20 ether);
         _buyErc20(actors[2], managed, 250 ether, 1000, 1 days, 2);
         _buyErc20(actors[4], withMeta, 75 ether, 400, 2 days, 3);
         // Exactly the minimum: one warp past `minDepositSeconds` drains it.
@@ -224,6 +243,7 @@ contract SeedLocal is BaseScript {
         vm.stopBroadcast();
 
         _saveDeployment(address(token), "LocalToken");
+        _saveDeployment(address(offerBook), "OfferBook");
 
         console2.log("=== seed complete ===");
     }
@@ -244,5 +264,32 @@ contract SeedLocal is BaseScript {
         vm.stopBroadcast();
         console2.log("bought", slotAddr);
         console2.log("   by", actor.addr);
+    }
+
+    /// A standing offer from someone who does NOT hold the slot.
+    ///
+    /// The distinction matters: an occupant's own offer is meaningless — they
+    /// cannot sell to themselves — and one left on the board is pure noise. So
+    /// the demo board carries a real counterparty's bid, under the asking
+    /// price, which is the only shape that makes sense.
+    ///
+    /// The allowance goes to the SLOT, not the book: the book never custodies,
+    /// and the slot is what pulls when the occupant sells. See OfferBook.
+    function _offer(
+        Actor memory bidder,
+        address slotAddr,
+        uint256 price,
+        uint256 deposit
+    ) internal {
+        vm.startBroadcast(bidder.pk);
+        token.approve(slotAddr, price + deposit);
+        offerBook.offer(
+            slotAddr,
+            price,
+            deposit,
+            uint64(block.timestamp + 7 days)
+        );
+        vm.stopBroadcast();
+        console2.log("offered on", slotAddr);
     }
 }

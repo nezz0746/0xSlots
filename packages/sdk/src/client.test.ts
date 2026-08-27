@@ -14,7 +14,10 @@ const UTILITY = "0x4444444444444444444444444444444444444444" as const;
  * rather than silently returning a default, which is half the point of these
  * tests.
  */
-function harness(reads: Record<string, unknown>) {
+function harness(
+  reads: Record<string, unknown>,
+  chainId: SlotsChain = SlotsChain.BASE,
+) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which
   // is a property of the fake, not of the code under test.
@@ -33,7 +36,7 @@ function harness(reads: Record<string, unknown>) {
   });
 
   const client = new SlotsClient({
-    chainId: SlotsChain.BASE,
+    chainId,
     apiUrl: "http://localhost/never-called",
     publicClient: {
       readContract,
@@ -42,7 +45,7 @@ function harness(reads: Record<string, unknown>) {
     walletClient: {
       writeContract,
       account: { address: ACCOUNT },
-      chain: { id: SlotsChain.BASE },
+      chain: { id: chainId },
     } as any,
   });
 
@@ -148,6 +151,75 @@ describe("factory admin", () => {
     expect(sent(writeContract, "setUtilityVerified").args).toEqual([
       UTILITY,
       false,
+    ]);
+  });
+});
+
+describe("standing offers", () => {
+  const DAY = 86_400n;
+  // Anvil is the only chain with an OfferBook deployed today, so these run
+  // there. On a chain without one, `offer` refuses by design — see the last
+  // test in this block.
+  const onBookChain = (reads: Record<string, unknown>) =>
+    harness(reads, SlotsChain.ANVIL);
+
+  it("approves the SLOT, not the book — the slot is what pulls on a sell", async () => {
+    const { client, writeContract } = onBookChain({
+      currency: ERC20,
+      allowance: 0n,
+    });
+
+    await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
+
+    const approve = sent(writeContract, "approve");
+    expect(approve.args[0]).toBe(SLOT);
+    expect(approve.args[1]).toBe(70n * 10n ** 6n + 10n ** 6n);
+  });
+
+  it("skips the approval when the allowance already covers it", async () => {
+    const { client, writeContract } = onBookChain({
+      currency: ERC20,
+      allowance: 10n ** 30n,
+    });
+
+    await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
+
+    // Raising a bid inside an allowance you already granted is one wallet
+    // prompt, not two. This is the behaviour `buy` has always had and the
+    // hand-rolled offer path did not.
+    expect(approvals(writeContract)).toHaveLength(0);
+    expect(sent(writeContract, "offer")).toBeDefined();
+  });
+
+  it("refuses on a chain with no book, naming the chain", async () => {
+    const { client, writeContract } = harness({});
+    await expect(client.offer(SLOT, 1n, 1n, DAY)).rejects.toThrow(
+      /No offer book/i,
+    );
+    expect(sent(writeContract, "offer")).toBeUndefined();
+  });
+
+  it("refuses a native slot rather than posting an offer nobody can fill", async () => {
+    const { client, writeContract } = onBookChain({
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await expect(
+      client.offer(SLOT, 10n ** 18n, 10n ** 17n, DAY),
+    ).rejects.toThrow(/native ETH/i);
+    expect(sent(writeContract, "offer")).toBeUndefined();
+  });
+
+  it("selling needs no allowance of the seller's own", async () => {
+    const { client, writeContract } = onBookChain({});
+
+    await client.sell(SLOT, ACCOUNT, 70n * 10n ** 6n, 10n ** 6n);
+
+    expect(approvals(writeContract)).toHaveLength(0);
+    expect(sent(writeContract, "sell").args).toEqual([
+      ACCOUNT,
+      70n * 10n ** 6n,
+      10n ** 6n,
     ]);
   });
 });

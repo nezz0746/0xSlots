@@ -12,6 +12,7 @@ export {
   slotFactoryAbi,
 } from "./abis";
 export { feedModuleAbi } from "./abis/feed-module";
+export { offerBookAbi } from "./abis/offerBook";
 export { feedRouterAbi } from "./abis/feed-router";
 export { feedSocialGroupAbi } from "./abis/feed-social-group";
 export { metadataModuleAbi } from "./abis/metadata-module";
@@ -33,11 +34,14 @@ export {
   getSupportedChainIds,
   isSlotsHubDeployed,
   MINIMUM_PRICE_POLICY_FACTORY,
+  offerBookAddress,
   MINIMUM_TENURE_POLICY_FACTORY,
   POLICY_FACTORIES,
+  publisherUrdAddress,
   type SupportedChainId,
   slotCollectiveFactoryAddress,
   slotFactoryAddress,
+  urdFactoryAddress,
 } from "./addresses";
 // Re-export feed events
 export { FEED_EVENT_TYPES, FeedEventType, feedEvent } from "./events";

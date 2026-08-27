@@ -176,6 +176,21 @@ interface ISlotEvents {
         uint256 selfAssessedPrice
     );
 
+    /// @notice The occupant handed the slot to `buyer` at a price they named.
+    ///
+    /// @dev Emitted ALONGSIDE `Bought`, never instead of it. The occupancy
+    ///      transition is a buy and every consumer already reads it that way;
+    ///      this carries the one thing `Bought` cannot — that the seller
+    ///      initiated. `tx.origin` cannot substitute: it reports a bundler or a
+    ///      Safe owner, which is wrong in exactly the delegated cases that
+    ///      matter.
+    event Sold(
+        address indexed seller,
+        address indexed buyer,
+        uint256 price,
+        uint256 deposit
+    );
+
     event Released(address indexed occupant, uint256 refund);
 
     event Liquidated(

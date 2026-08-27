@@ -22,5 +22,17 @@
   },
   "lib/protocol-monorepo": {
     "rev": "40d34958f31b55fa0f9271f07794786c56a01a65"
+  },
+  "lib/solady": {
+    "rev": "c251232428b668a073293eb04c6c288b19ad5728"
+  },
+  "lib/splits-contracts-monorepo": {
+    "rev": "71f09d309aabf967994ef623340129f186c340fd"
+  },
+  "lib/universal-rewards-distributor": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "8aaa0099db6cef311a2b02e04b930bfe9b6a6e4e"
+    }
   }
 }
