@@ -367,5 +367,31 @@ export const slotCollectiveAbi = [
     "type": "error",
     "name": "UnauthorizedInitializer",
     "inputs": []
+  },
+  {
+    "type": "function",
+    "name": "setSplit",
+    "inputs": [
+      {
+        "name": "split",
+        "type": "tuple",
+        "internalType": "struct SplitV2Lib.Split",
+        "components": [
+          { "name": "recipients", "type": "address[]", "internalType": "address[]" },
+          { "name": "allocations", "type": "uint256[]", "internalType": "uint256[]" },
+          { "name": "totalAllocation", "type": "uint256", "internalType": "uint256" },
+          { "name": "distributionIncentive", "type": "uint16", "internalType": "uint16" }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setPaused",
+    "inputs": [{ "name": "_paused", "type": "bool", "internalType": "bool" }],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   }
 ] as const;

@@ -8,6 +8,7 @@ import { useCallback } from "react";
 import { type Address, isAddress } from "viem";
 import { useAccount } from "wagmi";
 import { CollectiveRoleCard } from "@/components/collective-role-card";
+import { CollectiveSplitEditor } from "@/components/collective-split-editor";
 import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,17 @@ export default function CollectivePage() {
       ?.find((g) => g.label === "DEFAULT_ADMIN")
       ?.members.some((m) => m.account.toLowerCase() === me.toLowerCase()) ??
       false);
+
+  // Editing the split is gated the same way the contract gates `setSplit`:
+  // `onlyRoleOrAdmin(SPLIT_MANAGER_ROLE)`. Admin qualifies because it admins
+  // every role, so it is folded in here rather than checked separately.
+  const canManageSplit =
+    isAdmin ||
+    (!!me &&
+      (roles
+        ?.find((g) => g.label === "SPLIT_MANAGER")
+        ?.members.some((m) => m.account.toLowerCase() === me.toLowerCase()) ??
+        false));
 
   return (
     <div className="min-h-screen">
@@ -200,6 +212,13 @@ export default function CollectivePage() {
                   </div>
                 )}
               </div>
+
+              <CollectiveSplitEditor
+                collective={address as Address}
+                recipients={collective.recipients}
+                canManage={canManageSplit}
+                onChanged={handleChanged}
+              />
             </section>
 
             {/* ── Provenance ─────────────────────────────────── */}
