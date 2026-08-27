@@ -4,12 +4,12 @@ import { formatDistanceToNow } from "date-fns";
 import { ChevronRight, PlusIcon, Users } from "lucide-react";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
+import { CollectiveLabel } from "@/components/collective-name";
 import {
   CollectiveUnavailable,
   useCollectiveFactory,
 } from "@/components/collective-unavailable";
 import { CopyAddress } from "@/components/copy-address";
-import { EnsName } from "@/components/ens-name";
 import { PageHeader } from "@/components/page-header";
 import { TableEmpty, TableSkeleton } from "@/components/table-states";
 import { Badge } from "@/components/ui/badge";
@@ -176,7 +176,9 @@ function CollectiveListRow({ row }: { row: CollectiveRow }) {
             onClick={(e) => e.stopPropagation()}
             className="text-xs hover:underline"
           >
-            <EnsName address={row.id} />
+            {/* The name the user gave it, if any — the whole reason naming
+                exists is that this column was otherwise five rows of hex. */}
+            <CollectiveLabel address={row.id} />
           </NavLink>
           <CopyAddress address={row.id} showAddress={false} />
         </div>

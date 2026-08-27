@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useCallback } from "react";
 import { type Address, isAddress } from "viem";
 import { useAccount } from "wagmi";
+import { CollectiveNameHeading } from "@/components/collective-name";
 import { CollectiveRoleCard } from "@/components/collective-role-card";
 import { CollectiveSplitEditor } from "@/components/collective-split-editor";
 import { CopyAddress } from "@/components/copy-address";
@@ -87,9 +88,15 @@ export default function CollectivePage() {
           </NavLink>
           <Users className="size-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0">
-            <h1 className="text-xl font-bold leading-tight tracking-tight">
-              Collective
-            </h1>
+            {/* Renameable in place, but only once the address is real — a name
+                is stored against it, so there is nothing to name otherwise. */}
+            {valid ? (
+              <CollectiveNameHeading address={address} />
+            ) : (
+              <h1 className="text-xl font-bold leading-tight tracking-tight">
+                Collective
+              </h1>
+            )}
             {valid && (
               <div className="text-muted-foreground">
                 <CopyAddress address={address} truncate={false} ens />
