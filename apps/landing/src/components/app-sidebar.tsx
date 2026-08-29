@@ -1,7 +1,15 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { Check, ChevronDown, PlusIcon, Scale, User, Users } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  PlusIcon,
+  Scale,
+  Trophy,
+  User,
+  Users,
+} from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
@@ -77,7 +85,11 @@ export function AppSidebar() {
           0xSlots
         </NavLink>
 
-        <Button size="sm" className="w-full" onClick={() => push("/app/create")}>
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={() => push("/app/create")}
+        >
           <PlusIcon className="size-4" />
           Create Slot
         </Button>
@@ -115,6 +127,18 @@ export function AppSidebar() {
                 >
                   <Scale className="size-4" />
                   <span>Policies</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* A ROUTE like Policies, not a section: the reward leaderboard
+                  is program-wide, so it sits with the other "how the protocol
+                  works" destinations rather than the explorer tabs. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/app/rewards")}
+                  onClick={() => push("/app/rewards")}
+                >
+                  <Trophy className="size-4" />
+                  <span>Rewards</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
