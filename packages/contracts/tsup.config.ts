@@ -5,6 +5,7 @@ export default defineConfig({
     index: "src/index.ts",
     abis: "src/abis.ts",
     addresses: "src/addresses.ts",
+    slots: "src/slots.ts",
   },
   format: ["esm"],
   dts: true,

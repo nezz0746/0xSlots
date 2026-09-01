@@ -22,6 +22,10 @@
     "./addresses": {
       "types": "./dist/addresses.d.ts",
       "import": "./dist/addresses.js"
+    },
+    "./slots": {
+      "types": "./dist/slots.d.ts",
+      "import": "./dist/slots.js"
     }
   },
   "publishConfig": {

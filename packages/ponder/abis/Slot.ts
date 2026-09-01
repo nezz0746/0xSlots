@@ -1,3 +1,6 @@
+// Generated from apps/contracts/src/slots/Slot.sol. Copied from
+// packages/contracts/src/abis/slots/slot.ts — kept here so the indexer's
+// types do not depend on that package having been built.
 export const SlotAbi = [
     {
       "type": "constructor",
@@ -5,108 +8,8 @@ export const SlotAbi = [
       "stateMutability": "nonpayable"
     },
     {
-      "type": "function",
-      "name": "BASIS_POINTS",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "MAX_MODULES",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "MONTH",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "TOPIC_PRICE",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint32",
-          "internalType": "uint32"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "TOPIC_RELEASE",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint32",
-          "internalType": "uint32"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "TOPIC_SETTLE",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint32",
-          "internalType": "uint32"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "TOPIC_TRANSFER",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint32",
-          "internalType": "uint32"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "addModule",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
+      "type": "receive",
+      "stateMutability": "payable"
     },
     {
       "type": "function",
@@ -133,20 +36,7 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "cancelPendingUpdate",
-      "inputs": [
-        {
-          "name": "kind",
-          "type": "uint8",
-          "internalType": "enum UpdateKind"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "cancelPendingUpdates",
+      "name": "cancelProposal",
       "inputs": [],
       "outputs": [],
       "stateMutability": "nonpayable"
@@ -225,20 +115,7 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "epochSeconds",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint64",
-          "internalType": "uint64"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "factory",
+      "name": "hook",
       "inputs": [],
       "outputs": [
         {
@@ -251,231 +128,53 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "galleryModules",
+      "name": "hookFlags",
       "inputs": [],
       "outputs": [
         {
-          "name": "",
-          "type": "address[]",
-          "internalType": "address[]"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "getPendingUpdate",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
+          "name": "f",
           "type": "tuple",
-          "internalType": "struct PendingUpdate",
+          "internalType": "struct HookFlags",
           "components": [
             {
-              "name": "newTaxPercentage",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "newUtility",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "hasTaxUpdate",
+              "name": "beforeBuy",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "hasUtilityUpdate",
-              "type": "bool",
-              "internalType": "bool"
-            }
-          ]
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "getSlotInfo",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "info",
-          "type": "tuple",
-          "internalType": "struct SlotInfo",
-          "components": [
-            {
-              "name": "recipient",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "currency",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "manager",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "mutableTax",
+              "name": "beforeSell",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "mutableUtility",
+              "name": "beforeSelfAssess",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "mutablePolicy",
+              "name": "afterBuy",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "occupant",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "price",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "taxPercentage",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "utility",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "liquidationBountyBps",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "minDepositSeconds",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "deposit",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "collectedTax",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "taxOwed",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "lastSettled",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "secondsUntilLiquidation",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "insolvent",
+              "name": "afterSell",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "utilityName",
-              "type": "string",
-              "internalType": "string"
-            },
-            {
-              "name": "utilityVersion",
-              "type": "string",
-              "internalType": "string"
-            },
-            {
-              "name": "utilityFeeBps",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "utilityFeeRecipient",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "utilityURI",
-              "type": "string",
-              "internalType": "string"
-            },
-            {
-              "name": "hasPendingTax",
+              "name": "afterRelease",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "pendingTaxPercentage",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "hasPendingUtility",
+              "name": "afterLiquidate",
               "type": "bool",
               "internalType": "bool"
             },
             {
-              "name": "pendingUtility",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "occupancyPolicy",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "occupiedSince",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "hasPendingPolicy",
+              "name": "afterSettle",
               "type": "bool",
               "internalType": "bool"
-            },
-            {
-              "name": "pendingPolicy",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "taxProposedAt",
-              "type": "uint64",
-              "internalType": "uint64"
-            },
-            {
-              "name": "utilityProposedAt",
-              "type": "uint64",
-              "internalType": "uint64"
-            },
-            {
-              "name": "policyProposedAt",
-              "type": "uint64",
-              "internalType": "uint64"
             }
           ]
         }
@@ -487,59 +186,32 @@ export const SlotAbi = [
       "name": "initialize",
       "inputs": [
         {
-          "name": "_recipient",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "_currency",
-          "type": "address",
-          "internalType": "contract IERC20"
-        },
-        {
-          "name": "_config",
+          "name": "p",
           "type": "tuple",
-          "internalType": "struct SlotConfig",
+          "internalType": "struct SlotInit",
           "components": [
             {
-              "name": "mutableTax",
-              "type": "bool",
-              "internalType": "bool"
+              "name": "recipient",
+              "type": "address",
+              "internalType": "address"
             },
             {
-              "name": "mutableUtility",
-              "type": "bool",
-              "internalType": "bool"
-            },
-            {
-              "name": "mutablePolicy",
-              "type": "bool",
-              "internalType": "bool"
+              "name": "currency",
+              "type": "address",
+              "internalType": "contract IERC20"
             },
             {
               "name": "manager",
               "type": "address",
               "internalType": "address"
-            }
-          ]
-        },
-        {
-          "name": "_init",
-          "type": "tuple",
-          "internalType": "struct SlotInitParams",
-          "components": [
-            {
-              "name": "taxPercentage",
-              "type": "uint256",
-              "internalType": "uint256"
             },
             {
-              "name": "utility",
+              "name": "hook",
               "type": "address",
               "internalType": "address"
             },
             {
-              "name": "liquidationBountyBps",
+              "name": "taxPercentage",
               "type": "uint256",
               "internalType": "uint256"
             },
@@ -549,16 +221,16 @@ export const SlotAbi = [
               "internalType": "uint256"
             },
             {
-              "name": "occupancyPolicy",
-              "type": "address",
-              "internalType": "address"
+              "name": "mutableTax",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "mutableHook",
+              "type": "bool",
+              "internalType": "bool"
             }
           ]
-        },
-        {
-          "name": "_factory",
-          "type": "address",
-          "internalType": "address"
         }
       ],
       "outputs": [],
@@ -579,32 +251,8 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "isModuleInstalled",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "isOperator",
       "inputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        },
         {
           "name": "",
           "type": "address",
@@ -640,8 +288,8 @@ export const SlotAbi = [
       "outputs": [
         {
           "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
+          "type": "uint64",
+          "internalType": "uint64"
         }
       ],
       "stateMutability": "view"
@@ -652,19 +300,6 @@ export const SlotAbi = [
       "inputs": [],
       "outputs": [],
       "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "liquidationBountyBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -681,32 +316,6 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "maxPrice",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "pure"
-    },
-    {
-      "type": "function",
-      "name": "maxTaxBps",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "pure"
-    },
-    {
-      "type": "function",
       "name": "minDepositSeconds",
       "inputs": [],
       "outputs": [
@@ -714,63 +323,6 @@ export const SlotAbi = [
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "module",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "moduleData",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "tuple",
-          "internalType": "struct SlotModules.ModuleData",
-          "components": [
-            {
-              "name": "installedAt",
-              "type": "uint64",
-              "internalType": "uint64"
-            },
-            {
-              "name": "topics",
-              "type": "uint32",
-              "internalType": "uint32"
-            }
-          ]
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "modules",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "list",
-          "type": "address[]",
-          "internalType": "address[]"
         }
       ],
       "stateMutability": "view"
@@ -796,20 +348,7 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "mutableModule",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "mutablePolicy",
+      "name": "mutableHook",
       "inputs": [],
       "outputs": [
         {
@@ -835,32 +374,6 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "mutableUtility",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "occupancyPolicy",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "occupant",
       "inputs": [],
       "outputs": [
@@ -879,127 +392,6 @@ export const SlotAbi = [
       "outputs": [
         {
           "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "pendingModules",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address[]",
-          "internalType": "address[]"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "pendingPolicyUpdate",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "newPolicy",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "hasPolicyUpdate",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "pendingTransfer",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "buyer",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "effectiveAt",
-          "type": "uint96",
-          "internalType": "uint96"
-        },
-        {
-          "name": "deposit",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "newPrice",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "pricePaid",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "pendingUpdate",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "newTaxPercentage",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "newUtility",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "hasTaxUpdate",
-          "type": "bool",
-          "internalType": "bool"
-        },
-        {
-          "name": "hasUtilityUpdate",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "pendingUpdateOf",
-      "inputs": [
-        {
-          "name": "kind",
-          "type": "uint8",
-          "internalType": "enum UpdateKind"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "isSet",
-          "type": "bool",
-          "internalType": "bool"
-        },
-        {
-          "name": "value",
-          "type": "bytes32",
-          "internalType": "bytes32"
-        },
-        {
-          "name": "proposedAt",
           "type": "uint64",
           "internalType": "uint64"
         }
@@ -1008,11 +400,74 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "policyProposedAt",
-      "inputs": [],
+      "name": "orderNonce",
+      "inputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
       "outputs": [
         {
           "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "orderUsed",
+      "inputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "pending",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "taxPercentage",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "hook",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "hasTax",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "hasHook",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "proposedAt",
           "type": "uint64",
           "internalType": "uint64"
         }
@@ -1034,25 +489,27 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "proposePolicyUpdate",
+      "name": "proposeTerms",
       "inputs": [
         {
-          "name": "newPolicy",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "proposeTaxUpdate",
-      "inputs": [
-        {
-          "name": "newPct",
+          "name": "newTax",
           "type": "uint256",
           "internalType": "uint256"
+        },
+        {
+          "name": "newHook",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "changeTax",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "changeHook",
+          "type": "bool",
+          "internalType": "bool"
         }
       ],
       "outputs": [],
@@ -1075,19 +532,6 @@ export const SlotAbi = [
       "type": "function",
       "name": "release",
       "inputs": [],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
-      "name": "removeModule",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
       "outputs": [],
       "stateMutability": "nonpayable"
     },
@@ -1124,7 +568,7 @@ export const SlotAbi = [
         {
           "name": "order",
           "type": "tuple",
-          "internalType": "struct SlotSellOrder.SellOrder",
+          "internalType": "struct SlotOrders.SellOrder",
           "components": [
             {
               "name": "slot",
@@ -1174,7 +618,7 @@ export const SlotAbi = [
         {
           "name": "order",
           "type": "tuple",
-          "internalType": "struct SlotSellOrder.SellOrder",
+          "internalType": "struct SlotOrders.SellOrder",
           "components": [
             {
               "name": "slot",
@@ -1220,62 +664,6 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "sellOrderNonce",
-      "inputs": [
-        {
-          "name": "buyer",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "sellOrderUsed",
-      "inputs": [
-        {
-          "name": "buyer",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "nonce",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "bool",
-          "internalType": "bool"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "setLiquidationBounty",
-      "inputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "pure"
-    },
-    {
-      "type": "function",
       "name": "setOperator",
       "inputs": [
         {
@@ -1284,7 +672,7 @@ export const SlotAbi = [
           "internalType": "address"
         },
         {
-          "name": "approved",
+          "name": "allowed",
           "type": "bool",
           "internalType": "bool"
         }
@@ -1320,19 +708,6 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "taxProposedAt",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint64",
-          "internalType": "uint64"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
       "name": "topUp",
       "inputs": [
         {
@@ -1343,32 +718,6 @@ export const SlotAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
-    },
-    {
-      "type": "function",
-      "name": "utility",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "utilityProposedAt",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint64",
-          "internalType": "uint64"
-        }
-      ],
-      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -1413,7 +762,7 @@ export const SlotAbi = [
           "internalType": "address"
         },
         {
-          "name": "previousOccupant",
+          "name": "from",
           "type": "address",
           "indexed": true,
           "internalType": "address"
@@ -1431,7 +780,45 @@ export const SlotAbi = [
           "internalType": "uint256"
         },
         {
-          "name": "selfAssessedPrice",
+          "name": "paid",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "Claimed",
+      "inputs": [
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "Credited",
+      "inputs": [
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amount",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
@@ -1444,7 +831,7 @@ export const SlotAbi = [
       "name": "Deposited",
       "inputs": [
         {
-          "name": "depositor",
+          "name": "by",
           "type": "address",
           "indexed": true,
           "internalType": "address"
@@ -1454,6 +841,31 @@ export const SlotAbi = [
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
+        },
+        {
+          "name": "total",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "HookCallFailed",
+      "inputs": [
+        {
+          "name": "hook",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "selector",
+          "type": "bytes4",
+          "indexed": false,
+          "internalType": "bytes4"
         }
       ],
       "anonymous": false
@@ -1473,10 +885,29 @@ export const SlotAbi = [
     },
     {
       "type": "event",
+      "name": "Initialized",
+      "inputs": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "currency",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
       "name": "Liquidated",
       "inputs": [
         {
-          "name": "liquidator",
+          "name": "by",
           "type": "address",
           "indexed": true,
           "internalType": "address"
@@ -1485,115 +916,6 @@ export const SlotAbi = [
           "name": "occupant",
           "type": "address",
           "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "bounty",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "LiquidationBountyUpdated",
-      "inputs": [
-        {
-          "name": "newBps",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "ModuleAddQueued",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "ModuleCallFailed",
-      "inputs": [
-        {
-          "name": "callbackName",
-          "type": "string",
-          "indexed": false,
-          "internalType": "string"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "ModuleFeePaid",
-      "inputs": [
-        {
-          "name": "utility",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "amount",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        },
-        {
-          "name": "feeBps",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "ModuleInstalled",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "ModuleRemoved",
-      "inputs": [
-        {
-          "name": "module",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "ModuleUpdateProposed",
-      "inputs": [
-        {
-          "name": "newUtility",
-          "type": "address",
-          "indexed": false,
           "internalType": "address"
         }
       ],
@@ -1604,19 +926,13 @@ export const SlotAbi = [
       "name": "OperatorSet",
       "inputs": [
         {
-          "name": "occupant",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
           "name": "operator",
           "type": "address",
           "indexed": true,
           "internalType": "address"
         },
         {
-          "name": "approved",
+          "name": "allowed",
           "type": "bool",
           "indexed": false,
           "internalType": "bool"
@@ -1626,59 +942,33 @@ export const SlotAbi = [
     },
     {
       "type": "event",
-      "name": "PendingUpdateApplied",
+      "name": "OrderCancelled",
       "inputs": [
         {
-          "name": "newTaxPercentage",
+          "name": "buyer",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "nonce",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "PriceSet",
+      "inputs": [
+        {
+          "name": "by",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
         },
-        {
-          "name": "newUtility",
-          "type": "address",
-          "indexed": false,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "PendingUpdateCancelled",
-      "inputs": [],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "PolicyUpdateApplied",
-      "inputs": [
-        {
-          "name": "newPolicy",
-          "type": "address",
-          "indexed": false,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "PolicyUpdateProposed",
-      "inputs": [
-        {
-          "name": "newPolicy",
-          "type": "address",
-          "indexed": false,
-          "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "PriceUpdated",
-      "inputs": [
         {
           "name": "oldPrice",
           "type": "uint256",
@@ -1687,44 +977,6 @@ export const SlotAbi = [
         },
         {
           "name": "newPrice",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "RefundClaimed",
-      "inputs": [
-        {
-          "name": "account",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "amount",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "RefundCredited",
-      "inputs": [
-        {
-          "name": "account",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "amount",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
@@ -1753,130 +1005,25 @@ export const SlotAbi = [
     },
     {
       "type": "event",
-      "name": "SellOrderCancelled",
-      "inputs": [
-        {
-          "name": "buyer",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "nonce",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
       "name": "Settled",
       "inputs": [
         {
-          "name": "taxOwed",
+          "name": "owed",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
         },
         {
-          "name": "taxPaid",
+          "name": "paid",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
         },
         {
-          "name": "depositRemaining",
+          "name": "depositLeft",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "SlotCreated",
-      "inputs": [
-        {
-          "name": "slot",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "recipient",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "currency",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "config",
-          "type": "tuple",
-          "indexed": false,
-          "internalType": "struct SlotConfig",
-          "components": [
-            {
-              "name": "mutableTax",
-              "type": "bool",
-              "internalType": "bool"
-            },
-            {
-              "name": "mutableUtility",
-              "type": "bool",
-              "internalType": "bool"
-            },
-            {
-              "name": "mutablePolicy",
-              "type": "bool",
-              "internalType": "bool"
-            },
-            {
-              "name": "manager",
-              "type": "address",
-              "internalType": "address"
-            }
-          ]
-        },
-        {
-          "name": "initParams",
-          "type": "tuple",
-          "indexed": false,
-          "internalType": "struct SlotInitParams",
-          "components": [
-            {
-              "name": "taxPercentage",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "utility",
-              "type": "address",
-              "internalType": "address"
-            },
-            {
-              "name": "liquidationBountyBps",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "minDepositSeconds",
-              "type": "uint256",
-              "internalType": "uint256"
-            },
-            {
-              "name": "occupancyPolicy",
-              "type": "address",
-              "internalType": "address"
-            }
-          ]
         }
       ],
       "anonymous": false
@@ -1936,32 +1083,19 @@ export const SlotAbi = [
       "name": "TaxPaid",
       "inputs": [
         {
-          "name": "occupant",
+          "name": "payer",
           "type": "address",
           "indexed": true,
           "internalType": "address"
         },
         {
-          "name": "taxOwed",
+          "name": "owed",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
         },
         {
-          "name": "taxPaid",
-          "type": "uint256",
-          "indexed": false,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "TaxUpdateProposed",
-      "inputs": [
-        {
-          "name": "newPercentage",
+          "name": "paid",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
@@ -1971,57 +1105,50 @@ export const SlotAbi = [
     },
     {
       "type": "event",
-      "name": "UpdateApplied",
+      "name": "TermsApplied",
       "inputs": [
         {
-          "name": "kind",
-          "type": "uint8",
-          "indexed": true,
-          "internalType": "enum UpdateKind"
+          "name": "taxPercentage",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
         },
         {
-          "name": "value",
-          "type": "bytes32",
+          "name": "hook",
+          "type": "address",
           "indexed": false,
-          "internalType": "bytes32"
+          "internalType": "address"
         }
       ],
       "anonymous": false
     },
     {
       "type": "event",
-      "name": "UpdateCancelled",
+      "name": "TermsProposed",
       "inputs": [
         {
-          "name": "kind",
-          "type": "uint8",
-          "indexed": true,
-          "internalType": "enum UpdateKind"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "UpdateProposed",
-      "inputs": [
-        {
-          "name": "kind",
-          "type": "uint8",
-          "indexed": true,
-          "internalType": "enum UpdateKind"
+          "name": "taxPercentage",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
         },
         {
-          "name": "value",
-          "type": "bytes32",
+          "name": "hook",
+          "type": "address",
           "indexed": false,
-          "internalType": "bytes32"
+          "internalType": "address"
         },
         {
-          "name": "proposedAt",
-          "type": "uint64",
+          "name": "tax",
+          "type": "bool",
           "indexed": false,
-          "internalType": "uint64"
+          "internalType": "bool"
+        },
+        {
+          "name": "hook_",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
         }
       ],
       "anonymous": false
@@ -2038,6 +1165,12 @@ export const SlotAbi = [
         },
         {
           "name": "amount",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "left",
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
@@ -2068,22 +1201,22 @@ export const SlotAbi = [
     },
     {
       "type": "error",
-      "name": "InsufficientDeposit",
-      "inputs": []
-    },
-    {
-      "type": "error",
       "name": "InvalidCurrency",
       "inputs": []
     },
     {
       "type": "error",
-      "name": "InvalidInitialization",
+      "name": "InvalidDeposit",
       "inputs": []
     },
     {
       "type": "error",
-      "name": "InvalidModule_NoCode",
+      "name": "InvalidHook",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "InvalidInitialization",
       "inputs": []
     },
     {
@@ -2098,42 +1231,12 @@ export const SlotAbi = [
     },
     {
       "type": "error",
-      "name": "InvalidTaxPercentage",
+      "name": "InvalidTax",
       "inputs": []
     },
     {
       "type": "error",
       "name": "InvalidValue",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "LiquidationBountyRetired",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "ModuleAlreadyInstalled",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "ModuleHasNoCode",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "ModuleNotInstalled",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "ModuleNotMutable",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "ModuleNotVerified",
       "inputs": []
     },
     {
@@ -2158,12 +1261,17 @@ export const SlotAbi = [
     },
     {
       "type": "error",
+      "name": "NotMutable",
+      "inputs": []
+    },
+    {
+      "type": "error",
       "name": "NotOccupant",
       "inputs": []
     },
     {
       "type": "error",
-      "name": "NotOrderBuyer",
+      "name": "NotOccupantOrOperator",
       "inputs": []
     },
     {
@@ -2178,7 +1286,27 @@ export const SlotAbi = [
     },
     {
       "type": "error",
-      "name": "PolicyNotMutable",
+      "name": "NothingToWithdraw",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OrderBadSignature",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OrderExpired",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OrderUsed",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "OrderWrongSlot",
       "inputs": []
     },
     {
@@ -2204,42 +1332,12 @@ export const SlotAbi = [
     },
     {
       "type": "error",
-      "name": "SellOrderAlreadyUsed",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "SellOrderBadSignature",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "SellOrderExpired",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "SellOrderWrongSlot",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "SlotAlreadyInitialized",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "TaxNotMutable",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "TooManyModules",
-      "inputs": []
-    },
-    {
-      "type": "error",
       "name": "TransferFailed",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "Vacant",
       "inputs": []
     }
   ] as const;
