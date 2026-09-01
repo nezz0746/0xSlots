@@ -144,24 +144,6 @@ export const slotFactoryAbi = [
     },
     {
       "type": "function",
-      "name": "emitEvent",
-      "inputs": [
-        {
-          "name": "topic",
-          "type": "bytes32",
-          "internalType": "bytes32"
-        },
-        {
-          "name": "data",
-          "type": "bytes",
-          "internalType": "bytes"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "implementation",
       "inputs": [],
       "outputs": [
@@ -377,31 +359,6 @@ export const slotFactoryAbi = [
           "type": "address",
           "indexed": false,
           "internalType": "address"
-        }
-      ],
-      "anonymous": false
-    },
-    {
-      "type": "event",
-      "name": "SlotEvent",
-      "inputs": [
-        {
-          "name": "slot",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "topic",
-          "type": "bytes32",
-          "indexed": true,
-          "internalType": "bytes32"
-        },
-        {
-          "name": "data",
-          "type": "bytes",
-          "indexed": false,
-          "internalType": "bytes"
         }
       ],
       "anonymous": false

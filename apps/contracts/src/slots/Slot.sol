@@ -235,6 +235,7 @@ contract Slot is SlotOrders {
         uint256 refund = _deposit + owedToPrev;
 
         _occupant = account;
+        unchecked { ++tenureId; }
         _price = selfAssessedPrice;
         _deposit = depositAmount;
         occupiedSince = uint64(block.timestamp);
@@ -294,6 +295,7 @@ contract Slot is SlotOrders {
         uint256 proceeds = _deposit + order.price;
 
         _occupant = order.buyer;
+        unchecked { ++tenureId; }
         _price = order.price;
         _deposit = order.deposit;
         occupiedSince = uint64(block.timestamp);
@@ -449,13 +451,27 @@ contract Slot is SlotOrders {
         emit Withdrawn(msg.sender, amount, left);
     }
 
+    /**
+     * @notice Let somebody else reprice on your behalf.
+     *
+     * @dev The approval is scoped to YOUR tenure and dies with it. An approval
+     *      keyed by operator alone would outlive the occupancy that granted
+     *      it: whoever took the slot next would inherit the previous
+     *      occupant's bot as a co-signer on their own asking price, having
+     *      never approved anybody. Nothing else in the contract would notice,
+     *      because the operator's rights read as valid.
+     *
+     *      It does not resurrect either — retaking a slot you once held starts
+     *      a fresh tenure, which approves nobody.
+     */
     function setOperator(address operator, bool allowed)
         external
         onlyOccupant
     {
-        isOperator[operator] = allowed;
+        _operatorOf[tenureId][operator] = allowed;
         emit OperatorSet(operator, allowed);
     }
+
 
     // ─── money out ──────────────────────────────────────────────────────────
 

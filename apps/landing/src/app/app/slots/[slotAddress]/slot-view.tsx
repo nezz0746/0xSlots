@@ -2,7 +2,7 @@
 
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useCallback } from "react";
-import { type Address, isAddress } from "viem";
+import { type Address, getAddress, isAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -51,8 +51,11 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
   const factory = useSlotsFactory();
   const client = useSlots();
 
-  const valid = isAddress(slotAddress);
-  const slot = valid ? (slotAddress as Address) : undefined;
+  // `strict: false`, then checksum it ourselves. viem's default rejects a
+  // lowercase address, and lowercase is exactly what a block explorer, a log
+  // dump and half the tooling in this repo hand you.
+  const valid = isAddress(slotAddress, { strict: false });
+  const slot = valid ? getAddress(slotAddress) : undefined;
 
   const { data: state, isLoading, error, refetch } = useSlotState(slot);
   const currency = useCurrencyMeta(state?.currency);
@@ -107,9 +110,9 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
           </NavLink>
           <div className="flex flex-col">
             <h1 className="text-lg font-bold leading-tight tracking-tight">
-              Slot {truncateAddress(slotAddress)}
+              Slot {truncateAddress(slot ?? slotAddress)}
             </h1>
-            <AddressText address={slotAddress} label={slotAddress} />
+            <AddressText address={slot ?? slotAddress} label={slot ?? slotAddress} />
           </div>
           <SlotStatus state={state} />
         </div>

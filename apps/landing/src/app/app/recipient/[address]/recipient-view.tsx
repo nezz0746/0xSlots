@@ -1,6 +1,6 @@
 "use client";
 
-import { type Address, isAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import { SlotsTable } from "@/components/slots/slots-table";
@@ -13,7 +13,7 @@ import { SlotsTable } from "@/components/slots/slots-table";
  * directly.
  */
 export function RecipientView({ address }: { address: string }) {
-  if (!isAddress(address))
+  if (!isAddress(address, { strict: false }))
     return (
       <div className="min-h-screen px-3 py-8 md:px-5">
         <div className="border p-8 text-center text-sm text-muted-foreground">
@@ -34,7 +34,7 @@ export function RecipientView({ address }: { address: string }) {
       </PageHeader>
       <div className="px-3 py-3 md:px-5">
         <SlotsTable
-          filter={{ recipient: address as Address }}
+          filter={{ recipient: getAddress(address) }}
           emptyMessage="No slot on this chain pays its tax here."
         />
       </div>

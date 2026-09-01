@@ -49,8 +49,6 @@ contract SlotFactory is Initializable, UUPSUpgradeable {
     event HookAttested(address indexed hook, bool attested);
     event AdminTransferred(address indexed from, address indexed to);
     event BeaconUpgraded(address indexed implementation);
-    /// @notice Re-emitted from a slot so indexers watch one address, not 237.
-    event SlotEvent(address indexed slot, bytes32 indexed topic, bytes data);
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotManager();
@@ -96,14 +94,6 @@ contract SlotFactory is Initializable, UUPSUpgradeable {
             address(init.currency),
             init.hook
         );
-    }
-
-    /// @notice Republish a slot's event through this address.
-    /// @dev Only a slot this factory made may call. An indexer that trusted an
-    ///      arbitrary caller here would be indexing fiction.
-    function emitEvent(bytes32 topic, bytes calldata data) external {
-        if (!isSlot[msg.sender]) revert NotManager();
-        emit SlotEvent(msg.sender, topic, data);
     }
 
     function attestHook(address hook, bool attested) external onlyAdmin {

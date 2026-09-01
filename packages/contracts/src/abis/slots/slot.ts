@@ -252,7 +252,7 @@ export const slotAbi = [
       "name": "isOperator",
       "inputs": [
         {
-          "name": "",
+          "name": "operator",
           "type": "address",
           "internalType": "address"
         }
@@ -761,6 +761,19 @@ export const slotAbi = [
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "tenureId",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
         }
       ],
       "stateMutability": "view"

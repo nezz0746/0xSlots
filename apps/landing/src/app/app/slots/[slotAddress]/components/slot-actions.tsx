@@ -13,12 +13,12 @@ import {
   UserCog,
 } from "lucide-react";
 import { useState } from "react";
-import { type Address, isAddress } from "viem";
+import { type Address, formatUnits, isAddress } from "viem";
 import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CurrencyMeta } from "@/hooks/slots/use-slots";
-import { useWithdrawable } from "@/hooks/slots/use-slots";
+import { useTakeQuote, useWithdrawable } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { useCurrencyBalance } from "@/hooks/use-currency-balance";
 import { formatBalance, toRawUnits } from "@/utils";
@@ -71,9 +71,14 @@ export function TakePanel({
   const ready =
     isConnected && seatValid && priceRaw > 0n && depositRaw > 0n;
 
-  // `buy` pays out the current occupant at their own price; taking an insolvent
-  // slot pays nobody, because the eviction has already vacated it.
-  const cost = state.isInsolvent ? depositRaw : state.price + depositRaw;
+  // Asked of the slot, never derived. `liquidateAndTake` charges the deposit
+  // alone — the eviction vacates the slot before the purchase reads the price —
+  // and a native slot demands an exact `msg.value`, so guessing here reverts.
+  const { data: quote } = useTakeQuote(
+    slot,
+    depositRaw,
+    state.isInsolvent ? "liquidateAndTake" : "buy",
+  );
 
   const submit = () => {
     if (!ready) return;
@@ -138,7 +143,24 @@ export function TakePanel({
       ) : null}
 
       <div className="border-t pt-2">
-        <Field label="You pay" value={fmt(cost, currency)} emphasis />
+        <Field
+          label="You pay"
+          value={
+            depositRaw <= 0n
+              ? "—"
+              : quote === undefined
+                ? "…"
+                : fmt(quote, currency)
+          }
+          hint={
+            state.isInsolvent
+              ? "the deposit alone — there is nobody left to buy out"
+              : state.isVacant
+                ? "the deposit alone — the slot is vacant"
+                : "your deposit, plus buying the occupant out at their own price"
+          }
+          emphasis
+        />
         <Field label="Your balance" value={fmt(balance, currency)} />
         {state.isInsolvent ? (
           <p className="pt-1 text-[10px] leading-snug text-muted-foreground">
@@ -191,7 +213,7 @@ export function OccupantPanel({
         <ActionRow
           label="Self-assess"
           suffix={currency.symbol}
-          placeholder={String(state.price)}
+          placeholder={formatUnits(state.price, currency.decimals)}
           value={price}
           onChange={setPrice}
           submitLabel="Set"

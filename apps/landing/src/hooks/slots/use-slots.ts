@@ -253,3 +253,32 @@ export function useIsOperator(
     queryFn: () => client.isOperator(slot!, account!),
   });
 }
+
+/**
+ * What taking the slot will actually charge, asked of the slot itself.
+ *
+ * NOT `price() + deposit`. The payment rule is the contract's promise, and the
+ * two paths disagree in a way that is invisible from outside: `liquidateAndTake`
+ * evicts first, so by the time the purchase reads the price there is nobody
+ * left to buy out — while `price()` still reads non-zero right until the call
+ * lands. Deriving the figure here would overpay on exactly that path, and a
+ * native slot demands an EXACT `msg.value`, so overpaying reverts.
+ */
+export function useTakeQuote(
+  slot: Address | undefined,
+  depositAmount: bigint,
+  mode: "buy" | "liquidateAndTake",
+) {
+  const { chainId } = useChain();
+  const client = useSlots();
+
+  return useQuery({
+    queryKey: ["slots", "quote", chainId, slot, mode, depositAmount.toString()],
+    enabled: !!slot && depositAmount > 0n,
+    refetchInterval: 5_000,
+    queryFn: () =>
+      mode === "buy"
+        ? client.quoteBuy(slot!, depositAmount)
+        : client.quoteLiquidateAndTake(slot!, depositAmount),
+  });
+}

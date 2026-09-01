@@ -90,6 +90,14 @@ abstract contract SlotStorage is
     ///         for both — see ISlotHook.
     address public hook; // slot 3, offset 0
 
+    /// @notice Which tenure is current. Increments every time somebody is
+    ///         seated, and never repeats.
+    /// @dev A counter rather than `occupiedSince`, because two tenures can
+    ///      share a timestamp — release and reseat in one block — and an
+    ///      identity that collides is not an identity. It rides in `hook`'s
+    ///      spare 12 bytes, so it costs no storage slot.
+    uint64 public tenureId; // slot 3, offset 20
+
     // ─── occupancy ──────────────────────────────────────────────────────────
 
     address internal _occupant; // slot 4
@@ -143,7 +151,9 @@ abstract contract SlotStorage is
     mapping(address => uint256) public withdrawableOf; // slot 12
 
     /// @notice Addresses the occupant has delegated repricing to.
-    mapping(address => bool) public isOperator; // slot 13
+    /// @dev Keyed by tenure, so an approval expires with the tenure that gave
+    ///      it. Read it through `isOperator`.
+    mapping(uint64 => mapping(address => bool)) internal _operatorOf; // slot 13
 
     // ─── signed sell orders ─────────────────────────────────────────────────
 
@@ -170,8 +180,15 @@ abstract contract SlotStorage is
         _;
     }
 
+    /// @notice Whether `operator` may act for the CURRENT occupant.
+    /// @dev Lives here rather than in `Slot` because the modifier below is the
+    ///      only enforcement point and reads nothing else.
+    function isOperator(address operator) public view returns (bool) {
+        return _occupant != address(0) && _operatorOf[tenureId][operator];
+    }
+
     modifier onlyOccupantOrOperator() {
-        if (msg.sender != _occupant && !isOperator[msg.sender])
+        if (msg.sender != _occupant && !isOperator(msg.sender))
             revert NotOccupantOrOperator();
         _;
     }
