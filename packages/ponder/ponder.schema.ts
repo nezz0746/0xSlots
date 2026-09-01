@@ -218,6 +218,39 @@ export const module = onchainTable(
   }),
 );
 
+/**
+ * A module's attachment to one slot.
+ *
+ * Separate from `slot.module`, which is the legacy single `utility` head and
+ * still means exactly what it always did. This table is the GALLERY: a slot can
+ * carry several modules now, and each attachment has a lifecycle of its own.
+ *
+ * `status` is the column that matters. `addModule` only QUEUES — the install
+ * lands on the slot's next occupancy transition, so an occupant never has
+ * modules added under them mid-tenure. Anything that renders a queued module as
+ * though it were live is lying about what the slot will actually do.
+ */
+export const slotModule = onchainTable(
+  "slot_module",
+  (t) => ({
+    /** `${slot}-${module}` — one attachment per pair. */
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    module: t.hex().notNull(),
+    /** "queued" until a transition applies it, then "installed". */
+    status: t.text().notNull(),
+    queuedAt: t.bigint().notNull(),
+    /** Null while queued. */
+    installedAt: t.bigint(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    moduleIdx: index().on(table.module),
+  }),
+);
+
 export const metadataSlot = onchainTable(
   "metadata_slot",
   (t) => ({

@@ -50,7 +50,7 @@ const ROLE_FIELDS = [
   {
     key: "taxManagers",
     label: "Tax",
-    hint: "May change the tax rate and the liquidation bounty.",
+    hint: "May change the tax rate."
   },
   {
     key: "policyManagers",

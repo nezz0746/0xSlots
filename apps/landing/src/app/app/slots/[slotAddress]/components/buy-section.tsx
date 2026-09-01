@@ -12,6 +12,7 @@ import { PriceInput } from "@/components/ui/price-input";
 import { MONTH_SECONDS } from "@/constants";
 import { useChain } from "@/context/chain";
 import { useSlotAction } from "@/hooks/use-slot-action";
+import { useSlotBounds } from "@/hooks/use-slot-bounds";
 import type { SlotOnChain } from "@/hooks/use-slot-onchain";
 import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
 import { formatBalance, formatBps } from "@/utils";
@@ -36,7 +37,7 @@ export function BuySection({
 }) {
   const decimals = slot.currencyDecimals ?? 6;
   const symbol = slot.currencySymbol ?? "USDC";
-  const { buy, offer, retireOffer, selfAssess, busy } = useSlotAction();
+  const { buy, offer, selfAssess, busy } = useSlotAction();
   const { address } = useAccount();
   const { chainId } = useChain();
   const publicClient = usePublicClient({ chainId });
@@ -153,6 +154,13 @@ export function BuySection({
     isOccupied && !!book && slot.currency.toLowerCase() !== zeroAddress;
   const isOffer = canOffer && priceRaw > 0n && priceRaw < slot.price;
 
+  // The slot refuses a price above `MAX_PRICE`, so catch it here rather than
+  // letting the user discover it as an `InvalidPrice` revert. `undefined`
+  // while the bound is loading means "don't block" — the contract is still the
+  // backstop.
+  const bounds = useSlotBounds(slotAddress as Address);
+  const overMaxPrice = bounds ? priceRaw > bounds.maxPrice : false;
+
   /**
    * The bidder's own standing offer, if they have one.
    *
@@ -222,10 +230,6 @@ export function BuySection({
   async function handleBuy() {
     if (!address) return;
 
-    // Captured BEFORE the buy: once it lands the read below is refetched and
-    // this component may already be showing the new occupancy.
-    const standingId = hasStanding ? standing?.[1] : undefined;
-
     const hash = await buy({
       account: address,
       slot: slotAddress as Address,
@@ -234,23 +238,15 @@ export function BuySection({
     });
     if (!hash) return;
 
-    /**
-     * Buying out from under your own standing offer retires it.
-     *
-     * Offering 70 and then deciding to just buy at 80 leaves the 70 sitting in
-     * the book. It stops being fillable immediately — you are the occupant now,
-     * and `Slot.sell` refuses `CannotBuyFromYourself` — so it drops off the
-     * board and out of `best`. But dropping off is not the same as being gone:
-     * the day someone buys YOU out, that 70 becomes live again against an
-     * allowance you probably still have standing, and the new occupant can sell
-     * the slot back to you at a price you named in a different market.
-     *
-     * Best-effort, like the retire after a sell: the purchase already
-     * succeeded, and failing here must not report it as failed.
-     */
-    if (standingId === undefined) return;
-    await publicClient?.waitForTransactionReceipt({ hash });
-    await retireOffer(slotAddress as Address, standingId);
+    // Nothing to clean up. Buying does not consume your standing order — you
+    // signed it, it is still yours, and it stays valid until you cancel it or
+    // it expires. `_live` simply hides it while you are the occupant, because
+    // `Slot.sell` would refuse `CannotBuyFromYourself`.
+    //
+    // That used to be a hazard worth a cleanup transaction: consent was a bare
+    // allowance, so a stale offer coming back meant somebody could sell you a
+    // slot at a price you never agreed to. With an explicit signature it is
+    // just your bid, still standing.
   }
 
   function handleSelfAssess() {
@@ -305,12 +301,26 @@ export function BuySection({
         toUsd={toUsd}
       />
 
+      {overMaxPrice && (
+        <p className="rounded border border-destructive/40 px-2.5 py-2 text-[11px] leading-snug text-destructive">
+          That valuation is above the protocol maximum. The cap exists so the
+          tax calculation cannot overflow — which would freeze the slot for
+          everyone, liquidation included.
+        </p>
+      )}
+
       {isOffer && (
         <p className="rounded border border-dashed px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
           That is below the {formatBalance(slot.price, decimals)} {symbol} the
           occupant is asking, so this becomes a standing offer rather than a
           purchase. Your funds stay in your wallet — it costs nothing until they
           choose to take it.
+          <br />
+          <span className="text-foreground/80">
+            You&apos;ll sign your exact terms first — free, no gas. That
+            signature is what stops the occupant selling to you at a different
+            price.
+          </span>
           {hasStanding && (
             <>
               {" "}
@@ -383,7 +393,7 @@ export function BuySection({
 
       <div className="flex items-center gap-2">
         <Button
-          disabled={busy || !address || priceRaw === 0n}
+          disabled={busy || !address || priceRaw === 0n || overMaxPrice}
           onClick={() => void (isOffer ? handleOffer() : handleBuy())}
           variant={isOffer ? "outline" : "default"}
           className="flex-1"

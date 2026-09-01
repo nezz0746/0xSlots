@@ -10,6 +10,7 @@ export {
   POINTS_PER_BUY,
   POINTS_PER_HOUR,
   pointsFor,
+  REWARDS_WINDOW_DAYS,
 } from "@/lib/rewards";
 
 /**

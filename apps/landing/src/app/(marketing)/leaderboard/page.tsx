@@ -1,13 +1,16 @@
 import { SlotsChain } from "@0xslots/sdk";
 import { Clock, ShoppingCart } from "lucide-react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { LeaderboardAvatar } from "@/components/leaderboard-avatar";
+import { REWARDS_ENABLED } from "@/lib/features";
 import { type Profile, resolveProfiles } from "@/lib/profiles";
 import {
   computeLeaderboard,
   type LeaderboardEntry,
   POINTS_PER_BUY,
   POINTS_PER_HOUR,
+  REWARDS_WINDOW_DAYS,
 } from "@/lib/rewards";
 import { formatDuration, truncateAddress } from "@/utils";
 
@@ -27,6 +30,9 @@ export const revalidate = 120;
 const CHAIN = SlotsChain.BASE;
 
 export default async function LeaderboardPage() {
+  // Local-only for now — no public page in production until the program ships.
+  if (!REWARDS_ENABLED) notFound();
+
   let entries: LeaderboardEntry[] = [];
   let failed = false;
   try {
@@ -50,8 +56,9 @@ export default async function LeaderboardPage() {
       </h1>
       <p className="mt-4 max-w-xl text-base leading-relaxed text-foreground/80">
         Every occupant of every slot earns points — no eligibility list, no
-        curation. You climb by holding slots and using them, and anyone can
-        recompute a rank from public indexer data.
+        curation. You climb by buying slots and holding them, over the last{" "}
+        {REWARDS_WINDOW_DAYS} days, and anyone can recompute a rank from public
+        indexer data.
       </p>
 
       {/* ── Board ─────────────────────────────────────────── */}

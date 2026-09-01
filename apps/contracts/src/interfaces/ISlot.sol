@@ -105,6 +105,24 @@ struct SlotInfo {
     uint64 policyProposedAt;
 }
 
+// ─── Safety bounds ──────────────────────────────────────────────────────────
+//
+// File-level so `Slot` and `SlotFactory` enforce the SAME numbers. Duplicating
+// them was how the factory's front door and the slot's own checks drifted
+// apart in the first place.
+
+// Ceiling on a self-assessed price. Exists so `price * taxPercentage *
+// elapsed` cannot be driven to overflow. That product is computed in
+// `_accrue`, which every entry point calls first — so an overflow there
+// reverted `liquidate()` too and bricked the slot permanently. 2^128-1 is
+// ~3.4e38, past any real valuation in a token's smallest unit and far below
+// the danger zone.
+uint256 constant MAX_PRICE = type(uint128).max;
+
+// Ceiling on the monthly tax rate, in basis points (100%). The other factor in
+// that same product; bounding only the price left this lever open.
+uint256 constant MAX_TAX_BPS = 10_000;
+
 /// @notice Pending update for tax or utility (applied on next ownership transition)
 struct PendingUpdate {
     uint256 newTaxPercentage;

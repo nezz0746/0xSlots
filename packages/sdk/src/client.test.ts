@@ -35,6 +35,8 @@ function harness(
     return state[functionName];
   });
 
+  const signTypedData = vi.fn(async (_args: any) => "0xsignature" as const);
+
   const client = new SlotsClient({
     chainId,
     apiUrl: "http://localhost/never-called",
@@ -44,12 +46,13 @@ function harness(
     } as any,
     walletClient: {
       writeContract,
+      signTypedData,
       account: { address: ACCOUNT },
       chain: { id: chainId },
     } as any,
   });
 
-  return { client, writeContract, readContract };
+  return { client, writeContract, readContract, signTypedData };
 }
 
 const approvals = (writeContract: ReturnType<typeof vi.fn>) =>
@@ -167,6 +170,7 @@ describe("standing offers", () => {
     const { client, writeContract } = onBookChain({
       currency: ERC20,
       allowance: 0n,
+      sellOrderNonce: 0n,
     });
 
     await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
@@ -180,6 +184,7 @@ describe("standing offers", () => {
     const { client, writeContract } = onBookChain({
       currency: ERC20,
       allowance: 10n ** 30n,
+      sellOrderNonce: 0n,
     });
 
     await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
@@ -213,13 +218,42 @@ describe("standing offers", () => {
   it("selling needs no allowance of the seller's own", async () => {
     const { client, writeContract } = onBookChain({});
 
-    await client.sell(SLOT, ACCOUNT, 70n * 10n ** 6n, 10n ** 6n);
+    // The buyer's signed order is passed through verbatim. The seller supplies
+    // no terms of their own — that is the whole point of the signature.
+    const order = {
+      slot: SLOT,
+      buyer: ACCOUNT,
+      price: 70n * 10n ** 6n,
+      deposit: 10n ** 6n,
+      nonce: 0n,
+      deadline: DAY,
+    };
+    await client.sell(SLOT, order, "0xsig");
 
     expect(approvals(writeContract)).toHaveLength(0);
-    expect(sent(writeContract, "sell").args).toEqual([
-      ACCOUNT,
-      70n * 10n ** 6n,
-      10n ** 6n,
-    ]);
+    expect(sent(writeContract, "sell").args).toEqual([order, "0xsig"]);
+  });
+
+  it("posting an offer signs the exact terms, and sends the nonce with it", async () => {
+    const { client, writeContract, signTypedData } = onBookChain({
+      currency: ERC20,
+      allowance: 10n ** 30n,
+      sellOrderNonce: 7n,
+    });
+
+    await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
+
+    // Signed over the slot's domain, not the book's: a signature can never be
+    // replayed onto a different slot.
+    const signed = signTypedData.mock.calls[0]![0] as any;
+    expect(signed.domain.verifyingContract).toBe(SLOT);
+    expect(signed.message.price).toBe(70n * 10n ** 6n);
+    expect(signed.message.deposit).toBe(10n ** 6n);
+    expect(signed.message.nonce).toBe(7n);
+
+    // ...and the nonce travels with the offer so the occupant can rebuild it.
+    const offer = sent(writeContract, "offer");
+    expect(offer.args[4]).toBe(7n);
+    expect(offer.args[5]).toBe("0xsignature");
   });
 });

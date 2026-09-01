@@ -20,7 +20,9 @@ import {UpdateKind} from "./interfaces/ISlot.sol";
 interface IManagedSlot {
     function proposeTaxUpdate(uint256 newPct) external;
 
-    function proposeUtilityUpdate(address newUtility) external;
+    function addModule(address module) external;
+
+    function removeModule(address module) external;
 
     function proposePolicyUpdate(address newPolicy) external;
 
@@ -232,17 +234,47 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         emit UpdateRelayed(address(slot), msg.sender, UpdateKind.Tax, bytes32(newPct));
     }
 
-    /// @notice Propose a new utility on `slot` — what holding it grants.
-    function proposeUtilityUpdate(IManagedSlot slot, address newUtility)
+    /// @notice Install a module on `slot` — something holding it grants.
+    ///
+    /// @dev Replaces the relay for `proposeUtilityUpdate`, which the slot has
+    ///      retired. Same role, same deferral: the install lands on the slot's
+    ///      next occupancy transition, so an occupant never has modules added
+    ///      under them mid-tenure.
+    ///
+    ///      The slot refuses anything its factory has not verified, so this
+    ///      relay does not re-check. One verification, one authority.
+    function addModule(IManagedSlot slot, address module)
         external
         onlyRoleOrAdmin(UTILITY_MANAGER_ROLE)
     {
-        slot.proposeUtilityUpdate(newUtility);
+        slot.addModule(module);
         emit UpdateRelayed(
             address(slot),
             msg.sender,
             UpdateKind.Utility,
-            _asValue(newUtility)
+            _asValue(module)
+        );
+    }
+
+    /// @notice Detach a module from `slot`, effective immediately.
+    ///
+    /// @dev Immediate where installing defers, mirroring the slot: adding
+    ///      imposes cost on the occupant, removing only withdraws it. It is
+    ///      also the lever for detaching a module found to be broken, which
+    ///      must not wait on a tenure that may run for years.
+    ///
+    ///      Passing the slot's legacy `utility` vacates it. That is the only
+    ///      remaining way to change the head, and it is one-way.
+    function removeModule(IManagedSlot slot, address module)
+        external
+        onlyRoleOrAdmin(UTILITY_MANAGER_ROLE)
+    {
+        slot.removeModule(module);
+        emit UpdateRelayed(
+            address(slot),
+            msg.sender,
+            UpdateKind.Utility,
+            _asValue(module)
         );
     }
 

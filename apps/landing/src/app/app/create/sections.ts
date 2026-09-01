@@ -70,7 +70,7 @@ export const SECTIONS: SectionMeta[] = [
   },
   {
     id: "permissions",
-    title: "Permissions & bounty",
+    title: "Permissions",
     description: "What can change after creation, and who may change it.",
     icon: KeyRound,
     tint: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
@@ -110,7 +110,6 @@ const FIELD_SECTION: Record<string, SectionId> = {
   mutableModule: "permissions",
   mutablePolicy: "permissions",
   manager: "permissions",
-  liquidationBountyPercent: "permissions",
 };
 
 export function scrollToSection(id: SectionId) {

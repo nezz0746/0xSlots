@@ -36,7 +36,6 @@ export function SummaryCard({
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
   const taxPercentage = form.watch("taxPercentage");
-  const bounty = form.watch("liquidationBountyPercent");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
@@ -176,15 +175,6 @@ export function SummaryCard({
                     : "Module"}
               </SummaryRow>
             )}
-
-            {/* Liq. Bounty */}
-            <SummaryRow
-              section="permissions"
-              label="Liq. Bounty"
-              icon={<Sparkles className="size-3 text-amber-500" />}
-            >
-              {bounty || "0"}%
-            </SummaryRow>
 
             {/* Total */}
             <div className="flex justify-between border-t pt-2 mt-2">

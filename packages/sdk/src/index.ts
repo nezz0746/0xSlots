@@ -14,7 +14,9 @@ export {
   LOCAL_API_URL,
   type IndexerMeta,
   UpdateKind,
+  SELL_ORDER_TYPES,
 } from "./client";
+export type { SellOrder } from "./client";
 // Errors
 export { SlotsError } from "./errors";
 // Re-export generated types and SDK

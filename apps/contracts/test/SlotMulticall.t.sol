@@ -6,6 +6,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../src/Slot.sol";
+// `abi.encodeCall` needs the contract that DECLARES a function, not one that
+// merely inherits it — so these point at the bases, not at `Slot`.
+import {SlotOccupancy} from "../src/base/SlotOccupancy.sol";
+import {SlotEscrow} from "../src/base/SlotEscrow.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
 import "../src/interfaces/SlotErrors.sol";
@@ -102,8 +106,8 @@ contract SlotMulticallTest is Test {
         uint256 addition = DEPOSIT * 10;
 
         bytes[] memory calls = new bytes[](2);
-        calls[0] = abi.encodeCall(Slot.topUp, (addition));
-        calls[1] = abi.encodeCall(Slot.selfAssess, (newPrice));
+        calls[0] = abi.encodeCall(SlotEscrow.topUp, (addition));
+        calls[1] = abi.encodeCall(SlotOccupancy.selfAssess, (newPrice));
         slot.multicall(calls);
         vm.stopPrank();
 
@@ -122,8 +126,8 @@ contract SlotMulticallTest is Test {
         slot.buy(alice, DEPOSIT, PRICE);
 
         bytes[] memory calls = new bytes[](2);
-        calls[0] = abi.encodeCall(Slot.selfAssess, (PRICE * 10));
-        calls[1] = abi.encodeCall(Slot.topUp, (DEPOSIT * 10));
+        calls[0] = abi.encodeCall(SlotOccupancy.selfAssess, (PRICE * 10));
+        calls[1] = abi.encodeCall(SlotEscrow.topUp, (DEPOSIT * 10));
 
         vm.expectRevert(InsufficientDeposit.selector);
         slot.multicall(calls);
@@ -141,9 +145,9 @@ contract SlotMulticallTest is Test {
         slot.buy(alice, DEPOSIT, PRICE);
 
         bytes[] memory calls = new bytes[](3);
-        calls[0] = abi.encodeCall(Slot.topUp, (1 ether));
-        calls[1] = abi.encodeCall(Slot.topUp, (1 ether));
-        calls[2] = abi.encodeCall(Slot.selfAssess, (PRICE + 1));
+        calls[0] = abi.encodeCall(SlotEscrow.topUp, (1 ether));
+        calls[1] = abi.encodeCall(SlotEscrow.topUp, (1 ether));
+        calls[2] = abi.encodeCall(SlotOccupancy.selfAssess, (PRICE + 1));
         slot.multicall(calls);
         vm.stopPrank();
 
@@ -164,7 +168,7 @@ contract SlotMulticallTest is Test {
         slot.buy{value: DEPOSIT}(alice, DEPOSIT, PRICE);
 
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeCall(Slot.topUp, (1 ether));
+        calls[0] = abi.encodeCall(SlotEscrow.topUp, (1 ether));
 
         vm.expectRevert(InvalidValue.selector);
         slot.multicall(calls);

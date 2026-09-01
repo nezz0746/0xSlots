@@ -54,12 +54,12 @@ contract DeployLocal is BaseScript {
 
     /// Expected pinned addresses. Zero disables the check (first run).
     address internal constant EXPECTED_FACTORY =
-        0x78F614D6e3489a90BD2584D2ab1D90F5C35722F6;
+        0x0f3640e9C5844c848EFA0DB20Eed96d7a42F692c;
     address internal constant EXPECTED_METADATA =
-        0x6b2FB65de140764b208007b1591Cc6F7BaAad129;
+        0x72829A6476DBa44C144e1Eb711686b2f2e42D2b1;
     /// Zero until the first run logs it — see the docblock on drift.
     address internal constant EXPECTED_COLLECTIVE_FACTORY =
-        0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d;
+        0xF525B837Db9d5Af8068869E90B91FDbFf3e8745e;
 
     function run() external {
         _deploy();

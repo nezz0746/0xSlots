@@ -149,11 +149,25 @@ contract UtilityRenameCompatTest is Test {
         (ok, ) = address(s).staticcall(abi.encodeWithSignature("mutableModule()"));
         assertTrue(ok, "mutableModule() selector still routed");
 
+        // The deprecated WRITE selectors are gone, deliberately — unlike the
+        // getters above, which stay forever.
+        //
+        // `proposeUtilityUpdate` checked only `code.length`, so it let a
+        // manager install an unverified contract as the head, reaching exactly
+        // the hooks `addModule` guards. Keeping the alias would have kept that
+        // back door open under an older name. Installing now goes through
+        // `addModule`, which the factory must have verified.
         vm.prank(manager);
         (ok, ) = address(s).call(
             abi.encodeWithSignature("proposeModuleUpdate(address)", address(0))
         );
-        assertTrue(ok, "proposeModuleUpdate(address) still routed");
+        assertFalse(ok, "proposeModuleUpdate(address) is retired");
+
+        vm.prank(manager);
+        (ok, ) = address(s).call(
+            abi.encodeWithSignature("proposeUtilityUpdate(address)", address(0))
+        );
+        assertFalse(ok, "proposeUtilityUpdate(address) is retired");
     }
 
     /// The factory's registry kept its old selectors too.
@@ -175,7 +189,15 @@ contract UtilityRenameCompatTest is Test {
     /// `feeRecipient()` BY SIGNATURE on utilities it does not control and cannot
     /// upgrade. Renaming either would fail open and silently route 100% of tax
     /// to the recipient — no revert, no event, just a fee that stopped.
-    function test_UtilityFeeSignaturesUnchanged() public {
+    /// @notice Module fees are retired. A legacy utility still receives every
+    ///         HOOK it always did — that compatibility is the point of this
+    ///         file — but it no longer takes a cut of tax.
+    ///
+    /// @dev Removing the fee cost nothing: every module ever deployed
+    ///      (`MetadataModule`, `FeedPostModule`, and `AdModule` which inherits
+    ///      the first) returns `feeBps() == 0`. The mechanism was live, unused,
+    ///      and load-bearing in three separate findings.
+    function test_UtilityFeesAreRetiredButHooksSurvive() public {
         LegacyUtility u = new LegacyUtility(2000, feeTo); // 20%
         Slot s = _slot(address(u));
 
@@ -187,14 +209,10 @@ contract UtilityRenameCompatTest is Test {
         vm.warp(block.timestamp + 30 days);
         s.collect();
 
-        // A utility written against the old interface still gets paid.
-        assertGt(token.balanceOf(feeTo), 0, "legacy utility still earns its fee");
-        assertApproxEqRel(
-            token.balanceOf(feeTo),
-            (token.balanceOf(feeTo) + token.balanceOf(recipient)) / 5,
-            0.01e18,
-            "and it is still 20%"
-        );
+        // The utility advertises 20% and receives nothing: all tax is the
+        // recipient's.
+        assertEq(token.balanceOf(feeTo), 0, "no fee is taken");
+        assertGt(token.balanceOf(recipient), 0, "recipient keeps all of it");
     }
 
     /// The alias interface must stay ABI-identical, or a utility compiled

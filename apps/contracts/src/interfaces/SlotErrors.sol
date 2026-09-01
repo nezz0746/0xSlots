@@ -34,6 +34,13 @@ error CannotBuyFromYourself();
 ///      Native slots keep `buy()`.
 error SellNeedsErc20();
 error InvalidPrice();
+
+/// @notice This slot has already been initialized.
+/// @dev Distinct from OZ's `InvalidInitialization`: it fires for proxies whose
+///      OZ version counter is still zero because they were initialized by the
+///      hand-rolled flag that predated `Initializable` (see `_legacyInitialized`).
+///      Those would otherwise pass the `initializer` modifier and be seizable.
+error SlotAlreadyInitialized();
 error InvalidRecipient();
 error NotInsolvent();
 
@@ -43,6 +50,9 @@ error InsufficientDeposit();
 error NothingToCollect();
 error NothingToClaim();
 error InvalidLiquidationBounty();
+
+/// @notice Liquidation bounties were removed; the vacated slot is the reward.
+error LiquidationBountyRetired();
 
 // ── Mutability gates ────────────────────────────────────────
 error TaxNotMutable();

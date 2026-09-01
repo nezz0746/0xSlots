@@ -5,8 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Slot} from "../src/Slot.sol";
+import {SlotModules} from "../src/SlotModules.sol";
 import "../src/interfaces/SlotErrors.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
+// Errors are declared on the base that owns the state they guard.
+import {FactoryStorage} from "../src/factory/FactoryStorage.sol";
 import {SlotConfig, SlotInitParams, PendingUpdate, SlotInfo} from "../src/interfaces/ISlot.sol";
 import {IUtility} from "../src/interfaces/IUtility.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -152,7 +155,7 @@ contract SlotV3Test is Test {
     }
 
     function test_createSlotsZeroReverts() public {
-        vm.expectRevert(SlotFactory.InvalidCount.selector);
+        vm.expectRevert(FactoryStorage.InvalidCount.selector);
         factory.createSlots(recipient, IERC20(address(token)), _defaultConfig(), _defaultInit(), 0);
     }
 
@@ -162,7 +165,7 @@ contract SlotV3Test is Test {
             mutableUtility: false, mutablePolicy: false,
             manager: manager // should fail
         });
-        vm.expectRevert(SlotFactory.InvalidConfig_ManagerMustBeZero.selector);
+        vm.expectRevert(FactoryStorage.InvalidConfig_ManagerMustBeZero.selector);
         factory.createSlot(recipient, IERC20(address(token)), config, _defaultInit());
     }
 
@@ -172,7 +175,7 @@ contract SlotV3Test is Test {
             mutableUtility: false, mutablePolicy: false,
             manager: address(0) // should fail
         });
-        vm.expectRevert(SlotFactory.InvalidConfig_ManagerRequired.selector);
+        vm.expectRevert(FactoryStorage.InvalidConfig_ManagerRequired.selector);
         factory.createSlot(recipient, IERC20(address(token)), config, _defaultInit());
     }
 
@@ -329,9 +332,14 @@ contract SlotV3Test is Test {
 
         assertTrue(slot.isVacant());
 
-        // Liquidator should get 5% bounty
-        uint256 bounty = token.balanceOf(liquidator) - liquidatorBefore;
-        assertTrue(bounty > 0);
+        // No bounty: the liquidator is paid in opportunity, not in the
+        // recipient's tax. The slot is now vacant and they may take it for
+        // their own deposit alone — atomically, in the same `multicall`.
+        assertEq(
+            token.balanceOf(liquidator),
+            liquidatorBefore,
+            "liquidator receives no cut of the tax"
+        );
     }
 
     function test_cannotLiquidateSolvent() public {
@@ -468,7 +476,7 @@ contract SlotV3Test is Test {
 
         vm.prank(alice);
         vm.expectRevert(NotManager.selector);
-        slot.proposeUtilityUpdate(makeAddr("module"));
+        slot.addModule(makeAddr("module"));
     }
 
     function test_onlyManagerCanPropose() public {
@@ -483,20 +491,25 @@ contract SlotV3Test is Test {
     // LIQUIDATION BOUNTY UPDATE
     // ═══════════════════════════════════════════════════════════
 
-    function test_setLiquidationBounty() public {
+    /// @notice Retired. The reward for evicting a defaulter is the vacated
+    ///         slot, not a cut of the recipient's accrued tax.
+    function test_setLiquidationBountyIsRetired() public {
         Slot slot = _createDefaultSlot();
 
         vm.prank(manager);
-        slot.setLiquidationBounty(1000); // 10%
+        vm.expectRevert(LiquidationBountyRetired.selector);
+        slot.setLiquidationBounty(1000);
 
-        assertEq(slot.liquidationBountyBps(), 1000);
+        assertEq(slot.liquidationBountyBps(), 0, "and it reads as zero");
     }
 
-    function test_setLiquidationBountyOnlyManager() public {
+    /// @dev Retired for everyone, manager included — so the caller is no
+    ///      longer what decides the revert.
+    function test_setLiquidationBountyRetiredForEveryone() public {
         Slot slot = _createDefaultSlot();
 
         vm.prank(alice);
-        vm.expectRevert(NotManager.selector);
+        vm.expectRevert(LiquidationBountyRetired.selector);
         slot.setLiquidationBounty(1000);
     }
 
@@ -538,7 +551,7 @@ contract SlotV3Test is Test {
         address eoa = makeAddr("noCodeModule");
         assertEq(eoa.code.length, 0);
 
-        vm.expectRevert(SlotFactory.InvalidModule_NoCode.selector);
+        vm.expectRevert(FactoryStorage.InvalidModule_NoCode.selector);
         factory.createSlot(
             recipient,
             IERC20(address(token)),
@@ -549,7 +562,7 @@ contract SlotV3Test is Test {
 
     function test_createSlots_batchRejectsCodelessModule() public {
         address eoa = makeAddr("noCodeModule");
-        vm.expectRevert(SlotFactory.InvalidModule_NoCode.selector);
+        vm.expectRevert(FactoryStorage.InvalidModule_NoCode.selector);
         factory.createSlots(
             recipient,
             IERC20(address(token)),
@@ -597,8 +610,8 @@ contract SlotV3Test is Test {
 
         address eoa = makeAddr("noCodeModule");
         vm.prank(manager);
-        vm.expectRevert(InvalidModule_NoCode.selector);
-        slot.proposeUtilityUpdate(eoa);
+        vm.expectRevert(SlotModules.ModuleHasNoCode.selector);
+        slot.addModule(eoa);
     }
 
     function test_proposeModuleUpdate_acceptsContractModule() public {
@@ -610,17 +623,23 @@ contract SlotV3Test is Test {
         Slot slot = _createSlot(config);
         MockModule mod = new MockModule();
 
+        factory.setUtilityVerified(address(mod), true);
         vm.prank(manager);
-        slot.proposeUtilityUpdate(address(mod));
+        slot.addModule(address(mod));
 
-        PendingUpdate memory update = slot.getPendingUpdate();
-        assertTrue(update.hasUtilityUpdate);
-        assertEq(update.newUtility, address(mod));
+        // Queued, not live: installs land on the next occupancy transition so
+        // an occupant never has modules added under them mid-tenure.
+        address[] memory queued = slot.pendingModules();
+        assertEq(queued.length, 1);
+        assertEq(queued[0], address(mod));
+        assertFalse(slot.isModuleInstalled(address(mod)));
     }
 
-    function test_proposeModuleUpdate_acceptsZeroToClearModule() public {
-        // Clearing the module (newUtility = address(0)) must remain allowed,
-        // otherwise managers can't undo a module assignment.
+    /// @notice An unverified module is refused outright.
+    /// @dev The reason `proposeUtilityUpdate` was retired: it checked only
+    ///      `code.length`, so the head was an unverified back door into exactly
+    ///      the hooks `addModule` guards.
+    function test_addModule_refusesUnverified() public {
         SlotConfig memory config = SlotConfig({
             mutableTax: false,
             mutableUtility: true, mutablePolicy: false,
@@ -628,12 +647,10 @@ contract SlotV3Test is Test {
         });
         Slot slot = _createSlot(config);
 
+        MockModule mod = new MockModule(); // never verified
         vm.prank(manager);
-        slot.proposeUtilityUpdate(address(0));
-
-        PendingUpdate memory update = slot.getPendingUpdate();
-        assertTrue(update.hasUtilityUpdate);
-        assertEq(update.newUtility, address(0));
+        vm.expectRevert(SlotModules.ModuleNotVerified.selector);
+        slot.addModule(address(mod));
     }
 
     function test_getSlotInfo_doesNotRevertWhenModuleCodeWiped() public {

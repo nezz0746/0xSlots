@@ -218,7 +218,9 @@ export default function CreatePage() {
     const initParams = {
       taxPercentage: BigInt(Math.round(Number(data.taxPercentage) * 100)),
       module: (isAddress(module as string) ? module : zeroAddress) as Address,
-      liquidationBountyBps: percentToBps(data.liquidationBountyPercent),
+      // Liquidation bounties are retired. The slot normalises this to zero,
+      // so sending a number would only make the form appear to promise one.
+      liquidationBountyBps: 0n,
       minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
       occupancyPolicy,
     };

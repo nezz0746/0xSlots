@@ -59,19 +59,20 @@ export const createSlotSchema = z
       message: "Enter a valid address (0x…) or ENS name",
     }),
     moduleMode: z.enum(moduleModes),
+    // Upper bound mirrors the slot's own `MAX_TAX_BPS` (10_000 bps = 100% of
+    // the valuation per month). Without it the form happily submits a rate the
+    // contract rejects, so the user meets an `InvalidTaxPercentage` revert
+    // where a field error belongs.
     taxPercentage: z
       .string()
       .min(1, "Required")
       .refine(
         (v) => !isNaN(Number(v)) && Number(v) >= 0,
         "Must be a non-negative number",
-      ),
-    liquidationBountyPercent: z
-      .string()
-      .min(1, "Required")
+      )
       .refine(
-        (v) => !isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 100,
-        "Must be 0–100",
+        (v) => Number(v) <= 100,
+        "Must be at most 100% per month",
       ),
     minDepositValue: z
       .string()
@@ -205,7 +206,6 @@ export const defaultValues: CreateSlotFormValues = {
   customCurrency: "",
   moduleMode: "none",
   taxPercentage: "1",
-  liquidationBountyPercent: "5",
   minDepositValue: "1",
   minDepositUnit: "days",
   module: "",

@@ -1,11 +1,11 @@
 "use client";
 
 import { offerBookAbi, offerBookAddress } from "@0xslots/contracts";
+import type { SellOrder } from "@0xslots/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownRight, Gavel, Loader2 } from "lucide-react";
 import { type Address, formatUnits } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
-
 import { CopyAddress } from "@/components/copy-address";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,10 @@ type Offer = {
   deposit: bigint;
   expiry: bigint;
   cancelled: boolean;
+  /** The bidder's nonce on the slot. Burned when their order executes. */
+  nonce: bigint;
+  /** Their EIP-712 signature over these exact terms. */
+  signature: `0x${string}`;
 };
 
 /**
@@ -46,7 +50,12 @@ export function OfferBookPanel({
   const client = usePublicClient({ chainId });
   // Same hook the Buy button uses: toasts on confirm, a shared busy flag, and
   // the post-transaction refresh that invalidates this very board.
-  const { cancelOffer, retireOffer, sell, busy: isPending } = useSlotAction();
+  const {
+    cancelOffer,
+    cancelSellOrder,
+    sell,
+    busy: isPending,
+  } = useSlotAction();
   const queryClient = useQueryClient();
 
   const book = offerBookAddress[chainId as keyof typeof offerBookAddress] as
@@ -112,29 +121,44 @@ export function OfferBookPanel({
     if (hash) await refresh();
   };
 
-  // ── the exit: sell into the best standing offer ───────────────────────
+  /**
+   * Burn the nonce behind your own offer.
+   *
+   * Different from `cancel`, and both are worth having: cancelling takes the
+   * entry off THIS board, while burning the nonce invalidates the signature
+   * everywhere it was ever published. A signed order is a standing
+   * authorisation — removing one copy of it does not revoke it.
+   */
+  const handleRevoke = async (nonce: bigint) => {
+    const hash = await cancelSellOrder(slotAddr, nonce);
+    if (hash) await refresh();
+  };
+
+  /**
+   * The exit: sell into the best standing offer.
+   *
+   * The bidder's own signed order is forwarded verbatim — the slot re-verifies
+   * it, so nothing here (or in the book) can alter the terms they agreed to.
+   * That is why the book is safe to treat as untrusted infrastructure.
+   *
+   * No cleanup call follows. The slot burns the bidder's nonce as it executes,
+   * so the consumed order is dead everywhere it was ever published; the board
+   * reads `sellOrderUsed` and stops listing it on its own. This used to need a
+   * second `retire` transaction.
+   */
   const sellIntoBest = async () => {
-    if (!data?.found) return;
-    const filledId = data.bestId;
-    const { bidder, price, deposit } = data.best;
+    if (!data?.found || !book || !client) return;
 
-    const hash = await sell(slotAddr, bidder, price, deposit);
-    if (!hash) return; // `exec` already reported why
+    const [found, , order, signature] = (await client.readContract({
+      address: book,
+      abi: offerBookAbi,
+      functionName: "bestOrder",
+      args: [slotAddr],
+    })) as readonly [boolean, bigint, SellOrder, `0x${string}`];
+    if (!found) return;
 
-    /**
-     * Retire the offer we just consumed.
-     *
-     * `Slot.sell` cannot do this itself: the book is periphery and the core
-     * holds no reference to it. Left un-retired the entry is only HIDDEN — it
-     * reappears the moment its author is bought out, offering the next
-     * occupant a price from before the fill.
-     *
-     * Deliberately not awaited into the result: the sale is already final, and
-     * a failed cleanup must not be reported as a failed sale. Anyone can
-     * retire it later, since the condition is public.
-     */
-    await retireOffer(slotAddr, BigInt(filledId));
-    await refresh();
+    const hash = await sell(slotAddr, order, signature);
+    if (hash) await refresh();
   };
 
   // No offer book on this chain → render nothing at all, not a placeholder.
@@ -257,14 +281,26 @@ export function OfferBookPanel({
               <div className="flex shrink-0 items-center gap-2">
                 <CopyAddress address={o.bidder} ens />
                 {mine && (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => handleCancel(o.id)}
-                    className="text-[10px] text-muted-foreground hover:text-destructive"
-                  >
-                    cancel
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => handleCancel(o.id)}
+                      className="text-[10px] text-muted-foreground hover:text-destructive"
+                      title="Remove this offer from the board"
+                    >
+                      cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => handleRevoke(o.nonce)}
+                      className="text-[10px] text-muted-foreground hover:text-destructive"
+                      title="Invalidate the signature everywhere it was published, not just here"
+                    >
+                      revoke
+                    </button>
+                  </>
                 )}
               </div>
             </div>

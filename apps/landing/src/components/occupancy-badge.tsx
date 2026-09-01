@@ -35,8 +35,8 @@ export function OccupancyBadge({
             </Badge>
           </TooltipTrigger>
           <TooltipContent>
-            The deposit is exhausted. Anyone can liquidate this slot and collect
-            the bounty — no policy can prevent it.
+            The deposit is exhausted. Anyone can liquidate this slot, and it
+            becomes claimable for a deposit alone — no policy can prevent it.
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

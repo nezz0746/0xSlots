@@ -2,11 +2,21 @@
 pragma solidity ^0.8.23;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SlotSellOrder} from "../base/SlotSellOrder.sol";
 
 interface ISellableSlot {
     function occupant() external view returns (address);
     function price() external view returns (uint256);
     function currency() external view returns (address);
+    function sell(
+        SlotSellOrder.SellOrder calldata order,
+        bytes calldata signature
+    ) external;
+    function sellOrderNonce(address buyer) external view returns (uint256);
+    function sellOrderUsed(address buyer, uint256 nonce)
+        external
+        view
+        returns (bool);
 }
 
 /// @title OfferBook — standing bids an occupant can sell into
@@ -37,6 +47,23 @@ interface ISellableSlot {
 ///      The cost is that one allowance can back offers on many slots —
 ///      first-come-first-served, same as any limit order. `fundable()` below
 ///      lets a client grey out an offer whose backing has evaporated.
+///
+///      ── WHY AN OFFER CARRIES A SIGNATURE ───────────────────────────────
+///      An allowance says "you may spend up to this much". It never said "at a
+///      price my counterparty chooses", and `Slot.sell` used to read it as
+///      though it did — so an occupant could take a bidder's whole approval,
+///      or take the exact approval and rebook the escrow half as their own
+///      proceeds, seating the bidder insolvent.
+///
+///      `Slot.sell` now requires the buyer's EIP-712 signature over the exact
+///      terms, so an offer here is that signed order plus a place to publish
+///      it. The bidder signs off-chain for free; it costs them a wallet popup
+///      and no gas.
+///
+///      A consequence worth noticing: because the order is self-authenticating,
+///      this book is no longer load-bearing. The same signature works if it is
+///      handed to the occupant directly, or published anywhere else. This
+///      contract is now a convenience, not a dependency.
 contract OfferBook {
     struct Offer {
         address bidder;
@@ -47,6 +74,12 @@ contract OfferBook {
         uint256 deposit;
         uint64 expiry;
         bool cancelled;
+        /// @dev The bidder's nonce on the slot, and their signature over
+        ///      (slot, bidder, price, deposit, nonce, expiry). Held together
+        ///      because `Slot.sell` needs both, and because storing the terms
+        ///      apart from the signature is what would let them drift.
+        uint256 nonce;
+        bytes signature;
     }
 
     /// @notice slot => offers. Ordering is computed, not stored — see `best`.
@@ -76,11 +109,9 @@ contract OfferBook {
     /// @dev Distinct from `Cancelled`: the bidder withdrew that one, whereas
     ///      this one was consumed. An indexer that conflates them cannot tell a
     ///      filled bid from an abandoned one.
-    event Retired(address indexed slot, address indexed bidder, uint256 indexed id);
 
     error NotBidder();
     error AlreadyCancelled();
-    error NotFilled();
     error BadExpiry();
     error ZeroPrice();
     error NoSuchOffer();
@@ -103,7 +134,9 @@ contract OfferBook {
         address slot,
         uint256 price,
         uint256 deposit,
-        uint64 expiry
+        uint64 expiry,
+        uint256 nonce,
+        bytes calldata signature
     ) external returns (uint256 id) {
         if (price == 0) revert ZeroPrice();
         if (expiry <= block.timestamp) revert BadExpiry();
@@ -116,6 +149,8 @@ contract OfferBook {
             o.deposit = deposit;
             o.expiry = expiry;
             o.cancelled = false;
+            o.nonce = nonce;
+            o.signature = signature;
         } else {
             id = _offers[slot].length;
             _offers[slot].push(
@@ -124,13 +159,61 @@ contract OfferBook {
                     price: price,
                     deposit: deposit,
                     expiry: expiry,
-                    cancelled: false
+                    cancelled: false,
+                    nonce: nonce,
+                    signature: signature
                 })
             );
             _offerIdOf[slot][msg.sender] = id + 1;
         }
 
         emit Offered(slot, msg.sender, id, price, deposit, expiry);
+    }
+
+    /// @notice Rebuild the signed order an offer stands for.
+    /// @dev The occupant needs this to call `Slot.sell`; a client needs it to
+    ///      show what was actually signed.
+    function orderOf(address slot, uint256 id)
+        public
+        view
+        returns (SlotSellOrder.SellOrder memory order, bytes memory signature)
+    {
+        Offer storage o = _offers[slot][id];
+        order = SlotSellOrder.SellOrder({
+            slot: slot,
+            buyer: o.bidder,
+            price: o.price,
+            deposit: o.deposit,
+            nonce: o.nonce,
+            deadline: o.expiry
+        });
+        signature = o.signature;
+    }
+
+    /// @notice The best standing offer as a ready-to-submit signed order.
+    ///
+    /// @dev Deliberately a VIEW, not an executor. `Slot.sell` is
+    ///      `onlyOccupant`, so a book that tried to call it on the occupant's
+    ///      behalf would arrive as the wrong `msg.sender` — and giving the
+    ///      book standing to move somebody's slot is exactly the authority
+    ///      this design refuses it.
+    ///
+    ///      So the occupant fetches the bidder's own signed order from here and
+    ///      submits it themselves, in one transaction. The book publishes; it
+    ///      never acts.
+    function bestOrder(address slot)
+        external
+        view
+        returns (
+            bool found,
+            uint256 id,
+            SlotSellOrder.SellOrder memory order,
+            bytes memory signature
+        )
+    {
+        (found, id, ) = best(slot);
+        if (!found) return (false, 0, order, signature);
+        (order, signature) = orderOf(slot, id);
     }
 
     /// @notice A bidder's standing offer on a slot, if any.
@@ -163,29 +246,6 @@ contract OfferBook {
         emit Cancelled(slot, msg.sender, id);
     }
 
-    /// @notice Retire an offer whose bidder now occupies the slot.
-    ///
-    /// @dev `Slot.sell` pulls on an allowance and tells nobody — this book is
-    ///      periphery, and the core has no business knowing it exists. So a
-    ///      filled offer is left sitting in storage looking alive. `best`
-    ///      already refuses to return it, but "hidden" is not "gone": if the
-    ///      bidder is later bought out they stop being the occupant and the
-    ///      offer springs back to life, letting the NEW occupant sell into a
-    ///      price its author named in a different era. Real order books do not
-    ///      resurrect filled orders, and neither should this one.
-    ///
-    ///      Permissionless because the condition is objective — the bidder
-    ///      either holds the slot right now or they do not, and anyone can
-    ///      read that. There is nothing to judge and nothing to steal: the
-    ///      only effect is retiring an offer that cannot execute anyway, since
-    ///      `Slot.sell` would revert `CannotBuyFromYourself`.
-    function retire(address slot, uint256 id) external {
-        Offer storage o = _offers[slot][id];
-        if (o.cancelled) revert AlreadyCancelled();
-        if (ISellableSlot(slot).occupant() != o.bidder) revert NotFilled();
-        o.cancelled = true;
-        emit Retired(slot, o.bidder, id);
-    }
 
     // ═══════════════════════════════════════════════════════════
     // READS
@@ -283,6 +343,11 @@ contract OfferBook {
         // exit it would be a button that lies — and after a fill this is
         // exactly the state a consumed offer lands in.
         if (o.bidder == occupant) return false;
+        // The slot burns a nonce when it fills an order. Checking it here is
+        // what makes a filled offer dead ON ITS OWN, rather than merely hidden
+        // while its author happens to be the occupant — no cleanup call, no
+        // window in which it could come back.
+        if (ISellableSlot(slot).sellOrderUsed(o.bidder, o.nonce)) return false;
         return _fundable(slot, o);
     }
 

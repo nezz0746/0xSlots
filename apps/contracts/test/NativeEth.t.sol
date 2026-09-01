@@ -382,7 +382,8 @@ contract NativeEthTest is Test {
         _assertBalanceInvariant(slot, _actors());
     }
 
-    function test_native_liquidatePaysBounty() public {
+    /// @notice Retired: liquidation pays no bounty, in ETH or otherwise.
+    function test_native_liquidatePaysNoBounty() public {
         Slot slot = _createNativeSlot();
         _buyNative(slot, alice, 1 ether, 10 ether);
 
@@ -395,8 +396,12 @@ contract NativeEthTest is Test {
         vm.prank(liquidator);
         slot.liquidate();
 
-        assertEq(slot.occupant(), address(0));
-        assertGt(liquidator.balance, bountyBefore, "bounty must be paid in ETH");
+        assertEq(slot.occupant(), address(0), "slot vacated");
+        assertEq(
+            liquidator.balance,
+            bountyBefore,
+            "no cut of the recipient's tax; the vacated slot is the reward"
+        );
         _assertBalanceInvariant(slot, _actors());
     }
 

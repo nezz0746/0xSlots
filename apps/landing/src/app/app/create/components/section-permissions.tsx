@@ -107,31 +107,6 @@ export function SectionPermissions() {
         )}
       </div>
 
-      <Separator />
-
-      {/* Liquidation Bounty */}
-      <FormField
-        control={form.control}
-        name="liquidationBountyPercent"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Liquidation Bounty</FormLabel>
-            <div className="relative">
-              <Input
-                {...field}
-                type="text"
-                inputMode="decimal"
-                className="pr-8"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                %
-              </span>
-            </div>
-            <FormDescription>Reward for liquidators</FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
     </>
   );
 }

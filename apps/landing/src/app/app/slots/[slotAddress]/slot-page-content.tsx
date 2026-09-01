@@ -97,6 +97,7 @@ import {
 } from "./components/event-history";
 import { ManageTerms } from "./components/manage-terms";
 import { MetadataForm } from "./components/metadata-form";
+import { ModulesPanel } from "./components/modules-panel";
 import { OfferBookPanel } from "./components/offer-book";
 import {
   PendingUpdatesNotice,
@@ -150,7 +151,7 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
     collect,
     liquidate,
     proposeTaxUpdate,
-    proposeUtilityUpdate,
+    addModule,
     cancelPendingUpdate,
     busy,
     activeAction,
@@ -462,12 +463,6 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                           weight="primary"
                           label="Min. deposit"
                           value={formatDuration(Number(slot.minDepositSeconds))}
-                        />
-                        <DetailRow
-                          label="Liquidation bounty"
-                          value={formatBps(
-                            slot.liquidationBountyBps.toString(),
-                          )}
                         />
                       </DetailGroup>
 
@@ -817,18 +812,24 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
                               slot.utility.toLowerCase()
                           }
                           onClick={() =>
-                            proposeUtilityUpdate(
+                            addModule(
                               slotAddress as Address,
                               newModule as Address,
                             )
                           }
                         >
-                          {busy && activeAction === "Propose utility" ? (
+                          {busy && activeAction === "Add module" ? (
                             <Loader2 className="size-4 animate-spin" />
                           ) : (
-                            `Propose Module ${newModule ? truncateAddress(newModule) : ""}`
+                            `Add Module ${newModule ? truncateAddress(newModule) : ""}`
                           )}
                         </Button>
+                        <p className="text-[11px] text-muted-foreground">
+                          Queued, not live. The install lands on this
+                          slot&apos;s next occupancy change, so an occupant
+                          never has modules added under them mid-tenure. The
+                          module must be verified by the factory.
+                        </p>
                       </div>
                     )}
 
@@ -922,6 +923,15 @@ export function SlotPageContent({ slotAddress }: { slotAddress: string }) {
             {isOccupied && (
               <OfferBookPanel slot={slot} isOccupant={!!isOccupant} />
             )}
+
+            {/* Not gated on occupancy: a vacant slot still has a module set,
+                and a manager configuring one before it is ever taken is the
+                normal case rather than an edge one. */}
+            <ModulesPanel
+              slot={slot}
+              slotAddress={slotAddress as Address}
+              isManager={isManager}
+            />
           </div>
         </div>
       </div>

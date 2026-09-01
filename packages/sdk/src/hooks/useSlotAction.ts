@@ -10,6 +10,7 @@ import type {
   SlotsChain,
 } from "../client";
 import { UpdateKind } from "../client";
+import type { SellOrder } from "../client";
 import { useSlotsClient } from "./useSlotsClient";
 
 const CANCEL_LABELS: Record<UpdateKind, string> = {
@@ -304,14 +305,9 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
       exec("Cancel offer", () => client.cancelOffer(slot, id)),
     [exec, client],
   );
-  const retireOffer = useCallback(
-    (slot: Address, id: bigint) =>
-      exec("Retire offer", () => client.retireOffer(slot, id)),
-    [exec, client],
-  );
   const sell = useCallback(
-    (slot: Address, buyer: Address, price: bigint, deposit: bigint) =>
-      exec("Sell slot", () => client.sell(slot, buyer, price, deposit)),
+    (slot: Address, order: SellOrder, signature: `0x${string}`) =>
+      exec("Sell slot", () => client.sell(slot, order, signature)),
     [exec, client],
   );
 
@@ -321,15 +317,24 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
       exec("Propose tax", () => client.proposeTaxUpdate(slot, newPct)),
     [exec, client],
   );
-  const proposeUtilityUpdate = useCallback(
-    (slot: Address, newUtility: Address) =>
-      exec("Propose utility", () =>
-        client.proposeUtilityUpdate(slot, newUtility),
-      ),
+  /// Replaces `proposeUtilityUpdate`, which the slot retired: it checked only
+  /// for code at the address, so it was an unverified route into the same hooks
+  /// `addModule` guards.
+  const addModule = useCallback(
+    (slot: Address, module: Address) =>
+      exec("Add module", () => client.addModule(slot, module)),
     [exec, client],
   );
-  /** @deprecated use `proposeUtilityUpdate` */
-  const proposeModuleUpdate = proposeUtilityUpdate;
+  const removeModule = useCallback(
+    (slot: Address, module: Address) =>
+      exec("Remove module", () => client.removeModule(slot, module)),
+    [exec, client],
+  );
+  const cancelSellOrder = useCallback(
+    (slot: Address, nonce: bigint) =>
+      exec("Cancel order", () => client.cancelSellOrder(slot, nonce)),
+    [exec, client],
+  );
   const proposePolicyUpdate = useCallback(
     (slot: Address, newPolicy: Address) =>
       exec("Propose policy", () => client.proposePolicyUpdate(slot, newPolicy)),
@@ -348,11 +353,6 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
   const cancelPendingUpdates = useCallback(
     (slot: Address) =>
       exec("Cancel updates", () => client.cancelPendingUpdates(slot)),
-    [exec, client],
-  );
-  const setLiquidationBounty = useCallback(
-    (slot: Address, newBps: bigint) =>
-      exec("Set bounty", () => client.setLiquidationBounty(slot, newBps)),
     [exec, client],
   );
 
@@ -396,18 +396,17 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     release,
     offer,
     cancelOffer,
-    retireOffer,
     sell,
     collect,
     liquidate,
     proposeTaxUpdate,
-    proposeUtilityUpdate,
+    addModule,
+    removeModule,
+    cancelSellOrder,
     proposePolicyUpdate,
     /** @deprecated use `proposeUtilityUpdate` */
-    proposeModuleUpdate,
     cancelPendingUpdate,
     cancelPendingUpdates,
-    setLiquidationBounty,
     setUtilityVerified,
     updateMetadata,
     // Executor

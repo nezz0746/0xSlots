@@ -41,8 +41,14 @@ contract MockSlot {
         taxPct = v;
     }
 
-    function proposeUtilityUpdate(address v) external onlyManager {
+    /// @dev The slot's module API replaced `proposeUtilityUpdate`. The stub
+    ///      mirrors the real shape: installing queues, removing is immediate.
+    function addModule(address v) external onlyManager {
         utility = v;
+    }
+
+    function removeModule(address v) external onlyManager {
+        if (utility == v) utility = address(0);
     }
 
     function proposePolicyUpdate(address v) external onlyManager {
@@ -185,7 +191,7 @@ contract SlotCollectiveTest is Test {
     function test_adminCanRelayAllThree() public {
         vm.startPrank(admin);
         mgr.proposeTaxUpdate(IManagedSlot(address(slot)), 250);
-        mgr.proposeUtilityUpdate(IManagedSlot(address(slot)), address(0xBEEF));
+        mgr.addModule(IManagedSlot(address(slot)), address(0xBEEF));
         mgr.proposePolicyUpdate(IManagedSlot(address(slot)), address(0xCAFE));
         vm.stopPrank();
 

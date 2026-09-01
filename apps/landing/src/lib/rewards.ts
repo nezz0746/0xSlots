@@ -26,6 +26,26 @@ export const POINTS_PER_HOUR = 1;
  */
 export const POINTS_PER_BUY = 50;
 
+/**
+ * The scoring window: only activity in the last N days counts.
+ *
+ * Rolling ("a month ago from now"), recomputed each render. To run a fixed
+ * season instead — accumulating from a launch date rather than a moving 30-day
+ * window — replace the derived start in `computeLeaderboard` with an absolute
+ * unix timestamp.
+ */
+export const REWARDS_WINDOW_DAYS = 30;
+
+/**
+ * Addresses excluded from the board, lowercased. Empty for now.
+ *
+ * For team wallets, the faucet, test churners — anyone whose ranking would be
+ * noise rather than a real occupant. Applied to both occupants and buyers.
+ */
+export const REWARDS_BLACKLIST: ReadonlySet<string> = new Set<string>([
+  // "0x…",
+]);
+
 export interface LeaderboardEntry {
   rank: number;
   account: Address;
@@ -52,17 +72,15 @@ interface BoughtRow {
   buyer: Address;
 }
 
-// Two roots in one request: hold time from `accountSlots`, buy counts from
-// `boughtEvents`.
+// Two roots in one request: current occupancies from `accountSlots`, and buys
+// WITHIN THE WINDOW from `boughtEvents` (filtered by `timestamp_gte: $start`).
 //
-// No `holdTime_gt` filter, on purpose. `holdTime` only absorbs a period when
-// the occupancy ENDS — while someone is still holding, it reads 0 and their
-// live time lives in `lastOccupiedAt`. Filtering on `holdTime > 0` therefore
-// dropped every current occupant whose hold had not been booked yet: on Base
-// that hid a holder sitting on a slot for ~140 days. We fetch all rows and
-// discard the truly-empty ones by computed points instead.
+// No `holdTime_gt` filter on accountSlots, on purpose. `holdTime` only absorbs a
+// period when the occupancy ENDS — while someone is still holding, it reads 0
+// and their live time lives in `lastOccupiedAt`. We fetch all rows and window
+// the hold in JS from `lastOccupiedAt`.
 const QUERY = /* GraphQL */ `
-  query Leaderboard($chainId: Int!) {
+  query Leaderboard($chainId: Int!, $start: BigInt!) {
     accountSlots(
       where: { chainId: $chainId }
       orderBy: "lastInteractedAt"
@@ -76,7 +94,10 @@ const QUERY = /* GraphQL */ `
         lastOccupiedAt
       }
     }
-    boughtEvents(where: { chainId: $chainId }, limit: 1000) {
+    boughtEvents(
+      where: { chainId: $chainId, timestamp_gte: $start }
+      limit: 1000
+    ) {
       items {
         buyer
       }
@@ -103,10 +124,17 @@ export async function computeLeaderboard(
   nowSeconds: number,
   signal?: AbortSignal,
 ): Promise<LeaderboardEntry[]> {
+  // Rolling window start. Buys are filtered by it server-side; hold time is
+  // clipped to it below.
+  const start = nowSeconds - REWARDS_WINDOW_DAYS * 86_400;
+
   const res = await fetch(indexerUrlFor(chainId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: QUERY, variables: { chainId } }),
+    body: JSON.stringify({
+      query: QUERY,
+      variables: { chainId, start: String(start) },
+    }),
     signal,
     // Server renders cache this; a client fetch ignores it.
     next: { revalidate: 120 },
@@ -141,28 +169,34 @@ export async function computeLeaderboard(
     return acc;
   };
 
+  const excluded = (key: string) =>
+    key === zeroAddress || REWARDS_BLACKLIST.has(key);
+
   for (const r of rows) {
     const key = r.account.toLowerCase();
-    // The zero address turns up as a synthetic occupant (e.g. metadata written
-    // against a vacated slot). It is nobody, and it should not sit on a public
-    // leaderboard, so it is dropped rather than ranked.
-    if (key === zeroAddress) continue;
+    // Zero address is a synthetic occupant; the blacklist is team/faucet/test
+    // wallets. Neither belongs on the board.
+    if (excluded(key)) continue;
     const acc = seed(key);
-    // `lastOccupiedAt` set == holding right now. It is also the start of the
-    // still-open occupancy: booked `holdTime` (closed periods only) plus the
-    // time since it began, with no overlap to double-count.
+    // Windowed hold. `lastOccupiedAt` set == holding right now, and it is the
+    // start of the still-open occupancy. Count only time inside the window,
+    // clipping the start to it. Closed past occupancies (booked `holdTime`) are
+    // NOT counted — they belong to earlier windows, and for anyone STILL holding
+    // the current period already captures their in-window time here.
     const holdingNow = r.lastOccupiedAt != null;
-    const live = holdingNow
-      ? Math.max(0, nowSeconds - Number(r.lastOccupiedAt))
-      : 0;
-    acc.holdSeconds += Number(r.holdTime) + live;
+    if (holdingNow) {
+      acc.holdSeconds += Math.max(
+        0,
+        nowSeconds - Math.max(Number(r.lastOccupiedAt), start),
+      );
+      acc.activeSlots += 1;
+    }
     acc.slots += 1;
-    if (holdingNow) acc.activeSlots += 1;
   }
 
   for (const b of bought) {
     const key = b.buyer.toLowerCase();
-    if (key === zeroAddress) continue;
+    if (excluded(key)) continue;
     seed(key).buys += 1;
   }
 

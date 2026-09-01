@@ -1,6 +1,6 @@
 "use client";
 
-import { LandPlot, List, type LucideIcon, Puzzle, User } from "lucide-react";
+import { LandPlot, type LucideIcon, Puzzle } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -20,17 +20,13 @@ export interface ExplorerSection {
 }
 
 export const EXPLORER_SECTIONS: ExplorerSection[] = [
+  // Slots carries Events as an in-page tab, and recipients are reached from a
+  // slot rather than listed here — so the top-level explorer is just these two.
   { id: "slots", label: "Slots", icon: LandPlot },
-  { id: "recipients", label: "Recipients", icon: User },
   // Label says Utilities, id stays `modules`. The id is URL-facing
   // (`?section=modules`) and keys `SECTION_CONTENT` on the explorer, so
-  // renaming it would break every shared link for a word change. The contracts
-  // did NOT make the same trade for the metadata getter: `moduleURI()` and
-  // `policyURI()` became one `IModuleMetadata.metadataURI()`, accepting a wire
-  // break because every deployed value was empty and the utilities are
-  // upgradeable proxies. A URL is not, which is why this id stays.
+  // renaming it would break every shared link for a word change.
   { id: "modules", label: "Utilities", icon: Puzzle },
-  { id: "events", label: "Events", icon: List },
 ];
 
 const DEFAULT_SECTION = EXPLORER_SECTIONS[0].id;

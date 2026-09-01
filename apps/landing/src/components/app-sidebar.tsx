@@ -48,6 +48,7 @@ import {
 } from "@/context/explorer-section";
 import { NavLink, useNavigation } from "@/context/navigation";
 import { EXTERNAL_LINKS } from "@/lib/external-links";
+import { REWARDS_ENABLED } from "@/lib/features";
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -131,16 +132,19 @@ export function AppSidebar() {
               </SidebarMenuItem>
               {/* A ROUTE like Policies, not a section: the reward leaderboard
                   is program-wide, so it sits with the other "how the protocol
-                  works" destinations rather than the explorer tabs. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/app/rewards")}
-                  onClick={() => push("/app/rewards")}
-                >
-                  <Trophy className="size-4" />
-                  <span>Rewards</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                  works" destinations rather than the explorer tabs. Behind a
+                  flag while the program is still local-only. */}
+              {REWARDS_ENABLED && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/app/rewards")}
+                    onClick={() => push("/app/rewards")}
+                  >
+                    <Trophy className="size-4" />
+                    <span>Rewards</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -35,7 +35,9 @@ contract MockSlot {
         taxPct = v;
     }
 
-    function proposeUtilityUpdate(address) external onlyManager {}
+    function addModule(address) external onlyManager {}
+
+    function removeModule(address) external onlyManager {}
 
     function proposePolicyUpdate(address v) external onlyManager {
         policy = v;

@@ -6,6 +6,7 @@ import {OfferBook} from "../src/periphery/OfferBook.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../src/Slot.sol";
+import {SlotSellOrder} from "../src/base/SlotSellOrder.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {MetadataModule} from "../src/modules/MetadataModule.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
@@ -89,6 +90,20 @@ contract SeedLocal is BaseScript {
         uint256 num = price * taxBps * minDepositSeconds;
         uint256 den = MONTH * BASIS_POINTS;
         return (num + den - 1) / den;
+    }
+
+    /// @dev Modules mutable AND a manager, so the gallery is reachable.
+    ///      `_validateConfig` requires a manager whenever any flag is on.
+    function _cfgModules(
+        address manager
+    ) internal pure returns (SlotConfig memory) {
+        return
+            SlotConfig({
+                mutableTax: false,
+                mutableUtility: true,
+                mutablePolicy: false,
+                manager: manager
+            });
     }
 
     function _cfg(
@@ -198,6 +213,31 @@ contract SeedLocal is BaseScript {
             _cfg(false, address(0)),
             _init(2000, address(0), 1 hours)
         );
+        // ── Module gallery ───────────────────────────────────────────────
+        //
+        // Two slots so the UI can show the two states side by side. They are
+        // genuinely different and the distinction is the whole point of the
+        // panel: `addModule` QUEUES, and the install only lands on the next
+        // occupancy transition. A queued module rendered as installed would be
+        // the most misleading thing that screen could do.
+        address galleryQueued = factory.createSlot(
+            deployer,
+            usdx,
+            _cfgModules(deployer),
+            _init(300, address(0), 1 days)
+        );
+        address galleryLive = factory.createSlot(
+            deployer,
+            usdx,
+            _cfgModules(deployer),
+            _init(300, address(0), 1 days)
+        );
+
+        // `addModule` refuses anything the factory has not verified — that is
+        // the gate that replaced the old unverified `proposeUtilityUpdate`.
+        factory.setUtilityVerified(address(metadata), true);
+        Slot(payable(galleryQueued)).addModule(address(metadata));
+        Slot(payable(galleryLive)).addModule(address(metadata));
         vm.stopBroadcast();
 
         console2.log("slot prime:   ", prime);
@@ -206,12 +246,18 @@ contract SeedLocal is BaseScript {
         console2.log("slot withMeta:", withMeta);
         console2.log("slot vacant:  ", vacant, "(left unoccupied)");
         console2.log("slot thin:    ", thin, "(min deposit - liquidatable soon)");
+        console2.log("slot galleryQueued:", galleryQueued, "(module QUEUED, not yet live)");
+        console2.log("slot galleryLive:  ", galleryLive, "(module INSTALLED via transition)");
 
         // ── Occupancy ────────────────────────────────────────────────────────
         _buyErc20(actors[1], prime, 100 ether, 500, 7 days, 3);
         // actor 3 does not hold `prime` — a bid under actor 1's 100 asking
         // price, which is the only shape an offer makes sense in.
         _offer(actors[3], prime, 70 ether, 20 ether);
+
+        // Occupying `galleryLive` applies its queued install; `galleryQueued`
+        // is deliberately left untouched so both states exist at once.
+        _buyErc20(actors[2], galleryLive, 40 ether, 300, 1 days, 3);
         _buyErc20(actors[2], managed, 250 ether, 1000, 1 days, 2);
         _buyErc20(actors[4], withMeta, 75 ether, 400, 2 days, 3);
         // Exactly the minimum: one warp past `minDepositSeconds` drains it.
@@ -281,13 +327,34 @@ contract SeedLocal is BaseScript {
         uint256 price,
         uint256 deposit
     ) internal {
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        uint256 nonce = Slot(payable(slotAddr)).sellOrderNonce(bidder.addr);
+
+        // The bidder signs the exact terms. `Slot.sell` will not move their
+        // money on anything else — an allowance alone never meant "at whatever
+        // price the occupant picks".
+        SlotSellOrder.SellOrder memory order = SlotSellOrder.SellOrder({
+            slot: slotAddr,
+            buyer: bidder.addr,
+            price: price,
+            deposit: deposit,
+            nonce: nonce,
+            deadline: deadline
+        });
+        (uint8 v, bytes32 r, bytes32 sPart) = vm.sign(
+            bidder.pk,
+            Slot(payable(slotAddr)).sellOrderHash(order)
+        );
+
         vm.startBroadcast(bidder.pk);
         token.approve(slotAddr, price + deposit);
         offerBook.offer(
             slotAddr,
             price,
             deposit,
-            uint64(block.timestamp + 7 days)
+            deadline,
+            nonce,
+            abi.encodePacked(r, sPart, v)
         );
         vm.stopBroadcast();
         console2.log("offered on", slotAddr);

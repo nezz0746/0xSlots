@@ -114,7 +114,7 @@ export const COLLECTIVE_ROLES: RoleMeta[] = [
   {
     label: "TAX_MANAGER",
     title: "Tax",
-    can: "Change the tax rate and the liquidation bounty.",
+    can: "Change the tax rate.",
     hash: roleHash("TAX_MANAGER_ROLE"),
     icon: HandCoins,
     tint: "bg-amber-500/10 text-amber-600 dark:text-amber-400",

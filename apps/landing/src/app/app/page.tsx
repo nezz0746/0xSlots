@@ -5,10 +5,8 @@ import type { ReactNode } from "react";
 import { useAccount } from "wagmi";
 
 import { AdBar } from "@/components/ad-bar";
-import { EventsTable } from "@/components/explorer/events-table";
 import { ModulesTable } from "@/components/explorer/modules-table";
-import { RecipientsTable } from "@/components/explorer/recipients-table";
-import { SlotsTable } from "@/components/explorer/slots-table";
+import { SlotsEvents } from "@/components/explorer/slots-events";
 import { StatsBar } from "@/components/explorer/stats-bar";
 import { TabStrip } from "@/components/explorer-tabs";
 import { PageHeader } from "@/components/page-header";
@@ -19,12 +17,11 @@ import {
 } from "@/context/explorer-section";
 import { NavLink } from "@/context/navigation";
 
-/** Section id → table. Section metadata lives in the context so the sidebar
- *  and the mobile strip share one definition. */
+/** Section id → content. Section metadata lives in the context so the sidebar
+ *  and the mobile strip share one definition. Slots carries its own Events tab;
+ *  recipients are reachable from a slot, not as a top-level section. */
 const SECTION_CONTENT: Record<string, () => ReactNode> = {
-  events: () => <EventsTable />,
-  slots: () => <SlotsTable />,
-  recipients: () => <RecipientsTable />,
+  slots: () => <SlotsEvents />,
   modules: () => <ModulesTable />,
 };
 

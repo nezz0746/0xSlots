@@ -49,8 +49,84 @@ export const offerBookAbi = [
               "name": "cancelled",
               "type": "bool",
               "internalType": "bool"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "signature",
+              "type": "bytes",
+              "internalType": "bytes"
             }
           ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "bestOrder",
+      "inputs": [
+        {
+          "name": "slot",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "found",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "id",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "order",
+          "type": "tuple",
+          "internalType": "struct SlotSellOrder.SellOrder",
+          "components": [
+            {
+              "name": "slot",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "buyer",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "price",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "deposit",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        },
+        {
+          "name": "signature",
+          "type": "bytes",
+          "internalType": "bytes"
         }
       ],
       "stateMutability": "view"
@@ -95,6 +171,16 @@ export const offerBookAbi = [
               "name": "cancelled",
               "type": "bool",
               "internalType": "bool"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "signature",
+              "type": "bytes",
+              "internalType": "bytes"
             }
           ]
         },
@@ -171,6 +257,16 @@ export const offerBookAbi = [
           "name": "expiry",
           "type": "uint64",
           "internalType": "uint64"
+        },
+        {
+          "name": "nonce",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "signature",
+          "type": "bytes",
+          "internalType": "bytes"
         }
       ],
       "outputs": [
@@ -227,6 +323,16 @@ export const offerBookAbi = [
               "name": "cancelled",
               "type": "bool",
               "internalType": "bool"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "signature",
+              "type": "bytes",
+              "internalType": "bytes"
             }
           ]
         }
@@ -307,6 +413,16 @@ export const offerBookAbi = [
               "name": "cancelled",
               "type": "bool",
               "internalType": "bool"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "signature",
+              "type": "bytes",
+              "internalType": "bytes"
             }
           ]
         }
@@ -353,6 +469,16 @@ export const offerBookAbi = [
               "name": "cancelled",
               "type": "bool",
               "internalType": "bool"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "signature",
+              "type": "bytes",
+              "internalType": "bytes"
             }
           ]
         }
@@ -361,7 +487,7 @@ export const offerBookAbi = [
     },
     {
       "type": "function",
-      "name": "retire",
+      "name": "orderOf",
       "inputs": [
         {
           "name": "slot",
@@ -374,8 +500,51 @@ export const offerBookAbi = [
           "internalType": "uint256"
         }
       ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
+      "outputs": [
+        {
+          "name": "order",
+          "type": "tuple",
+          "internalType": "struct SlotSellOrder.SellOrder",
+          "components": [
+            {
+              "name": "slot",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "buyer",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "price",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "deposit",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        },
+        {
+          "name": "signature",
+          "type": "bytes",
+          "internalType": "bytes"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "event",
@@ -446,31 +615,6 @@ export const offerBookAbi = [
       "anonymous": false
     },
     {
-      "type": "event",
-      "name": "Retired",
-      "inputs": [
-        {
-          "name": "slot",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "bidder",
-          "type": "address",
-          "indexed": true,
-          "internalType": "address"
-        },
-        {
-          "name": "id",
-          "type": "uint256",
-          "indexed": true,
-          "internalType": "uint256"
-        }
-      ],
-      "anonymous": false
-    },
-    {
       "type": "error",
       "name": "AlreadyCancelled",
       "inputs": []
@@ -488,11 +632,6 @@ export const offerBookAbi = [
     {
       "type": "error",
       "name": "NotBidder",
-      "inputs": []
-    },
-    {
-      "type": "error",
-      "name": "NotFilled",
       "inputs": []
     },
     {

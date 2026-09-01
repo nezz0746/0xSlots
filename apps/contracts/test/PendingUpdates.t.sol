@@ -124,9 +124,41 @@ contract PendingUpdatesTest is Test, ISlotEvents {
     function _proposeAll(Slot s) internal {
         vm.startPrank(manager);
         s.proposeTaxUpdate(250);
-        s.proposeUtilityUpdate(address(utility));
         s.proposePolicyUpdate(address(policy));
         vm.stopPrank();
+        _stageLegacyUtilityProposal(s, address(utility));
+    }
+
+
+    /**
+     * @dev Stage a utility proposal the way the PRE-GALLERY implementation
+     *      would have written it.
+     *
+     *      `proposeUtilityUpdate` is retired, but the apply path it fed must
+     *      still work: live proxies can carry an in-flight proposal made before
+     *      the upgrade, and dropping it would strand them silently — the
+     *      manager saw the proposal accepted and it would simply never land.
+     *      Writing the struct directly is the only honest way to reproduce that
+     *      state now, and these tests are what keep the branch alive.
+     *
+     *      `PendingUpdate` sits at slot 12; its second word packs
+     *      `newUtility` (offset 0), `hasTaxUpdate` (offset 20) and
+     *      `hasUtilityUpdate` (offset 21). `utilityProposedAt` is slot 24,
+     *      offset 8.
+     */
+    function _stageLegacyUtilityProposal(Slot s, address newUtility) internal {
+        bytes32 word = vm.load(address(s), bytes32(uint256(13)));
+        uint256 packed = uint256(word);
+        packed &= ~uint256(type(uint160).max);        // clear the address
+        packed |= uint256(uint160(newUtility));
+        packed |= uint256(1) << 168;                  // hasUtilityUpdate = true
+        vm.store(address(s), bytes32(uint256(13)), bytes32(packed));
+
+        bytes32 stamps = vm.load(address(s), bytes32(uint256(24)));
+        uint256 st = uint256(stamps);
+        st &= ~(uint256(type(uint64).max) << 64);     // clear utilityProposedAt
+        st |= uint256(uint64(block.timestamp)) << 64;
+        vm.store(address(s), bytes32(uint256(24)), bytes32(st));
     }
 
     function _asValue(address a) internal pure returns (bytes32) {
@@ -216,11 +248,11 @@ contract PendingUpdatesTest is Test, ISlotEvents {
     function test_CancelUtility_DoesNotClobberTaxInSameStruct() public {
         Slot s = _slot();
 
-        vm.startPrank(manager);
+        vm.prank(manager);
         s.proposeTaxUpdate(777);
-        s.proposeUtilityUpdate(address(utility));
+        _stageLegacyUtilityProposal(s, address(utility));
+        vm.prank(manager);
         s.cancelPendingUpdate(UpdateKind.Utility);
-        vm.stopPrank();
 
         (bool isSet, bytes32 value, ) = s.pendingUpdateOf(UpdateKind.Tax);
         assertTrue(isSet, "tax survived");
@@ -362,11 +394,6 @@ contract PendingUpdatesTest is Test, ISlotEvents {
         s.proposeTaxUpdate(200);
 
         vm.expectEmit(true, false, false, true, address(s));
-        emit UpdateProposed(UpdateKind.Utility, _asValue(address(utility)), 5_000_000);
-        vm.prank(manager);
-        s.proposeUtilityUpdate(address(utility));
-
-        vm.expectEmit(true, false, false, true, address(s));
         emit UpdateProposed(UpdateKind.Policy, _asValue(address(policy)), 5_000_000);
         vm.prank(manager);
         s.proposePolicyUpdate(address(policy));
@@ -414,8 +441,7 @@ contract PendingUpdatesTest is Test, ISlotEvents {
 
         // Give the slot a utility so the flat event has something misleading
         // to report.
-        vm.prank(manager);
-        s.proposeUtilityUpdate(address(utility));
+        _stageLegacyUtilityProposal(s, address(utility));
         vm.prank(alice);
         s.release();
         assertEq(s.utility(), address(utility), "utility now live");

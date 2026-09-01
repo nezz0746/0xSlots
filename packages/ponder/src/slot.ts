@@ -26,6 +26,7 @@ import {
   taxPaidEvent,
   taxUpdateProposedEvent,
   withdrawnEvent,
+  slotModule,
 } from "ponder:schema";
 import type { Hex } from "viem";
 import type ponderConfig from "../ponder.config";
@@ -803,5 +804,87 @@ onSlot("ModuleFeePaid", async ({ event, context }) => {
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MODULE GALLERY
+//
+// A slot can carry several modules now. `slot.module` remains the legacy
+// single `utility` head and is untouched by these handlers — the head is still
+// the head, it simply is no longer the only one.
+//
+// The distinction these three handlers exist to preserve is queued vs
+// installed. `addModule` only queues; the install lands on the slot's next
+// occupancy transition, so an occupant never has modules added under them
+// mid-tenure. A consumer that cannot tell the two apart will show a module as
+// live when nothing is calling it yet.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const attachmentId = (slotAddr: string, moduleAddr: string) =>
+  `${slotAddr}-${moduleAddr}`;
+
+onSlot("ModuleAddQueued", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const moduleAddr = lower(event.args.module);
+
+  // Ensure the module row exists so consumers can resolve a name for it even
+  // before it is ever installed. The slot knows its own factory, which is
+  // where verification lives.
+  const s = await loadSlot(context, slotAddr);
+  await getOrCreateModule(context, moduleAddr, s.factory, context.chain.id);
+
+  await context.db
+    .insert(slotModule)
+    .values({
+      id: attachmentId(slotAddr, moduleAddr),
+      chainId: context.chain.id,
+      slot: slotAddr,
+      module: moduleAddr,
+      status: "queued",
+      queuedAt: event.block.timestamp,
+      installedAt: null,
+    })
+    // Re-queuing after a removal reuses the pair, so this is an upsert rather
+    // than an insert: the same module may be attached, detached and attached
+    // again over a slot's life.
+    .onConflictDoUpdate({
+      status: "queued",
+      queuedAt: event.block.timestamp,
+      installedAt: null,
+    });
+});
+
+onSlot("ModuleInstalled", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const moduleAddr = lower(event.args.module);
+
+  await context.db
+    .insert(slotModule)
+    .values({
+      id: attachmentId(slotAddr, moduleAddr),
+      chainId: context.chain.id,
+      slot: slotAddr,
+      module: moduleAddr,
+      status: "installed",
+      queuedAt: event.block.timestamp,
+      installedAt: event.block.timestamp,
+    })
+    .onConflictDoUpdate({
+      status: "installed",
+      installedAt: event.block.timestamp,
+    });
+});
+
+onSlot("ModuleRemoved", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const moduleAddr = lower(event.args.module);
+
+  // Deleted rather than marked: an attachment that no longer exists is not a
+  // state a slot is "in", and leaving tombstones would make every consumer
+  // filter them out. `ModuleRemoved` also fires for a cancelled QUEUE entry,
+  // which never became an attachment at all.
+  await context.db.delete(slotModule, {
+    id: attachmentId(slotAddr, moduleAddr),
   });
 });

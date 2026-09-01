@@ -1,14 +1,17 @@
 "use client";
 
 import { Clock, ShoppingCart, Trophy } from "lucide-react";
+import { notFound } from "next/navigation";
 import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import {
   type LeaderboardEntry,
   POINTS_PER_BUY,
   POINTS_PER_HOUR,
+  REWARDS_WINDOW_DAYS,
   useLeaderboard,
 } from "@/hooks/use-rewards";
+import { REWARDS_ENABLED } from "@/lib/features";
 import { formatDuration } from "@/utils";
 
 /**
@@ -19,6 +22,13 @@ import { formatDuration } from "@/utils";
  * so a rank is always reproducible from public indexer data.
  */
 export default function RewardsPage() {
+  // Local-only for now. A disabled feature has no route, not a hidden one.
+  // The content lives in its own component so the data hook stays unconditional.
+  if (!REWARDS_ENABLED) notFound();
+  return <RewardsContent />;
+}
+
+function RewardsContent() {
   const { data: entries, isLoading, error } = useLeaderboard();
 
   return (
@@ -80,10 +90,11 @@ export default function RewardsPage() {
           </h2>
           <div className="space-y-2 border p-3 text-xs leading-relaxed">
             <p className="text-muted-foreground">
-              Points reward what the protocol is built on: holding a slot and
-              using it. There is no eligibility list — every occupant of every
-              slot earns, and a rank is computable by anyone from public indexer
-              data. The board is per-network.
+              Points reward what the protocol is built on: buying slots and
+              holding them, over the last {REWARDS_WINDOW_DAYS} days. There is
+              no eligibility list — every occupant of every slot earns, and a
+              rank is computable by anyone from public indexer data. The board
+              is per-network.
             </p>
 
             <div className="grid gap-2 sm:grid-cols-2">

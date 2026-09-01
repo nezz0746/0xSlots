@@ -8,6 +8,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {Slot} from "../src/Slot.sol";
+import {SlotSellOrder} from "../src/base/SlotSellOrder.sol";
 import {OfferBook} from "../src/periphery/OfferBook.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
@@ -18,6 +19,7 @@ import "../src/interfaces/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("Mock", "MCK") {}
+
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
@@ -43,15 +45,17 @@ contract Switchable is IOccupancyPolicy {
     function name() external pure returns (string memory) {
         return "Switchable";
     }
+
     function version() external pure returns (string memory) {
         return "1.0.0";
     }
+
     function metadataURI() external pure returns (string memory) {
         return "";
     }
+
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId
-            || id == type(IModuleMetadata).interfaceId
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId
             || id == type(IERC165).interfaceId;
     }
 }
@@ -71,15 +75,17 @@ contract Reveals is IOccupancyPolicy {
     function name() external pure returns (string memory) {
         return "Reveals";
     }
+
     function version() external pure returns (string memory) {
         return "1.0.0";
     }
+
     function metadataURI() external pure returns (string memory) {
         return "";
     }
+
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IOccupancyPolicy).interfaceId
-            || id == type(IModuleMetadata).interfaceId
+        return id == type(IOccupancyPolicy).interfaceId || id == type(IModuleMetadata).interfaceId
             || id == type(IERC165).interfaceId;
     }
 }
@@ -89,29 +95,24 @@ contract SlotSellTest is Test {
     Tok internal token;
 
     address internal recipient = makeAddr("recipient");
-    address internal alice = makeAddr("alice");
-    address internal bob = makeAddr("bob");
-    address internal carol = makeAddr("carol");
+    uint256 internal aliceKey;
+    uint256 internal bobKey;
+    uint256 internal carolKey;
+    address internal alice;
+    address internal bob;
+    address internal carol;
 
-    event Sold(
-        address indexed seller,
-        address indexed buyer,
-        uint256 price,
-        uint256 deposit
-    );
+    event Sold(address indexed seller, address indexed buyer, uint256 price, uint256 deposit);
 
     function setUp() public {
+        (alice, aliceKey) = makeAddrAndKey("alice");
+        (bob, bobKey) = makeAddrAndKey("bob");
+        (carol, carolKey) = makeAddrAndKey("carol");
         Slot impl = new Slot();
         SlotFactory fImpl = new SlotFactory();
         factory = SlotFactory(
             address(
-                new ERC1967Proxy(
-                    address(fImpl),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (address(this), address(impl))
-                    )
-                )
+                new ERC1967Proxy(address(fImpl), abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))
             )
         );
         token = new Tok();
@@ -120,20 +121,12 @@ contract SlotSellTest is Test {
         token.mint(carol, 1_000 ether);
     }
 
-    function _slot(address policy, address currency)
-        internal
-        returns (Slot s)
-    {
+    function _slot(address policy, address currency) internal returns (Slot s) {
         s = Slot(
             factory.createSlot(
                 recipient,
                 IERC20(currency),
-                SlotConfig({
-                    mutableTax: false,
-                    mutableUtility: false,
-                    mutablePolicy: false,
-                    manager: address(0)
-                }),
+                SlotConfig({mutableTax: false, mutableUtility: false, mutablePolicy: false, manager: address(0)}),
                 SlotInitParams({
                     taxPercentage: 100,
                     utility: address(0),
@@ -159,6 +152,84 @@ contract SlotSellTest is Test {
 
     /// @notice The half of the transfer surface that was missing: the occupant
     ///         hands the slot over at a price THEY name, and gets paid for it.
+
+    // ─── signed sell orders ─────────────────────────────────────────────────
+
+    /// @dev `sell` now requires the buyer's EIP-712 signature over the exact
+    ///      terms, because a bare allowance authorises spending but never a
+    ///      price the counterparty picks. These helpers keep the tests reading
+    ///      the way they did while exercising the real consent path.
+    ///
+    ///      The digest is rebuilt locally rather than read from the slot: a
+    ///      helper that made an external call would swallow the `vm.prank` the
+    ///      caller set for `sell` itself.
+    bytes32 internal constant _TYPEHASH =
+        keccak256("SellOrder(address slot,address buyer,uint256 price,uint256 deposit,uint256 nonce,uint64 deadline)");
+
+    mapping(address => uint256) internal _nextNonce;
+
+    function _keyOf(address who) internal view returns (uint256) {
+        if (who == alice) return aliceKey;
+        if (who == bob) return bobKey;
+        if (who == carol) return carolKey;
+        revert("no key for actor");
+    }
+
+    function _digest(address slot, SlotSellOrder.SellOrder memory o) internal view returns (bytes32) {
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256("0xSlots"),
+                keccak256("1"),
+                block.chainid,
+                slot
+            )
+        );
+        bytes32 structHash = keccak256(abi.encode(_TYPEHASH, o.slot, o.buyer, o.price, o.deposit, o.nonce, o.deadline));
+        return keccak256(abi.encodePacked("\x19\x01", domain, structHash));
+    }
+
+    function _signedOrder(Slot s, address buyer, uint256 price, uint256 dep)
+        internal
+        returns (SlotSellOrder.SellOrder memory o, bytes memory sig)
+    {
+        o = SlotSellOrder.SellOrder({
+            slot: address(s),
+            buyer: buyer,
+            price: price,
+            deposit: dep,
+            nonce: _nextNonce[buyer],
+            deadline: uint64(block.timestamp + 1 days)
+        });
+        _nextNonce[buyer] = o.nonce + 1;
+        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(_keyOf(buyer), _digest(address(s), o));
+        sig = abi.encodePacked(r, ss, v);
+    }
+
+    /// @dev Post an offer carrying the bidder's signature over the exact terms.
+    ///
+    ///      Deliberately makes NO external call before `book.offer`, so it can
+    ///      be invoked under an active `vm.prank`/`vm.startPrank` without
+    ///      swallowing it. `vm.sign` is a cheatcode and does not consume one.
+    function _offerAs(OfferBook book, address slotAddr, address bidder, uint256 price, uint256 dep, uint64 deadline)
+        internal
+        returns (uint256 id)
+    {
+        uint256 nonce = _nextNonce[bidder];
+        _nextNonce[bidder] = nonce + 1;
+        SlotSellOrder.SellOrder memory o = SlotSellOrder.SellOrder({
+            slot: slotAddr, buyer: bidder, price: price, deposit: dep, nonce: nonce, deadline: deadline
+        });
+        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(_keyOf(bidder), _digest(slotAddr, o));
+        return book.offer(slotAddr, price, dep, deadline, nonce, abi.encodePacked(r, ss, v));
+    }
+
+    /// @dev Sign as `buyer`, then execute under whatever prank the caller set.
+    function _sellTo(Slot s, address buyer, uint256 price, uint256 dep) internal {
+        (SlotSellOrder.SellOrder memory o, bytes memory sig) = _signedOrder(s, buyer, price, dep);
+        s.sell(o, sig);
+    }
+
     function test_OccupantSellsAtOwnPriceAndIsPaid() public {
         Slot s = _slot(address(0), address(token));
         _seatAlice(s, 100 ether);
@@ -173,7 +244,7 @@ contract SlotSellTest is Test {
         emit Sold(alice, bob, 80 ether, 10 ether);
 
         vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether);
+        _sellTo(s, bob, 80 ether, 10 ether);
 
         assertEq(s.occupant(), bob);
         assertEq(s.price(), 80 ether);
@@ -181,10 +252,7 @@ contract SlotSellTest is Test {
 
         // Alice: sale price + her escrow back, less the tax she owed.
         assertApproxEqAbs(
-            token.balanceOf(alice) - aliceBefore,
-            90 ether,
-            0.01 ether,
-            "seller gets price + deposit back"
+            token.balanceOf(alice) - aliceBefore, 90 ether, 0.01 ether, "seller gets price + deposit back"
         );
         // Bob paid price + his own deposit.
         assertEq(bobBefore - token.balanceOf(bob), 90 ether);
@@ -200,7 +268,7 @@ contract SlotSellTest is Test {
         token.approve(address(s), type(uint256).max);
 
         vm.prank(alice);
-        s.sell(bob, 1 ether, 10 ether);
+        _sellTo(s, bob, 1 ether, 10 ether);
 
         assertEq(s.price(), 1 ether, "no floor - the seller names the price");
         assertEq(s.occupant(), bob);
@@ -229,13 +297,13 @@ contract SlotSellTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(Switchable.Refused.selector);
-        s.sell(bob, 80 ether, 10 ether);
+        _sellTo(s, bob, 80 ether, 10 ether);
 
         // And reopening it lets exactly the same call through, so the revert
         // above was the policy and not some unrelated guard.
         policy.set(true);
         vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether);
+        _sellTo(s, bob, 80 ether, 10 ether);
         assertEq(s.occupant(), bob);
     }
 
@@ -257,10 +325,10 @@ contract SlotSellTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 Reveals.Saw.selector,
-                alice,          // account = incoming occupant
-                address(0),     // occupant = vacant
+                alice, // account = incoming occupant
+                address(0), // occupant = vacant
                 uint256(50 ether),
-                alice           // caller
+                alice // caller
             )
         );
         r.buy(alice, 10 ether, 50 ether);
@@ -277,7 +345,7 @@ contract SlotSellTest is Test {
 
         vm.prank(bob);
         vm.expectRevert(NotOccupant.selector);
-        s.sell(carol, 50 ether, 10 ether);
+        _sellTo(s, carol, 50 ether, 10 ether);
     }
 
     /// @notice The buyer's allowance is their only consent — and it is enough.
@@ -292,11 +360,11 @@ contract SlotSellTest is Test {
 
         vm.prank(alice);
         vm.expectRevert();
-        s.sell(bob, 200 ether, 10 ether);
+        _sellTo(s, bob, 200 ether, 10 ether);
 
         // The agreed terms still go through.
         vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether);
+        _sellTo(s, bob, 80 ether, 10 ether);
         assertEq(s.occupant(), bob);
     }
 
@@ -306,20 +374,39 @@ contract SlotSellTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(CannotBuyFromYourself.selector);
-        s.sell(alice, 50 ether, 10 ether);
+        _sellTo(s, alice, 50 ether, 10 ether);
     }
 
-    function test_RejectsZeroPriceAndZeroBuyer() public {
+    function test_RejectsZeroPrice() public {
         Slot s = _slot(address(0), address(token));
         _seatAlice(s, 100 ether);
 
-        vm.startPrank(alice);
+        vm.prank(alice);
         vm.expectRevert(InvalidPrice.selector);
-        s.sell(bob, 0, 10 ether);
+        _sellTo(s, bob, 0, 10 ether);
+    }
 
-        vm.expectRevert(InvalidRecipient.selector);
-        s.sell(address(0), 50 ether, 10 ether);
-        vm.stopPrank();
+    /// @dev A zero buyer no longer needs its own check: nobody can produce a
+    ///      signature for `address(0)`, so the consent gate rejects it first.
+    ///      The guard stays in place regardless — it is one comparison, and it
+    ///      documents the invariant rather than relying on ECDSA to imply it.
+    function test_RejectsZeroBuyerAtTheSignatureGate() public {
+        Slot s = _slot(address(0), address(token));
+        _seatAlice(s, 100 ether);
+
+        SlotSellOrder.SellOrder memory o = SlotSellOrder.SellOrder({
+            slot: address(s),
+            buyer: address(0),
+            price: 50 ether,
+            deposit: 10 ether,
+            nonce: 0,
+            deadline: uint64(block.timestamp + 1 days)
+        });
+        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(bobKey, s.sellOrderHash(o));
+
+        vm.prank(alice);
+        vm.expectRevert(SlotSellOrder.SellOrderBadSignature.selector);
+        s.sell(o, abi.encodePacked(r, ss, v));
     }
 
     function test_EnforcesMinimumDepositForTheBuyer() public {
@@ -331,7 +418,7 @@ contract SlotSellTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(InsufficientDeposit.selector);
-        s.sell(bob, 100 ether, 1); // a deposit that funds no runway
+        _sellTo(s, bob, 100 ether, 1); // a deposit that funds no runway
     }
 
     /// @dev The buyer is not the caller, so there is no `msg.value` and no
@@ -345,7 +432,7 @@ contract SlotSellTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(SellNeedsErc20.selector);
-        s.sell(bob, 50 ether, 10 ether);
+        _sellTo(s, bob, 50 ether, 10 ether);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -364,12 +451,10 @@ contract SlotSellTest is Test {
 
         vm.recordLogs();
         vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether);
+        _sellTo(s, bob, 80 ether, 10 ether);
 
         bytes32 sold = keccak256("Sold(address,address,uint256,uint256)");
-        bytes32 bought = keccak256(
-            "Bought(address,address,uint256,uint256,uint256)"
-        );
+        bytes32 bought = keccak256("Bought(address,address,uint256,uint256,uint256)");
         bool sawSold;
         bool sawBought;
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -398,21 +483,21 @@ contract SlotSellTest is Test {
         // Two bidders, the better one posted second.
         vm.startPrank(carol);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 40 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), carol, 40 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 80 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), bob, 80 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
-        (bool found, , OfferBook.Offer memory o) = book.best(address(s));
+        (bool found,, OfferBook.Offer memory o) = book.best(address(s));
         assertTrue(found);
         assertEq(o.bidder, bob, "best by price, not by arrival");
         assertEq(o.price, 80 ether);
 
         vm.prank(alice);
-        s.sell(o.bidder, o.price, o.deposit);
+        _sellTo(s, o.bidder, o.price, o.deposit);
 
         assertEq(s.occupant(), bob);
         assertEq(s.price(), 80 ether);
@@ -428,17 +513,15 @@ contract SlotSellTest is Test {
         // Carol is funded and approves; Bob posts higher but approves nothing.
         vm.startPrank(carol);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 40 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), carol, 40 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         vm.prank(bob);
-        uint256 bobId = book.offer(
-            address(s), 90 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
+        uint256 bobId = _offerAs(book, address(s), carol, 90 ether, 10 ether, uint64(block.timestamp + 1 days));
 
         assertFalse(book.fundable(address(s), bobId), "no allowance, not fundable");
 
-        (bool found, , OfferBook.Offer memory o) = book.best(address(s));
+        (bool found,, OfferBook.Offer memory o) = book.best(address(s));
         assertTrue(found);
         assertEq(o.bidder, carol, "the higher but unfunded offer is skipped");
     }
@@ -450,22 +533,20 @@ contract SlotSellTest is Test {
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        uint256 id = book.offer(
-            address(s), 80 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
+        uint256 id = _offerAs(book, address(s), bob, 80 ether, 10 ether, uint64(block.timestamp + 1 days));
         book.cancel(address(s), id);
         vm.stopPrank();
 
-        (bool found, , ) = book.best(address(s));
+        (bool found,,) = book.best(address(s));
         assertFalse(found, "a cancelled offer is off the board");
 
         vm.startPrank(carol);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 50 ether, 10 ether, uint64(block.timestamp + 100));
+        _offerAs(book, address(s), carol, 50 ether, 10 ether, uint64(block.timestamp + 100));
         vm.stopPrank();
 
         vm.warp(block.timestamp + 200);
-        (found, , ) = book.best(address(s));
+        (found,,) = book.best(address(s));
         assertFalse(found, "an expired offer is off the board");
     }
 
@@ -474,9 +555,7 @@ contract SlotSellTest is Test {
         OfferBook book = _book();
 
         vm.prank(bob);
-        uint256 id = book.offer(
-            address(s), 80 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
+        uint256 id = _offerAs(book, address(s), carol, 80 ether, 10 ether, uint64(block.timestamp + 1 days));
 
         vm.prank(carol);
         vm.expectRevert(OfferBook.NotBidder.selector);
@@ -486,7 +565,7 @@ contract SlotSellTest is Test {
     function test_EmptyBoardIsNotAnError() public {
         Slot s = _slot(address(0), address(token));
         OfferBook book = _book();
-        (bool found, , ) = book.best(address(s));
+        (bool found,,) = book.best(address(s));
         assertFalse(found);
     }
 
@@ -496,9 +575,7 @@ contract SlotSellTest is Test {
         OfferBook book = _book();
 
         vm.prank(bob);
-        uint256 id = book.offer(
-            address(s), 1 ether, 1 ether, uint64(block.timestamp + 1 days)
-        );
+        uint256 id = _offerAs(book, address(s), carol, 1 ether, 1 ether, uint64(block.timestamp + 1 days));
         assertFalse(book.fundable(address(s), id));
     }
 
@@ -512,24 +589,24 @@ contract SlotSellTest is Test {
 
         // Alice occupies AND has a fully funded offer on her own slot.
         vm.prank(alice);
-        book.offer(address(s), 90 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), carol, 90 ether, 10 ether, uint64(block.timestamp + 1 days));
 
-        (bool found, , ) = book.best(address(s));
+        (bool found,,) = book.best(address(s));
         assertFalse(found, "the occupant's own offer is not an exit");
 
         // A real counterparty is.
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 40 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), bob, 40 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         OfferBook.Offer memory o;
-        (found, , o) = book.best(address(s));
+        (found,, o) = book.best(address(s));
         assertTrue(found);
         assertEq(o.bidder, bob);
 
         vm.prank(alice);
-        s.sell(o.bidder, o.price, o.deposit);
+        _sellTo(s, o.bidder, o.price, o.deposit);
         assertEq(s.occupant(), bob);
     }
 
@@ -545,18 +622,14 @@ contract SlotSellTest is Test {
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        uint256 first = book.offer(
-            address(s), 40 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
-        uint256 second = book.offer(
-            address(s), 80 ether, 15 ether, uint64(block.timestamp + 2 days)
-        );
+        uint256 first = _offerAs(book, address(s), bob, 40 ether, 10 ether, uint64(block.timestamp + 1 days));
+        uint256 second = _offerAs(book, address(s), bob, 80 ether, 15 ether, uint64(block.timestamp + 2 days));
         vm.stopPrank();
 
         assertEq(second, first, "the same id is reused");
         assertEq(book.offerCount(address(s)), 1, "the board did not grow");
 
-        (bool found, , OfferBook.Offer memory o) = book.best(address(s));
+        (bool found,, OfferBook.Offer memory o) = book.best(address(s));
         assertTrue(found);
         assertEq(o.price, 80 ether);
         assertEq(o.deposit, 15 ether, "every field is replaced, not just price");
@@ -572,11 +645,11 @@ contract SlotSellTest is Test {
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 80 ether, 10 ether, uint64(block.timestamp + 1 days));
-        book.offer(address(s), 30 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), bob, 80 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), bob, 30 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
-        (, , OfferBook.Offer memory o) = book.best(address(s));
+        (,, OfferBook.Offer memory o) = book.best(address(s));
         assertEq(o.price, 30 ether, "the withdrawn price is gone");
     }
 
@@ -589,20 +662,16 @@ contract SlotSellTest is Test {
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        uint256 id = book.offer(
-            address(s), 40 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
+        uint256 id = _offerAs(book, address(s), bob, 40 ether, 10 ether, uint64(block.timestamp + 1 days));
         book.cancel(address(s), id);
 
-        uint256 again = book.offer(
-            address(s), 60 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
+        uint256 again = _offerAs(book, address(s), bob, 60 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         assertEq(again, id, "the cancelled entry is reused");
         assertEq(book.offerCount(address(s)), 1);
 
-        (bool found, , OfferBook.Offer memory o) = book.best(address(s));
+        (bool found,, OfferBook.Offer memory o) = book.best(address(s));
         assertTrue(found, "the cancelled flag was cleared");
         assertEq(o.price, 60 ether);
     }
@@ -616,17 +685,17 @@ contract SlotSellTest is Test {
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 50 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), bob, 50 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         vm.startPrank(carol);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 50 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), carol, 50 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         assertEq(book.offerCount(address(s)), 2, "separate bidders, separate offers");
 
-        (bool found, , OfferBook.Offer memory o) = book.best(address(s));
+        (bool found,, OfferBook.Offer memory o) = book.best(address(s));
         assertTrue(found);
         assertEq(o.bidder, bob, "first in at an equal price takes the tie");
     }
@@ -637,13 +706,11 @@ contract SlotSellTest is Test {
         Slot s = _slot(address(0), address(token));
         OfferBook book = _book();
 
-        (bool has, , ) = book.offerOf(address(s), bob);
+        (bool has,,) = book.offerOf(address(s), bob);
         assertFalse(has, "nothing standing to begin with");
 
         vm.startPrank(bob);
-        uint256 id = book.offer(
-            address(s), 40 ether, 10 ether, uint64(block.timestamp + 100)
-        );
+        uint256 id = _offerAs(book, address(s), bob, 40 ether, 10 ether, uint64(block.timestamp + 100));
 
         OfferBook.Offer memory o;
         uint256 reported;
@@ -653,14 +720,14 @@ contract SlotSellTest is Test {
         assertEq(o.price, 40 ether);
 
         book.cancel(address(s), id);
-        (has, , ) = book.offerOf(address(s), bob);
+        (has,,) = book.offerOf(address(s), bob);
         assertFalse(has, "cancelled is not standing");
 
-        book.offer(address(s), 40 ether, 10 ether, uint64(block.timestamp + 100));
+        _offerAs(book, address(s), bob, 40 ether, 10 ether, uint64(block.timestamp + 100));
         vm.stopPrank();
 
         vm.warp(block.timestamp + 200);
-        (has, , ) = book.offerOf(address(s), bob);
+        (has,,) = book.offerOf(address(s), bob);
         assertFalse(has, "expired is not standing");
     }
 
@@ -676,14 +743,14 @@ contract SlotSellTest is Test {
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 80 ether, 10 ether, uint64(block.timestamp + 1 days));
+        _offerAs(book, address(s), bob, 80 ether, 10 ether, uint64(block.timestamp + 1 days));
         vm.stopPrank();
 
         (, bool[] memory live) = book.board(address(s));
         assertTrue(live[0], "live before the fill");
 
         vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether);
+        _sellTo(s, bob, 80 ether, 10 ether);
 
         OfferBook.Offer[] memory list;
         (list, live) = book.board(address(s));
@@ -691,25 +758,104 @@ contract SlotSellTest is Test {
         assertFalse(live[0], "but the board must not call it live");
     }
 
-    /// @notice A filled offer that is merely HIDDEN comes back the moment its
-    ///         author stops occupying, letting the next occupant sell into a
-    ///         price from a previous era. `retire` is what makes it permanent.
+    /// @notice A filled order stays dead — with no cleanup transaction.
+    ///
+    /// @dev This used to require a permissionless `retire` call, and a race to
+    ///      send it: until someone did, the consumed offer was merely HIDDEN
+    ///      (its author happened to be the occupant) and sprang back the moment
+    ///      they were bought out. The slot now burns the bidder's nonce as it
+    ///      executes, so the order is dead everywhere it was ever published.
     function test_AFilledOfferDoesNotResurrect() public {
+        Slot s = _slot(address(0), address(token));
+        OfferBook book = _book();
+        _seatAlice(s, 100 ether);
+
+        vm.prank(bob);
+        token.approve(address(s), type(uint256).max);
+        vm.prank(bob);
+        _offerAs(book, address(s), bob, 80 ether, 10 ether, uint64(block.timestamp + 30 days));
+
+        // Alice sells into THE ORDER ON THE BOARD — the real flow. Selling via
+        // some other signed order would burn a different nonce and leave this
+        // one standing, which is correct: they would be two separate offers.
+        (, , SlotSellOrder.SellOrder memory order, bytes memory sig) =
+            book.bestOrder(address(s));
+        vm.prank(alice);
+        s.sell(order, sig);
+        assertEq(s.occupant(), bob, "bob now occupies");
+
+        // Carol buys bob out, so bob is no longer the occupant — the exact
+        // moment the old design let the consumed offer come back.
+        vm.startPrank(carol);
+        token.approve(address(s), type(uint256).max);
+        s.buy(carol, 20 ether, 200 ether);
+        vm.stopPrank();
+
+        (bool found, , ) = book.best(address(s));
+        assertFalse(found, "the consumed order stays dead");
+    }
+
+
+    /// @notice An unfilled order stays live. Nothing needs to retire it, and
+    ///         nothing can: it dies only when its own nonce is burned — by
+    ///         being executed, or by the bidder cancelling it.
+    function test_AnUnfilledOrderStaysLive() public {
         Slot s = _slot(address(0), address(token));
         OfferBook book = _book();
         _seatAlice(s, 100 ether);
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        uint256 id = book.offer(
-            address(s), 80 ether, 10 ether, uint64(block.timestamp + 30 days)
-        );
         vm.stopPrank();
+        vm.prank(bob);
+        _offerAs(book, address(s), bob, 80 ether, 10 ether, uint64(block.timestamp + 1 days));
+
+        (bool found, , ) = book.best(address(s));
+        assertTrue(found, "bob's offer is untouched");
+    }
+
+    /// @notice The book cannot alter what the bidder agreed to. It forwards a
+    ///         signed order; the slot re-verifies it, so a hostile book is
+    ///         powerless rather than merely discouraged.
+    function test_TheBookCannotChangeTheTerms() public {
+        Slot s = _slot(address(0), address(token));
+        OfferBook book = _book();
+        _seatAlice(s, 100 ether);
+
+        vm.prank(bob);
+        token.approve(address(s), type(uint256).max);
+        // `prank` above is spent by `approve`; re-prank for the offer itself.
+        vm.prank(bob);
+        _offerAs(book, address(s), bob, 70 ether, 10 ether, uint64(block.timestamp + 1 days));
+
+        (SlotSellOrder.SellOrder memory order, bytes memory sig) =
+            book.orderOf(address(s), 0);
+
+        // Alice rewrites the split in her favour and submits it directly.
+        order.price = 80 ether;
+        order.deposit = 0;
 
         vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether); // bob now occupies
+        vm.expectRevert(SlotSellOrder.SellOrderBadSignature.selector);
+        s.sell(order, sig);
+    }
 
-        book.retire(address(s), id); // permissionless — note: not pranked
+    /// @notice A filled offer is dead ON ITS OWN — the slot burned the nonce,
+    ///         so no cleanup call is needed and it cannot come back.
+    function test_AFilledOfferDiesWithoutCleanup() public {
+        Slot s = _slot(address(0), address(token));
+        OfferBook book = _book();
+        _seatAlice(s, 100 ether);
+
+        vm.prank(bob);
+        token.approve(address(s), type(uint256).max);
+        vm.prank(bob);
+        _offerAs(book, address(s), bob, 70 ether, 10 ether, uint64(block.timestamp + 30 days));
+
+        (, , SlotSellOrder.SellOrder memory order, bytes memory sig) =
+            book.bestOrder(address(s));
+        vm.prank(alice);
+        s.sell(order, sig);
 
         // Carol buys bob out, so bob is no longer the occupant.
         vm.startPrank(carol);
@@ -717,55 +863,7 @@ contract SlotSellTest is Test {
         s.buy(carol, 20 ether, 200 ether);
         vm.stopPrank();
 
-        assertTrue(s.occupant() == carol, "bob is out");
         (bool found, , ) = book.best(address(s));
-        assertFalse(found, "the consumed offer stays dead");
-    }
-
-    /// @notice Without `retire`, that same sequence hands Carol a live 80 that
-    ///         Bob never re-offered. This test documents why retiring matters.
-    function test_WithoutRetireTheOfferWouldComeBack() public {
-        Slot s = _slot(address(0), address(token));
-        OfferBook book = _book();
-        _seatAlice(s, 100 ether);
-
-        vm.startPrank(bob);
-        token.approve(address(s), type(uint256).max);
-        book.offer(address(s), 80 ether, 10 ether, uint64(block.timestamp + 30 days));
-        vm.stopPrank();
-
-        vm.prank(alice);
-        s.sell(bob, 80 ether, 10 ether);
-
-        vm.startPrank(carol);
-        token.approve(address(s), type(uint256).max);
-        s.buy(carol, 20 ether, 200 ether);
-        vm.stopPrank();
-
-        (bool found, , OfferBook.Offer memory o) = book.best(address(s));
-        assertTrue(found, "un-retired, it is live again");
-        assertEq(o.price, 80 ether, "a price from before the fill");
-    }
-
-    /// @notice Retiring is only legal when the bidder really does hold the
-    ///         slot — otherwise anyone could cancel anyone's offer.
-    function test_RetireRefusesAnOfferThatWasNotFilled() public {
-        Slot s = _slot(address(0), address(token));
-        OfferBook book = _book();
-        _seatAlice(s, 100 ether);
-
-        vm.startPrank(bob);
-        token.approve(address(s), type(uint256).max);
-        uint256 id = book.offer(
-            address(s), 80 ether, 10 ether, uint64(block.timestamp + 1 days)
-        );
-        vm.stopPrank();
-
-        vm.prank(carol);
-        vm.expectRevert(OfferBook.NotFilled.selector);
-        book.retire(address(s), id);
-
-        (bool found, , ) = book.best(address(s));
-        assertTrue(found, "bob's offer is untouched");
+        assertFalse(found, "the consumed order never returns");
     }
 }
