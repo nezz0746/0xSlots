@@ -188,6 +188,16 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     (slot: Address) => exec("Liquidate", () => client.liquidate(slot)),
     [exec, client],
   );
+  /**
+   * Evict and claim in one transaction — the only version of liquidating that
+   * ends with you holding the slot. Labelled apart from "Liquidate" because the
+   * outcomes differ: one leaves the slot vacant for anyone, this one takes it.
+   */
+  const liquidateAndTake = useCallback(
+    (params: BuyParams) =>
+      exec("Liquidate and take", () => client.liquidateAndTake(params)),
+    [exec, client],
+  );
 
   // ─── Holding ──────────────────────────────────────────────────────────────
 
@@ -283,6 +293,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     sell,
     release,
     liquidate,
+    liquidateAndTake,
     // Holding
     selfAssess,
     topUp,

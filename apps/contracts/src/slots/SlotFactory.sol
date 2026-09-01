@@ -68,7 +68,13 @@ contract SlotFactory is Initializable, UUPSUpgradeable {
     {
         if (admin_ == address(0)) revert InvalidRecipient();
         admin = admin_;
-        beacon = new UpgradeableBeacon(implementation, admin_);
+        // The FACTORY owns the beacon, not the admin EOA. Handing beacon
+        // ownership straight to `admin_` reads like the simpler thing and
+        // breaks two ways: `upgradeBeacon` below can then never succeed, since
+        // the caller OZ sees is this contract; and beacon ownership would be
+        // frozen at whoever deployed, so `transferAdmin` would hand over an
+        // admin role that silently no longer carries the power to upgrade.
+        beacon = new UpgradeableBeacon(implementation, address(this));
         emit AdminTransferred(address(0), admin_);
     }
 

@@ -531,3 +531,108 @@ describe("guards", () => {
     expect(sent(writeContract, "selfAssess")).toBeUndefined();
   });
 });
+
+describe("liquidateAndTake", () => {
+  it("pays the DEPOSIT ALONE on a native slot, and never reads the price", async () => {
+    // `price` is deliberately absent from the double. The eviction vacates the
+    // slot before the buy half runs, so `owedToPrev` is zero and the live price
+    // is not part of what is owed — reading it would be the bug, and here it is
+    // an unexpected read that throws.
+    const { client, writeContract, readContract } = harness({
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await client.liquidateAndTake({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 4n * 10n ** 17n,
+      selfAssessedPrice: 3n * 10n ** 18n,
+    });
+
+    const call = sent(writeContract, "liquidateAndTake");
+    expect(call.address).toBe(SLOT);
+    expect(call.value).toBe(4n * 10n ** 17n);
+    expect(call.args).toEqual([ACCOUNT, 4n * 10n ** 17n, 3n * 10n ** 18n]);
+    // `buy` demands an EXACT msg.value, so overpaying by the stale price would
+    // revert rather than refund.
+    expect(readContract.mock.calls.map((c: any[]) => c[0].functionName)).toEqual(
+      ["currency"],
+    );
+    expect(approvals(writeContract)).toHaveLength(0);
+  });
+
+  it("approves the SLOT for the deposit on an ERC-20 slot, and sends no value", async () => {
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      allowance: 0n,
+    });
+
+    await client.liquidateAndTake({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 5n * 10n ** 6n,
+      selfAssessedPrice: 20n * 10n ** 6n,
+    });
+
+    expect(sent(writeContract, "approve").args).toEqual([SLOT, 5n * 10n ** 6n]);
+    expect(sent(writeContract, "liquidateAndTake").value).toBeUndefined();
+  });
+
+  it("skips the approval when the allowance already covers the deposit", async () => {
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      allowance: 10n ** 30n,
+    });
+
+    await client.liquidateAndTake({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 5n * 10n ** 6n,
+      selfAssessedPrice: 20n * 10n ** 6n,
+    });
+
+    expect(approvals(writeContract)).toHaveLength(0);
+    expect(sent(writeContract, "liquidateAndTake")).toBeDefined();
+  });
+
+  it("seats `account` while the connected wallet pays, exactly as buy does", async () => {
+    const { client, writeContract } = harness({
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+    const seated = "0x7777777777777777777777777777777777777777" as const;
+
+    await client.liquidateAndTake({
+      slot: SLOT,
+      account: seated,
+      depositAmount: 1n,
+      selfAssessedPrice: 10n,
+    });
+
+    const call = sent(writeContract, "liquidateAndTake");
+    expect(call.args[0]).toBe(seated);
+    expect(call.account).toBe(ACCOUNT);
+  });
+
+  it("rejects a zero self-assessed price without touching the chain", async () => {
+    const { client, readContract } = harness({});
+    await expect(
+      client.liquidateAndTake({
+        slot: SLOT,
+        account: ACCOUNT,
+        depositAmount: 1n,
+        selfAssessedPrice: 0n,
+      }),
+    ).rejects.toThrow(/selfAssessedPrice/);
+    expect(readContract).not.toHaveBeenCalled();
+  });
+
+  it("plain liquidate still sends no value and takes no arguments", async () => {
+    // The atomic path is an ADDITION; `liquidate` keeps its old signature for
+    // keepers that genuinely only want the slot vacated.
+    const { client, writeContract } = harness({});
+    await client.liquidate(SLOT);
+    const call = sent(writeContract, "liquidate");
+    expect(call.args).toEqual([]);
+    expect(call.value).toBeUndefined();
+  });
+});

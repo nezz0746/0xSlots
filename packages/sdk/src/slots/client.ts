@@ -605,12 +605,51 @@ export class SlotsClient {
   /**
    * Evict an occupant whose deposit is empty. Anyone may call.
    *
-   * There is no bounty — the reward is the slot. This leaves it vacant, and a
-   * vacant slot costs only your own deposit, so whoever actually wants it can
-   * evict and take it in one transaction.
+   * There is no bounty — the reward is the slot. This leaves it VACANT, which is
+   * only worth doing if you do not want the slot yourself: use
+   * {@link liquidateAndTake} to evict and claim atomically, or you hand the
+   * vacancy to whoever is watching the mempool.
    */
   liquidate(slot: Address): Promise<Hash> {
     return this.write(slot, "liquidate", []);
+  }
+
+  /**
+   * Evict an insolvent occupant and take the slot, in one transaction.
+   *
+   * This is what makes "no bounty" honest: the reward for liquidating is the
+   * slot, which only holds if the eviction and the claim are atomic — otherwise
+   * the keeper vacates the slot and loses the race for it to whoever is watching
+   * the mempool.
+   *
+   * ── The payment is the DEPOSIT ALONE ──────────────────────────────────────
+   *
+   * Not `price() + deposit`, which is what {@link buy} sends. The eviction runs
+   * first and vacates the slot, so by the time the buy half executes there is no
+   * previous occupant to buy out and `owedToPrev` is zero — even though
+   * `price()` still reads non-zero from outside, right up until this call lands.
+   *
+   * Sending the live price on top would overpay: `buy` demands an EXACT
+   * `msg.value` on a native slot and would revert, and an ERC-20 slot would pull
+   * the surplus. So this reads no price at all — and there is a test asserting
+   * exactly that, by omitting `price` from the double.
+   *
+   * Both currencies work. `multicall` deliberately does not cover this: OZ's is
+   * non-payable, so it was silently unreachable for native slots.
+   */
+  async liquidateAndTake(params: BuyParams): Promise<Hash> {
+    this.assertPositive(params.depositAmount, "depositAmount");
+    this.assertPrice(params.selfAssessedPrice, "selfAssessedPrice");
+    if (params.account === zeroAddress)
+      throw new SlotsError(
+        "liquidateAndTake",
+        "account must not be the zero address",
+      );
+
+    return this.withPayment(params.slot, params.depositAmount, {
+      functionName: "liquidateAndTake",
+      args: [params.account, params.depositAmount, params.selfAssessedPrice],
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -844,7 +883,10 @@ export class SlotsClient {
   private async withPayment(
     slot: Address,
     amount: bigint,
-    call: { functionName: "buy" | "topUp"; args: readonly unknown[] },
+    call: {
+      functionName: "buy" | "topUp" | "liquidateAndTake";
+      args: readonly unknown[];
+    },
   ): Promise<Hash> {
     const currency = await this.currency(slot);
 
