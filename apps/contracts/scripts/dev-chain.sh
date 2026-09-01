@@ -68,20 +68,45 @@ echo "  up on $RPC"
 
 # Both scripts run to completion in the foreground. Backgrounding them loses the
 # race against the deployment JSON that everything downstream reads.
+# The hook-based protocol in src/slots. DeployLocal/SeedLocal deploy the
+# RETIRED one — pointing this at them leaves the app looking for a factory that
+# was never created, which reads as "the explorer is broken" rather than as
+# "the wrong protocol is on the chain".
+#
+# Addresses are deterministic from a fresh chain driven by account 0, which is
+# what lets the app pin them; see packages/contracts/src/slots.ts.
+FACTORY=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+HOOK=0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
+TOKEN=0x5FC8d32690cc91D4c39d9d3abcBD16989F875707
+PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
 echo "▸ deploying"
 cd "$HERE"
-forge script script/DeployLocal.s.sol:DeployLocal --broadcast >/tmp/deploy-local.log 2>&1 \
+forge script script/slots/DeploySlots.s.sol:DeploySlots \
+  --rpc-url "$RPC" --broadcast --private-key "$PK" >/tmp/deploy-local.log 2>&1 \
   || { echo "  deploy failed:"; tail -25 /tmp/deploy-local.log; exit 1; }
-grep -E "proxy:" /tmp/deploy-local.log | sed 's/^/  /'
+grep -E "SLOT_FACTORY|MIN_TENURE_HOOK|TEST_TOKEN" /tmp/deploy-local.log | sed 's/^/  /'
+
+# Deploying to an address the app does not know about is the failure this
+# script exists to prevent, so check rather than assume.
+if [ "$(cast codesize "$FACTORY" --rpc-url "$RPC" 2>/dev/null || echo 0)" = "0" ]; then
+  echo "  the factory did not land at $FACTORY — the app pins that address." >&2
+  echo "  Something changed what DeploySlots deploys, or in what order." >&2
+  exit 1
+fi
 
 echo "▸ seeding"
-forge script script/SeedLocal.s.sol:SeedLocal --broadcast >/tmp/seed-local.log 2>&1 \
+forge script script/slots/SeedSlots.s.sol:SeedSlots \
+  --rpc-url "$RPC" --broadcast --private-key "$PK" \
+  --sig "run(address,address,address)" "$FACTORY" "$HOOK" "$TOKEN" \
+  >/tmp/seed-local.log 2>&1 \
   || { echo "  seed failed:"; tail -25 /tmp/seed-local.log; exit 1; }
-grep -E "^  (slot|LocalToken)" /tmp/seed-local.log | sed 's/^/  /'
+grep -E "^  [0-9] " /tmp/seed-local.log | sed 's/^/  /'
 
 cat <<EOF
 
   chain ready — anvil on $RPC (chainId 31337)
+  factory:  $FACTORY
   accounts: anvil default mnemonic, indices 0-4
   time warp:
     cast rpc evm_increaseTime 604800 --rpc-url $RPC
