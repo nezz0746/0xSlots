@@ -63,6 +63,42 @@ abstract contract SlotHooks is SlotStorage {
      *      work; better to refuse it now than to attach it with no
      *      subscriptions and leave someone wondering why nothing fires.
      */
+    /**
+     * @dev `_readHookFlags` without the right to revert.
+     *
+     *      Used only by `_applyPending`, which runs inside `_liquidate`. The
+     *      gas cap matters as much as the `try`: an uncapped read lets a hook
+     *      burn the caller's frame, which prices out an eviction rather than
+     *      blocking it — the same harm by a slower route. `HOOK_GAS` is the
+     *      same stipend `_after` grants, so no hook gets a bigger claim on an
+     *      eviction than any other.
+     *
+     *      Returns ok=false for a revert, for all-false flags, and for a hook
+     *      whose answer does not decode. The caller attaches nothing.
+     */
+    function _tryReadHookFlags(address h)
+        internal
+        view
+        returns (bool ok, uint8 packed)
+    {
+        if (h == address(0)) return (false, 0);
+
+        try ISlotHook(h).hooks{gas: HOOK_GAS}() returns (HookFlags memory f) {
+            if (f.beforeBuy) packed |= F_BEFORE_BUY;
+            if (f.beforeSell) packed |= F_BEFORE_SELL;
+            if (f.beforeSelfAssess) packed |= F_BEFORE_SELF_ASSESS;
+            if (f.afterBuy) packed |= F_AFTER_BUY;
+            if (f.afterSell) packed |= F_AFTER_SELL;
+            if (f.afterRelease) packed |= F_AFTER_RELEASE;
+            if (f.afterLiquidate) packed |= F_AFTER_LIQUIDATE;
+            if (f.afterSettle) packed |= F_AFTER_SETTLE;
+            ok = packed != 0;
+            if (!ok) packed = 0;
+        } catch {
+            return (false, 0);
+        }
+    }
+
     function _readHookFlags(address h) internal view returns (uint8 packed) {
         if (h == address(0)) return 0;
 
@@ -122,8 +158,29 @@ abstract contract SlotHooks is SlotStorage {
     // ─── effects ────────────────────────────────────────────────────────────
 
     function _after(uint8 flag, bytes memory call) internal {
-        address h = hook;
-        if (h == address(0) || _hookFlags & flag == 0) return;
+        _afterOn(hook, _hookFlags, flag, call);
+    }
+
+    /**
+     * @dev `_after`, addressed to a hook named by the caller.
+     *
+     *      Exists because a transition that swaps hooks would otherwise split
+     *      its own callbacks across two contracts: the hook that governed the
+     *      tenure is asked for permission, `_applyPending` replaces it, and
+     *      the notification that the tenure ENDED is delivered to its
+     *      successor — which never saw the tenure begin. Any hook holding
+     *      per-occupancy state (rewards, a feed, an allowlist) is left with a
+     *      tenure it can never close.
+     *
+     *      End-of-tenure callbacks pass the hook cached before the swap.
+     */
+    function _afterOn(
+        address h,
+        uint8 flags,
+        uint8 flag,
+        bytes memory call
+    ) internal {
+        if (h == address(0) || flags & flag == 0) return;
         (bool ok, ) = h.call{gas: HOOK_GAS}(call);
         if (!ok) emit HookCallFailed(h, bytes4(call));
     }

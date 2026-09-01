@@ -34,3 +34,4 @@ error OrderExpired();
 error OrderWrongSlot();
 error OrderUsed();
 error OrderBadSignature();
+error PaymentAboveMax();

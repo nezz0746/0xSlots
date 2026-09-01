@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
+import {HOOK_GAS} from "../SlotStorage.sol";
 
 /**
  * @title CompositeHook
@@ -36,17 +37,29 @@ contract CompositeHook is ISlotHook, IDescribedHook {
     address[] public children;
     HookFlags public declared;
 
-    /// @dev Per-child stipend for `after` callbacks. The slot gives this whole
-    ///      contract 500k; spending it all on the first child would be a
-    ///      denial of service on the rest.
-    uint256 public constant CHILD_GAS = 100_000;
+    uint256 public constant MAX_CHILDREN = 8;
+
+    /// @dev Headroom left for this contract's own loop and return.
+    uint256 internal constant GAS_FLOOR = 10_000;
+
+    /// @dev Per-child stipend for `after` callbacks, derived from the budget
+    ///      rather than guessed.
+    ///
+    ///      It was a flat 100_000 against `MAX_CHILDREN = 8`, promising 800k
+    ///      out of the 500k the slot actually forwards. The failure was not
+    ///      "the last few children are starved": the composite's own frame ran
+    ///      out, so every child that had already succeeded was rolled back
+    ///      too, and the slot swallowed it as one `HookCallFailed`. A lenient
+    ///      fan-out that drops all of its children is the exact failure it
+    ///      exists to prevent.
+    uint256 public constant CHILD_GAS = HOOK_GAS / MAX_CHILDREN;
 
     error NotOwner();
     error TooManyChildren();
+    error ChildHasNoCode();
 
     event ChildAdded(address indexed child);
 
-    uint256 public constant MAX_CHILDREN = 8;
 
     /// @notice Identifies this as a composite. See `IDescribedHook`.
     bytes32 public constant FAMILY = keccak256("slots.hook.composite");
@@ -67,17 +80,31 @@ contract CompositeHook is ISlotHook, IDescribedHook {
         metadataURI = metadataURI_;
         declared = flags;
         for (uint256 i; i < initial.length; ++i) {
+            // A staticcall to an address with no code SUCCEEDS with empty
+            // returndata, and `_all` reads success as assent — so a codeless
+            // child is a veto that always approves. The slot refuses a hook
+            // that cannot answer; a composite must refuse one too, or it
+            // launders exactly what the slot rejected.
+            if (initial[i].code.length == 0) revert ChildHasNoCode();
             children.push(initial[i]);
         }
         if (children.length > MAX_CHILDREN) revert TooManyChildren();
     }
 
-    function add(address child) external {
-        if (msg.sender != owner) revert NotOwner();
-        if (children.length >= MAX_CHILDREN) revert TooManyChildren();
-        children.push(child);
-        emit ChildAdded(child);
-    }
+    // `add` is deliberately gone.
+    //
+    // The slot snapshots `hooks()` once so a hook cannot widen its reach under
+    // a sitting occupant. `add` walked around that: the flags stayed as
+    // snapshotted while what ran behind them changed, letting this contract's
+    // owner — a third party to the slot — install a veto mid-tenure on every
+    // slot pointing here. The veto then blocked `buy`, which is the transition
+    // the manager needs in order to detach the composite, so it could not even
+    // be undone.
+    //
+    // The child set is the configuration, so it belongs in the address, the
+    // way `MinimumTenureHook`'s duration does. Changing it means deploying a
+    // new composite and proposing it — which is deferred, visible, and
+    // refusable.
 
     function childCount() external view returns (uint256) {
         return children.length;
@@ -172,6 +199,13 @@ contract CompositeHook is ISlotHook, IDescribedHook {
     function _each(bytes memory call) internal {
         uint256 n = children.length;
         for (uint256 i; i < n; ++i) {
+            // Stop rather than continue into a frame too small to run in.
+            // `call{gas: X}` only CAPS the forward — once the budget is spent
+            // the remaining children are called with almost nothing, fail, and
+            // (worse) the composite's own frame can die and roll back every
+            // child that already succeeded. Returning cleanly keeps the ones
+            // that ran.
+            if (gasleft() < CHILD_GAS + GAS_FLOOR) return;
             children[i].call{gas: CHILD_GAS}(call);
         }
     }

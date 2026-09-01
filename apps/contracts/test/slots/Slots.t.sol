@@ -165,7 +165,7 @@ contract SlotsTest is Test {
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
         vm.startPrank(who);
         token.approve(address(s), type(uint256).max);
-        s.buy(who, dep, price);
+        s.buy(who, dep, price, 0);
         vm.stopPrank();
     }
 
@@ -233,7 +233,7 @@ contract SlotsTest is Test {
         // The hook's own error surfaces, not a generic "call failed" — a vetoed
         // buy should say which rule refused it.
         vm.expectRevert(DenyBuys.Denied.selector);
-        s.buy(alice, 1 ether, 100 ether);
+        s.buy(alice, 1 ether, 100 ether, 0);
         vm.stopPrank();
     }
 
@@ -398,7 +398,7 @@ contract SlotsTest is Test {
         Slot s = _slot(address(0));
         vm.prank(alice);
         vm.expectRevert(InvalidPrice.selector);
-        s.buy(alice, 0, type(uint256).max);
+        s.buy(alice, 0, type(uint256).max, 0);
         assertTrue(s.isVacant(), "and the slot is untouched");
     }
 

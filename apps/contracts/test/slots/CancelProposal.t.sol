@@ -110,6 +110,9 @@ contract CancelProposalTest is Test {
         slot.proposeTerms(0, hookA, false, true);
         slot.cancelProposal(false, true);
 
+        // Terms are queued, ripen, then land at a transition.
+        vm.warp(block.timestamp + 1 days + 1);
+
         address buyer = address(0xB0B);
         vm.deal(buyer, 10 ether);
         // Sized from the contract, not from taxPercentage(): the queued 750
@@ -117,9 +120,9 @@ contract CancelProposalTest is Test {
         // would be refused.
         uint256 price = 0.01 ether;
         uint256 need = slot.minDepositForBuy(price);
-        uint256 dep = slot.quoteBuy(need);
+        uint256 dep = slot.quoteBuy(buyer, need);
         vm.prank(buyer);
-        slot.buy{value: dep}(buyer, need, price);
+        slot.buy{value: dep}(buyer, need, price, 0);
 
         assertEq(slot.taxPercentage(), 750, "the tax change landed");
         assertEq(slot.hook(), address(0), "the cancelled hook did not");
@@ -132,6 +135,11 @@ contract CancelProposalTest is Test {
         uint256 atCurrentTax = slot.minDepositForBuy(price);
 
         slot.proposeTerms(750, address(0), true, false);
+        // Not yet: a queued rise the transition will not apply must not be
+        // priced in, or the quote asks for money the slot will not take.
+        assertEq(slot.minDepositForBuy(price), atCurrentTax, "not ripe yet");
+
+        vm.warp(block.timestamp + 1 days + 1);
         uint256 atPendingTax = slot.minDepositForBuy(price);
 
         assertGt(atPendingTax, atCurrentTax, "the queued rise must be priced in");
@@ -142,10 +150,10 @@ contract CancelProposalTest is Test {
         vm.deal(buyer, 10 ether);
         vm.prank(buyer);
         vm.expectRevert();
-        slot.buy{value: atCurrentTax}(buyer, atCurrentTax, price);
+        slot.buy{value: atCurrentTax}(buyer, atCurrentTax, price, 0);
 
         vm.prank(buyer);
-        slot.buy{value: atPendingTax}(buyer, atPendingTax, price);
+        slot.buy{value: atPendingTax}(buyer, atPendingTax, price, 0);
         assertEq(slot.occupant(), buyer);
     }
 }

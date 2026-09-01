@@ -110,24 +110,58 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         f.beforeBuy = true;
         f.beforeSell = true;
         f.beforeSelfAssess = true;
+        // Subscribed so the hook can see the ONE transition the protected
+        // party controls. Without them, an occupant releases and retakes the
+        // slot in a single transaction and the window renews for ever.
+        f.afterRelease = true;
+        f.afterLiquidate = true;
     }
+
+    /// @notice When an account that just vacated may take this slot again.
+    /// @dev A window protects an occupant FROM the market. Letting the same
+    ///      account start a fresh one the instant it ends turns protection
+    ///      into tenure without end, which is the opposite of a forced-sale
+    ///      market. Keyed by (slot, account) because one hook serves many.
+    mapping(address => mapping(address => uint256)) public reentryAllowedAt;
 
     /// @notice Refuse a buy that is underfunded, or that lands inside somebody
     ///         else's protection window.
     function beforeBuy(SlotContext calldata ctx) external view {
         _requireFunded(ctx);
 
-        // Vacant slots are always claimable — there is no tenure to protect.
+        // The account that just vacated cannot immediately retake it. This is
+        // what closes the renewal loop: release-and-rebuy in one transaction
+        // used to re-arm `occupiedSince` at no cost, and at a dust price the
+        // tax floors to zero so liquidation never armed either — the slot left
+        // forced sale permanently, for one wei.
+        uint256 barred = reentryAllowedAt[ctx.slot][ctx.account];
+        if (block.timestamp < barred) revert TenureNotElapsed(barred);
+
+        // Vacant slots are otherwise always claimable — no tenure to protect.
         if (ctx.occupant == address(0)) return;
 
         uint256 availableAt = ctx.occupiedSince + tenureSeconds;
         if (block.timestamp < availableAt) revert TenureNotElapsed(availableAt);
     }
 
-    /// @notice A voluntary sale is allowed at any time, but the incoming
-    ///         occupant must still fund the window they are about to receive.
+    /// @notice A voluntary sale is allowed at any time, but it may not be used
+    ///         to do what `selfAssess` is forbidden from doing.
+    ///
+    /// @dev The occupant is not barred from selling inside their own window —
+    ///      the window exists to stop the slot being taken FROM them, and
+    ///      there is nobody to protect when they are the one handing it over.
+    ///
+    ///      But `sell` also sets a price and restarts the clock, and it was
+    ///      the only price-setting path this hook did not examine. An occupant
+    ///      could enter high, sell to an address they control at price 1, and
+    ///      hold a fresh window at a price the tax rounds to nothing —
+    ///      precisely the manoeuvre `beforeSelfAssess` refuses. The buyer's
+    ///      signature is no defence when the seller signs both sides.
     function beforeSell(SlotContext calldata ctx) external view {
         _requireFunded(ctx);
+        if (ctx.occupiedSince == 0) return;
+        if (block.timestamp >= ctx.occupiedSince + tenureSeconds) return;
+        if (ctx.newPrice < ctx.currentPrice) revert PriceCutDuringTenure();
     }
 
     /// @notice No cutting your price while nobody is allowed to take it.
@@ -137,11 +171,23 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         if (ctx.newPrice < ctx.currentPrice) revert PriceCutDuringTenure();
     }
 
+    /// @notice Record who left, so they cannot walk straight back in.
+    /// @dev The slot calls these gas-capped and swallows a revert, so this
+    ///      must stay cheap and must not assume it succeeded — a missed write
+    ///      only means one account is not barred, never that a slot breaks.
+    function afterRelease(SlotContext calldata ctx) external {
+        reentryAllowedAt[msg.sender][ctx.account] =
+            block.timestamp + tenureSeconds;
+    }
+
+    function afterLiquidate(SlotContext calldata ctx) external {
+        reentryAllowedAt[msg.sender][ctx.account] =
+            block.timestamp + tenureSeconds;
+    }
+
     // Not subscribed — declared to satisfy the interface, never called.
     function afterBuy(SlotContext calldata) external {}
     function afterSell(SlotContext calldata) external {}
-    function afterRelease(SlotContext calldata) external {}
-    function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
 
     /// @notice Tax due on `price` over the full window.
@@ -160,8 +206,19 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
             );
     }
 
+    /// @dev Sized against the HIGHER of the incoming and sitting price.
+    ///
+    ///      The funding requirement used to be computed from the taker's own
+    ///      declared price, so the party the window protects also set what the
+    ///      window cost: enter at 1 wei and `ceilDiv` returns 1 wei for a slot
+    ///      nobody may buy for the whole period. Anchoring to the price being
+    ///      displaced means undercutting the market no longer buys protection
+    ///      cheaply.
     function _requireFunded(SlotContext calldata ctx) internal view {
-        uint256 required = requiredDeposit(ctx.newPrice, ctx.taxPercentage);
+        uint256 basis = ctx.newPrice > ctx.currentPrice
+            ? ctx.newPrice
+            : ctx.currentPrice;
+        uint256 required = requiredDeposit(basis, ctx.taxPercentage);
         if (ctx.depositAmount < required) revert TenureUnderfunded(required);
     }
 }

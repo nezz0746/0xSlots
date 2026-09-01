@@ -59,7 +59,7 @@ contract MinimumTenureHookTest is Test {
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
         vm.startPrank(who);
         token.approve(address(s), type(uint256).max);
-        s.buy(who, dep, price);
+        s.buy(who, dep, price, 0);
         vm.stopPrank();
     }
 
@@ -75,9 +75,9 @@ contract MinimumTenureHookTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(MinimumTenureHook.TenureUnderfunded.selector, need)
         );
-        s.buy(alice, need - 1, 100 ether);
+        s.buy(alice, need - 1, 100 ether, 0);
 
-        s.buy(alice, need, 100 ether); // exactly enough
+        s.buy(alice, need, 100 ether, 0); // exactly enough
         vm.stopPrank();
         assertEq(s.occupant(), alice);
     }
@@ -131,7 +131,7 @@ contract MinimumTenureHookTest is Test {
                 block.timestamp + TENURE
             )
         );
-        s.buy(bob, 100 ether, 200 ether);
+        s.buy(bob, 100 ether, 200 ether, 0);
         vm.stopPrank();
     }
 
@@ -166,9 +166,12 @@ contract MinimumTenureHookTest is Test {
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
 
-        uint256 dep = hook.requiredDeposit(70 ether, TAX) + 5 ether;
+        // At or above the sitting price: the window protects the occupant
+        // FROM the market, and there is nobody to protect when they are the
+        // one handing it over.
+        uint256 dep = hook.requiredDeposit(120 ether, TAX) + 5 ether;
         SellOrder memory o = SellOrder({
-            slot: address(s), buyer: bob, price: 70 ether, deposit: dep,
+            slot: address(s), buyer: bob, price: 120 ether, deposit: dep,
             nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
         });
         (uint8 v, bytes32 r, bytes32 ss) = vm.sign(bobKey, s.sellOrderHash(o));
@@ -177,6 +180,54 @@ contract MinimumTenureHookTest is Test {
         s.sell(o, abi.encodePacked(r, ss, v)); // well inside alice's window
 
         assertEq(s.occupant(), bob, "a voluntary sale is not blocked");
+    }
+
+    /// @notice But a sale may not do what `selfAssess` is forbidden from
+    ///         doing. Selling to an address you control at a dust price was
+    ///         the way to restart the window for nothing: the tax on 1 wei
+    ///         floors to zero, so the slot left forced sale entirely.
+    function test_ASaleCannotCutThePriceInsideTheWindow() public {
+        Slot s = _slot();
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX) + 10 ether, 100 ether);
+
+        vm.prank(bob);
+        token.approve(address(s), type(uint256).max);
+
+        uint256 dep = hook.requiredDeposit(100 ether, TAX) + 5 ether;
+        SellOrder memory o = SellOrder({
+            slot: address(s), buyer: bob, price: 1, deposit: dep,
+            nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
+        });
+        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(bobKey, s.sellOrderHash(o));
+
+        vm.prank(alice);
+        vm.expectRevert(MinimumTenureHook.PriceCutDuringTenure.selector);
+        s.sell(o, abi.encodePacked(r, ss, v));
+
+        assertEq(s.occupant(), alice, "the dust self-deal is refused");
+    }
+
+    /// @notice And the account that just vacated cannot walk straight back in
+    ///         to start a fresh window.
+    function test_AVacatingAccountCannotImmediatelyRetake() public {
+        Slot s = _slot();
+        uint256 dep = hook.requiredDeposit(100 ether, TAX) + 10 ether;
+        _take(s, alice, dep, 100 ether);
+
+        vm.prank(alice);
+        s.release();
+        assertTrue(s.isVacant());
+
+        vm.prank(alice);
+        vm.expectRevert();
+        s.buy(alice, dep, 100 ether, 0);
+
+        // Somebody else may take it immediately — only the leaver is barred.
+        vm.prank(bob);
+        token.approve(address(s), type(uint256).max);
+        vm.prank(bob);
+        s.buy(bob, dep, 100 ether, 0);
+        assertEq(s.occupant(), bob);
     }
 
     /// @notice ...but a sale cannot seat someone underfunded.

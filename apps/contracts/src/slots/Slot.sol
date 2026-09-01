@@ -134,13 +134,15 @@ contract Slot is SlotOrders {
         if (_occupant == address(0)) return type(uint256).max;
         uint256 owed = taxOwed();
         if (owed >= _deposit) return 0;
-        uint256 perSecond = Math.mulDiv(
-            _price,
-            taxPercentage,
-            MONTH * BASIS_POINTS
-        );
-        if (perSecond == 0) return type(uint256).max;
-        return (_deposit - owed) / perSecond;
+        // Inverted from the same numerator space `taxOwed` uses, rather than
+        // via a per-second rate. A rate divides before it multiplies, so it
+        // floors to zero for any price x tax below MONTH * BASIS_POINTS — and
+        // the function then answered "never" for a position that was genuinely
+        // insolvent within the month. That is the wrong direction to be wrong
+        // in: it is keepers and UIs that read this.
+        uint256 rate = _price * taxPercentage;
+        if (rate == 0) return type(uint256).max;
+        return Math.mulDiv(_deposit - owed, MONTH * BASIS_POINTS, rate);
     }
 
     /**
@@ -158,7 +160,9 @@ contract Slot is SlotOrders {
      */
     function minDepositForBuy(uint256 price_) public view returns (uint256) {
         if (minDepositSeconds == 0) return 0;
-        uint256 tax = pending.hasTax ? pending.taxPercentage : taxPercentage;
+        uint256 tax = (pending.hasTax && pendingApplies())
+            ? pending.taxPercentage
+            : taxPercentage;
         return Math.ceilDiv(price_ * tax * minDepositSeconds, MONTH * BASIS_POINTS);
     }
 
@@ -174,31 +178,17 @@ contract Slot is SlotOrders {
      *      For a native slot this is exactly the `msg.value` to send — `buy`
      *      checks it for equality, not for sufficiency.
      */
-    function quoteBuy(uint256 depositAmount) public view returns (uint256) {
-        return (_occupant == address(0) ? 0 : _price) + depositAmount;
-    }
-
-    /**
-     * @notice What `liquidateAndTake` will charge for `depositAmount`.
-     *
-     * @dev Deliberately its own function rather than a comment on `quoteBuy`,
-     *      because the answer differs and the difference is invisible from
-     *      outside: the eviction vacates the slot before the purchase reads
-     *      the price, so there is no occupant left to pay. `price()` still
-     *      reads non-zero right up until the call lands, so a client that
-     *      reasons by analogy with `buy` overpays — reverting on a native slot
-     *      and quietly pulling the surplus on an ERC-20 one.
-     *
-     *      This is a quote, not a permission: it does not check solvency, and
-     *      `liquidateAndTake` still reverts unless the occupant is insolvent.
-     */
-    function quoteLiquidateAndTake(uint256 depositAmount)
+    function quoteBuy(address account, uint256 depositAmount)
         public
         view
         returns (uint256)
     {
-        return depositAmount;
+        return
+            (_occupant == address(0) ? 0 : _price) +
+            depositAmount +
+            arrearsOf[account];
     }
+
 
     // ─── occupancy ──────────────────────────────────────────────────────────
 
@@ -212,15 +202,17 @@ contract Slot is SlotOrders {
     function buy(
         address account,
         uint256 depositAmount,
-        uint256 selfAssessedPrice
+        uint256 selfAssessedPrice,
+        uint256 maxPayment
     ) external payable nonReentrant {
-        _buy(account, depositAmount, selfAssessedPrice);
+        _buy(account, depositAmount, selfAssessedPrice, maxPayment);
     }
 
     function _buy(
         address account,
         uint256 depositAmount,
-        uint256 selfAssessedPrice
+        uint256 selfAssessedPrice,
+        uint256 maxPayment
     ) internal {
         if (selfAssessedPrice == 0 || selfAssessedPrice > MAX_PRICE)
             revert InvalidPrice();
@@ -233,6 +225,16 @@ contract Slot is SlotOrders {
 
         uint256 owedToPrev = prev == address(0) ? 0 : _price;
 
+        // Terms land BEFORE the hook is asked, not after.
+        //
+        // The hook was previously handed `_ctx` built from the outgoing
+        // configuration and the slot then charged the incoming one, so any
+        // hook sizing a requirement from `ctx.taxPercentage` under-charged by
+        // the full ratio of the two rates. Asking a policy to judge terms the
+        // same transaction is about to discard is not a policy check.
+        _applyPending();
+        _requireFunded(depositAmount, selfAssessedPrice);
+
         _before(
             F_BEFORE_BUY,
             abi.encodeCall(
@@ -241,10 +243,25 @@ contract Slot is SlotOrders {
             )
         );
 
-        _applyPending();
-        _requireFunded(depositAmount, selfAssessedPrice);
+        // Arrears follow the account, not the seat. Settling can only take
+        // what the deposit held; the rest is charged here, so running a
+        // deposit dry and retaking the vacated seat costs what staying would
+        // have.
+        uint256 debt = arrearsOf[account];
+        if (debt != 0) {
+            arrearsOf[account] = 0;
+            collectedTax += debt;
+        }
 
-        uint256 owed = owedToPrev + depositAmount;
+        uint256 owed = owedToPrev + depositAmount + debt;
+
+        // The price is read at execution, not at quote time, so without a
+        // ceiling the sitting occupant can raise it between a buyer's
+        // simulation and inclusion and take their whole allowance. Native is
+        // incidentally protected by the exact-value check below; ERC-20 was
+        // not protected at all.
+        if (maxPayment != 0 && owed > maxPayment) revert PaymentAboveMax();
+
         if (_isNative()) {
             if (msg.value != owed) revert InvalidValue();
         } else {
@@ -299,6 +316,10 @@ contract Slot is SlotOrders {
         address prev = _occupant;
         if (order.buyer == prev) revert CannotBuyFromYourself();
 
+        // Applied before the hook is asked, for the same reason as `buy`.
+        _applyPending();
+        _requireFunded(order.deposit, order.price);
+
         _before(
             F_BEFORE_SELL,
             abi.encodeCall(
@@ -307,10 +328,13 @@ contract Slot is SlotOrders {
             )
         );
 
-        _applyPending();
-        _requireFunded(order.deposit, order.price);
+        uint256 debt = arrearsOf[order.buyer];
+        if (debt != 0) {
+            arrearsOf[order.buyer] = 0;
+            collectedTax += debt;
+        }
 
-        _pull(order.buyer, order.price + order.deposit);
+        _pull(order.buyer, order.price + order.deposit + debt);
 
         uint256 proceeds = _deposit + order.price;
 
@@ -344,6 +368,11 @@ contract Slot is SlotOrders {
         address prev = _occupant;
         uint256 refund = _deposit;
 
+        // Cached before the swap: this callback belongs to the hook that
+        // governed the tenure now ending, not to whatever replaces it.
+        address outgoing = hook;
+        uint8 outgoingFlags = _hookFlags;
+
         _vacate();
         _applyPending();
 
@@ -351,7 +380,9 @@ contract Slot is SlotOrders {
         _flush();
 
         emit Released(prev, refund);
-        _after(
+        _afterOn(
+            outgoing,
+            outgoingFlags,
             F_AFTER_RELEASE,
             abi.encodeCall(ISlotHook.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
         );
@@ -362,7 +393,12 @@ contract Slot is SlotOrders {
      *
      * @dev No bounty. The reward is the slot: this leaves it vacant, and a
      *      vacant slot costs only the taker's own deposit — so whoever actually
-     *      wants it can evict and take it atomically via `liquidateAndTake`.
+     *      wants it can evict and take it in one transaction — via the
+     *      inherited `multicall` on an ERC-20 slot, or via a periphery taker
+     *      that forwards value on a native one. Neither belongs in the core:
+     *      "evict, then buy" is a composition of two public entry points, and
+     *      baking it in bought one currency's convenience at the cost of a
+     *      second seating path to keep correct.
      *      Paying keepers out of the recipient's accrued tax funded the
      *      incentive from the wrong pocket, and across tenures that were not
      *      even the defaulter's.
@@ -377,46 +413,22 @@ contract Slot is SlotOrders {
         if (_deposit > 0) revert NotInsolvent();
 
         address prev = _occupant;
+        address outgoing = hook;
+        uint8 outgoingFlags = _hookFlags;
+
         _vacate();
         _applyPending();
         _flush();
 
         emit Liquidated(msg.sender, prev);
-        _after(
+        _afterOn(
+            outgoing,
+            outgoingFlags,
             F_AFTER_LIQUIDATE,
             abi.encodeCall(ISlotHook.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 
-    /**
-     * @notice Evict an insolvent occupant and take the slot, in one call.
-     *
-     * @dev This is what makes "no bounty" honest. The rationale for paying
-     *      keepers nothing is that whoever wants the slot can evict and take
-     *      it, so the slot itself is the reward — but that only works if the
-     *      two happen atomically, or the keeper does the eviction and loses
-     *      the race for the vacancy to whoever is watching the mempool.
-     *
-     *      The inherited `multicall` almost does it, and silently does not:
-     *      OZ's is non-payable, so `msg.value` is zero inside it and `buy`
-     *      demands an exact amount. It works for ERC-20 slots and is
-     *      unreachable for native ones — the promise held for half the
-     *      protocol. Making `multicall` payable instead would be the classic
-     *      mistake: every delegatecall sees the same `msg.value`, so one ETH
-     *      payment would satisfy two `buy` calls and the second would be
-     *      funded out of the contract's own balance.
-     *
-     *      A single guarded entry point costs one function and keeps `buy`'s
-     *      exactness check intact.
-     */
-    function liquidateAndTake(
-        address account,
-        uint256 depositAmount,
-        uint256 selfAssessedPrice
-    ) external payable nonReentrant {
-        _liquidate();
-        _buy(account, depositAmount, selfAssessedPrice);
-    }
 
     // ─── holding ────────────────────────────────────────────────────────────
 

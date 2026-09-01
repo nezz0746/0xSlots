@@ -175,9 +175,9 @@ contract DeployAndDriveCollective is Script {
         // staticcall once `vm.broadcast` has armed the next transaction, and
         // `quoteBuy` inside the call arguments is exactly that.
         uint256 need = slot.minDepositForBuy(PRICE);
-        uint256 cost = slot.quoteBuy(need);
+        uint256 cost = slot.quoteBuy(address(this), need);
         vm.broadcast(PK_BUYER);
-        slot.buy{value: cost}(buyer, need, PRICE);
+        slot.buy{value: cost}(buyer, need, PRICE, 0);
         require(
             slot.taxPercentage() == TAX_PROPOSED,
             "TermsApplied did not land the surviving tax"

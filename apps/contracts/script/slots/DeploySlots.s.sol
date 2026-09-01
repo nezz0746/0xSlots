@@ -9,6 +9,7 @@ import {SlotFactory} from "../../src/slots/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/slots/hooks/MinimumTenureHook.sol";
 import {MinimumTenureHookFactory} from "../../src/slots/hooks/MinimumTenureHookFactory.sol";
 import {OfferBook} from "../../src/slots/periphery/OfferBook.sol";
+import {SlotTaker} from "../../src/slots/periphery/SlotTaker.sol";
 
 contract SlotsTestToken is ERC20 {
     constructor() ERC20("Slots Test USD", "USDX") {}
@@ -88,6 +89,7 @@ contract DeploySlots is Script {
         // higher shifts every address after it and breaks the pinned
         // SlotFactory that slots.ts and dev-chain.sh both assert.
         OfferBook offerBook = new OfferBook();
+        SlotTaker slotTaker = new SlotTaker();
 
         vm.stopBroadcast();
 
@@ -100,6 +102,7 @@ contract DeploySlots is Script {
         _record("MinimumTenureHook", address(tenureHook), startBlock);
         _record("SlotsTestToken", address(token), startBlock);
         _record("OfferBook", address(offerBook), startBlock);
+        _record("SlotTaker", address(slotTaker), startBlock);
         _record(
             "MinimumTenureHookFactory",
             address(tenureHookFactory),
@@ -114,6 +117,7 @@ contract DeploySlots is Script {
         console2.log("TENURE_HOOK_FACTORY", address(tenureHookFactory));
         console2.log("ADMIN              ", deployer);
         console2.log("OFFER_BOOK         ", address(offerBook));
+        console2.log("SLOT_TAKER         ", address(slotTaker));
         console2.log("START_BLOCK        ", startBlock);
     }
 

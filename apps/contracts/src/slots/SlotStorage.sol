@@ -34,6 +34,15 @@ uint256 constant HOOK_GAS = 500_000;
 //      expensive and unreliable. 30k covers an EOA and a typical Safe.
 uint256 constant PAYOUT_GAS = 30_000;
 
+// How long a proposal must sit before an occupancy transition may apply it.
+//
+// Without this, `proposeTerms` in block N binds a buyer in block N: the
+// manager watches the mempool, raises the tax, and the incoming occupant is
+// seated on terms they never saw. The deferral to a transition was only ever
+// half the guarantee; this is the other half, and it is what
+// `pending.proposedAt` was recorded for and never used.
+uint64 constant TERMS_DELAY = 1 days;
+
 /**
  * @title SlotStorage
  * @notice Everything a slot remembers.
@@ -165,6 +174,15 @@ abstract contract SlotStorage is
 
     /// @notice buyer => next unused nonce.
     mapping(address => uint256) public orderNonce; // slot 15
+
+    /// @notice Tax an occupancy could not pay, carried rather than forgiven.
+    /// @dev `_settle` can only take what the deposit holds. The remainder used
+    ///      to be dropped on the floor, which made defaulting cheaper than
+    ///      paying: run the deposit dry, then retake the vacated seat at
+    ///      vacancy pricing with the arrears gone. Recorded here and charged on
+    ///      re-entry, so the seat costs the same whether you left it politely
+    ///      or were evicted from it.
+    mapping(address => uint256) public arrearsOf; // slot 16
 
     // ═══════════════════════════════════════════════════════════════════════
     // APPEND BELOW THIS LINE ONLY.

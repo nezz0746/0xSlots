@@ -11,6 +11,25 @@ export const slotAbi = [
     },
     {
       "type": "function",
+      "name": "arrearsOf",
+      "inputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "buy",
       "inputs": [
         {
@@ -25,6 +44,11 @@ export const slotAbi = [
         },
         {
           "name": "selfAssessedPrice",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "maxPayment",
           "type": "uint256",
           "internalType": "uint256"
         }
@@ -312,29 +336,6 @@ export const slotAbi = [
     },
     {
       "type": "function",
-      "name": "liquidateAndTake",
-      "inputs": [
-        {
-          "name": "account",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "depositAmount",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "selfAssessedPrice",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "payable"
-    },
-    {
-      "type": "function",
       "name": "manager",
       "inputs": [],
       "outputs": [
@@ -527,6 +528,19 @@ export const slotAbi = [
     },
     {
       "type": "function",
+      "name": "pendingApplies",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "price",
       "inputs": [],
       "outputs": [
@@ -571,24 +585,10 @@ export const slotAbi = [
       "name": "quoteBuy",
       "inputs": [
         {
-          "name": "depositAmount",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "quoteLiquidateAndTake",
-      "inputs": [
+          "name": "account",
+          "type": "address",
+          "internalType": "address"
+        },
         {
           "name": "depositAmount",
           "type": "uint256",
@@ -657,7 +657,7 @@ export const slotAbi = [
         {
           "name": "order",
           "type": "tuple",
-          "internalType": "struct SlotOrders.SellOrder",
+          "internalType": "struct SellOrder",
           "components": [
             {
               "name": "slot",
@@ -707,7 +707,7 @@ export const slotAbi = [
         {
           "name": "order",
           "type": "tuple",
-          "internalType": "struct SlotOrders.SellOrder",
+          "internalType": "struct SellOrder",
           "components": [
             {
               "name": "slot",
@@ -968,6 +968,19 @@ export const slotAbi = [
           "type": "bytes4",
           "indexed": false,
           "internalType": "bytes4"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "HookDetached",
+      "inputs": [
+        {
+          "name": "hook",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
         }
       ],
       "anonymous": false
@@ -1428,6 +1441,11 @@ export const slotAbi = [
     {
       "type": "error",
       "name": "OrderWrongSlot",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "PaymentAboveMax",
       "inputs": []
     },
     {

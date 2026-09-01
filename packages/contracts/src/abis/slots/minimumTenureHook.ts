@@ -117,7 +117,7 @@ export const minimumTenureHookAbi = [
       "name": "afterLiquidate",
       "inputs": [
         {
-          "name": "",
+          "name": "ctx",
           "type": "tuple",
           "internalType": "struct SlotContext",
           "components": [
@@ -187,7 +187,7 @@ export const minimumTenureHookAbi = [
       "name": "afterRelease",
       "inputs": [
         {
-          "name": "",
+          "name": "ctx",
           "type": "tuple",
           "internalType": "struct SlotContext",
           "components": [
@@ -701,6 +701,30 @@ export const minimumTenureHookAbi = [
           "name": "",
           "type": "string",
           "internalType": "string"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "reentryAllowedAt",
+      "inputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
       "stateMutability": "view"

@@ -215,7 +215,7 @@ contract MinimumTenureHookFactoryTest is Test {
         uint256 need = hook.requiredDeposit(100 ether, TAX);
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
-        s.buy(alice, need + 10 ether, 100 ether);
+        s.buy(alice, need + 10 ether, 100 ether, 0);
         vm.stopPrank();
         assertEq(s.occupant(), alice);
 
@@ -229,13 +229,13 @@ contract MinimumTenureHookFactoryTest is Test {
                 availableAt
             )
         );
-        s.buy(bob, 500 ether, 200 ether);
+        s.buy(bob, 500 ether, 200 ether, 0);
         vm.stopPrank();
 
         // ...and released the moment the window it was asked for is over.
         vm.warp(availableAt + 1);
         vm.startPrank(bob);
-        s.buy(bob, hook.requiredDeposit(200 ether, TAX) + 10 ether, 200 ether);
+        s.buy(bob, hook.requiredDeposit(200 ether, TAX) + 10 ether, 200 ether, 0);
         vm.stopPrank();
         assertEq(s.occupant(), bob);
     }

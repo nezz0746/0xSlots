@@ -67,7 +67,7 @@ contract OfferBookSlotsTest is Test {
         // Alice sits on the slot.
         uint256 dep = slot.minDepositForBuy(PRICE);
         vm.prank(alice);
-        slot.buy(alice, dep, PRICE);
+        slot.buy(alice, dep, PRICE, 0);
     }
 
     function _sign(uint256 key, uint256 price, uint256 deposit, uint256 nonce, uint64 deadline)

@@ -122,19 +122,6 @@ export const compositeHookAbi = [
     },
     {
       "type": "function",
-      "name": "add",
-      "inputs": [
-        {
-          "name": "child",
-          "type": "address",
-          "internalType": "address"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "afterBuy",
       "inputs": [
         {
@@ -901,6 +888,11 @@ export const compositeHookAbi = [
         }
       ],
       "anonymous": false
+    },
+    {
+      "type": "error",
+      "name": "ChildHasNoCode",
+      "inputs": []
     },
     {
       "type": "error",

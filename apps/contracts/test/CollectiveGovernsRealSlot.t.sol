@@ -98,10 +98,23 @@ contract CollectiveGovernsRealSlotTest is Test {
         });
     }
 
+    /// @dev Terms are queued, then ripen, then land at a transition.
+    function _ripen() internal {
+        vm.warp(block.timestamp + 1 days + 1);
+    }
+
+    /// @dev Funded generously on purpose: once a tenure hook is attached its
+    ///      own window requirement exceeds the core's `minDepositSeconds`
+    ///      floor, and this helper is used on both sides of that change.
     function _seat(address who) internal {
-        uint256 need = slot.minDepositForBuy(PRICE);
+        // Native slot, and funded generously on purpose: once a tenure hook is
+        // attached its own window requirement exceeds the core's floor, and
+        // this helper is used on both sides of that change.
+        uint256 need = slot.minDepositForBuy(PRICE) + 1 ether;
+        uint256 cost = slot.quoteBuy(who, need);
+        vm.deal(who, cost + 1 ether);
         vm.prank(who);
-        slot.buy{value: slot.quoteBuy(need)}(who, need, PRICE);
+        slot.buy{value: cost}(who, need, PRICE, 0);
     }
 
     function _pending()
@@ -122,6 +135,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         assertEq(tax, 750);
         assertEq(slot.taxPercentage(), 500, "deferred, not immediate");
 
+        _ripen();
         _seat(buyer);
         assertEq(slot.taxPercentage(), 750, "landed on the occupancy change");
     }
@@ -132,6 +146,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(hookMgr);
         collective.proposeHook(IManagedSlot(address(slot)), hookA);
 
+        _ripen();
         _seat(buyer);
         assertEq(slot.hook(), hookA);
 
@@ -164,6 +179,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         assertFalse(hasHook);
         assertEq(hook, address(0));
 
+        _ripen();
         _seat(buyer);
         assertEq(slot.taxPercentage(), 750);
         assertEq(slot.hook(), address(0), "the cancelled hook did not land");
@@ -206,6 +222,7 @@ contract CollectiveGovernsRealSlotTest is Test {
     /// @notice Money still flows: sweep pulls a real slot's tax into the
     ///         payout engine.
     function test_SweepPullsRealTaxIntoTheCollective() public {
+        _ripen();
         _seat(buyer);
         vm.warp(block.timestamp + 10 days);
 

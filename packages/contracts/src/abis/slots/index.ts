@@ -13,3 +13,6 @@ export { slotCollectiveFactoryAbi } from "./slotCollectiveFactory";
 // The on-chain order book. A signed order is how a sale settles; this is
 // how a bid is DISCOVERED — the count, the list, and the best to accept.
 export { offerBookAbi } from "./offerBook";
+// Evict-and-take, composed from outside the slot. See SlotTaker.sol for
+// why this is not a core entry point.
+export { slotTakerAbi } from "./slotTaker";

@@ -9,6 +9,9 @@ export {
   compositeHookAbi,
   minimumTenureHookAbi,
   minimumTenureHookFactoryAbi,
+  // Discovery for signed sell orders — the count, the board, and the best bid
+  // as a ready `(SellOrder, signature)` pair.
+  offerBookAbi,
   slotAbi,
   slotFactoryAbi,
 } from "./abis/slots";
@@ -53,6 +56,22 @@ export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
   {
     [anvil.id]: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
   };
+
+/**
+ * The on-chain `OfferBook` for a chain, if one is deployed there.
+ *
+ * Discovery, not settlement. A signed sell order is how a sale SETTLES — the
+ * occupant passes `(order, signature)` to `Slot.sell` — and this is how a bid
+ * is FOUND: bidders post their signed terms here, anyone can read the book, and
+ * the occupant accepts the best. The book never executes and never custodies
+ * funds; it holds signatures and the metadata needed to rank them.
+ *
+ * Optional per chain. A chain without one simply has no public book, and the
+ * private hand-over path (paste an order the bidder sent you) still works.
+ */
+export const offerBookAddress: Partial<Record<number, Address>> = {
+  [anvil.id]: "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+};
 
 /**
  * A hook a client can offer by name instead of asking for an address.

@@ -168,7 +168,7 @@ contract DescribedHookTest is Test {
         vm.deal(buyer, 10 ether);
         uint256 need = s.minDepositForBuy(0.01 ether);
         vm.prank(buyer);
-        s.buy{value: s.quoteBuy(need)}(buyer, need, 0.01 ether);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, need, 0.01 ether, 0);
 
         assertEq(s.occupant(), buyer, "execution is unaffected by discovery");
         assertEq(s.hook(), address(liar));
@@ -190,7 +190,7 @@ contract DescribedHookTest is Test {
         vm.deal(buyer, 10 ether);
         uint256 need = s.minDepositForBuy(0.01 ether);
         vm.prank(buyer);
-        s.buy{value: s.quoteBuy(need)}(buyer, need, 0.01 ether);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, need, 0.01 ether, 0);
         assertEq(s.occupant(), buyer);
     }
 

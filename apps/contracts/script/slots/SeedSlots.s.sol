@@ -40,19 +40,19 @@ contract SeedSlots is Script {
         // 1. Native, no hook, occupied. The plainest slot there is.
         Slot a = _create(me, address(0), address(0), 500, 7 days, true, true);
         uint256 depA = _minDeposit(0.05 ether, 500, 7 days);
-        a.buy{value: depA}(me, depA, 0.05 ether);
+        a.buy{value: depA}(me, depA, 0.05 ether, 0);
 
         // 2. ERC-20, no hook, occupied.
         Slot b = _create(me, token, address(0), 250, 3 days, true, true);
         uint256 depB = _minDeposit(1_000e18, 250, 3 days);
         IERC20(token).approve(address(b), depB);
-        b.buy(me, depB, 1_000e18);
+        b.buy(me, depB, 1_000e18, 0);
 
         // 3. Native, tenure hook, occupied — inside its protection window, so
         //    the UI has a slot that renders as "not available yet".
         Slot c = _create(me, address(0), hook, 500, 7 days, true, true);
         uint256 depC = _minDeposit(0.1 ether, 500, 7 days);
-        c.buy{value: depC}(me, depC, 0.1 ether);
+        c.buy{value: depC}(me, depC, 0.1 ether, 0);
 
         // 4. Native, no hook, VACANT. The empty state.
         Slot d = _create(me, address(0), address(0), 1_000, 1 days, true, true);
@@ -60,12 +60,12 @@ contract SeedSlots is Script {
         // 5. Immutable terms — neither tax nor hook may ever be proposed.
         Slot e = _create(me, address(0), address(0), 300, 1 days, false, false);
         uint256 depE = _minDeposit(0.02 ether, 300, 1 days);
-        e.buy{value: depE}(me, depE, 0.02 ether);
+        e.buy{value: depE}(me, depE, 0.02 ether, 0);
 
         // 6. A pending term change, parked until the next occupancy transition.
         Slot f = _create(me, address(0), address(0), 500, 1 days, true, true);
         uint256 depF = _minDeposit(0.02 ether, 500, 1 days);
-        f.buy{value: depF}(me, depF, 0.02 ether);
+        f.buy{value: depF}(me, depF, 0.02 ether, 0);
         f.proposeTerms(750, address(0), true, false);
 
         // 7. Funded to the exact minimum. `minDepositSeconds` is 1 hour, so an
@@ -73,7 +73,7 @@ contract SeedSlots is Script {
         //    anyone. This is the slot the liquidation UI is built against.
         Slot g = _create(me, address(0), address(0), 2_000, 1 hours, true, true);
         uint256 depG = _minDeposit(0.01 ether, 2_000, 1 hours);
-        g.buy{value: depG}(me, depG, 0.01 ether);
+        g.buy{value: depG}(me, depG, 0.01 ether, 0);
 
         vm.stopBroadcast();
 

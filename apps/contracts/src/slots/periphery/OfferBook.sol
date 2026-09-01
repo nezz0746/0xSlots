@@ -2,9 +2,15 @@
 pragma solidity ^0.8.23;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {SellOrder} from "../SlotOrders.sol";
 
 interface ISellableSlot {
+    function sellOrderHash(SellOrder calldata order)
+        external
+        view
+        returns (bytes32);
+
     function occupant() external view returns (address);
     function price() external view returns (uint256);
     function currency() external view returns (address);
@@ -387,7 +393,44 @@ contract OfferBook {
         // while its author happens to be the occupant — no cleanup call, no
         // window in which it could come back.
         if (ISellableSlot(slot).orderUsed(o.bidder, o.nonce)) return false;
+        if (!_signed(slot, o)) return false;
         return _fundable(slot, o);
+    }
+
+    /**
+     * @dev Whether the stored signature actually authorises the stored terms.
+     *
+     *      The predicate checked funding, expiry, cancellation and the burnt
+     *      nonce — every precondition of `Slot.sell` except the only one that
+     *      decides whether it can execute. `offer` stores the signature and
+     *      the terms from separate arguments and never binds them, so a funded
+     *      bidder could post the top of the board with a garbage signature:
+     *      `bestOrder` handed the occupant an order that reverts, and the real
+     *      best bid stayed hidden underneath it.
+     *
+     *      Checked here rather than in `offer` so a signature that stops being
+     *      valid later — a contract wallet changing its mind under ERC-1271 —
+     *      also drops out of the board.
+     */
+    function _signed(address slot, Offer storage o) internal view returns (bool) {
+        SellOrder memory order = SellOrder({
+            slot: slot,
+            buyer: o.bidder,
+            price: o.price,
+            deposit: o.deposit,
+            nonce: o.nonce,
+            deadline: o.expiry
+        });
+        try ISellableSlot(slot).sellOrderHash(order) returns (bytes32 digest) {
+            return
+                SignatureChecker.isValidSignatureNow(
+                    o.bidder,
+                    digest,
+                    o.signature
+                );
+        } catch {
+            return false;
+        }
     }
 
     function _fundable(address slot, Offer storage o) internal view returns (bool) {
@@ -396,7 +439,16 @@ contract OfferBook {
         // `SellNeedsErc20`, because there is no allowance to pull against.
         if (currency == address(0)) return false;
 
-        uint256 owed = o.price + o.deposit;
+        // Guarded, because `offer` puts no ceiling on either number and this
+        // predicate sits on every read path. A single free offer at
+        // `price = type(uint256).max` made the checked addition panic, and
+        // `best`, `bestOrder`, `board`, `liveCount` and `isLive` reverted for
+        // that slot for ever — the array has no removal path and `cancel` is
+        // bidder-only, so nobody could clear it.
+        uint256 owed;
+        unchecked { owed = o.price + o.deposit; }
+        if (owed < o.price) return false;
+
         return
             IERC20(currency).balanceOf(o.bidder) >= owed &&
             IERC20(currency).allowance(o.bidder, slot) >= owed;
