@@ -40,6 +40,15 @@ fi
 # The addresses are deterministic from a fresh chain driven by account 0, so
 # code at the factory is a reliable "already seeded" check.
 if [[ "$(cast codesize "$FACTORY" --rpc-url "$RPC" 2>/dev/null || echo 0)" != "0" ]]; then
+  # The deploy is what writes deployments/31337/*.json, and the indexer's dev
+  # loop waits on those — so a warm chain with the files deleted would hang it
+  # forever. Restore the one it gates on rather than redeploying.
+  DEPLOY_FILE=deployments/31337/SlotFactory.json
+  if [[ ! -f "$DEPLOY_FILE" ]]; then
+    mkdir -p "$(dirname "$DEPLOY_FILE")"
+    printf '{"address":"%s","startBlock":0}\n' "$FACTORY" > "$DEPLOY_FILE"
+    echo "restored $DEPLOY_FILE"
+  fi
   echo "already deployed — factory $FACTORY, $(cast call "$FACTORY" 'slotCount()(uint256)' --rpc-url "$RPC") slots"
   exit 0
 fi

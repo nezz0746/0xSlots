@@ -239,6 +239,15 @@ export const slot = onchainTable(
     /// without a null check in every query.
     isOccupied: t.boolean().notNull(),
     occupiedSince: t.bigint().notNull(),
+    /// Which tenure is current. Increments on every seating and never repeats;
+    /// zero before the slot has ever been occupied.
+    ///
+    /// A COUNTER, not a timestamp, and mirrored from the chain's own
+    /// `tenureId` rather than derived here: release-and-reseat can happen in
+    /// one block, so two tenures can share an `occupiedSince` and an identity
+    /// that collides is not an identity. Never reset by vacancy — the counter
+    /// only goes up, so the value persists while the slot is empty.
+    tenureId: t.bigint().notNull(),
     price: t.bigint().notNull(),
     /// Escrow left after the last settlement. Maintained from `Settled`,
     /// `Deposited`, `Withdrawn` and the transition events, all of which report
@@ -312,28 +321,50 @@ export const accountSlot = onchainTable(
 );
 
 /**
- * Repricing rights delegated by an occupant.
+ * Repricing rights delegated by an occupant, for ONE tenure.
  *
- * Keyed by (slot, operator) and NOT by occupant, which is a faithful model of
- * `isOperator` rather than a simplification: the mapping is slot-global and
- * `_vacate()` does not clear it, so an operator approved by one occupant keeps
- * `selfAssess` rights over whoever occupies the slot next. `setBy` records who
- * granted it, which is the only way to notice that from the outside.
+ * The tenure is in the primary key because that is what the approval is scoped
+ * to on chain: storage is `_operatorOf[tenureId][operator]`, and `isOperator`
+ * answers for the current occupant only. An approval therefore EXPIRES SILENTLY
+ * at the next seating — there is no revocation event, and nothing on chain
+ * marks the row dead.
+ *
+ * So a row here is never "the operators of this slot". It is "the operators
+ * approved during tenure N", and it stops meaning anything the moment tenure
+ * N ends. Live approvals are exactly:
+ *
+ *     slotOperator.approved
+ *       AND slotOperator.tenure = slot.tenureId
+ *       AND slot.isOccupied
+ *
+ * All three conjuncts are load bearing. The tenure test is what expires an
+ * approval at a hand-over; `isOccupied` is what expires it at a release or a
+ * liquidation, which vacate the slot WITHOUT advancing the counter — the chain
+ * gets the same answer from `isOperator`'s own `_occupant != address(0)` guard.
+ *
+ * A stale row is deliberately kept rather than deleted: it is the record that
+ * this operator once acted for that occupant, and the pair (tenure, setBy)
+ * says exactly whose authority it was.
  */
 export const slotOperator = onchainTable(
   "slot_operator",
   (t) => ({
     slot: t.hex().notNull(),
+    /// The tenure this approval belongs to, and dies with.
+    tenure: t.bigint().notNull(),
     operator: t.hex().notNull(),
     chainId: t.integer().notNull(),
     approved: t.boolean().notNull(),
-    /// The occupant who granted or revoked it, at the time they did.
+    /// The occupant who granted or revoked it. `setOperator` is `onlyOccupant`,
+    /// so this is always the holder of `tenure`.
     setBy: t.hex().notNull(),
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
-    pk: primaryKey({ columns: [table.slot, table.operator] }),
+    pk: primaryKey({ columns: [table.slot, table.tenure, table.operator] }),
     chainIdx: index().on(table.chainId),
+    // The lookup a client actually makes: this slot, this tenure.
+    currentIdx: index().on(table.slot, table.tenure),
     approvedIdx: index().on(table.approved),
   }),
 );
@@ -521,6 +552,9 @@ export const boughtEvent = onchainTable(
     paid: t.bigint().notNull(),
     /// True when this transition came through `sell` rather than `buy`.
     viaSell: t.boolean().notNull(),
+    /// The tenure this seating STARTED. Operator approvals carrying this
+    /// number were granted by this buyer.
+    tenure: t.bigint().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),
@@ -803,6 +837,9 @@ export const operatorSetEvent = onchainTable(
     occupant: t.hex().notNull(),
     operator: t.hex().notNull(),
     allowed: t.boolean().notNull(),
+    /// The tenure the approval was scoped to. Compare against `slot.tenureId`
+    /// to tell whether it is still in force.
+    tenure: t.bigint().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),

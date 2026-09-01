@@ -136,6 +136,9 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     occupantAccount: null,
     isOccupied: false,
     occupiedSince: 0n,
+    // The chain's counter starts at zero and reaches 1 on the first seating,
+    // so "no tenure has ever happened here" is representable.
+    tenureId: 0n,
     price: 0n,
     deposit: 0n,
     collectedTax: 0n,

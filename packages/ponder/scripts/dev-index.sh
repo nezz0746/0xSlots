@@ -28,8 +28,21 @@ fi
 echo "▸ waiting for anvil"
 until cast block-number --rpc-url "$RPC" >/dev/null 2>&1; do sleep 1; done
 
+# The file outlives the chain: restart anvil and it is still sitting there
+# describing contracts that no longer exist. Gate on code at the address it
+# names, so a wiped chain reads as "not deployed yet" rather than as ready —
+# otherwise the indexer starts against an empty chain and reports zero of
+# everything, which looks like a handler bug.
 echo "▸ waiting for the local deploy"
-until [ -f "$DEPLOYMENT" ]; do sleep 1; done
+while :; do
+  if [ -f "$DEPLOYMENT" ]; then
+    ADDR=$(sed -n 's/.*"address":"\([^"]*\)".*/\1/p' "$DEPLOYMENT")
+    if [ -n "$ADDR" ] && [ "$(cast codesize "$ADDR" --rpc-url "$RPC" 2>/dev/null || echo 0)" != "0" ]; then
+      break
+    fi
+  fi
+  sleep 1
+done
 
 # Ponder's store describes a chain that no longer exists once anvil restarts:
 # the block numbers repeat with different contents, so a warm store silently

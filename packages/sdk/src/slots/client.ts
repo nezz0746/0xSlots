@@ -1,4 +1,9 @@
-import { slotAbi, slotFactoryAbi } from "@0xslots/contracts/slots";
+import {
+  compositeHookAbi,
+  minimumTenureHookAbi,
+  slotAbi,
+  slotFactoryAbi,
+} from "@0xslots/contracts/slots";
 import {
   type Address,
   type Chain,
@@ -244,6 +249,11 @@ export interface SlotState {
   mutableHook: boolean;
   /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
   occupiedSince: bigint;
+  /**
+   * Bumped on every seating. Operator approvals are keyed to it, so a change
+   * here silently voids every one of them.
+   */
+  tenureId: bigint;
 }
 
 export interface SlotsClientConfig {
@@ -254,6 +264,25 @@ export interface SlotsClientConfig {
 }
 
 // ─── Client ───────────────────────────────────────────────────────────────────
+
+/**
+ * `slotAbi` plus every hook error this package can name.
+ *
+ * A hook's veto reverts with the HOOK'S error, and viem decodes an error only
+ * if it is in the ABI it was handed — so simulating against `slotAbi` alone
+ * yields a bare four-byte selector, which is a hex string nobody can act on.
+ * Extra error entries cost nothing: the function being called is still resolved
+ * by name out of `slotAbi`.
+ *
+ * A hook this package has never heard of still degrades to the selector. That
+ * is the honest floor for an open extension point, and it is strictly more than
+ * a mined revert with no reason at all.
+ */
+const SIMULATION_ABI = [
+  ...slotAbi,
+  ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
+  ...compositeHookAbi.filter((entry) => entry.type === "error"),
+] as const;
 
 /**
  * Client for the hook-based Slots protocol.
@@ -475,9 +504,32 @@ export class SlotsClient {
     return this.read<bigint>(slot, "withdrawableOf", [account ?? this.account]);
   }
 
-  /** Whether `operator` may reprice on the occupant's behalf. */
+  /**
+   * Whether `operator` may reprice on behalf of the CURRENT occupant.
+   *
+   * Scoped to the tenure, not to the address. An approval is keyed by
+   * {@link tenureId} and dies the moment somebody else is seated — so this can
+   * go from true to false with no transaction from the operator, the occupant,
+   * or anyone acting for them.
+   *
+   * Always read it live. Accumulating `OperatorSet` events instead produces a
+   * list that only ever grows, and it will show a previous occupant's bot as a
+   * co-signer on an asking price its owner never approved anybody for.
+   */
   isOperator(slot: Address, operator: Address): Promise<boolean> {
     return this.read<boolean>(slot, "isOperator", [operator]);
+  }
+
+  /**
+   * Bumped every time somebody is seated. The key every operator approval hangs
+   * off, and the thing to watch if you cache anything about the occupancy.
+   *
+   * There is no event for an approval expiring — the tenure ending IS the
+   * expiry, and it is silent. A `Bought` log is the only signal that every
+   * approval granted under the previous tenure is now void.
+   */
+  tenureId(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "tenureId");
   }
 
   /** Everything above, in parallel. */
@@ -501,6 +553,7 @@ export class SlotsClient {
       mutableTax,
       mutableHook,
       occupiedSince,
+      tenureId,
     ] = await Promise.all([
       this.occupant(slot),
       this.price(slot),
@@ -520,6 +573,7 @@ export class SlotsClient {
       this.read<boolean>(slot, "mutableTax"),
       this.read<boolean>(slot, "mutableHook"),
       this.read<bigint>(slot, "occupiedSince"),
+      this.tenureId(slot),
     ]);
 
     return {
@@ -541,6 +595,7 @@ export class SlotsClient {
       mutableTax,
       mutableHook,
       occupiedSince,
+      tenureId,
     };
   }
 
@@ -629,6 +684,53 @@ export class SlotsClient {
       functionName: "buy",
       args: [params.account, params.depositAmount, params.selfAssessedPrice],
     });
+  }
+
+  /**
+   * Ask the chain what {@link buy} would do, WITHOUT sending it.
+   *
+   * A hook's veto is a `view` revert carrying the hook's own error —
+   * `TenureNotElapsed(availableAt)`, not "execution reverted" — and that reason
+   * is readable only from a simulation. Sent blind, the same veto arrives as a
+   * MINED, reverted transaction whose receipt carries no reason at all, and the
+   * best a UI can then say is "it failed", which is the least useful true thing
+   * it could say.
+   *
+   * Throws on refusal, resolves on success. Costs one `eth_call`.
+   */
+  simulateBuy(params: BuyParams): Promise<void> {
+    return this.simulateTake("buy", params);
+  }
+
+  /** {@link simulateBuy}, for the eviction path. */
+  simulateLiquidateAndTake(params: BuyParams): Promise<void> {
+    return this.simulateTake("liquidateAndTake", params);
+  }
+
+  /**
+   * @dev The quote comes from the slot, exactly as the write path takes it —
+   *      a simulation that guessed the payment differently would answer a
+   *      question nobody is about to ask.
+   */
+  private async simulateTake(
+    functionName: "buy" | "liquidateAndTake",
+    params: BuyParams,
+  ): Promise<void> {
+    const [currency, amount] = await Promise.all([
+      this.currency(params.slot),
+      functionName === "buy"
+        ? this.quoteBuy(params.slot, params.depositAmount)
+        : this.quoteLiquidateAndTake(params.slot, params.depositAmount),
+    ]);
+
+    await this.publicClient.simulateContract({
+      address: params.slot,
+      abi: SIMULATION_ABI,
+      functionName,
+      args: [params.account, params.depositAmount, params.selfAssessedPrice],
+      account: this.account,
+      ...(isNativeCurrency(currency) ? { value: amount } : {}),
+    } as never);
   }
 
   /**
@@ -734,7 +836,14 @@ export class SlotsClient {
     return this.write(slot, "withdraw", [amount]);
   }
 
-  /** Delegate repricing. Occupant only; the grant does not survive the tenure. */
+  /**
+   * Delegate repricing to `operator`. Occupant only.
+   *
+   * The grant does not survive the tenure: it is recorded against the current
+   * {@link tenureId} and is void the moment the slot changes hands, with no
+   * event marking it. There is nothing to revoke afterwards, and nothing an
+   * incoming occupant has to clean up before setting their own.
+   */
   setOperator(slot: Address, operator: Address, allowed: boolean): Promise<Hash> {
     return this.write(slot, "setOperator", [operator, allowed]);
   }

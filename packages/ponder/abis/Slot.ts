@@ -254,7 +254,7 @@ export const SlotAbi = [
       "name": "isOperator",
       "inputs": [
         {
-          "name": "",
+          "name": "operator",
           "type": "address",
           "internalType": "address"
         }
@@ -540,6 +540,44 @@ export const SlotAbi = [
     },
     {
       "type": "function",
+      "name": "quoteBuy",
+      "inputs": [
+        {
+          "name": "depositAmount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "quoteLiquidateAndTake",
+      "inputs": [
+        {
+          "name": "depositAmount",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "recipient",
       "inputs": [],
       "outputs": [
@@ -725,6 +763,19 @@ export const SlotAbi = [
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "tenureId",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
         }
       ],
       "stateMutability": "view"

@@ -25,7 +25,19 @@ const CHAIN_ID = 8453;
  * tests. A `buy` that quietly stopped reading `currency` would otherwise still
  * pass every assertion about the call it sends.
  */
-function harness(reads: Record<string, unknown>) {
+function harness(
+  reads: Record<string, unknown>,
+  /**
+   * Let a test model an on-chain side effect of a write. Used to reproduce the
+   * one rule that cannot be seen in a single read: seating somebody voids every
+   * operator approval, silently and with no event.
+   */
+  onWrite?: (
+    functionName: string,
+    args: readonly unknown[],
+    state: Record<string, unknown>,
+  ) => void,
+) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which is
   // a property of the fake, not of the code under test.
@@ -33,6 +45,7 @@ function harness(reads: Record<string, unknown>) {
 
   const writeContract = vi.fn(async ({ functionName, args }: any) => {
     if (functionName === "approve") state.allowance = args[1];
+    onWrite?.(functionName, args, state);
     return "0xhash";
   });
 
@@ -705,5 +718,136 @@ describe("the two quotes are not interchangeable", () => {
     const takeRun = harness(reads);
     await takeRun.client.liquidateAndTake(params);
     expect(sent(takeRun.writeContract, "liquidateAndTake").value).toBe(7n);
+  });
+});
+
+describe("operator approvals belong to a tenure, not to an address", () => {
+  const OPERATOR = "0x8888888888888888888888888888888888888888" as const;
+
+  /** Seating somebody bumps the tenure, and the new tenure has no operators. */
+  const seatingVoidsApprovals = (
+    functionName: string,
+    _args: readonly unknown[],
+    state: Record<string, unknown>,
+  ) => {
+    if (functionName === "buy" || functionName === "sell") {
+      state.tenureId = (state.tenureId as bigint) + 1n;
+      state.isOperator = false;
+    }
+  };
+
+  it("an approval granted under one tenure is gone under the next", async () => {
+    const { client } = harness(
+      {
+        isOperator: true,
+        tenureId: 3n,
+        quoteBuy: 10n ** 18n,
+        currency: NATIVE_CURRENCY_ADDRESS,
+      },
+      seatingVoidsApprovals,
+    );
+
+    expect(await client.isOperator(SLOT, OPERATOR)).toBe(true);
+
+    // Somebody else takes the slot. No transaction from the occupant, the
+    // operator, or anyone acting for them.
+    await client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 10n ** 17n,
+      selfAssessedPrice: 2n * 10n ** 18n,
+    });
+
+    expect(await client.tenureId(SLOT)).toBe(4n);
+    // Silently false. There is no event for this — the tenure ending IS the
+    // expiry, which is why nothing may cache the answer.
+    expect(await client.isOperator(SLOT, OPERATOR)).toBe(false);
+  });
+
+  it("a sale voids approvals the same way a buy does", async () => {
+    const { client } = harness(
+      { isOperator: true, tenureId: 1n },
+      seatingVoidsApprovals,
+    );
+
+    await client.sell(
+      SLOT,
+      {
+        slot: SLOT,
+        buyer: ACCOUNT,
+        price: 1n,
+        deposit: 1n,
+        nonce: 0n,
+        deadline: 1n,
+      },
+      "0xsig",
+    );
+
+    expect(await client.isOperator(SLOT, OPERATOR)).toBe(false);
+    expect(await client.tenureId(SLOT)).toBe(2n);
+  });
+
+  it("isOperator hits the chain every call — nothing memoizes it", async () => {
+    const { client, readContract } = harness({ isOperator: true });
+
+    await client.isOperator(SLOT, OPERATOR);
+    await client.isOperator(SLOT, OPERATOR);
+
+    // A client that answered the second call from a cache would hand back an
+    // approval that may have expired between the two.
+    expect(
+      readContract.mock.calls.filter(
+        (c: any[]) => c[0].functionName === "isOperator",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("setOperator sends the pair to the slot unchanged", async () => {
+    const { client, writeContract } = harness({});
+
+    await client.setOperator(SLOT, OPERATOR, true);
+    expect(sent(writeContract, "setOperator").args).toEqual([OPERATOR, true]);
+
+    const revoke = harness({});
+    await revoke.client.setOperator(SLOT, OPERATOR, false);
+    expect(sent(revoke.writeContract, "setOperator").args).toEqual([
+      OPERATOR,
+      false,
+    ]);
+  });
+
+  it("slotState carries tenureId, so a cache can be keyed on it", async () => {
+    const { client } = harness({
+      occupant: ACCOUNT,
+      price: 1n,
+      deposit: 1n,
+      taxOwed: 0n,
+      isVacant: false,
+      isInsolvent: false,
+      secondsUntilLiquidation: 10n,
+      currency: ERC20,
+      taxPercentage: 250n,
+      minDepositSeconds: 0n,
+      recipient: ACCOUNT,
+      manager: ZERO,
+      hook: ZERO,
+      hookFlags: {
+        beforeBuy: false,
+        beforeSell: false,
+        beforeSelfAssess: false,
+        afterBuy: false,
+        afterSell: false,
+        afterRelease: false,
+        afterLiquidate: false,
+        afterSettle: false,
+      },
+      pending: [0n, ZERO, false, false, 0n],
+      mutableTax: false,
+      mutableHook: false,
+      occupiedSince: 1700000000n,
+      tenureId: 12n,
+    });
+
+    expect((await client.slotState(SLOT)).tenureId).toBe(12n);
   });
 });

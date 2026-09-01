@@ -46,10 +46,40 @@ export function useSlotsClient(config: UseSlotsClientConfig = {}): SlotsClient {
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
+/**
+ * The custom error a revert actually carried, if viem could decode one.
+ *
+ * viem puts the decoded error on a `ContractFunctionRevertedError` several
+ * links down the cause chain, and leaves `shortMessage` at the useless
+ * `The contract function "buy" reverted.` — so a hook's `TenureNotElapsed`
+ * reads identically to running out of gas unless this is dug out. Walks the
+ * chain rather than reaching for a fixed depth, because how deep it sits
+ * depends on whether the call was a simulation or a send.
+ */
+function decodedRevert(error: unknown): string | undefined {
+  let node = error as Record<string, unknown> | undefined;
+  for (let depth = 0; node && typeof node === "object" && depth < 8; depth++) {
+    const data = node.data as Record<string, unknown> | undefined;
+    if (data && typeof data.errorName === "string") {
+      const args = Array.isArray(data.args) ? data.args : [];
+      return args.length
+        ? `${data.errorName}(${args.map((a) => String(a)).join(", ")})`
+        : data.errorName;
+    }
+    node = node.cause as Record<string, unknown> | undefined;
+  }
+  return undefined;
+}
+
 function extractErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("User rejected") || message.includes("User denied"))
     return "Transaction rejected";
+
+  // The decoded custom error first: it names WHAT refused, which is the only
+  // part a reader can act on.
+  const decoded = decodedRevert(error);
+  if (decoded) return decoded;
 
   // viem ContractFunctionExecutionError: prefer the shortMessage or reason.
   // A hook's veto arrives here — `_before` bubbles the hook's own revert reason

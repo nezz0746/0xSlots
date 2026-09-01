@@ -116,7 +116,14 @@ async function clearOccupant(
   });
 }
 
-/** Occupancy cleared the same way by both release and liquidation. */
+/**
+ * Occupancy cleared the same way by both release and liquidation.
+ *
+ * `tenureId` is deliberately absent: `_vacate()` does not touch the chain's
+ * counter, so the last tenure's number persists through the vacancy and the
+ * next seating increments from it. What expires an operator approval across a
+ * release is `isOccupied`, not the counter — see `slotOperator`.
+ */
 const VACANT = {
   occupant: null,
   occupantAccount: null,
@@ -178,11 +185,23 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
       lastInteractedAt: event.block.timestamp,
     });
 
+  // The chain increments `tenureId` at the moment it seats somebody, just
+  // before this event, so mirroring it here keeps the two in step. Counted
+  // rather than read back: it advances on exactly the transitions that emit
+  // `Bought` and on nothing else, and an eth_call per buy to learn a number we
+  // can add one to would be the expensive way to be no more correct.
+  //
+  // Not derived from `occupiedSince`, deliberately. Release and reseat can land
+  // in one block, and two tenures sharing a timestamp is exactly the collision
+  // the counter exists to avoid.
+  const tenure = s.tenureId + 1n;
+
   await context.db.update(slot, { id: slotAddr }).set({
     occupant: lower(event.args.buyer),
     occupantAccount: buyer.id,
     isOccupied: true,
     occupiedSince: event.block.timestamp,
+    tenureId: tenure,
     price: event.args.price,
     deposit: event.args.deposit,
     updatedAt: event.block.timestamp,
@@ -208,6 +227,7 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
     deposit: event.args.deposit,
     paid: event.args.paid,
     viaSell,
+    tenure,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -629,20 +649,23 @@ ponder.on("Slot:Claimed", async ({ event, context }) => {
 // ─── delegation ────────────────────────────────────────────────────────────
 
 /**
- * Repricing rights.
+ * Repricing rights, scoped to one tenure.
  *
- * Stored keyed by (slot, operator) with no occupant in the key, because that is
- * what `isOperator` is: a slot-global mapping that `_vacate()` does not clear.
- * `setBy` is the only record of who granted it — and the only way to notice
- * that an approval outlived the tenure that made it.
+ * `_operatorOf` is keyed by `tenureId` on chain, so the row written here is
+ * valid for THIS tenure and dies unannounced at the next seating. The tenure
+ * goes in the primary key so that expiry is a fact about the row rather than
+ * something a reader has to remember — see the note on `slotOperator` for the
+ * exact liveness predicate, which also has to test `slot.isOccupied` because a
+ * release vacates without advancing the counter.
+ *
+ * `setOperator` is `onlyOccupant`, so `setBy` is the holder of `tenure`.
  */
 ponder.on("Slot:OperatorSet", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
   const operator = lower(event.args.operator);
-  // `onlyOccupant`, so the caller is the occupant — taken from the transaction
-  // rather than the row so it stays right even if the row lags.
+  const tenure = s.tenureId;
   const setBy = s.occupant ?? lower(event.transaction.from);
 
   await getOrCreateAccount(context, operator);
@@ -651,6 +674,7 @@ ponder.on("Slot:OperatorSet", async ({ event, context }) => {
     .insert(slotOperator)
     .values({
       slot: slotAddr,
+      tenure,
       operator,
       chainId,
       approved: event.args.allowed,
@@ -670,6 +694,7 @@ ponder.on("Slot:OperatorSet", async ({ event, context }) => {
     occupant: setBy,
     operator,
     allowed: event.args.allowed,
+    tenure,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,

@@ -80,7 +80,17 @@ export function TakePanel({
     state.isInsolvent ? "liquidateAndTake" : "buy",
   );
 
-  const submit = () => {
+  /**
+   * Simulate, then send.
+   *
+   * The simulation is not belt-and-braces: a hook's veto is a `view` revert
+   * carrying the hook's own error, and that reason survives only in a
+   * simulation. Sent blind, the same veto comes back as a mined, reverted
+   * transaction whose receipt says nothing — so "Minimum tenure has not
+   * elapsed" would degrade to "it failed", which is useless to the person who
+   * has to decide what to do next.
+   */
+  const submit = async () => {
     if (!ready) return;
     const params = {
       slot,
@@ -88,6 +98,14 @@ export function TakePanel({
       depositAmount: depositRaw,
       selfAssessedPrice: priceRaw,
     };
+    const label = state.isInsolvent ? "Liquidate and take" : "Buy slot";
+    const ok = await actions.preflight(label, async () => {
+      if (state.isInsolvent)
+        await actions.client.simulateLiquidateAndTake(params);
+      else await actions.client.simulateBuy(params);
+      return true;
+    });
+    if (!ok) return;
     if (state.isInsolvent) actions.liquidateAndTake(params);
     else actions.buy(params);
   };

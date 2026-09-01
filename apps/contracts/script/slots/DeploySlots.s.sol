@@ -46,6 +46,7 @@ contract DeploySlots is Script {
         vm.startBroadcast();
 
         address deployer = msg.sender;
+        uint256 startBlock = block.number;
 
         Slot implementation = new Slot();
         SlotFactory factoryImpl = new SlotFactory();
@@ -71,12 +72,41 @@ contract DeploySlots is Script {
 
         vm.stopBroadcast();
 
+        // The indexer's dev loop blocks until this file appears — that is what
+        // makes the chain half and the index half independently restartable,
+        // instead of depending on turbo's start order. Same shape the older
+        // scripts write, so `_readDeployment` still reads it.
+        _record("SlotFactory", address(factory), startBlock);
+        _record("Slot", address(implementation), startBlock);
+        _record("MinimumTenureHook", address(tenureHook), startBlock);
+        _record("SlotsTestToken", address(token), startBlock);
+
         console2.log("");
         console2.log("SLOT_FACTORY       ", address(factory));
         console2.log("SLOT_IMPLEMENTATION", address(implementation));
         console2.log("MIN_TENURE_HOOK    ", address(tenureHook));
         console2.log("TEST_TOKEN         ", address(token));
         console2.log("ADMIN              ", deployer);
-        console2.log("START_BLOCK        ", block.number);
+        console2.log("START_BLOCK        ", startBlock);
+    }
+
+    function _record(
+        string memory name,
+        address addr,
+        uint256 startBlock
+    ) internal {
+        string memory obj = name;
+        vm.serializeAddress(obj, "address", addr);
+        string memory json = vm.serializeUint(obj, "startBlock", startBlock);
+        vm.writeFile(
+            string.concat(
+                "./deployments/",
+                vm.toString(block.chainid),
+                "/",
+                name,
+                ".json"
+            ),
+            json
+        );
     }
 }

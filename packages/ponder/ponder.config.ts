@@ -16,26 +16,19 @@ import { SlotAbi, SlotFactoryAbi } from "./abis";
 // must never become a suffixed second creator, because that splits this file
 // again.
 //
-// ── Discovering slots: factory() and not SlotEvent ─────────────────────────
+// ── Discovering slots: factory() on SlotCreated ────────────────────────────
 //
 // Slots are BeaconProxies, so their addresses are only knowable from the
-// factory's own log. Two ways to follow them:
+// factory's own log. `factory()` on `SlotCreated` watches every slot address
+// directly, which keeps viem's typed decoding and keeps `event.log.address`
+// meaning the slot.
 //
-//   1. `factory()` on `SlotCreated`, watching every slot address directly.
-//   2. `SlotFactory.SlotEvent(slot, topic, data)`, one watched address for the
-//      whole protocol, with every event ABI-decoded by hand from `data`.
-//
-// This config uses (1), for a reason that settles it rather than merely
-// favours it: in the new protocol NOTHING CALLS `emitEvent`. The re-emit lives
-// on in `SlotFactory.sol`, but `src/slots/Slot.sol` never invokes it — the
-// only caller is `src/base/SlotAccounting.sol`, which belongs to the retired
-// contracts. `SlotEvent` is emitted zero times today, so indexing it would
-// index nothing. Even once it is wired up, (1) keeps viem's typed decoding and
-// keeps `event.log.address` meaning the slot; (2) would trade that for one
-// address and a hand-rolled `decodeEventLog` per topic.
-//
-// Indexing BOTH would double-count every occupancy transition, so this is a
-// choice, not a default.
+// The factory briefly carried a re-emit — `emitEvent` / `SlotEvent`, one
+// watched address for the whole protocol with every event hand-decoded from
+// `bytes` — and nothing in `src/slots` ever called it. It is gone from the
+// contracts now rather than left as a supported-looking path that emitted
+// nothing, so this is the only way in and there is no second stream to
+// accidentally index alongside it and double-count every transition.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ──────────────────────────────────────────
