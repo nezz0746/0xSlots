@@ -247,10 +247,21 @@ export function SellOrderPanel({
               parsed.order.slot.toLowerCase() !== slot.toLowerCase() ||
               state.isVacant
             }
-            onClick={() => {
-              console.log("[sell] click", parsed);
-              const r = parsed && actions.sell(slot, parsed.order, parsed.signature);
-              console.log("[sell] returned", r);
+            onClick={async () => {
+              if (!parsed) return;
+              // Simulated first, for the same reason the buy path is: an
+              // unfunded or already-used order is legal to hold and impossible
+              // to fill, and the occupant should be told which of those it is
+              // rather than watching a transaction fail.
+              const ok = await actions.preflight("Sell slot", async () => {
+                await actions.client.simulateSell(
+                  slot,
+                  parsed.order,
+                  parsed.signature,
+                );
+                return true;
+              });
+              if (ok) actions.sell(slot, parsed.order, parsed.signature);
             }}
           >
             Sell on these terms

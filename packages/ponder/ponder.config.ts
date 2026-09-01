@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
 import { createConfig, factory } from "ponder";
 import { parseAbiItem } from "viem";
-import { SlotAbi, SlotFactoryAbi } from "./abis";
+import {
+  SlotAbi,
+  SlotCollectiveAbi,
+  SlotCollectiveFactoryAbi,
+  SlotFactoryAbi,
+} from "./abis";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE HOOK-BASED SLOTS PROTOCOL
@@ -57,6 +63,57 @@ const ANVIL_SLOT_FACTORY = (process.env.SLOTS_FACTORY_ANVIL ??
   "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0") as `0x${string}`;
 const ANVIL_START_BLOCK = Number(process.env.SLOTS_START_BLOCK_ANVIL ?? 0);
 
+/**
+ * The local collective factory, which cannot be pinned the way the slot
+ * factory is.
+ *
+ * `DeploySlots.s.sol` does not deploy it — collectives need a
+ * `SplitsWarehouse`, which the protocol deploy has no business creating — so it
+ * comes up separately, from `script/slots/DeployAndDriveCollective.s.sol`,
+ * against a chain whose nonce is already wherever the seed left it. Its address
+ * is therefore a function of when it was deployed, not of the deploy script,
+ * and a hardcoded constant would be wrong on the second run.
+ *
+ * Resolved in order: the env var, then the deployment file that script writes,
+ * then nothing. The file outliving its chain is the same hazard called out
+ * above for `SlotFactory` — a filter that silently matches nothing — so the
+ * resolved address is ANNOUNCED at boot with where it came from. That turns a
+ * stale address into one line of output you can check against `cast codesize`,
+ * instead of an empty table with no explanation.
+ */
+function anvilCollectiveFactory(): Deployment {
+  const fromEnv = process.env.SLOTS_COLLECTIVE_FACTORY_ANVIL as
+    | `0x${string}`
+    | undefined;
+  if (fromEnv) {
+    const block = Number(process.env.SLOTS_COLLECTIVE_START_BLOCK_ANVIL ?? 0);
+    console.log(`[local] collective factory ${fromEnv} from block ${block} (env)`);
+    return { address: fromEnv, startBlock: block };
+  }
+  try {
+    const raw = readFileSync(
+      "../../apps/contracts/deployments/31337/SlotCollectiveFactory.json",
+      "utf8",
+    );
+    const { address, startBlock } = JSON.parse(raw) as Deployment;
+    console.log(
+      `[local] collective factory ${address} from block ${startBlock} ` +
+        `(deployments/31337) — verify with: cast codesize ${address}`,
+    );
+    // The recorded block, not 0. The collective factory comes up long after
+    // the protocol does — it is a second script against an already-running
+    // chain — so starting at 0 would be a thousand empty `eth_getLogs` before
+    // the first log it can possibly match.
+    return { address, startBlock };
+  } catch {
+    console.log(
+      "[local] no collective factory: set SLOTS_COLLECTIVE_FACTORY_ANVIL, or " +
+        "run script/slots/DeployAndDriveCollective.s.sol",
+    );
+    return { address: UNDEPLOYED, startBlock: 0 };
+  }
+}
+
 // ──────────────────────────────────────────
 // Per-chain factory addresses
 //
@@ -95,11 +152,40 @@ const BASE_SLOT_FACTORY = remoteFactory(
 );
 
 // ──────────────────────────────────────────
+// Collective factories
+//
+// Env-driven for the same reason the slot factories above are, and it is NOT
+// the same reason it looks like. Collective factories ARE deployed on base and
+// base-sepolia — the addresses are in this file's history — but what is behind
+// them is the PRE-PORT collective: three manager roles, a three-member
+// `UpdateKind`, and a `LiquidationBountyRelayed` that no longer exists.
+//
+// `UpdateRelayed(address,address,uint8,bytes32)` is byte-identical across the
+// port, so pointing this at a legacy factory would not fail — it would decode
+// old `Policy` (ordinal 2) proposals against a two-member `Dimension` and
+// quietly write a null `kind`. Silence, not an error. So the addresses are
+// gone until a ported factory is deployed, and each chain reads its own.
+// ──────────────────────────────────────────
+
+const BASE_SEPOLIA_COLLECTIVE_FACTORY = remoteFactory(
+  "COLLECTIVE_FACTORY_BASE_SEPOLIA",
+  "COLLECTIVE_START_BLOCK_BASE_SEPOLIA",
+);
+const BASE_COLLECTIVE_FACTORY = remoteFactory(
+  "COLLECTIVE_FACTORY_BASE",
+  "COLLECTIVE_START_BLOCK_BASE",
+);
+
+// ──────────────────────────────────────────
 // Event signatures used to derive child addresses via factory()
 // ──────────────────────────────────────────
 
 const SLOT_CREATED_EVENT = parseAbiItem(
   "event SlotCreated(address indexed slot, address indexed recipient, address indexed creator, address currency, address hook)",
+);
+
+const COLLECTIVE_DEPLOYED_EVENT = parseAbiItem(
+  "event SlotCollectiveDeployed(address indexed manager, address indexed admin, address indexed deployer)",
 );
 
 // ──────────────────────────────────────────
@@ -393,6 +479,37 @@ const remoteConfig = createConfig({
         },
       },
     },
+    SlotCollectiveFactory: {
+      abi: SlotCollectiveFactoryAbi,
+      chain: {
+        baseSepolia: BASE_SEPOLIA_COLLECTIVE_FACTORY,
+        base: BASE_COLLECTIVE_FACTORY,
+      },
+    },
+    // Every collective the factory has made. Same shape as `Slot` above and
+    // for the same reason: collectives are BeaconProxies, so their addresses
+    // exist only in the factory's own log.
+    SlotCollective: {
+      abi: SlotCollectiveAbi,
+      chain: {
+        baseSepolia: {
+          address: factory({
+            address: BASE_SEPOLIA_COLLECTIVE_FACTORY.address,
+            event: COLLECTIVE_DEPLOYED_EVENT,
+            parameter: "manager",
+          }),
+          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY.startBlock,
+        },
+        base: {
+          address: factory({
+            address: BASE_COLLECTIVE_FACTORY.address,
+            event: COLLECTIVE_DEPLOYED_EVENT,
+            parameter: "manager",
+          }),
+          startBlock: BASE_COLLECTIVE_FACTORY.startBlock,
+        },
+      },
+    },
   },
 });
 
@@ -402,6 +519,14 @@ function buildLocalConfig() {
     address: ANVIL_SLOT_FACTORY,
     startBlock: ANVIL_START_BLOCK,
   };
+
+  // A collective factory that has not been deployed yet is watched at the zero
+  // address rather than dropped from the config. Dropping it would change the
+  // set of registered sources, and ponder rejects handlers for a source that
+  // does not exist — so `src/collective.ts` would have to be conditionally
+  // imported, and a local run without collectives would stop type-checking the
+  // handlers it is not running. One filter that matches nothing is cheaper.
+  const collectiveAt = anvilCollectiveFactory();
 
   return createConfig({
     chains: {
@@ -426,6 +551,23 @@ function buildLocalConfig() {
               parameter: "slot",
             }),
             startBlock: ANVIL_START_BLOCK,
+          },
+        },
+      },
+      SlotCollectiveFactory: {
+        abi: SlotCollectiveFactoryAbi,
+        chain: { anvil: collectiveAt },
+      },
+      SlotCollective: {
+        abi: SlotCollectiveAbi,
+        chain: {
+          anvil: {
+            address: factory({
+              address: collectiveAt.address,
+              event: COLLECTIVE_DEPLOYED_EVENT,
+              parameter: "manager",
+            }),
+            startBlock: collectiveAt.startBlock,
           },
         },
       },

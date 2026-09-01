@@ -64,7 +64,7 @@ contract DeploySlots is Script {
 
         // A week of protected tenure: long enough that the UI's "available in…"
         // state is visible without a time warp, short enough to wait out.
-        MinimumTenureHook tenureHook = new MinimumTenureHook(7 days);
+        MinimumTenureHook tenureHook = new MinimumTenureHook(7 days, "");
         factory.attestHook(address(tenureHook), true);
 
         SlotsTestToken token = new SlotsTestToken();

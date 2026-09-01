@@ -59,6 +59,11 @@ export const compositeHookAbi = [
               "internalType": "bool"
             }
           ]
+        },
+        {
+          "name": "metadataURI_",
+          "type": "string",
+          "internalType": "string"
         }
       ],
       "stateMutability": "nonpayable"
@@ -72,6 +77,32 @@ export const compositeHookAbi = [
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "DESCRIPTOR_VERSION",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint32",
+          "internalType": "uint32"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "FAMILY",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bytes32",
+          "internalType": "bytes32"
         }
       ],
       "stateMutability": "view"
@@ -744,6 +775,41 @@ export const compositeHookAbi = [
     },
     {
       "type": "function",
+      "name": "descriptors",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "tuple[]",
+          "internalType": "struct HookDescriptor[]",
+          "components": [
+            {
+              "name": "family",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "version",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "metadataURI",
+              "type": "string",
+              "internalType": "string"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "hooks",
       "inputs": [],
       "outputs": [
@@ -793,6 +859,19 @@ export const compositeHookAbi = [
               "internalType": "bool"
             }
           ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "metadataURI",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "string",
+          "internalType": "string"
         }
       ],
       "stateMutability": "view"

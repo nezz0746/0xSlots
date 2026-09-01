@@ -750,6 +750,33 @@ export class SlotsClient {
   }
 
   /**
+   * Ask the chain what {@link sell} would do, WITHOUT sending it.
+   *
+   * The failure this exists for is not a hook veto but an unfunded order: a
+   * signed order is legal whether or not the buyer still holds the tokens, and
+   * an occupant who fills a stale one otherwise learns nothing except that the
+   * button stopped working. Simulating names it — `ERC20InsufficientBalance`,
+   * `OrderExpired`, `OrderUsed` — before any gas is spent.
+   *
+   * Simulated as the CONNECTED account, because `sell` is the occupant's call
+   * and it is the occupant's permission being tested along with the buyer's
+   * funding.
+   */
+  async simulateSell(
+    slot: Address,
+    order: SellOrder,
+    signature: `0x${string}`,
+  ): Promise<void> {
+    await this.publicClient.simulateContract({
+      address: slot,
+      abi: SIMULATION_ABI,
+      functionName: "sell",
+      args: [order, signature],
+      account: this.account,
+    } as never);
+  }
+
+  /**
    * Hand the slot you occupy to a buyer, on terms that buyer signed.
    *
    * You need no allowance of your own — the buyer's is what gets pulled. Pass

@@ -910,6 +910,43 @@ export const termsAppliedEvent = onchainTable(
   }),
 );
 
+/**
+ * A queued proposal retracted, per dimension.
+ *
+ * `cancelProposal` takes the same two flags `proposeTerms` does, which is what
+ * lets a collective's tax manager and hook manager retract their own work
+ * without destroying each other's — so the flags here say WHICH dimension was
+ * dropped, and a row with only one of them true is the normal case rather than
+ * a partial write.
+ *
+ * The slot's event carries no canceller: `cancelProposal` is `onlyManager`, so
+ * the manager is the slot's own column, and when that manager is a collective
+ * the actual role holder is in `collectiveActionEvent.by` and nowhere else.
+ */
+export const proposalCancelledEvent = onchainTable(
+  "proposal_cancelled_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    /// The slot's manager at the time. The only party allowed to emit this.
+    manager: t.hex().notNull(),
+    cancelTax: t.boolean().notNull(),
+    cancelHook: t.boolean().notNull(),
+    /// What was dropped, captured before the pending columns were cleared —
+    /// otherwise a retraction leaves no record of what it retracted.
+    cancelledTaxPercentage: t.bigint(),
+    cancelledHook: t.hex(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
 export const orderCancelledEvent = onchainTable(
   "order_cancelled_event",
   (t) => ({
@@ -1036,6 +1073,22 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     references: [hook.id, hook.chainId],
   }),
 
+  // A slot names two addresses, and a SlotCollective can be BOTH of them. Each
+  // link resolves to null when the address is an ordinary EOA, which is the
+  // common case — these say "governed by / paid to a collective", not "has
+  // one". Distinct relationNames because a slot may point at the same
+  // collective twice, for different reasons.
+  managerCollectiveRef: one(slotCollective, {
+    fields: [slot.manager],
+    references: [slotCollective.id],
+    relationName: "collectiveManagedSlots",
+  }),
+  recipientCollectiveRef: one(slotCollective, {
+    fields: [slot.recipient],
+    references: [slotCollective.id],
+    relationName: "collectiveReceivingSlots",
+  }),
+
   accountSlots: many(accountSlot),
   operators: many(slotOperator),
   credits: many(slotCredit),
@@ -1057,6 +1110,7 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
   operatorChanges: many(operatorSetEvent),
   termsProposals: many(termsProposedEvent),
   termsApplications: many(termsAppliedEvent),
+  proposalCancellations: many(proposalCancelledEvent),
   orderCancellations: many(orderCancelledEvent),
   hookFailures: many(hookCallFailedEvent),
 }));
@@ -1249,6 +1303,16 @@ export const termsAppliedEventRelations = relations(
   }),
 );
 
+export const proposalCancelledEventRelations = relations(
+  proposalCancelledEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [proposalCancelledEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
 export const orderCancelledEventRelations = relations(
   orderCancelledEvent,
   ({ one }) => ({
@@ -1273,6 +1337,291 @@ export const hookCallFailedEventRelations = relations(
     hookRef: one(hook, {
       fields: [hookCallFailedEvent.hook, hookCallFailedEvent.chainId],
       references: [hook.id, hook.chainId],
+    }),
+  }),
+);
+
+// ═══════════════════════════════════════════════════════════
+// COLLECTIVES
+// ═══════════════════════════════════════════════════════════
+//
+// A SlotCollective fills BOTH of a slot's named addresses at once: `recipient`
+// (tax flows to it) and `manager` (it may propose tax and hook changes).
+// Indexed here so those two columns on `slot` stop being opaque addresses and
+// become a join — "who governs this slot, and who actually gets paid".
+//
+// Split membership and role membership are the two things unavailable on-chain
+// without replaying logs: `splitHash` is a hash, and AccessControl keeps no
+// enumerable member list. Both are reconstructed below.
+//
+// ── What the port to the hook-based Slot changed here ──────────────────────
+//
+// TWO manager roles, not three. `UTILITY_MANAGER_ROLE` is gone with the
+// utility head it governed; a hook is the old policy and the old utility
+// unified, and `POLICY_MANAGER_ROLE` is the identifier that survived. So
+// wherever this schema says "policy", read HOOK — the label is preserved
+// deliberately (renaming a `keccak256` constant would move the role on every
+// live collective) and only the meaning moved.
+//
+// The relay events narrowed with it: `Dimension` has two members where
+// `UpdateKind` had three, and `LiquidationBountyRelayed` is gone entirely
+// along with the bounty. `collectiveActionEvent.kind` is therefore
+// "Tax" | "Hook", and its `action` no longer has a "bounty" value.
+
+export const slotCollective = onchainTable(
+  "slot_collective",
+  (t) => ({
+    id: t.hex().primaryKey(),
+    chainId: t.integer().notNull(),
+    /// DEFAULT_ADMIN_ROLE holder at deployment. Roles can move afterwards —
+    /// `collectiveRole` is the live answer, this is only the founding one.
+    admin: t.hex().notNull(),
+    deployer: t.hex().notNull(),
+    /// Mirrors the on-chain `splitHash`, read back from the collective at the
+    /// block of the `SplitUpdated` that set it. The event carries the Split
+    /// struct but not its hash, and the hash is what the contract checks a
+    /// `distribute` against — so it is read rather than recomputed, and null
+    /// when the read did not answer.
+    splitHash: t.hex(),
+    totalAllocation: t.bigint().notNull(),
+    distributionIncentive: t.integer().notNull(),
+    paused: t.boolean().notNull(),
+    /// How many recipients the CURRENT split has. Stored so an update can
+    /// delete the tail when a split shrinks, without querying for it.
+    splitRecipientCount: t.integer().notNull(),
+    createdAt: t.bigint().notNull(),
+    createdTx: t.hex().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    adminIdx: index().on(table.admin),
+  }),
+);
+
+/// @notice Live role membership. AccessControl has no enumerable member list,
+///         so this is the only way to answer "who governs this collective".
+/// @dev Rows are kept rather than deleted on revoke, with `granted` flipped —
+///      history is the point, and a revoked member is a fact worth showing.
+export const collectiveRole = onchainTable(
+  "collective_role",
+  (t) => ({
+    collective: t.hex().notNull(),
+    /// keccak of the role name. Resolved to a label in `label` where known.
+    role: t.hex().notNull(),
+    account: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    granted: t.boolean().notNull(),
+    /// Human-readable role name where the hash is one of the known ones.
+    /// "POLICY_MANAGER" is the HOOK role — see the section note. Null for any
+    /// role added later, rather than a guess.
+    label: t.text(),
+    grantedAt: t.bigint(),
+    revokedAt: t.bigint(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.collective, table.role, table.account],
+    }),
+    chainIdx: index().on(table.chainId),
+    accountIdx: index().on(table.account),
+    collectiveIdx: index().on(table.collective),
+  }),
+);
+
+/// @notice Who the collective pays right now, and in what share.
+/// @dev CURRENT state only — `SplitUpdated` carries the entire Split struct, so
+///      the live set is always exactly the last event's contents and there is no
+///      incremental add/remove to reconcile. History lives in
+///      `collectiveSplitUpdatedEvent` instead, which keeps this table cheap:
+///      updating it touches only primary keys, never a scan.
+///
+///      Keyed by position rather than account because splits-v2 does not forbid
+///      the same address appearing twice.
+export const collectiveSplitRecipient = onchainTable(
+  "collective_split_recipient",
+  (t) => ({
+    collective: t.hex().notNull(),
+    index: t.integer().notNull(),
+    chainId: t.integer().notNull(),
+    account: t.hex().notNull(),
+    allocation: t.bigint().notNull(),
+    /// Share of the whole in basis points, precomputed so a UI never has to
+    /// divide by `totalAllocation` itself.
+    shareBps: t.integer().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.collective, table.index] }),
+    chainIdx: index().on(table.chainId),
+    collectiveIdx: index().on(table.collective),
+    accountIdx: index().on(table.account),
+  }),
+);
+
+/// @notice Every split rewrite, with the full membership as it was.
+/// @dev The history half of the pair above. Arrays are stored as JSON text
+///      because the whole point is to keep the snapshot verbatim; nothing
+///      queries inside them.
+export const collectiveSplitUpdatedEvent = onchainTable(
+  "collective_split_updated_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    collective: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    /// JSON array of addresses, in allocation order.
+    recipients: t.text().notNull(),
+    /// JSON array of decimal strings, index-aligned with `recipients`.
+    allocations: t.text().notNull(),
+    totalAllocation: t.bigint().notNull(),
+    distributionIncentive: t.integer().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    collectiveIdx: index().on(table.collective),
+  }),
+);
+
+/// @notice Governance actions relayed through the collective to a slot.
+/// @dev The reason this table can exist at all: the slot's own `TermsProposed`
+///      and `ProposalCancelled` carry NO actor, and `transaction.from` is wrong
+///      whenever the role holder is a Safe or the call is bundled. `by` here is
+///      the actual role holder, which is recoverable from nowhere else.
+///
+///      Join to the slot side on `tx` — one relay produces exactly one
+///      `TermsProposed`/`ProposalCancelled` on the slot in the same
+///      transaction, so `collectiveActionEvent` supplies the WHO and the slot's
+///      own tables supply the WHAT.
+export const collectiveActionEvent = onchainTable(
+  "collective_action_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    collective: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    by: t.hex().notNull(),
+    /// "propose" | "cancel" | "cancelAll". The old "bounty" value went with
+    /// `LiquidationBountyRelayed`.
+    action: t.text().notNull(),
+    /// "Tax" | "Hook" — null for cancelAll, which reaches across both.
+    /// `Dimension` is positional across the ABI boundary, so an unrecognised
+    /// ordinal stays null rather than being guessed at.
+    kind: t.text(),
+    /// Raw basis points for Tax, the left-padded address for Hook. Left as the
+    /// widened bytes32 the event carries; null on every cancel, which carries
+    /// no value.
+    value: t.hex(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    collectiveIdx: index().on(table.collective),
+    slotIdx: index().on(table.slot),
+    byIdx: index().on(table.by),
+  }),
+);
+
+/// @notice Each time the collective fanned revenue out over its split.
+export const collectiveDistributionEvent = onchainTable(
+  "collective_distribution_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    collective: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    token: t.hex().notNull(),
+    distributor: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    collectiveIdx: index().on(table.collective),
+    tokenIdx: index().on(table.token),
+  }),
+);
+
+export const slotCollectiveRelations = relations(
+  slotCollective,
+  ({ many }) => ({
+    roles: many(collectiveRole),
+    splitRecipients: many(collectiveSplitRecipient),
+    splitUpdates: many(collectiveSplitUpdatedEvent),
+    actions: many(collectiveActionEvent),
+    distributions: many(collectiveDistributionEvent),
+    /// Slots that named this collective. Two relations because a slot may name
+    /// it as manager, as recipient, or both — `relationName` keeps them apart.
+    managedSlots: many(slot, { relationName: "collectiveManagedSlots" }),
+    receivingSlots: many(slot, { relationName: "collectiveReceivingSlots" }),
+  }),
+);
+
+export const collectiveRoleRelations = relations(collectiveRole, ({ one }) => ({
+  collectiveRef: one(slotCollective, {
+    fields: [collectiveRole.collective],
+    references: [slotCollective.id],
+  }),
+  accountRef: one(account, {
+    fields: [collectiveRole.account],
+    references: [account.id],
+  }),
+}));
+
+export const collectiveSplitRecipientRelations = relations(
+  collectiveSplitRecipient,
+  ({ one }) => ({
+    collectiveRef: one(slotCollective, {
+      fields: [collectiveSplitRecipient.collective],
+      references: [slotCollective.id],
+    }),
+    accountRef: one(account, {
+      fields: [collectiveSplitRecipient.account],
+      references: [account.id],
+    }),
+  }),
+);
+
+export const collectiveSplitUpdatedEventRelations = relations(
+  collectiveSplitUpdatedEvent,
+  ({ one }) => ({
+    collectiveRef: one(slotCollective, {
+      fields: [collectiveSplitUpdatedEvent.collective],
+      references: [slotCollective.id],
+    }),
+  }),
+);
+
+export const collectiveActionEventRelations = relations(
+  collectiveActionEvent,
+  ({ one }) => ({
+    collectiveRef: one(slotCollective, {
+      fields: [collectiveActionEvent.collective],
+      references: [slotCollective.id],
+    }),
+    slotRef: one(slot, {
+      fields: [collectiveActionEvent.slot],
+      references: [slot.id],
+    }),
+    byRef: one(account, {
+      fields: [collectiveActionEvent.by],
+      references: [account.id],
+    }),
+  }),
+);
+
+export const collectiveDistributionEventRelations = relations(
+  collectiveDistributionEvent,
+  ({ one }) => ({
+    collectiveRef: one(slotCollective, {
+      fields: [collectiveDistributionEvent.collective],
+      references: [slotCollective.id],
     }),
   }),
 );

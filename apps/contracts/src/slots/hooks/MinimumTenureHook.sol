@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
+import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
 import {BASIS_POINTS, MONTH} from "../SlotStorage.sol";
 
 /**
@@ -56,7 +57,7 @@ import {BASIS_POINTS, MONTH} from "../SlotStorage.sol";
  *      Funding is still enforced on `sell`, so the channel cannot be used to
  *      seat someone underfunded and restart protection on the cheap.
  */
-contract MinimumTenureHook is ISlotHook {
+contract MinimumTenureHook is ISlotHook, IDescribedHook {
     /// @notice Protection window in seconds.
     uint256 public immutable tenureSeconds;
 
@@ -64,8 +65,45 @@ contract MinimumTenureHook is ISlotHook {
     error TenureUnderfunded(uint256 required);
     error PriceCutDuringTenure();
 
-    constructor(uint256 tenureSeconds_) {
+    /// @notice Identifies this behaviour to clients. See `IDescribedHook`.
+    bytes32 public constant FAMILY = keccak256("slots.hook.minimum-tenure");
+
+    /// @notice The encoding of `descriptors()[0].data`, and nothing else.
+    uint32 public constant DESCRIPTOR_VERSION = 1;
+
+    /// @notice Where the human half lives — label, units, copy. May be empty.
+    /// @dev A constructor argument rather than a constant, so a deployment can
+    ///      point at metadata that actually exists. A hardcoded URI would have
+    ///      to be edited before every deploy, and the one that shipped
+    ///      unedited would resolve to nothing while looking authoritative.
+    string public metadataURI;
+
+    constructor(uint256 tenureSeconds_, string memory metadataURI_) {
         tenureSeconds = tenureSeconds_;
+        metadataURI = metadataURI_;
+    }
+
+    /**
+     * @notice What this hook claims to be.
+     *
+     * @dev version 1 — `data` is `abi.encode(uint256 tenureSeconds)`.
+     *
+     *      One entry: this hook is one family. The array exists so a hook that
+     *      honestly is several can say so, and so a composite's shape is the
+     *      same shape.
+     */
+    function descriptors()
+        external
+        view
+        returns (HookDescriptor[] memory result)
+    {
+        result = new HookDescriptor[](1);
+        result[0] = HookDescriptor({
+            family: FAMILY,
+            version: DESCRIPTOR_VERSION,
+            data: abi.encode(tenureSeconds),
+            metadataURI: metadataURI
+        });
     }
 
     function hooks() external pure returns (HookFlags memory f) {

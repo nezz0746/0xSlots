@@ -425,7 +425,7 @@ contract SlotsTest is Test {
 
         HookFlags memory f;
         f.afterBuy = true;
-        CompositeHook c = new CompositeHook(address(this), kids, f);
+        CompositeHook c = new CompositeHook(address(this), kids, f, "");
 
         Slot s = _slot(address(c));
         _take(s, alice, 1 ether, 100 ether);
@@ -444,7 +444,7 @@ contract SlotsTest is Test {
 
         HookFlags memory f;
         f.afterBuy = true;
-        CompositeHook c = new CompositeHook(address(this), kids, f);
+        CompositeHook c = new CompositeHook(address(this), kids, f, "");
 
         Slot s = _slot(address(c));
         _take(s, alice, 1 ether, 100 ether);

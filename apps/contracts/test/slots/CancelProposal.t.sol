@@ -33,7 +33,7 @@ contract CancelProposalTest is Test {
             mutableTax: true,
             mutableHook: true
         }))));
-        hookA = address(new MinimumTenureHook(7 days));
+        hookA = address(new MinimumTenureHook(7 days, ""));
     }
 
     function _pending()

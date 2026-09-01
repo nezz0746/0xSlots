@@ -37,7 +37,18 @@ export const SlotAbi = [
     {
       "type": "function",
       "name": "cancelProposal",
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "cancelTax",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "cancelHook",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
       "outputs": [],
       "stateMutability": "nonpayable"
     },
@@ -333,6 +344,25 @@ export const SlotAbi = [
           "name": "",
           "type": "address",
           "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "minDepositForBuy",
+      "inputs": [
+        {
+          "name": "price_",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
       "stateMutability": "view"
@@ -1054,6 +1084,25 @@ export const SlotAbi = [
           "type": "uint256",
           "indexed": false,
           "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "ProposalCancelled",
+      "inputs": [
+        {
+          "name": "tax",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
+        },
+        {
+          "name": "hook",
+          "type": "bool",
+          "indexed": false,
+          "internalType": "bool"
         }
       ],
       "anonymous": false

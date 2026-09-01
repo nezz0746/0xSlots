@@ -7,9 +7,40 @@ export const minimumTenureHookAbi = [
           "name": "tenureSeconds_",
           "type": "uint256",
           "internalType": "uint256"
+        },
+        {
+          "name": "metadataURI_",
+          "type": "string",
+          "internalType": "string"
         }
       ],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "DESCRIPTOR_VERSION",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint32",
+          "internalType": "uint32"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "FAMILY",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -573,6 +604,41 @@ export const minimumTenureHookAbi = [
     },
     {
       "type": "function",
+      "name": "descriptors",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "tuple[]",
+          "internalType": "struct HookDescriptor[]",
+          "components": [
+            {
+              "name": "family",
+              "type": "bytes32",
+              "internalType": "bytes32"
+            },
+            {
+              "name": "version",
+              "type": "uint32",
+              "internalType": "uint32"
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "metadataURI",
+              "type": "string",
+              "internalType": "string"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "hooks",
       "inputs": [],
       "outputs": [
@@ -625,6 +691,19 @@ export const minimumTenureHookAbi = [
         }
       ],
       "stateMutability": "pure"
+    },
+    {
+      "type": "function",
+      "name": "metadataURI",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "string",
+          "internalType": "string"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",

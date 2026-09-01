@@ -39,7 +39,7 @@ contract MinimumTenureHookTest is Test {
         token = new T();
         token.mint(alice, 1_000_000 ether);
         token.mint(bob, 1_000_000 ether);
-        hook = new MinimumTenureHook(TENURE);
+        hook = new MinimumTenureHook(TENURE, "");
         vm.warp(1_000_000);
     }
 

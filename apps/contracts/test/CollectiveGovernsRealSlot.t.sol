@@ -68,7 +68,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             mutableHook: true
         }))));
 
-        hookA = address(new MinimumTenureHook(7 days));
+        hookA = address(new MinimumTenureHook(7 days, ""));
         vm.deal(buyer, 100 ether);
     }
 

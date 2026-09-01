@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
+import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
 
 /**
  * @title CompositeHook
@@ -29,7 +30,7 @@ import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
  *      others still run, mirroring how the slot treats this contract. Without
  *      it, one broken observer would silence every other one.
  */
-contract CompositeHook is ISlotHook {
+contract CompositeHook is ISlotHook, IDescribedHook {
     address public immutable owner;
 
     address[] public children;
@@ -47,8 +48,23 @@ contract CompositeHook is ISlotHook {
 
     uint256 public constant MAX_CHILDREN = 8;
 
-    constructor(address owner_, address[] memory initial, HookFlags memory flags) {
+    /// @notice Identifies this as a composite. See `IDescribedHook`.
+    bytes32 public constant FAMILY = keccak256("slots.hook.composite");
+
+    /// @notice The encoding of `descriptors()[0].data`, and nothing else.
+    uint32 public constant DESCRIPTOR_VERSION = 1;
+
+    /// @notice Where the human half lives. May be empty.
+    string public metadataURI;
+
+    constructor(
+        address owner_,
+        address[] memory initial,
+        HookFlags memory flags,
+        string memory metadataURI_
+    ) {
         owner = owner_;
+        metadataURI = metadataURI_;
         declared = flags;
         for (uint256 i; i < initial.length; ++i) {
             children.push(initial[i]);
@@ -65,6 +81,38 @@ contract CompositeHook is ISlotHook {
 
     function childCount() external view returns (uint256) {
         return children.length;
+    }
+
+    /**
+     * @notice What this hook claims to be.
+     *
+     * @dev version 1 — `data` is `abi.encode(address[] children)`.
+     *
+     *      Returns ONLY its own descriptor. A consumer that wants the whole
+     *      tree walks `children` and calls `descriptors()` on each, which
+     *      preserves the shape: flattening every child's descriptor into this
+     *      array would report a composite of two hooks identically to a slot
+     *      wearing two hooks directly, and those are not the same thing. It
+     *      also keeps this array bounded by `MAX_CHILDREN` rather than by the
+     *      sum of whatever an untrusted subtree decides to return.
+     *
+     *      Recursion is the consumer's to bound. Nothing here prevents a cycle
+     *      — a composite may name another composite, and could in principle
+     *      name one that names it back — so a client must cap depth and track
+     *      what it has visited.
+     */
+    function descriptors()
+        external
+        view
+        returns (HookDescriptor[] memory result)
+    {
+        result = new HookDescriptor[](1);
+        result[0] = HookDescriptor({
+            family: FAMILY,
+            version: DESCRIPTOR_VERSION,
+            data: abi.encode(children),
+            metadataURI: metadataURI
+        });
     }
 
     /// @dev The union its children need, declared at construction. Not derived

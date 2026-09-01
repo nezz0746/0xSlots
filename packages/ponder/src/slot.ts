@@ -13,6 +13,7 @@ import {
   operatorSetEvent,
   orderCancelledEvent,
   priceSetEvent,
+  proposalCancelledEvent,
   releasedEvent,
   settledEvent,
   slot,
@@ -817,6 +818,64 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     previousHook: prevHook ?? ZERO_ADDR,
     taxChanged,
     hookChanged,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+/**
+ * A queued proposal retracted, per dimension.
+ *
+ * `cancelProposal` takes the same two flags `proposeTerms` does — so this
+ * clears only the dimensions the event names, and a slot with a tax change and
+ * a hook change queued keeps whichever one was not cancelled. Clearing both
+ * unconditionally here would reintroduce, in the indexer, exactly the
+ * all-or-nothing behaviour the contract was fixed to stop doing: under a
+ * collective, tax and hook belong to different roles.
+ *
+ * `pendingProposedAt` follows the contract's own rule — zeroed only when
+ * nothing is left queued, because a surviving proposal keeps its clock.
+ *
+ * The pre-clear values are copied into the event row. The chain does not carry
+ * them here (`ProposalCancelled` names the flags and nothing else), so if they
+ * are not captured before the update, what was retracted is unrecoverable
+ * without replaying the preceding `TermsProposed`.
+ */
+ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const s = await loadSlot(context, slotAddr);
+  const { tax, hook: hookFlag } = event.args;
+
+  const hadTax = s.pendingHasTax && tax;
+  const hadHook = s.pendingHasHook && hookFlag;
+
+  const nextHasTax = tax ? false : s.pendingHasTax;
+  const nextHasHook = hookFlag ? false : s.pendingHasHook;
+
+  await context.db.update(slot, { id: slotAddr }).set({
+    pendingHasTax: nextHasTax,
+    pendingTaxPercentage: tax ? null : s.pendingTaxPercentage,
+    pendingHasHook: nextHasHook,
+    pendingHook: hookFlag ? null : s.pendingHook,
+    // Mirrors `if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0`.
+    pendingProposedAt:
+      nextHasTax || nextHasHook ? s.pendingProposedAt : null,
+    updatedAt: event.block.timestamp,
+  });
+
+  await context.db.insert(proposalCancelledEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    slot: slotAddr,
+    // `cancelProposal` is `onlyManager`, so the manager on the row IS the
+    // canceller. `transaction.from` is the fallback only for the impossible
+    // case of a slot with no manager, where nothing could have emitted this.
+    manager: s.manager ?? lower(event.transaction.from),
+    cancelTax: tax,
+    cancelHook: hookFlag,
+    cancelledTaxPercentage: hadTax ? s.pendingTaxPercentage : null,
+    cancelledHook: hadHook ? s.pendingHook : null,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
