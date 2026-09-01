@@ -1,29 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.23;
+pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {SellOrder} from "../SlotOrders.sol";
-
-interface ISellableSlot {
-    function sellOrderHash(SellOrder calldata order)
-        external
-        view
-        returns (bytes32);
-
-    function occupant() external view returns (address);
-    function price() external view returns (uint256);
-    function currency() external view returns (address);
-    function sell(
-        SellOrder calldata order,
-        bytes calldata signature
-    ) external;
-    function orderNonce(address buyer) external view returns (uint256);
-    function orderUsed(address buyer, uint256 nonce)
-        external
-        view
-        returns (bool);
-}
+import {SellOrder} from "../../SlotOrders.sol";
+import {ISellableSlot} from "./ISellableSlot.sol";
+import {OfferBookInternals} from "./OfferBookInternals.sol";
+import "./OfferBookErrors.sol";
 
 /// @title OfferBook — standing bids an occupant can sell into
 ///
@@ -82,72 +64,45 @@ interface ISellableSlot {
 ///      this book is no longer load-bearing. The same signature works if it is
 ///      handed to the occupant directly, or published anywhere else. This
 ///      contract is now a convenience, not a dependency.
-contract OfferBook {
-    struct Offer {
-        address bidder;
-        /// @dev What the bidder pays the occupant. Also the price they will
-        ///      then hold the slot at.
-        uint256 price;
-        /// @dev Escrow they will post to cover their own tax.
-        uint256 deposit;
-        uint64 expiry;
-        bool cancelled;
-        /// @dev The bidder's nonce on the slot, and their signature over
-        ///      (slot, bidder, price, deposit, nonce, expiry). Held together
-        ///      because `Slot.sell` needs both, and because storing the terms
-        ///      apart from the signature is what would let them drift.
-        uint256 nonce;
-        bytes signature;
+///
+/// @dev ── Upgradeable, and what that is and is not ────────────────────────
+///
+///      Behind a UUPS proxy so a board can be fixed in place. That matters
+///      here specifically: a bug in this contract strands a slot's discovery
+///      surface, and before the overflow guard one free offer could brick
+///      every read path for a slot with no way to clear it. Redeploying would
+///      have meant abandoning every standing bid.
+///
+///      The admin's power stops at the code. The book never holds funds and
+///      never moves a slot: an offer settles when the OCCUPANT submits the
+///      bidder's own signature to the slot, which validates it against its own
+///      domain. An admin who replaced this contract with something hostile
+///      could lie about what is on the board; they could not spend a bidder's
+///      allowance or seat anybody. Discovery is upgradeable, settlement is
+///      not.
+contract OfferBook is OfferBookInternals {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
-    /// @notice slot => offers. Ordering is computed, not stored — see `best`.
-    mapping(address => Offer[]) internal _offers;
+    function initialize(address admin_) external initializer {
+        if (admin_ == address(0)) revert ZeroAdmin();
+        admin = admin_;
+    }
 
-    /// @notice slot => bidder => id + 1. Zero means "no offer".
-    ///
-    /// @dev One offer per bidder per slot, enforced here rather than left to
-    ///      the client. Two offers from one address are backed by the SAME
-    ///      allowance, so at most one of them could ever execute — the other is
-    ///      a promise that silently cannot be kept, and because `best` picks
-    ///      the highest, a stale high one masks its owner's real intent.
-    ///
-    ///      Offset by one so a fresh mapping reads as absent without needing a
-    ///      second flag, the same reason ids elsewhere start at 1.
-    mapping(address => mapping(address => uint256)) internal _offerIdOf;
+    /// @notice Hand the upgrade right to somebody else.
+    function transferAdmin(address next) external {
+        if (msg.sender != admin) revert NotAdmin();
+        if (next == address(0)) revert ZeroAdmin();
+        emit AdminTransferred(admin, next);
+        admin = next;
+    }
 
-    event Offered(
-        address indexed slot,
-        address indexed bidder,
-        uint256 indexed id,
-        uint256 price,
-        uint256 deposit,
-        uint64 expiry
-    );
-    event Cancelled(address indexed slot, address indexed bidder, uint256 indexed id);
-    /// @dev Distinct from `Cancelled`: the bidder withdrew that one, whereas
-    ///      this one was consumed. An indexer that conflates them cannot tell a
-    ///      filled bid from an abandoned one.
+    function _authorizeUpgrade(address) internal view override {
+        if (msg.sender != admin) revert NotAdmin();
+    }
 
-    error NotBidder();
-    error AlreadyCancelled();
-    error BadExpiry();
-    error ZeroPrice();
-    error NoSuchOffer();
-
-    /// @notice Post a standing bid, REPLACING your previous one on this slot.
-    ///
-    /// @dev The bidder must separately `approve(slot, price + deposit)` on the
-    ///      slot's currency. Not enforced here — an unfunded offer is legal and
-    ///      simply never executes, which is cheaper than policing it.
-    ///
-    ///      Replacing rather than appending, and rather than reverting: raising
-    ///      or lowering your bid is the ordinary thing a bidder does, and
-    ///      making them cancel first would leave a window where they have no
-    ///      offer standing at all. A cancelled offer is revived by the same
-    ///      call, reusing its slot in the array.
-    ///
-    ///      A client sees the replacement as a second `Offered` with the same
-    ///      `id`; last one wins, the same rule metadata updates follow.
     function offer(
         address slot,
         uint256 price,
@@ -378,79 +333,4 @@ contract OfferBook {
 
     /// @dev Can this offer be executed against `slot` right now? Cancelled and
     ///      expired are its own state; occupancy and funding are the world's.
-    function _live(address slot, Offer storage o, address occupant)
-        internal
-        view
-        returns (bool)
-    {
-        if (o.cancelled || o.expiry <= block.timestamp) return false;
-        // Unusable: `Slot.sell` refuses `CannotBuyFromYourself`. Surfaced as an
-        // exit it would be a button that lies — and after a fill this is
-        // exactly the state a consumed offer lands in.
-        if (o.bidder == occupant) return false;
-        // The slot burns a nonce when it fills an order. Checking it here is
-        // what makes a filled offer dead ON ITS OWN, rather than merely hidden
-        // while its author happens to be the occupant — no cleanup call, no
-        // window in which it could come back.
-        if (ISellableSlot(slot).orderUsed(o.bidder, o.nonce)) return false;
-        if (!_signed(slot, o)) return false;
-        return _fundable(slot, o);
-    }
-
-    /**
-     * @dev Whether the stored signature actually authorises the stored terms.
-     *
-     *      The predicate checked funding, expiry, cancellation and the burnt
-     *      nonce — every precondition of `Slot.sell` except the only one that
-     *      decides whether it can execute. `offer` stores the signature and
-     *      the terms from separate arguments and never binds them, so a funded
-     *      bidder could post the top of the board with a garbage signature:
-     *      `bestOrder` handed the occupant an order that reverts, and the real
-     *      best bid stayed hidden underneath it.
-     *
-     *      Checked here rather than in `offer` so a signature that stops being
-     *      valid later — a contract wallet changing its mind under ERC-1271 —
-     *      also drops out of the board.
-     */
-    function _signed(address slot, Offer storage o) internal view returns (bool) {
-        SellOrder memory order = SellOrder({
-            slot: slot,
-            buyer: o.bidder,
-            price: o.price,
-            deposit: o.deposit,
-            nonce: o.nonce,
-            deadline: o.expiry
-        });
-        try ISellableSlot(slot).sellOrderHash(order) returns (bytes32 digest) {
-            return
-                SignatureChecker.isValidSignatureNow(
-                    o.bidder,
-                    digest,
-                    o.signature
-                );
-        } catch {
-            return false;
-        }
-    }
-
-    function _fundable(address slot, Offer storage o) internal view returns (bool) {
-        address currency = ISellableSlot(slot).currency();
-        // A native slot cannot be sold into at all — `Slot.sell` reverts with
-        // `SellNeedsErc20`, because there is no allowance to pull against.
-        if (currency == address(0)) return false;
-
-        // Guarded, because `offer` puts no ceiling on either number and this
-        // predicate sits on every read path. A single free offer at
-        // `price = type(uint256).max` made the checked addition panic, and
-        // `best`, `bestOrder`, `board`, `liveCount` and `isLive` reverted for
-        // that slot for ever — the array has no removal path and `cancel` is
-        // bidder-only, so nobody could clear it.
-        uint256 owed;
-        unchecked { owed = o.price + o.deposit; }
-        if (owed < o.price) return false;
-
-        return
-            IERC20(currency).balanceOf(o.bidder) >= owed &&
-            IERC20(currency).allowance(o.bidder, slot) >= owed;
-    }
 }

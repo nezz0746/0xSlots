@@ -8,7 +8,7 @@ import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import {MinimumTenureHookFactory} from "../../src/hooks/MinimumTenureHookFactory.sol";
-import {OfferBook} from "../../src/periphery/OfferBook.sol";
+import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {SlotTaker} from "../../src/periphery/SlotTaker.sol";
 
 contract SlotsTestToken is ERC20 {
@@ -88,7 +88,14 @@ contract DeploySlots is Script {
         // Appended last, like the hook factory above it: anything inserted
         // higher shifts every address after it and breaks the pinned
         // SlotFactory that slots.ts and dev-chain.sh both assert.
-        OfferBook offerBook = new OfferBook();
+        OfferBook offerBook = OfferBook(
+            address(
+                new ERC1967Proxy(
+                    address(new OfferBook()),
+                    abi.encodeCall(OfferBook.initialize, (deployer))
+                )
+            )
+        );
         SlotTaker slotTaker = new SlotTaker();
 
         vm.stopBroadcast();

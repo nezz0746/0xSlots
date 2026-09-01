@@ -9,7 +9,7 @@ import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
 import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
-import {OfferBook} from "../../src/periphery/OfferBook.sol";
+import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
 /// @dev 2 decimals, like GUSD — small units make truncation reachable.
 contract Small is ERC20 {
@@ -229,7 +229,7 @@ contract AuditRegressionsTest is Test {
         s.buy(occ, 5_000, PRICE, 0);
         vm.stopPrank();
 
-        OfferBook book = new OfferBook();
+        OfferBook book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));
         vm.prank(address(0xBAD));
         book.offer(
             address(s),
@@ -255,7 +255,7 @@ contract AuditRegressionsTest is Test {
         s.buy(occ, 5_000, PRICE, 0);
         vm.stopPrank();
 
-        OfferBook book = new OfferBook();
+        OfferBook book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));
         address faker = address(0xFA4E);
         token.mint(faker, 10_000_000);
         vm.startPrank(faker);

@@ -79,7 +79,7 @@ export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
  * `apps/contracts/deployments/31337/SlotTaker.json`.
  */
 export const slotTakerAddress: Partial<Record<number, Address>> = {
-  [anvil.id]: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+  [anvil.id]: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
 };
 
 /**
@@ -95,7 +95,7 @@ export const slotTakerAddress: Partial<Record<number, Address>> = {
  * private hand-over path (paste an order the bidder sent you) still works.
  */
 export const offerBookAddress: Partial<Record<number, Address>> = {
-  [anvil.id]: "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+  [anvil.id]: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
 };
 
 /**

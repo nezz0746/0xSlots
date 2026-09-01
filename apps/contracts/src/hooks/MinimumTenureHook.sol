@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SlotMath} from "../SlotMath.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
 import {SlotConstants} from "../SlotConstants.sol";
@@ -199,11 +200,10 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook, SlotConstants {
         view
         returns (uint256)
     {
-        return
-            Math.ceilDiv(
-                price * taxPercentage * tenureSeconds,
-                MONTH * BASIS_POINTS
-            );
+        // The slot's own formula, not a copy of it. A hook cannot inherit
+        // from the slot, and a hand-written duplicate that drifts seats an
+        // occupant this hook believed had funded the window.
+        return SlotMath.depositFor(price, taxPercentage, tenureSeconds);
     }
 
     /// @dev Sized against the HIGHER of the incoming and sitting price.

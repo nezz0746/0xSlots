@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SlotMath} from "./SlotMath.sol";
 import {SlotHooks} from "./SlotHooks.sol";
 import {ISlotHook, SlotContext} from "./ISlotHook.sol";
 import "./SlotErrors.sol";
@@ -34,21 +35,12 @@ abstract contract SlotAccounting is SlotHooks {
     function taxOwed() public view returns (uint256) {
         if (_occupant == address(0)) return 0;
         uint256 elapsed = block.timestamp - lastSettled;
-        // `mulDiv`, not `a * b / c`. The plain form multiplies before it
-        // divides, so a large price overflowed uint256 and reverted — and
-        // because every entry point settles first, that reverted `liquidate()`
-        // too and bricked the slot permanently. The quotient always fitted.
-        return Math.mulDiv(_price, taxPercentage * elapsed, MONTH * BASIS_POINTS);
+        return SlotMath.taxFor(_price, taxPercentage, elapsed);
     }
 
     /// @notice The smallest deposit that funds `minDepositSeconds` at `price_`.
     function _minDepositFor(uint256 price_) internal view returns (uint256) {
-        if (minDepositSeconds == 0) return 0;
-        return
-            Math.ceilDiv(
-                price_ * taxPercentage * minDepositSeconds,
-                MONTH * BASIS_POINTS
-            );
+        return SlotMath.depositFor(price_, taxPercentage, minDepositSeconds);
     }
 
     function _requireFunded(uint256 depositAmount, uint256 price_) internal view {
@@ -97,19 +89,14 @@ abstract contract SlotAccounting is SlotHooks {
             // Converting `paid` back into seconds keeps the unpaid remainder
             // owed. It is exact when it divides evenly and rounds in the
             // occupant's favour by at most one second when it does not.
-            uint256 rate = _price * taxPercentage;
-            if (rate == 0) {
-                lastSettled = uint64(upTo);
-            } else {
-                uint256 secondsPaid = Math.mulDiv(
-                    paid,
-                    MONTH * BASIS_POINTS,
-                    rate
-                );
-                uint256 elapsed = upTo - lastSettled;
-                if (secondsPaid >= elapsed) lastSettled = uint64(upTo);
-                else lastSettled += uint64(secondsPaid);
-            }
+            uint256 secondsPaid = SlotMath.secondsFor(
+                paid,
+                _price,
+                taxPercentage
+            );
+            uint256 elapsed = upTo - lastSettled;
+            if (secondsPaid >= elapsed) lastSettled = uint64(upTo);
+            else lastSettled += uint64(secondsPaid);
         }
         collectedTax += paid;
 

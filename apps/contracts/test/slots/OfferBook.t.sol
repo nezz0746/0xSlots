@@ -8,7 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SellOrder} from "../../src/SlotOrders.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {OfferBook} from "../../src/periphery/OfferBook.sol";
+import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -44,7 +44,7 @@ contract OfferBookSlotsTest is Test {
             abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
         )));
         token = new Tok();
-        book = new OfferBook();
+        book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));
 
         slot = Slot(payable(factory.createSlot(SlotInit({
             recipient: address(0xF00D),

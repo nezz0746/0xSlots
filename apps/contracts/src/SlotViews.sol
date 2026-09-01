@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SlotMath} from "./SlotMath.sol";
 import "./SlotErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HookFlags} from "./ISlotHook.sol";
@@ -174,9 +175,7 @@ abstract contract SlotViews is SlotOrders {
         // the function then answered "never" for a position that was genuinely
         // insolvent within the month. That is the wrong direction to be wrong
         // in: it is keepers and UIs that read this.
-        uint256 rate = _price * taxPercentage;
-        if (rate == 0) return type(uint256).max;
-        return Math.mulDiv(_deposit - owed, MONTH * BASIS_POINTS, rate);
+        return SlotMath.secondsFor(_deposit - owed, _price, taxPercentage);
     }
 
     /**
@@ -197,7 +196,7 @@ abstract contract SlotViews is SlotOrders {
         uint256 tax = (pending.hasTax && pendingApplies())
             ? pending.taxPercentage
             : taxPercentage;
-        return Math.ceilDiv(price_ * tax * minDepositSeconds, MONTH * BASIS_POINTS);
+        return SlotMath.depositFor(price_, tax, minDepositSeconds);
     }
 
     /**

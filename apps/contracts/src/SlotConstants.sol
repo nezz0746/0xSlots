@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotMath} from "./SlotMath.sol";
+
 /**
  * @title SlotConstants
  * @notice The protocol's fixed numbers, readable on-chain.
@@ -32,8 +34,8 @@ abstract contract SlotConstants {
     //         that same product.
     uint256 public constant MAX_TAX_BPS = 10_000;
 
-    uint256 public constant BASIS_POINTS = 10_000;
-    uint256 public constant MONTH = 30 days;
+    uint256 public constant BASIS_POINTS = SlotMath.BASIS_POINTS;
+    uint256 public constant MONTH = SlotMath.MONTH;
 
     // Gas handed to a hook's `after` callbacks.
     // Bounded because these run inside `buy`, `sell`, `release` and
