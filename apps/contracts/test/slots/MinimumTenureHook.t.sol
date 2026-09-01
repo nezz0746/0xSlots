@@ -8,7 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot, SlotInit} from "../../src/slots/Slot.sol";
 import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {SlotOrders} from "../../src/slots/SlotOrders.sol";
+import {SlotOrders, SellOrder} from "../../src/slots/SlotOrders.sol";
 import {MinimumTenureHook} from "../../src/slots/hooks/MinimumTenureHook.sol";
 import "../../src/slots/SlotErrors.sol";
 
@@ -167,7 +167,7 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(s), type(uint256).max);
 
         uint256 dep = hook.requiredDeposit(70 ether, TAX) + 5 ether;
-        SlotOrders.SellOrder memory o = SlotOrders.SellOrder({
+        SellOrder memory o = SellOrder({
             slot: address(s), buyer: bob, price: 70 ether, deposit: dep,
             nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
         });
@@ -187,7 +187,7 @@ contract MinimumTenureHookTest is Test {
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
 
-        SlotOrders.SellOrder memory o = SlotOrders.SellOrder({
+        SellOrder memory o = SellOrder({
             slot: address(s), buyer: bob, price: 70 ether, deposit: 0,
             nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
         });

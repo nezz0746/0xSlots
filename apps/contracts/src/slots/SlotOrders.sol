@@ -25,15 +25,21 @@ import "./SlotErrors.sol";
  *      ERC-1271. Requiring an EOA signature would quietly exclude every Safe
  *      and every 4337 account.
  */
+/// @notice One buyer's standing terms for one slot.
+/// @dev File-level rather than nested in `SlotOrders` so periphery can name the
+///      type without inheriting the core. An order book has to speak this
+///      struct; making it reach through the implementation to do so would pull
+///      storage and accounting into every contract that merely quotes a bid.
+struct SellOrder {
+    address slot;
+    address buyer;
+    uint256 price;
+    uint256 deposit;
+    uint256 nonce;
+    uint64 deadline;
+}
+
 abstract contract SlotOrders is SlotAccounting {
-    struct SellOrder {
-        address slot;
-        address buyer;
-        uint256 price;
-        uint256 deposit;
-        uint256 nonce;
-        uint64 deadline;
-    }
 
     bytes32 internal constant SELL_ORDER_TYPEHASH =
         keccak256(

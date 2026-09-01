@@ -10,3 +10,6 @@ export { minimumTenureHookFactoryAbi } from "./minimumTenureHookFactory";
 // policy and utility roles, and per-dimension cancels.
 export { slotCollectiveAbi } from "./slotCollective";
 export { slotCollectiveFactoryAbi } from "./slotCollectiveFactory";
+// The on-chain order book. A signed order is how a sale settles; this is
+// how a bid is DISCOVERED — the count, the list, and the best to accept.
+export { offerBookAbi } from "./offerBook";

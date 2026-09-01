@@ -8,7 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot, SlotInit} from "../../src/slots/Slot.sol";
 import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {SlotOrders} from "../../src/slots/SlotOrders.sol";
+import {SlotOrders, SellOrder} from "../../src/slots/SlotOrders.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../../src/slots/ISlotHook.sol";
 import {CompositeHook} from "../../src/slots/hooks/CompositeHook.sol";
 import "../../src/slots/SlotErrors.sol";
@@ -289,10 +289,10 @@ contract SlotsTest is Test {
     function _order(Slot s, address buyer, uint256 p, uint256 d)
         internal
         view
-        returns (SlotOrders.SellOrder memory)
+        returns (SellOrder memory)
     {
         return
-            SlotOrders.SellOrder({
+            SellOrder({
                 slot: address(s),
                 buyer: buyer,
                 price: p,
@@ -302,7 +302,7 @@ contract SlotsTest is Test {
             });
     }
 
-    function _sign(Slot s, SlotOrders.SellOrder memory o, uint256 key)
+    function _sign(Slot s, SellOrder memory o, uint256 key)
         internal
         view
         returns (bytes memory)
@@ -318,7 +318,7 @@ contract SlotsTest is Test {
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
 
-        SlotOrders.SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
+        SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
         bytes memory sig = _sign(s, o, bobKey);
 
         vm.prank(alice);
@@ -339,10 +339,10 @@ contract SlotsTest is Test {
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
 
-        SlotOrders.SellOrder memory intended = _order(s, bob, 70 ether, 10 ether);
+        SellOrder memory intended = _order(s, bob, 70 ether, 10 ether);
         bytes memory sig = _sign(s, intended, bobKey);
 
-        SlotOrders.SellOrder memory greedy = SlotOrders.SellOrder({
+        SellOrder memory greedy = SellOrder({
             slot: intended.slot,
             buyer: intended.buyer,
             price: 80 ether,
@@ -362,7 +362,7 @@ contract SlotsTest is Test {
 
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
-        SlotOrders.SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
+        SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
         bytes memory sig = _sign(s, o, bobKey);
 
         vm.prank(alice);
@@ -379,7 +379,7 @@ contract SlotsTest is Test {
 
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
-        SlotOrders.SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
+        SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
         bytes memory sig = _sign(s, o, bobKey);
 
         vm.prank(bob);
