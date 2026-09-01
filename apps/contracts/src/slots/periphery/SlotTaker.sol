@@ -33,14 +33,27 @@ import {Slot} from "../Slot.sol";
  *      call, and a slot it fails to seat reverts the whole transaction.
  */
 contract SlotTaker {
-    error NothingToRefund();
+    /// @notice This slot is an ERC-20 slot; use the slot's own `multicall`.
+    /// @dev `Slot.buy` pulls from `msg.sender`, which here is this contract,
+    ///      and it holds nothing and grants no allowance. Rather than let the
+    ///      call fail deep inside a transfer, say so at the door — and say
+    ///      where to go instead, because the ERC-20 path genuinely does exist
+    ///      and needs no periphery at all.
+    error UseMulticallForErc20();
 
     /**
      * @notice Liquidate `slot` and buy it in the same transaction.
      *
-     * @param maxPayment Passed through to `buy`. Zero disables the ceiling —
-     *        pass a real one on an ERC-20 slot, where nothing else bounds what
-     *        the sitting price can be raised to before this lands.
+     * @dev NATIVE SLOTS ONLY. An ERC-20 slot needs no periphery: the slot's
+     *      inherited `multicall` already composes `liquidate()` and `buy()`,
+     *      and the allowance goes to the slot where it belongs. This contract
+     *      exists solely because OZ's `Multicall` is non-payable, so the same
+     *      composition cannot carry ETH.
+     *
+     * @param maxPayment Passed through to `buy`. Zero disables the ceiling.
+     *        On a native slot `buy`'s exact-`msg.value` check already bounds
+     *        the payment, so the ceiling matters less here than on the ERC-20
+     *        path — where it is the only bound there is.
      */
     function liquidateAndTake(
         Slot slot,
@@ -49,6 +62,9 @@ contract SlotTaker {
         uint256 selfAssessedPrice,
         uint256 maxPayment
     ) external payable {
+        if (address(slot.currency()) != address(0)) {
+            revert UseMulticallForErc20();
+        }
         slot.liquidate();
         slot.buy{value: msg.value}(
             account,
@@ -65,6 +81,9 @@ contract SlotTaker {
     ///      non-zero until the call lands, so a client reasoning by analogy
     ///      with `buy` overpays: reverting on a native slot, and quietly
     ///      pulling the surplus on an ERC-20 one.
+    /// @dev Currency-agnostic, unlike `liquidateAndTake` — the arithmetic is
+    ///      the same either way, and a client on the ERC-20 path still needs
+    ///      the number before it builds its `multicall`.
     function quote(
         Slot slot,
         address account,

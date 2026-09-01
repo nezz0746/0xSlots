@@ -13,7 +13,11 @@ import { Input } from "@/components/ui/input";
 import { PriceInput } from "@/components/ui/price-input";
 import { useChain } from "@/context/chain";
 import type { CurrencyMeta } from "@/hooks/slots/use-slots";
-import { useMinDepositForBuy, useTakeQuote } from "@/hooks/slots/use-slots";
+import {
+  useArrears,
+  useMinDepositForBuy,
+  useTakeQuote,
+} from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { useCurrencyBalance } from "@/hooks/use-currency-balance";
 import { useSlotBounds } from "@/hooks/use-slot-bounds";
@@ -251,9 +255,11 @@ export function BuySection({
   // first — they are in the quote, and they are not part of what the occupant
   // is being paid.
   const quotedPurchase =
-    quote === undefined ? ZERO : quote - deposit - debt < ZERO
+    quote === undefined
       ? ZERO
-      : quote - deposit - debt;
+      : quote - deposit - debt < ZERO
+        ? ZERO
+        : quote - deposit - debt;
   // An offer pays what YOU named; a purchase pays what the occupant named.
   const purchase = isOffer ? price : quotedPurchase;
   const total = isOffer ? price + deposit + debt : (quote ?? ZERO);
@@ -456,8 +462,8 @@ export function BuySection({
                   Number(state.taxPercentage),
                 )}/mo — the queued rate is not binding yet`
               : noMinimum
-              ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."
-              : undefined
+                ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."
+                : undefined
         }
       />
 

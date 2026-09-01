@@ -7,6 +7,7 @@ import { type Address, zeroAddress } from "viem";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
+import { useChainTimeSkew } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { formatBps, truncateAddress } from "@/utils";
 import { Panel } from "./panel";
@@ -193,10 +194,26 @@ export function PendingUpdatesPanel({
   bare?: boolean;
 }) {
   const { chainId } = useChain();
+  /**
+   * Both timestamps here are the CHAIN'S, so both must be measured against the
+   * chain's clock.
+   *
+   * `proposedAt` is a `block.timestamp` and `TERMS_DELAY` is counted in chain
+   * seconds. Subtracting the browser's `Date.now()` from either answers a
+   * different question, and on a warped local chain — eight days ahead in the
+   * local runbook — "applies in 9d" is nine times the real wait. The skew is
+   * measured from a block header rather than assumed; see `useChainTimeSkew`.
+   *
+   * Read BEFORE the early return below, because it is a hook and the return is
+   * conditional.
+   */
+  const skew = useChainTimeSkew();
+
   const changes = pendingChanges(state, chainId);
   if (changes.length === 0) return null;
 
-  const ago = queuedAgo(state.pending.proposedAt, nowSeconds);
+  const chainNow = nowSeconds + skew;
+  const ago = queuedAgo(state.pending.proposedAt, chainNow);
   const canCancel = viewer === "manager" && !!actions;
   /**
    * Straight from `pendingApplies()`, not inferred from `proposedAt` and this
@@ -226,7 +243,7 @@ export function PendingUpdatesPanel({
           // Tuesday" implies a timer, "applies at the next occupancy change"
           // implies the next buyer gets it.
           <p className="text-[11px] font-medium leading-snug">
-            Applies after {ripeAt(appliesAt)} ({ripensIn(appliesAt, nowSeconds)}
+            Applies after {ripeAt(appliesAt)} ({ripensIn(appliesAt, chainNow)}
             ), at the next occupancy change.
           </p>
         )}

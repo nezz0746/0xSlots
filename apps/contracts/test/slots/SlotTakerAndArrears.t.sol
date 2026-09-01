@@ -179,4 +179,28 @@ contract SlotTakerAndArrearsTest is Test {
         s.buy(keeper, dep, 1e18, 0);
         assertEq(s.occupant(), keeper);
     }
+
+    /// @notice The taker refuses an ERC-20 slot at the door, and names the
+    ///         path that does work — rather than failing deep inside a
+    ///         transfer for a reason the caller has to reverse-engineer.
+    function test_TheTakerCannotServeAnErc20Slot() public {
+        Slot s = _slot(address(token));
+        uint256 dep = _dep(0.01e18);
+        token.mint(defaulter, 1e18);
+        vm.startPrank(defaulter);
+        token.approve(address(s), type(uint256).max);
+        s.buy(defaulter, dep, 0.01e18, 0);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 2 hours);
+        assertTrue(s.isInsolvent());
+
+        token.mint(keeper, 1e18);
+        vm.startPrank(keeper);
+        token.approve(address(taker), type(uint256).max);
+        token.approve(address(s), type(uint256).max);
+        vm.expectRevert(SlotTaker.UseMulticallForErc20.selector);
+        taker.liquidateAndTake(s, keeper, dep, 0.01e18, 0);
+        vm.stopPrank();
+    }
 }

@@ -1,6 +1,4 @@
-// Generated from apps/contracts/src/slots/Slot.sol. Copied from
-// packages/contracts/src/abis/slots/slot.ts — kept here so the indexer's
-// types do not depend on that package having been built.
+// Copied from packages/contracts/src/abis/slots/slot.ts. Do not edit.
 export const SlotAbi = [
     {
       "type": "constructor",
@@ -10,6 +8,25 @@ export const SlotAbi = [
     {
       "type": "receive",
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "arrearsOf",
+      "inputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -27,6 +44,11 @@ export const SlotAbi = [
         },
         {
           "name": "selfAssessedPrice",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "maxPayment",
           "type": "uint256",
           "internalType": "uint256"
         }
@@ -314,29 +336,6 @@ export const SlotAbi = [
     },
     {
       "type": "function",
-      "name": "liquidateAndTake",
-      "inputs": [
-        {
-          "name": "account",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "depositAmount",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "selfAssessedPrice",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [],
-      "stateMutability": "payable"
-    },
-    {
-      "type": "function",
       "name": "manager",
       "inputs": [],
       "outputs": [
@@ -529,6 +528,19 @@ export const SlotAbi = [
     },
     {
       "type": "function",
+      "name": "pendingApplies",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "price",
       "inputs": [],
       "outputs": [
@@ -573,24 +585,10 @@ export const SlotAbi = [
       "name": "quoteBuy",
       "inputs": [
         {
-          "name": "depositAmount",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "view"
-    },
-    {
-      "type": "function",
-      "name": "quoteLiquidateAndTake",
-      "inputs": [
+          "name": "account",
+          "type": "address",
+          "internalType": "address"
+        },
         {
           "name": "depositAmount",
           "type": "uint256",
@@ -659,7 +657,7 @@ export const SlotAbi = [
         {
           "name": "order",
           "type": "tuple",
-          "internalType": "struct SlotOrders.SellOrder",
+          "internalType": "struct SellOrder",
           "components": [
             {
               "name": "slot",
@@ -709,7 +707,7 @@ export const SlotAbi = [
         {
           "name": "order",
           "type": "tuple",
-          "internalType": "struct SlotOrders.SellOrder",
+          "internalType": "struct SellOrder",
           "components": [
             {
               "name": "slot",
@@ -970,6 +968,19 @@ export const SlotAbi = [
           "type": "bytes4",
           "indexed": false,
           "internalType": "bytes4"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "HookDetached",
+      "inputs": [
+        {
+          "name": "hook",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
         }
       ],
       "anonymous": false
@@ -1430,6 +1441,11 @@ export const SlotAbi = [
     {
       "type": "error",
       "name": "OrderWrongSlot",
+      "inputs": []
+    },
+    {
+      "type": "error",
+      "name": "PaymentAboveMax",
       "inputs": []
     },
     {

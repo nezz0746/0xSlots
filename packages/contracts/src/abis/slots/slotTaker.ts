@@ -64,7 +64,7 @@ export const slotTakerAbi = [
     },
     {
       "type": "error",
-      "name": "NothingToRefund",
+      "name": "UseMulticallForErc20",
       "inputs": []
     }
   ] as const;
