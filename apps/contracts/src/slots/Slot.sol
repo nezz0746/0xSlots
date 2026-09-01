@@ -3,6 +3,9 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SellOrder} from "./SlotOrders.sol";
+import {SlotViews} from "./SlotViews.sol";
+import {SlotOccupancy} from "./SlotOccupancy.sol";
+import {SlotEscrow} from "./SlotEscrow.sol";
 import {SlotAdmin} from "./SlotAdmin.sol";
 import {ISlotHook, SlotContext} from "./ISlotHook.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -43,7 +46,7 @@ struct SlotInit {
  *      A slot wanting several behaviours points at a composite that fans out,
  *      which keeps the loop in userland and out of the eviction path.
  */
-contract Slot is SlotAdmin {
+contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
