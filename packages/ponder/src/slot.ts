@@ -1,75 +1,67 @@
-import type { Virtual } from "ponder";
 import { type Context, ponder } from "ponder:registry";
 import {
   account,
   accountSlot,
   boughtEvent,
+  cancelledOrder,
+  claimedEvent,
+  creditedEvent,
   depositedEvent,
+  hook,
+  hookCallFailedEvent,
   liquidatedEvent,
-  module,
-  moduleFeePaidEvent,
-  moduleUpdateProposedEvent,
   operatorSetEvent,
-  pendingUpdateCancelledEvent,
-  pendingUpdateEvent,
-  policyUpdateAppliedEvent,
-  policyUpdateProposedEvent,
-  priceUpdatedEvent,
-  refundClaimedEvent,
-  refundCreditedEvent,
+  orderCancelledEvent,
+  priceSetEvent,
   releasedEvent,
   settledEvent,
   slot,
+  slotCredit,
   slotOperator,
-  slotRefund,
+  soldEvent,
   taxCollectedEvent,
   taxPaidEvent,
-  taxUpdateProposedEvent,
+  termsAppliedEvent,
+  termsProposedEvent,
   withdrawnEvent,
-  slotModule,
 } from "ponder:schema";
 import type { Hex } from "viem";
-import type ponderConfig from "../ponder.config";
-import type * as ponderSchema from "../ponder.schema";
 import {
   bumpAccountChain,
+  bumpHookSlotCount,
   evtId,
   getOrCreateAccount,
   getOrCreateAccountSlot,
-  getOrCreateModule,
+  hookFlagColumns,
   lower,
+  NO_HOOK_FLAGS,
+  readSlotTerms,
   ZERO_ADDR,
 } from "./helpers";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DUAL-ERA REGISTRATION
+// ONE REGISTRATION PER EVENT
 //
-// Slots born under either `SlotDeployed` signature run the same beacon
-// implementation, so both emit the identical event set — only the factory
-// event that birthed them differs, and that forced two `factory()` sources
-// (see ponder.config.ts). Every handler therefore has to be registered twice
-// or the 301 pre-occupancy-layer slots index nothing at all.
+// The previous indexer registered every handler TWICE, because two live
+// `SlotDeployed` signatures forced two `factory()` sources. There is now one
+// creation function and one `SlotCreated`, so there is one `Slot` source and
+// one `ponder.on` per event. Do not reintroduce a second one.
 //
-// The two sources share one ABI, so their handler argument types are
-// structurally identical; `Slot:` is used as the type witness and the cast is
-// confined to the registration boundary, leaving handler bodies fully typed.
+// ── The two ordering facts every handler below depends on ──────────────────
+//
+//   1. EVERY entry point settles FIRST. `Settled` — and `TaxPaid` when money
+//      actually moved — precede the event that names the action, and they are
+//      attributed to the occupant on record at that moment. So a buy charges
+//      the OUTGOING occupant for their own tenure, and the handlers here see
+//      the pre-transition slot row when they run. That is correct and load
+//      bearing: `Bought` is what moves occupancy, nothing before it.
+//
+//   2. `sell` emits `Sold` and then `Bought`, deliberately — the transition IS
+//      a buy and every consumer already reads it that way. `Bought` is
+//      therefore the ONLY occupancy handler; `Sold` records the seller's side
+//      and touches no occupancy state. Doing otherwise double-counts every
+//      negotiated sale.
 // ═══════════════════════════════════════════════════════════════════════════
-
-type EventName = Virtual.EventNames<typeof ponderConfig>;
-
-type SlotArgs<name extends string> = Virtual.IndexingFunctionArgs<
-  typeof ponderConfig,
-  typeof ponderSchema,
-  `Slot:${name}` & EventName
->;
-
-function onSlot<name extends string>(
-  eventName: name,
-  handler: (args: SlotArgs<name>) => Promise<void>,
-) {
-  ponder.on(`Slot:${eventName}` as EventName, handler as never);
-  ponder.on(`SlotLegacy:${eventName}` as EventName, handler as never);
-}
 
 async function loadSlot(context: Context, addr: Hex) {
   const row = await context.db.find(slot, { id: lower(addr) });
@@ -78,8 +70,10 @@ async function loadSlot(context: Context, addr: Hex) {
 }
 
 /**
- * @param recipient The slot's recipient, so their `occupiedAsRecipient` can
- *        fall with the occupancy. Passed in rather than re-read: every caller
+ * End a tenure: hold time, counters, and the recipient's occupied count.
+ *
+ * @param recipient The slot's recipient, so their `occupiedAsRecipient` falls
+ *        with the occupancy. Passed in rather than re-read; every caller
  *        already holds the slot row.
  */
 async function clearOccupant(
@@ -92,8 +86,6 @@ async function clearOccupant(
   const prev = lower(prevOccupant);
   if (prev === ZERO_ADDR) return;
 
-  // The slot just became vacant, so its recipient holds one fewer occupied
-  // slot. Tracked here rather than counted at read time, which capped at 500.
   await bumpAccountChain(context, recipient, context.chain.id, {
     occupiedAsRecipient: -1,
   });
@@ -132,10 +124,11 @@ const VACANT = {
   occupiedSince: 0n,
   price: 0n,
   deposit: 0n,
-  collectedTax: 0n,
 } as const;
 
-onSlot("Bought", async ({ event, context }) => {
+// ─── occupancy ─────────────────────────────────────────────────────────────
+
+ponder.on("Slot:Bought", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
@@ -150,7 +143,13 @@ onSlot("Bought", async ({ event, context }) => {
     );
   }
 
-  const buyer = await getOrCreateAccount(context, event.args.buyer, true);
+  // `buy(account, …)` seats one address while another pays, so the buyer is
+  // not reliably `tx.from` — but when it is, that is the DELEGATED signal.
+  const buyer = await getOrCreateAccount(
+    context,
+    event.args.buyer,
+    lower(event.args.buyer) === lower(event.transaction.from),
+  );
   await context.db
     .update(account, { id: buyer.id })
     .set((row) => ({ occupiedCount: row.occupiedCount + 1 }));
@@ -158,9 +157,9 @@ onSlot("Bought", async ({ event, context }) => {
     occupiedCount: 1,
   });
   // …and the RECIPIENT now has one more of their slots occupied. A different
-  // account and a different column from the line above: the buyer occupies, the
-  // recipient collects. `clearOccupant` above already decremented this if the
-  // slot was being taken from someone, so a hand-over nets to zero.
+  // account and a different column: the buyer occupies, the recipient collects.
+  // `clearOccupant` above already decremented it on a hand-over, so that nets
+  // to zero.
   await bumpAccountChain(context, s.recipient, chainId, {
     occupiedAsRecipient: 1,
   });
@@ -184,10 +183,19 @@ onSlot("Bought", async ({ event, context }) => {
     occupantAccount: buyer.id,
     isOccupied: true,
     occupiedSince: event.block.timestamp,
-    price: event.args.selfAssessedPrice,
+    price: event.args.price,
     deposit: event.args.deposit,
     updatedAt: event.block.timestamp,
   });
+
+  // `sell` emits `Sold` immediately before this `Bought`, in the same call,
+  // so the preceding log index is an exact test for which path we are on. A
+  // primary-key lookup rather than a scan.
+  const viaSell =
+    event.log.logIndex > 0 &&
+    (await context.db.find(soldEvent, {
+      id: evtId(event.transaction.hash, event.log.logIndex - 1),
+    })) != null;
 
   await context.db.insert(boughtEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -195,36 +203,69 @@ onSlot("Bought", async ({ event, context }) => {
     slot: slotAddr,
     currency: s.currency,
     buyer: lower(event.args.buyer),
-    previousOccupant: lower(event.args.previousOccupant),
+    from: lower(event.args.from),
     price: event.args.price,
     deposit: event.args.deposit,
-    selfAssessedPrice: event.args.selfAssessedPrice,
+    paid: event.args.paid,
+    viaSell,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-onSlot("Released", async ({ event, context }) => {
-  const chainId = context.chain.id;
+/**
+ * The seller's side of a negotiated sale.
+ *
+ * Records only. The `Bought` emitted one log later does the occupancy work —
+ * see the ordering note at the top of this file.
+ */
+ponder.on("Slot:Sold", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  if (s.occupant) {
-    await clearOccupant(
-      context,
-      slotAddr,
-      s.occupant,
-      event.block.timestamp,
-      s.recipient,
-    );
-  }
+
+  await getOrCreateAccount(
+    context,
+    event.args.seller,
+    lower(event.args.seller) === lower(event.transaction.from),
+  );
+  await getOrCreateAccount(context, event.args.buyer);
+
+  await context.db.insert(soldEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    slot: slotAddr,
+    currency: s.currency,
+    seller: lower(event.args.seller),
+    buyer: lower(event.args.buyer),
+    price: event.args.price,
+    deposit: event.args.deposit,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+ponder.on("Slot:Released", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const s = await loadSlot(context, slotAddr);
+
+  await clearOccupant(
+    context,
+    slotAddr,
+    event.args.occupant,
+    event.block.timestamp,
+    s.recipient,
+  );
+
   await context.db.update(slot, { id: slotAddr }).set({
     ...VACANT,
     updatedAt: event.block.timestamp,
   });
+
   await context.db.insert(releasedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
+    chainId: context.chain.id,
     slot: slotAddr,
     currency: s.currency,
     occupant: lower(event.args.occupant),
@@ -235,50 +276,73 @@ onSlot("Released", async ({ event, context }) => {
   });
 });
 
-onSlot("Liquidated", async ({ event, context }) => {
-  const chainId = context.chain.id;
+/**
+ * Eviction for insolvency. No bounty field, because there is no bounty: the
+ * reward is that the slot is now vacant and the liquidator can take it in the
+ * same `multicall`.
+ */
+ponder.on("Slot:Liquidated", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  if (s.occupant) {
-    await clearOccupant(
-      context,
-      slotAddr,
-      s.occupant,
-      event.block.timestamp,
-      s.recipient,
-    );
-  }
+
+  // Read before `clearOccupant` wipes it. The slot row still carries the
+  // tenure being ended, because `Liquidated` is emitted after `_vacate()` on
+  // chain but nothing has told this indexer yet.
+  const heldFor =
+    s.occupiedSince > 0n ? event.block.timestamp - s.occupiedSince : 0n;
+
+  await clearOccupant(
+    context,
+    slotAddr,
+    event.args.occupant,
+    event.block.timestamp,
+    s.recipient,
+  );
+  await getOrCreateAccount(
+    context,
+    event.args.by,
+    lower(event.args.by) === lower(event.transaction.from),
+  );
+
   await context.db.update(slot, { id: slotAddr }).set({
     ...VACANT,
     updatedAt: event.block.timestamp,
   });
+
   await context.db.insert(liquidatedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
+    chainId: context.chain.id,
     slot: slotAddr,
     currency: s.currency,
-    liquidator: lower(event.args.liquidator),
+    by: lower(event.args.by),
     occupant: lower(event.args.occupant),
-    bounty: event.args.bounty,
+    heldFor,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-onSlot("PriceUpdated", async ({ event, context }) => {
-  const chainId = context.chain.id;
+// ─── holding ───────────────────────────────────────────────────────────────
+
+ponder.on("Slot:PriceSet", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
+
   await context.db.update(slot, { id: slotAddr }).set({
     price: event.args.newPrice,
     updatedAt: event.block.timestamp,
   });
-  await context.db.insert(priceUpdatedEvent).values({
+
+  await context.db.insert(priceSetEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
+    chainId: context.chain.id,
     slot: slotAddr,
     currency: s.currency,
+    by: lower(event.args.by),
+    // The caller may be an operator rather than the occupant, and it is the
+    // occupant who pays the tax on the new price. Both are recorded.
+    occupant: s.occupant ?? ZERO_ADDR,
     oldPrice: event.args.oldPrice,
     newPrice: event.args.newPrice,
     timestamp: event.block.timestamp,
@@ -287,100 +351,131 @@ onSlot("PriceUpdated", async ({ event, context }) => {
   });
 });
 
-onSlot("Deposited", async ({ event, context }) => {
+/** Anyone may fund a slot, so `by` is not necessarily the occupant. */
+ponder.on("Slot:Deposited", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    deposit: row.deposit + event.args.amount,
+
+  await context.db.update(slot, { id: slotAddr }).set({
+    deposit: event.args.total,
     updatedAt: event.block.timestamp,
-  }));
+  });
+
+  await getOrCreateAccount(
+    context,
+    event.args.by,
+    lower(event.args.by) === lower(event.transaction.from),
+  );
+  await getOrCreateAccountSlot(
+    context,
+    event.args.by,
+    event.log.address,
+    event.block.timestamp,
+    chainId,
+  );
+  await context.db
+    .update(accountSlot, { account: lower(event.args.by), slot: slotAddr })
+    .set({ lastInteractedAt: event.block.timestamp });
+
   await context.db.insert(depositedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
     currency: s.currency,
-    depositor: lower(event.args.depositor),
+    by: lower(event.args.by),
     amount: event.args.amount,
+    total: event.args.total,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-onSlot("Withdrawn", async ({ event, context }) => {
-  const chainId = context.chain.id;
+ponder.on("Slot:Withdrawn", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    deposit: row.deposit - event.args.amount,
+
+  await context.db.update(slot, { id: slotAddr }).set({
+    deposit: event.args.left,
     updatedAt: event.block.timestamp,
-  }));
+  });
+
   await context.db.insert(withdrawnEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
+    chainId: context.chain.id,
     slot: slotAddr,
     currency: s.currency,
     occupant: lower(event.args.occupant),
     amount: event.args.amount,
+    left: event.args.left,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-/**
- * Settlement, balance leg only.
- *
- * Per-address attribution deliberately does NOT happen here even though
- * `Settled` carries `taxPaid`: this event does not name the payer, so crediting
- * it would have to assume the current occupant is the one who owed. `TaxPaid`
- * fires from the same `_settle()` with the payer explicit — that is where the
- * ledger is written. Doing both double-counts.
- */
-onSlot("Settled", async ({ event, context }) => {
-  const chainId = context.chain.id;
-  const slotAddr = lower(event.log.address);
-  const s = await loadSlot(context, slotAddr);
-  await context.db.update(slot, { id: slotAddr }).set({
-    deposit: event.args.depositRemaining,
-    updatedAt: event.block.timestamp,
-  });
-
-  await context.db.insert(settledEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
-    slot: slotAddr,
-    currency: s.currency,
-    taxOwed: event.args.taxOwed,
-    taxPaid: event.args.taxPaid,
-    depositRemaining: event.args.depositRemaining,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
+// ─── money ─────────────────────────────────────────────────────────────────
 
 /**
- * Settlement, attribution leg. Fires only when `paid > 0`.
+ * Tax realised out of the deposit.
  *
- * The payer comes from the event, never from current occupancy: `_settle()`
- * runs before a buy reassigns the slot, so the charge belongs to the OUTGOING
- * occupant. `matchedOccupant` records whether the two agreed, as a tripwire on
- * that ordering.
+ * Fires from every entry point and even when nothing moved, so this is by far
+ * the highest-frequency table. `depositLeft` is authoritative for the slot's
+ * escrow — no arithmetic here reconstructs it.
+ *
+ * `collectedTax` is accumulated HERE and not from `TaxPaid`, which is emitted
+ * only when `paid > 0`. Doing both would double it.
  */
-onSlot("TaxPaid", async ({ event, context }) => {
-  const chainId = context.chain.id;
+ponder.on("Slot:Settled", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const payer = lower(event.args.occupant);
 
   await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    taxPaidTotal: row.taxPaidTotal + event.args.taxPaid,
+    deposit: event.args.depositLeft,
+    collectedTax: row.collectedTax + event.args.paid,
     updatedAt: event.block.timestamp,
   }));
 
+  await context.db.insert(settledEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    slot: slotAddr,
+    currency: s.currency,
+    owed: event.args.owed,
+    paid: event.args.paid,
+    depositLeft: event.args.depositLeft,
+    insolvent: event.args.owed > event.args.paid,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+/**
+ * Tax attributed to the occupant who owed it.
+ *
+ * `paid` is the number that means money moved; `owed` can exceed it when the
+ * deposit ran dry. Anything reconstructing contributions from price × time
+ * over-credits.
+ */
+ponder.on("Slot:TaxPaid", async ({ event, context }) => {
+  const chainId = context.chain.id;
+  const slotAddr = lower(event.log.address);
+  const payer = lower(event.args.payer);
+
+  await context.db.update(slot, { id: slotAddr }).set((row) => ({
+    taxPaidTotal: row.taxPaidTotal + event.args.paid,
+    updatedAt: event.block.timestamp,
+  }));
+
+  const s = await loadSlot(context, slotAddr);
+
   await getOrCreateAccount(context, payer);
+  await context.db
+    .update(account, { id: payer })
+    .set((row) => ({ taxPaidTotal: row.taxPaidTotal + event.args.paid }));
+
   await getOrCreateAccountSlot(
     context,
     payer,
@@ -391,7 +486,7 @@ onSlot("TaxPaid", async ({ event, context }) => {
   await context.db
     .update(accountSlot, { account: payer, slot: slotAddr })
     .set((row) => ({
-      taxPaid: row.taxPaid + event.args.taxPaid,
+      taxPaid: row.taxPaid + event.args.paid,
       lastInteractedAt: event.block.timestamp,
     }));
 
@@ -400,28 +495,31 @@ onSlot("TaxPaid", async ({ event, context }) => {
     chainId,
     slot: slotAddr,
     currency: s.currency,
-    occupant: payer,
-    taxOwed: event.args.taxOwed,
-    taxPaid: event.args.taxPaid,
-    matchedOccupant: s.occupant === payer,
+    payer,
+    owed: event.args.owed,
+    paid: event.args.paid,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-onSlot("TaxCollected", async ({ event, context }) => {
-  const chainId = context.chain.id;
+/** Accrued tax flushed to the recipient. Nothing is carved out of it. */
+ponder.on("Slot:TaxCollected", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
+
   await context.db.update(slot, { id: slotAddr }).set((row) => ({
     collectedTax: 0n,
     totalCollected: row.totalCollected + event.args.amount,
     updatedAt: event.block.timestamp,
   }));
+
+  await getOrCreateAccount(context, event.args.recipient);
+
   await context.db.insert(taxCollectedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
+    chainId: context.chain.id,
     slot: slotAddr,
     currency: s.currency,
     recipient: lower(event.args.recipient),
@@ -432,54 +530,15 @@ onSlot("TaxCollected", async ({ event, context }) => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// OPERATORS
-// ═══════════════════════════════════════════════════════════════════════════
-
-onSlot("OperatorSet", async ({ event, context }) => {
-  const chainId = context.chain.id;
-  const slotAddr = lower(event.log.address);
-  const occupant = lower(event.args.occupant);
-  const operator = lower(event.args.operator);
-
-  await context.db
-    .insert(slotOperator)
-    .values({
-      slot: slotAddr,
-      occupant,
-      operator,
-      chainId,
-      approved: event.args.approved,
-      updatedAt: event.block.timestamp,
-    })
-    .onConflictDoUpdate(() => ({
-      approved: event.args.approved,
-      updatedAt: event.block.timestamp,
-    }));
-
-  await context.db.insert(operatorSetEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
-    slot: slotAddr,
-    occupant,
-    operator,
-    approved: event.args.approved,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// REFUND CREDITS
-//
-// `_payOrCredit` credits instead of transferring when the push fails, which is
-// what keeps liquidation unconditional — an occupant the currency refuses to
-// pay must not be able to veto their own forced sale. A non-zero `balance`
-// therefore means the slot owes someone money.
-// ═══════════════════════════════════════════════════════════════════════════
-
-onSlot("RefundCredited", async ({ event, context }) => {
+/**
+ * A payout that could not be pushed.
+ *
+ * Rare by construction — every payout tries a direct transfer first — and each
+ * occurrence is a counterparty the slot cannot pay: a reverting `receive()`, a
+ * blocklisting currency, or a recipient whose fallback costs more than the 30k
+ * stipend. Worth surfacing loudly, because nothing on chain will.
+ */
+ponder.on("Slot:Credited", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
@@ -487,8 +546,13 @@ onSlot("RefundCredited", async ({ event, context }) => {
 
   await getOrCreateAccount(context, acct);
 
+  await context.db.update(slot, { id: slotAddr }).set((row) => ({
+    creditedTotal: row.creditedTotal + event.args.amount,
+    updatedAt: event.block.timestamp,
+  }));
+
   await context.db
-    .insert(slotRefund)
+    .insert(slotCredit)
     .values({
       slot: slotAddr,
       account: acct,
@@ -505,7 +569,7 @@ onSlot("RefundCredited", async ({ event, context }) => {
       updatedAt: event.block.timestamp,
     }));
 
-  await context.db.insert(refundCreditedEvent).values({
+  await context.db.insert(creditedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
@@ -518,7 +582,8 @@ onSlot("RefundCredited", async ({ event, context }) => {
   });
 });
 
-onSlot("RefundClaimed", async ({ event, context }) => {
+/** Anyone may claim on anyone's behalf; the funds always go to `account`. */
+ponder.on("Slot:Claimed", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
@@ -527,7 +592,7 @@ onSlot("RefundClaimed", async ({ event, context }) => {
   await getOrCreateAccount(context, acct);
 
   await context.db
-    .insert(slotRefund)
+    .insert(slotCredit)
     .values({
       slot: slotAddr,
       account: acct,
@@ -535,16 +600,20 @@ onSlot("RefundClaimed", async ({ event, context }) => {
       currency: s.currency,
       credited: 0n,
       claimed: event.args.amount,
-      balance: -event.args.amount,
+      balance: 0n,
       updatedAt: event.block.timestamp,
     })
     .onConflictDoUpdate((row) => ({
       claimed: row.claimed + event.args.amount,
-      balance: row.balance - event.args.amount,
+      // A claim always empties the balance — `claim` reads `withdrawableOf`
+      // and zeroes it — so this subtracts to zero rather than tracking a
+      // partial withdrawal that the contract does not offer.
+      balance:
+        row.balance > event.args.amount ? row.balance - event.args.amount : 0n,
       updatedAt: event.block.timestamp,
     }));
 
-  await context.db.insert(refundClaimedEvent).values({
+  await context.db.insert(claimedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
@@ -557,334 +626,257 @@ onSlot("RefundClaimed", async ({ event, context }) => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// LEGACY PENDING-UPDATE EVENTS
-//
-// Superseded by the per-kind UpdateProposed/Cancelled/Applied trio below, but
-// still emitted and still the only record for slots that transacted before the
-// refactor. Kept for historical continuity.
-// ═══════════════════════════════════════════════════════════════════════════
-
-onSlot("TaxUpdateProposed", async ({ event, context }) => {
-  await context.db.insert(taxUpdateProposedEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: lower(event.log.address),
-    newPercentage: event.args.newPercentage,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-onSlot("ModuleUpdateProposed", async ({ event, context }) => {
-  await context.db.insert(moduleUpdateProposedEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: lower(event.log.address),
-    newModule: lower(event.args.newUtility),
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-onSlot("PendingUpdateCancelled", async ({ event, context }) => {
-  await context.db.insert(pendingUpdateCancelledEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: lower(event.log.address),
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-onSlot("PendingUpdateApplied", async ({ event, context }) => {
-  const chainId = context.chain.id;
-  const slotAddr = lower(event.log.address);
-  const s = await loadSlot(context, slotAddr);
-  const newModule = lower(event.args.newUtility);
-  if (newModule === ZERO_ADDR) {
-    await context.db.update(slot, { id: slotAddr }).set({
-      taxPercentage: event.args.newTaxPercentage,
-      module: null,
-      updatedAt: event.block.timestamp,
-    });
-  } else {
-    await getOrCreateModule(context, newModule, s.factory, chainId);
-    await context.db.update(slot, { id: slotAddr }).set({
-      taxPercentage: event.args.newTaxPercentage,
-      module: newModule,
-      updatedAt: event.block.timestamp,
-    });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PER-KIND PENDING UPDATES
-//
-// A slot holds at most one pending update per dimension — tax, utility, policy
-// — and each can now be proposed, cancelled and applied on its own. These three
-// handlers maintain the live pending columns on `slot` and append to the log.
-//
-// The live values (`taxPercentage`, `module`, `occupancyPolicy`) are
-// deliberately NOT written here. `PendingUpdateApplied` and
-// `PolicyUpdateApplied` fire in the same transaction and already own that
-// write; these only clear what is no longer queued.
-// ═══════════════════════════════════════════════════════════════════════════
-
-const UPDATE_KIND = { TAX: 0, UTILITY: 1, POLICY: 2 } as const;
-
-/** The `bytes32` an update event carries, read back as an address. */
-function valueAsAddress(value: Hex): Hex {
-  return lower(`0x${value.slice(-40)}` as Hex);
-}
+// ─── delegation ────────────────────────────────────────────────────────────
 
 /**
- * The pending columns for one kind, set to `value` or cleared with `null`.
+ * Repricing rights.
  *
- * Every kind clears BOTH of its columns together, so a row can never carry a
- * proposed value with no timestamp or the reverse.
+ * Stored keyed by (slot, operator) with no occupant in the key, because that is
+ * what `isOperator` is: a slot-global mapping that `_vacate()` does not clear.
+ * `setBy` is the only record of who granted it — and the only way to notice
+ * that an approval outlived the tenure that made it.
  */
-function pendingColumns(
-  kind: number,
-  value: Hex | null,
-  proposedAt: bigint | null,
-) {
-  if (kind === UPDATE_KIND.TAX) {
-    return {
-      pendingTaxPercentage: value === null ? null : BigInt(value),
-      taxProposedAt: proposedAt,
-    };
-  }
-  if (kind === UPDATE_KIND.UTILITY) {
-    return {
-      pendingUtility: value === null ? null : valueAsAddress(value),
-      utilityProposedAt: proposedAt,
-    };
-  }
-  return {
-    pendingPolicy: value === null ? null : valueAsAddress(value),
-    policyProposedAt: proposedAt,
-  };
-}
-
-onSlot("UpdateProposed", async ({ event, context }) => {
-  const slotAddr = lower(event.log.address);
-  const kind = Number(event.args.kind);
-
-  await context.db.update(slot, { id: slotAddr }).set({
-    ...pendingColumns(kind, event.args.value, event.args.proposedAt),
-    updatedAt: event.block.timestamp,
-  });
-
-  await context.db.insert(pendingUpdateEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: slotAddr,
-    kind,
-    action: "proposed",
-    value: event.args.value,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-onSlot("UpdateCancelled", async ({ event, context }) => {
-  const slotAddr = lower(event.log.address);
-  const kind = Number(event.args.kind);
-
-  await context.db.update(slot, { id: slotAddr }).set({
-    ...pendingColumns(kind, null, null),
-    updatedAt: event.block.timestamp,
-  });
-
-  await context.db.insert(pendingUpdateEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: slotAddr,
-    kind,
-    action: "cancelled",
-    value: null,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-onSlot("UpdateApplied", async ({ event, context }) => {
-  const slotAddr = lower(event.log.address);
-  const kind = Number(event.args.kind);
-
-  await context.db.update(slot, { id: slotAddr }).set({
-    ...pendingColumns(kind, null, null),
-    updatedAt: event.block.timestamp,
-  });
-
-  await context.db.insert(pendingUpdateEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: slotAddr,
-    kind,
-    action: "applied",
-    value: event.args.value,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// OCCUPANCY POLICY
-// ═══════════════════════════════════════════════════════════════════════════
-
-onSlot("PolicyUpdateProposed", async ({ event, context }) => {
-  await context.db.insert(policyUpdateProposedEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: lower(event.log.address),
-    newPolicy: lower(event.args.newPolicy),
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-/** Owns the live `occupancyPolicy` write; `UpdateApplied` clears the queue. */
-onSlot("PolicyUpdateApplied", async ({ event, context }) => {
-  const slotAddr = lower(event.log.address);
-  const newPolicy = lower(event.args.newPolicy);
-
-  await context.db.update(slot, { id: slotAddr }).set({
-    occupancyPolicy: newPolicy === ZERO_ADDR ? null : newPolicy,
-    updatedAt: event.block.timestamp,
-  });
-
-  await context.db.insert(policyUpdateAppliedEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: slotAddr,
-    newPolicy,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-onSlot("LiquidationBountyUpdated", async ({ event, context }) => {
-  await context.db.update(slot, { id: lower(event.log.address) }).set({
-    liquidationBountyBps: event.args.newBps,
-    updatedAt: event.block.timestamp,
-  });
-});
-
-onSlot("ModuleFeePaid", async ({ event, context }) => {
+ponder.on("Slot:OperatorSet", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const moduleId = lower(event.args.utility);
+  const operator = lower(event.args.operator);
+  // `onlyOccupant`, so the caller is the occupant — taken from the transaction
+  // rather than the row so it stays right even if the row lags.
+  const setBy = s.occupant ?? lower(event.transaction.from);
 
-  const mod = await context.db.find(module, { id: moduleId });
-  if (mod) {
-    await context.db.update(module, { id: moduleId }).set((row) => ({
-      totalFeesCollected: row.totalFeesCollected + event.args.amount,
+  await getOrCreateAccount(context, operator);
+
+  await context.db
+    .insert(slotOperator)
+    .values({
+      slot: slotAddr,
+      operator,
+      chainId,
+      approved: event.args.allowed,
+      setBy,
+      updatedAt: event.block.timestamp,
+    })
+    .onConflictDoUpdate(() => ({
+      approved: event.args.allowed,
+      setBy,
+      updatedAt: event.block.timestamp,
     }));
-  }
 
-  await context.db.insert(moduleFeePaidEvent).values({
+  await context.db.insert(operatorSetEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
-    currency: s.currency,
-    module: moduleId,
-    amount: event.args.amount,
-    feeBps: event.args.feeBps,
+    occupant: setBy,
+    operator,
+    allowed: event.args.allowed,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// MODULE GALLERY
-//
-// A slot can carry several modules now. `slot.module` remains the legacy
-// single `utility` head and is untouched by these handlers — the head is still
-// the head, it simply is no longer the only one.
-//
-// The distinction these three handlers exist to preserve is queued vs
-// installed. `addModule` only queues; the install lands on the slot's next
-// occupancy transition, so an occupant never has modules added under them
-// mid-tenure. A consumer that cannot tell the two apart will show a module as
-// live when nothing is calling it yet.
-// ═══════════════════════════════════════════════════════════════════════════
+// ─── deferred terms ────────────────────────────────────────────────────────
 
-const attachmentId = (slotAddr: string, moduleAddr: string) =>
-  `${slotAddr}-${moduleAddr}`;
-
-onSlot("ModuleAddQueued", async ({ event, context }) => {
+/**
+ * Terms queued by the manager.
+ *
+ * The event carries BOTH values on every emission regardless of which
+ * dimension was touched, so `tax` / `hook_` are the only way to tell what was
+ * actually proposed. Each dimension is written independently — proposing a tax
+ * change does not clear a hook change already queued, and the contract's
+ * `Pending` struct behaves the same way.
+ */
+ponder.on("Slot:TermsProposed", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
-  const moduleAddr = lower(event.args.module);
-
-  // Ensure the module row exists so consumers can resolve a name for it even
-  // before it is ever installed. The slot knows its own factory, which is
-  // where verification lives.
   const s = await loadSlot(context, slotAddr);
-  await getOrCreateModule(context, moduleAddr, s.factory, context.chain.id);
+  const proposedHook = lower(event.args.hook);
 
-  await context.db
-    .insert(slotModule)
-    .values({
-      id: attachmentId(slotAddr, moduleAddr),
-      chainId: context.chain.id,
-      slot: slotAddr,
-      module: moduleAddr,
-      status: "queued",
-      queuedAt: event.block.timestamp,
-      installedAt: null,
-    })
-    // Re-queuing after a removal reuses the pair, so this is an upsert rather
-    // than an insert: the same module may be attached, detached and attached
-    // again over a slot's life.
-    .onConflictDoUpdate({
-      status: "queued",
-      queuedAt: event.block.timestamp,
-      installedAt: null,
-    });
+  await context.db.update(slot, { id: slotAddr }).set((row) => ({
+    pendingHasTax: event.args.tax || row.pendingHasTax,
+    pendingTaxPercentage: event.args.tax
+      ? event.args.taxPercentage
+      : row.pendingTaxPercentage,
+    pendingHasHook: event.args.hook_ || row.pendingHasHook,
+    // The zero address is a real proposed value — "detach the hook" — which is
+    // why `pendingHasHook` exists rather than testing this column for null.
+    pendingHook: event.args.hook_ ? proposedHook : row.pendingHook,
+    pendingProposedAt: event.block.timestamp,
+    updatedAt: event.block.timestamp,
+  }));
+
+  await context.db.insert(termsProposedEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    slot: slotAddr,
+    manager: s.manager ?? lower(event.transaction.from),
+    changeTax: event.args.tax,
+    changeHook: event.args.hook_,
+    taxPercentage: event.args.taxPercentage,
+    hook: proposedHook,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
 });
 
-onSlot("ModuleInstalled", async ({ event, context }) => {
+/**
+ * Queued terms landing at an occupancy transition.
+ *
+ * Reports the slot's FINAL values including the dimension that did not move,
+ * so what changed is computed by diffing against the row.
+ *
+ * The hook flag snapshot is re-read here rather than carried over: the contract
+ * calls `_readHookFlags` again at apply time precisely because the hook could
+ * have been upgraded since it was proposed, and the snapshot must describe the
+ * code that will actually run.
+ */
+ponder.on("Slot:TermsApplied", async ({ event, context }) => {
+  const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
-  const moduleAddr = lower(event.args.module);
+  const s = await loadSlot(context, slotAddr);
 
-  await context.db
-    .insert(slotModule)
-    .values({
-      id: attachmentId(slotAddr, moduleAddr),
-      chainId: context.chain.id,
-      slot: slotAddr,
-      module: moduleAddr,
-      status: "installed",
-      queuedAt: event.block.timestamp,
-      installedAt: event.block.timestamp,
-    })
-    .onConflictDoUpdate({
-      status: "installed",
-      installedAt: event.block.timestamp,
-    });
+  const nextHook = lower(event.args.hook);
+  const prevHook = s.hook;
+  const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
+  const taxChanged = s.taxPercentage !== event.args.taxPercentage;
+
+  let flags = NO_HOOK_FLAGS;
+  if (nextHook !== ZERO_ADDR) {
+    if (hookChanged) {
+      // A new hook: read the snapshot the slot just took.
+      const terms = await readSlotTerms(context, slotAddr);
+      flags = terms.flags;
+    } else {
+      flags = {
+        beforeBuy: s.hookBeforeBuy,
+        beforeSell: s.hookBeforeSell,
+        beforeSelfAssess: s.hookBeforeSelfAssess,
+        afterBuy: s.hookAfterBuy,
+        afterSell: s.hookAfterSell,
+        afterRelease: s.hookAfterRelease,
+        afterLiquidate: s.hookAfterLiquidate,
+        afterSettle: s.hookAfterSettle,
+      };
+    }
+  }
+
+  if (hookChanged) {
+    if (prevHook) {
+      await bumpHookSlotCount(context, prevHook, event.block.timestamp, -1);
+    }
+    if (nextHook !== ZERO_ADDR) {
+      await bumpHookSlotCount(context, nextHook, event.block.timestamp, 1);
+    }
+  }
+
+  await context.db.update(slot, { id: slotAddr }).set({
+    taxPercentage: event.args.taxPercentage,
+    hook: nextHook === ZERO_ADDR ? null : nextHook,
+    ...hookFlagColumns(flags),
+    pendingHasTax: false,
+    pendingTaxPercentage: null,
+    pendingHasHook: false,
+    pendingHook: null,
+    pendingProposedAt: null,
+    updatedAt: event.block.timestamp,
+  });
+
+  await context.db.insert(termsAppliedEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId,
+    slot: slotAddr,
+    taxPercentage: event.args.taxPercentage,
+    hook: nextHook,
+    previousTaxPercentage: s.taxPercentage,
+    previousHook: prevHook ?? ZERO_ADDR,
+    taxChanged,
+    hookChanged,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
 });
 
-onSlot("ModuleRemoved", async ({ event, context }) => {
-  const slotAddr = lower(event.log.address);
-  const moduleAddr = lower(event.args.module);
+// ─── signed sell orders ────────────────────────────────────────────────────
 
-  // Deleted rather than marked: an attachment that no longer exists is not a
-  // state a slot is "in", and leaving tombstones would make every consumer
-  // filter them out. `ModuleRemoved` also fires for a cancelled QUEUE entry,
-  // which never became an attachment at all.
-  await context.db.delete(slotModule, {
-    id: attachmentId(slotAddr, moduleAddr),
+/**
+ * A buyer burned one of their own nonces.
+ *
+ * This is the ONLY order-lifecycle event the protocol emits. A nonce is also
+ * consumed when an order is FILLED, and `Sold` carries no nonce — so an order
+ * book cannot distinguish a filled order from a live one by watching logs; it
+ * has to call `orderUsed(buyer, nonce)`. Adding the nonce to `Sold` would close
+ * that gap.
+ */
+ponder.on("Slot:OrderCancelled", async ({ event, context }) => {
+  const chainId = context.chain.id;
+  const slotAddr = lower(event.log.address);
+  const buyer = lower(event.args.buyer);
+
+  await getOrCreateAccount(
+    context,
+    buyer,
+    buyer === lower(event.transaction.from),
+  );
+
+  await context.db
+    .insert(cancelledOrder)
+    .values({
+      slot: slotAddr,
+      buyer,
+      nonce: event.args.nonce,
+      chainId,
+      cancelledAt: event.block.timestamp,
+      tx: event.transaction.hash,
+    })
+    .onConflictDoNothing();
+
+  await context.db.insert(orderCancelledEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId,
+    slot: slotAddr,
+    buyer,
+    nonce: event.args.nonce,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+// ─── hooks ─────────────────────────────────────────────────────────────────
+
+/**
+ * An `after` callback reverted and was swallowed.
+ *
+ * The protocol's only observability into a broken hook: nothing reverts,
+ * nothing retries, and the action the hook was watching succeeded anyway. If
+ * this is not indexed, a hook that has stopped working is completely silent.
+ *
+ * Never emitted for the `before` side — a failing `before` reverts the whole
+ * transaction and never reaches here.
+ */
+ponder.on("Slot:HookCallFailed", async ({ event, context }) => {
+  const chainId = context.chain.id;
+  const slotAddr = lower(event.log.address);
+  const hookAddr = lower(event.args.hook);
+
+  await bumpHookSlotCount(context, hookAddr, event.block.timestamp, 0);
+  await context.db
+    .update(hook, { id: hookAddr, chainId })
+    .set((row) => ({
+      failedCallCount: row.failedCallCount + 1,
+      updatedAt: event.block.timestamp,
+    }));
+
+  await context.db.insert(hookCallFailedEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId,
+    slot: slotAddr,
+    hook: hookAddr,
+    selector: event.args.selector,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
   });
 });

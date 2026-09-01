@@ -1,75 +1,94 @@
 import { type Context, ponder } from "ponder:registry";
 import {
   account,
+  adminTransferredEvent,
+  beaconUpgradedEvent,
   factory,
-  module,
+  hook,
+  hookAttestedEvent,
   slot,
-  slotDeployedEvent,
+  slotCreatedEvent,
 } from "ponder:schema";
-import type { Hex } from "viem";
 import {
   bumpAccountChain,
   evtId,
   getOrCreateAccount,
   getOrCreateCurrency,
-  getOrCreateModule,
+  getOrCreateHook,
+  hookFlagColumns,
   lower,
-  resolveAdJson,
+  NO_HOOK_FLAGS,
+  readSlotTerms,
   ZERO_ADDR,
 } from "./helpers";
 
 /**
- * One `SlotDeployed` body for both eras.
+ * SlotFactory — the protocol's registry and its admin surface.
  *
- * The pre-occupancy-layer signature carries neither `mutablePolicy` nor
- * `occupancyPolicy`; those are backfilled as false/null by the caller rather
- * than left undefined, so every column means the same thing for every row.
+ * Four events, all handled here. `Initialized(uint64)` and `Upgraded(address)`
+ * are deliberately not: both come from OpenZeppelin's proxy plumbing rather
+ * than from the protocol, `Initialized` collides by name with the Slot event of
+ * the same name, and `BeaconUpgraded` — which IS handled — is the one that
+ * matters, because it changes the code of every slot at once.
  */
-type SlotDeployedEvent = {
-  log: { address: Hex; logIndex: number };
-  args: { slot: Hex; recipient: Hex; currency: Hex };
-  block: { timestamp: bigint; number: bigint };
-  transaction: { hash: Hex; from: Hex };
-};
 
-async function recordSlotDeployed(
-  event: SlotDeployedEvent,
-  context: Context,
-  config: {
-    mutableTax: boolean;
-    mutableUtility: boolean;
-    mutablePolicy: boolean;
-    manager: Hex;
-  },
-  initParams: {
-    taxPercentage: bigint;
-    utility: Hex;
-    liquidationBountyBps: bigint;
-    minDepositSeconds: bigint;
-    occupancyPolicy: Hex | null;
+/** Upsert the factory row. Any of its four events may be the first one seen. */
+async function touchFactory(
+  ctx: Context,
+  id: `0x${string}`,
+  values: {
+    slotCount?: bigint;
+    admin?: `0x${string}`;
+    implementation?: `0x${string}`;
+    implementationUpdatedAt?: bigint;
   },
 ) {
+  await ctx.db
+    .insert(factory)
+    .values({
+      id,
+      chainId: ctx.chain.id,
+      slotCount: values.slotCount ?? 0n,
+      admin: values.admin ?? null,
+      implementation: values.implementation ?? null,
+      implementationUpdatedAt: values.implementationUpdatedAt ?? null,
+    })
+    .onConflictDoUpdate((row) => ({
+      slotCount: row.slotCount + (values.slotCount ?? 0n),
+      admin: values.admin ?? row.admin,
+      implementation: values.implementation ?? row.implementation,
+      implementationUpdatedAt:
+        values.implementationUpdatedAt ?? row.implementationUpdatedAt,
+    }));
+}
+
+/**
+ * A new slot.
+ *
+ * `SlotCreated` carries slot, recipient, creator, currency and hook — and
+ * nothing about the terms. Tax, the deposit floor, the two mutability flags and
+ * the manager are read back from the slot with `readSlotTerms`, which is six
+ * eth_calls at the creation block.
+ *
+ * That read is the one avoidable cost in this indexer. Putting the four scalars
+ * in the event would remove it entirely, and they are all known at emit time —
+ * `init` is right there in the call frame. See the report accompanying this
+ * rewrite; nothing here can fix it from the indexer side, because a slot's
+ * terms are simply not in any log.
+ */
+ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
   const slotId = lower(event.args.slot);
-  const moduleAddr = lower(initParams.utility);
+  const hookAddr = lower(event.args.hook);
+  const hasHook = hookAddr !== ZERO_ADDR;
 
-  const policy =
-    initParams.occupancyPolicy && lower(initParams.occupancyPolicy) !== ZERO_ADDR
-      ? lower(initParams.occupancyPolicy)
-      : null;
+  await touchFactory(context, factoryId, { slotCount: 1n });
 
-  // Factory: bump slot count
-  await context.db
-    .insert(factory)
-    .values({ id: factoryId, chainId, slotCount: 1n })
-    .onConflictDoUpdate((row) => ({ slotCount: row.slotCount + 1n }));
-
-  // Currency
   const cur = await getOrCreateCurrency(context, event.args.currency);
 
-  // Recipient account. The total and the per-chain count move together —
-  // see `bumpAccountChain`; the pair is only meaningful while it agrees.
+  // The recipient's total and per-chain counts move together; the pair is only
+  // meaningful while it agrees.
   const recipient = await getOrCreateAccount(context, event.args.recipient);
   await context.db
     .update(account, { id: recipient.id })
@@ -78,27 +97,41 @@ async function recordSlotDeployed(
     slotCount: 1,
   });
 
-  // Optional module
-  if (moduleAddr !== ZERO_ADDR) {
-    await getOrCreateModule(context, moduleAddr, factoryId, chainId);
+  // `creator` is `msg.sender` of `createSlot`, which is not necessarily
+  // `tx.from` — a collective or a router creates slots on someone's behalf.
+  await getOrCreateAccount(
+    context,
+    event.args.creator,
+    lower(event.args.creator) === lower(event.transaction.from),
+  );
+
+  const terms = await readSlotTerms(context, slotId);
+
+  if (hasHook) {
+    await getOrCreateHook(context, hookAddr, event.block.timestamp);
+    await context.db
+      .update(hook, { id: hookAddr, chainId })
+      .set((row) => ({
+        slotCount: row.slotCount + 1,
+        updatedAt: event.block.timestamp,
+      }));
   }
 
-  // Slot
   await context.db.insert(slot).values({
     id: slotId,
     chainId,
+    factory: factoryId,
     recipient: lower(event.args.recipient),
     recipientAccount: recipient.id,
     currency: cur.id,
-    mutableTax: config.mutableTax,
-    mutableModule: config.mutableUtility,
-    mutablePolicy: config.mutablePolicy,
-    manager: lower(config.manager),
-    taxPercentage: initParams.taxPercentage,
-    module: moduleAddr === ZERO_ADDR ? null : moduleAddr,
-    occupancyPolicy: policy,
-    liquidationBountyBps: initParams.liquidationBountyBps,
-    minDepositSeconds: initParams.minDepositSeconds,
+    manager: terms.manager,
+    creator: lower(event.args.creator),
+    taxPercentage: terms.taxPercentage,
+    minDepositSeconds: terms.minDepositSeconds,
+    mutableTax: terms.mutableTax,
+    mutableHook: terms.mutableHook,
+    hook: hasHook ? hookAddr : null,
+    ...hookFlagColumns(hasHook ? terms.flags : NO_HOOK_FLAGS),
     occupant: null,
     occupantAccount: null,
     isOccupied: false,
@@ -108,105 +141,113 @@ async function recordSlotDeployed(
     collectedTax: 0n,
     taxPaidTotal: 0n,
     totalCollected: 0n,
+    creditedTotal: 0n,
+    pendingHasTax: false,
+    pendingTaxPercentage: null,
+    pendingHasHook: false,
+    pendingHook: null,
+    pendingProposedAt: null,
     createdAt: event.block.timestamp,
     createdTx: event.transaction.hash,
     updatedAt: event.block.timestamp,
-    factory: factoryId,
+    feed: null,
   });
 
-  // Immutable deploy event
-  await context.db.insert(slotDeployedEvent).values({
+  await context.db.insert(slotCreatedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
+    factory: factoryId,
     slot: slotId,
     recipient: lower(event.args.recipient),
+    creator: lower(event.args.creator),
     currency: cur.id,
-    manager: lower(config.manager),
-    mutableTax: config.mutableTax,
-    mutableModule: config.mutableUtility,
-    mutablePolicy: config.mutablePolicy,
-    taxPercentage: initParams.taxPercentage,
-    module: moduleAddr,
-    occupancyPolicy: policy,
-    liquidationBountyBps: initParams.liquidationBountyBps,
-    minDepositSeconds: initParams.minDepositSeconds,
+    hook: hookAddr,
+    taxPercentage: terms.taxPercentage,
+    minDepositSeconds: terms.minDepositSeconds,
+    mutableTax: terms.mutableTax,
+    mutableHook: terms.mutableHook,
+    manager: terms.manager,
     deployer: lower(event.transaction.from),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
-}
-
-ponder.on("SlotFactory:SlotDeployed", async ({ event, context }) => {
-  await recordSlotDeployed(
-    event,
-    context,
-    event.args.config,
-    event.args.initParams,
-  );
 });
 
-/** Pre-occupancy-layer slots — 301 of the 303 deployed so far. */
-ponder.on("SlotFactoryLegacy:SlotDeployed", async ({ event, context }) => {
-  await recordSlotDeployed(
-    event,
-    context,
-    { ...event.args.config, mutablePolicy: false },
-    { ...event.args.initParams, occupancyPolicy: null },
-  );
-});
-
-ponder.on("SlotFactory:ModuleVerified", async ({ event, context }) => {
+/**
+ * The admin's opinion about a hook.
+ *
+ * Advisory and nothing more — any hook with code may be attached to any slot
+ * whether or not it appears here. Indexed so a client can surface the opinion,
+ * and so an attestation being REVOKED on a hook that slots already point at is
+ * visible; nothing on chain detaches it.
+ */
+ponder.on("SlotFactory:HookAttested", async ({ event, context }) => {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
-  const id = lower(event.args.utility);
+  const hookAddr = lower(event.args.hook);
 
-  const existing = await context.db.find(module, { id });
+  await touchFactory(context, factoryId, {});
+  await getOrCreateHook(context, hookAddr, event.block.timestamp);
+  await context.db.update(hook, { id: hookAddr, chainId }).set({
+    attested: event.args.attested,
+    attestedAt: event.args.attested ? event.block.timestamp : null,
+    updatedAt: event.block.timestamp,
+  });
 
-  // Optional IPFS metadata fetch
-  let image: string | null = null;
-  let description: string | null = null;
-  const uri = event.args.metadataURI;
-  if (uri && uri.length > 0) {
-    const json = await resolveAdJson(uri);
-    if (json) {
-      try {
-        const obj = JSON.parse(json);
-        if (typeof obj?.image === "string") image = obj.image;
-        if (typeof obj?.description === "string") description = obj.description;
-      } catch {
-        // swallow
-      }
-    }
-  }
-
-  if (!existing) {
-    await context.db.insert(module).values({
-      id,
-      chainId,
-      factory: factoryId,
-      verified: event.args.verified,
-      name: event.args.name,
-      version: event.args.version,
-      feeBps: event.args.feeBps,
-      metadataURI: uri ?? null,
-      image,
-      description,
-      totalFeesCollected: 0n,
-    });
-  } else {
-    await context.db.update(module, { id }).set({
-      verified: event.args.verified,
-      name: event.args.name,
-      version: event.args.version,
-      feeBps: event.args.feeBps,
-      metadataURI: uri ?? null,
-      image,
-      description,
-    });
-  }
+  await context.db.insert(hookAttestedEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId,
+    factory: factoryId,
+    hook: hookAddr,
+    attested: event.args.attested,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
 });
 
-ponder.on("SlotFactory:AdminTransferred", async () => {
-  // No-op: admin not stored in schema
+/**
+ * The key that can replace every slot's code changed hands.
+ *
+ * Also fires once from `initialize`, with `from` at the zero address.
+ */
+ponder.on("SlotFactory:AdminTransferred", async ({ event, context }) => {
+  const factoryId = lower(event.log.address);
+  const next = lower(event.args.to);
+
+  await touchFactory(context, factoryId, { admin: next });
+  await getOrCreateAccount(context, next);
+
+  await context.db.insert(adminTransferredEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    factory: factoryId,
+    previousAdmin: lower(event.args.from),
+    newAdmin: next,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+/** Every slot on this chain now runs different code. */
+ponder.on("SlotFactory:BeaconUpgraded", async ({ event, context }) => {
+  const factoryId = lower(event.log.address);
+  const impl = lower(event.args.implementation);
+
+  await touchFactory(context, factoryId, {
+    implementation: impl,
+    implementationUpdatedAt: event.block.timestamp,
+  });
+
+  await context.db.insert(beaconUpgradedEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    factory: factoryId,
+    implementation: impl,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
 });

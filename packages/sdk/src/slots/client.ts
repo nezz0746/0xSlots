@@ -302,6 +302,10 @@ export class SlotsClient {
     return chain;
   }
 
+  // Guarded writes below are `async` even where nothing is awaited. A method
+  // typed `Promise<Hash>` that throws SYNCHRONOUSLY escapes `.catch()` and
+  // escapes an un-awaited call, which is exactly how a rejected guard turns into
+  // a button that looks alive and does nothing.
   private assertPositive(value: bigint, name: string): void {
     if (value <= 0n) throw new SlotsError(name, `${name} must be > 0`);
   }
@@ -619,7 +623,7 @@ export class SlotsClient {
    *
    * Callable by the occupant or an address they made an operator.
    */
-  selfAssess(slot: Address, newPrice: bigint): Promise<Hash> {
+  async selfAssess(slot: Address, newPrice: bigint): Promise<Hash> {
     this.assertPrice(newPrice, "newPrice");
     return this.write(slot, "selfAssess", [newPrice]);
   }
@@ -639,7 +643,7 @@ export class SlotsClient {
   }
 
   /** Take back part of your escrow, keeping whatever `minDepositSeconds` requires. */
-  withdraw(slot: Address, amount: bigint): Promise<Hash> {
+  async withdraw(slot: Address, amount: bigint): Promise<Hash> {
     this.assertPositive(amount, "amount");
     return this.write(slot, "withdraw", [amount]);
   }
@@ -682,7 +686,7 @@ export class SlotsClient {
    * apply. Omit a field to leave it alone; pass `hook: zeroAddress` to detach the
    * hook, which is why presence rather than truthiness decides.
    */
-  proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
+  async proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
     const changeTax = params.taxPercentage !== undefined;
     const changeHook = params.hook !== undefined;
     if (!changeTax && !changeHook)

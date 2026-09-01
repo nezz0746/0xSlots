@@ -156,6 +156,14 @@ contract Slot is SlotOrders {
         uint256 depositAmount,
         uint256 selfAssessedPrice
     ) external payable nonReentrant {
+        _buy(account, depositAmount, selfAssessedPrice);
+    }
+
+    function _buy(
+        address account,
+        uint256 depositAmount,
+        uint256 selfAssessedPrice
+    ) internal {
         if (selfAssessedPrice == 0 || selfAssessedPrice > MAX_PRICE)
             revert InvalidPrice();
         if (account == address(0)) revert InvalidRecipient();
@@ -294,11 +302,16 @@ contract Slot is SlotOrders {
      *
      * @dev No bounty. The reward is the slot: this leaves it vacant, and a
      *      vacant slot costs only the taker's own deposit — so whoever actually
-     *      wants it can evict and take it in one `multicall`. Paying keepers out
-     *      of the recipient's accrued tax funded the incentive from the wrong
-     *      pocket, and across tenures that were not even the defaulter's.
+     *      wants it can evict and take it atomically via `liquidateAndTake`.
+     *      Paying keepers out of the recipient's accrued tax funded the
+     *      incentive from the wrong pocket, and across tenures that were not
+     *      even the defaulter's.
      */
     function liquidate() external nonReentrant {
+        _liquidate();
+    }
+
+    function _liquidate() internal {
         if (_occupant == address(0)) revert Vacant();
         _settle();
         if (_deposit > 0) revert NotInsolvent();
@@ -313,6 +326,36 @@ contract Slot is SlotOrders {
             F_AFTER_LIQUIDATE,
             abi.encodeCall(ISlotHook.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
         );
+    }
+
+    /**
+     * @notice Evict an insolvent occupant and take the slot, in one call.
+     *
+     * @dev This is what makes "no bounty" honest. The rationale for paying
+     *      keepers nothing is that whoever wants the slot can evict and take
+     *      it, so the slot itself is the reward — but that only works if the
+     *      two happen atomically, or the keeper does the eviction and loses
+     *      the race for the vacancy to whoever is watching the mempool.
+     *
+     *      The inherited `multicall` almost does it, and silently does not:
+     *      OZ's is non-payable, so `msg.value` is zero inside it and `buy`
+     *      demands an exact amount. It works for ERC-20 slots and is
+     *      unreachable for native ones — the promise held for half the
+     *      protocol. Making `multicall` payable instead would be the classic
+     *      mistake: every delegatecall sees the same `msg.value`, so one ETH
+     *      payment would satisfy two `buy` calls and the second would be
+     *      funded out of the contract's own balance.
+     *
+     *      A single guarded entry point costs one function and keeps `buy`'s
+     *      exactness check intact.
+     */
+    function liquidateAndTake(
+        address account,
+        uint256 depositAmount,
+        uint256 selfAssessedPrice
+    ) external payable nonReentrant {
+        _liquidate();
+        _buy(account, depositAmount, selfAssessedPrice);
     }
 
     // ─── holding ────────────────────────────────────────────────────────────
