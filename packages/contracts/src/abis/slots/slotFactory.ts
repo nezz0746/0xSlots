@@ -1,4 +1,4 @@
-// Generated from src/slots/SlotFactory.sol. Do not edit.
+// Generated from src/SlotFactory.sol. Do not edit.
 export const slotFactoryAbi = [
     {
       "type": "constructor",

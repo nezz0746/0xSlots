@@ -1,4 +1,4 @@
-// Generated from src/slots/hooks/MinimumTenureHookFactory.sol. Do not edit.
+// Generated from src/hooks/MinimumTenureHookFactory.sol. Do not edit.
 export const minimumTenureHookFactoryAbi = [
     {
       "type": "function",

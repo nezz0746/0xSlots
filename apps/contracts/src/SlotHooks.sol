@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotStorage, HOOK_GAS} from "./SlotStorage.sol";
+import {SlotStorage} from "./SlotStorage.sol";
 import {ISlotHook, HookFlags, SlotContext} from "./ISlotHook.sol";
 import "./SlotErrors.sol";
 
@@ -41,7 +41,7 @@ abstract contract SlotHooks is SlotStorage {
     event HookCallFailed(address indexed hook, bytes4 selector);
 
     /// @notice The hook's snapshotted subscriptions, unpacked.
-    function hookFlags() external view returns (HookFlags memory f) {
+    function hookFlags() public view returns (HookFlags memory f) {
         uint8 b = _hookFlags;
         f.beforeBuy = b & F_BEFORE_BUY != 0;
         f.beforeSell = b & F_BEFORE_SELL != 0;

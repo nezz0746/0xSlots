@@ -6,7 +6,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotHooks} from "./SlotHooks.sol";
 import {ISlotHook, SlotContext} from "./ISlotHook.sol";
-import {BASIS_POINTS, MONTH, PAYOUT_GAS, TERMS_DELAY} from "./SlotStorage.sol";
 import "./SlotErrors.sol";
 
 /**

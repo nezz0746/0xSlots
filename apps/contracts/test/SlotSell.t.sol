@@ -7,15 +7,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot} from "../src/Slot.sol";
-import {SlotSellOrder} from "../src/base/SlotSellOrder.sol";
-import {OfferBook} from "../src/periphery/OfferBook.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
-import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
-import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotSellOrder} from "../src/v1/base/SlotSellOrder.sol";
+import {OfferBook} from "../src/v1/periphery/OfferBook.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
+import {IOccupancyPolicy, OccupancyContext} from "../src/v1/interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "../src/v1/interfaces/IModuleMetadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import "../src/interfaces/SlotErrors.sol";
+import "../src/v1/interfaces/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("Mock", "MCK") {}

@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {SlotStreamCollective} from "../../src/draft/SlotStreamCollective.sol";
-import {SlotGovernance, IManagedSlot, Dimension} from "../../src/SlotGovernance.sol";
-import {ISuperfluidPool, ISuperToken} from "../../src/draft/interfaces/ISuperfluid.sol";
+import {SlotStreamCollective} from "../../src/collectives/draft/SlotStreamCollective.sol";
+import {SlotGovernance, IManagedSlot, Dimension} from "../../src/collectives/SlotGovernance.sol";
+import {ISuperfluidPool, ISuperToken} from "../../src/collectives/draft/interfaces/ISuperfluid.sol";
 
 /// @dev Same shape as the mock in `SlotCollective.t.sol`. Duplicated rather
 ///      than shared because its job here is to prove the governance half works

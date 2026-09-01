@@ -6,12 +6,12 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot} from "../src/Slot.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
-import {IUtility} from "../src/interfaces/IUtility.sol";
-import {ISlotsModule} from "../src/interfaces/ISlotsModule.sol";
-import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
+import {IUtility} from "../src/v1/interfaces/IUtility.sol";
+import {ISlotsModule} from "../src/v1/interfaces/ISlotsModule.sol";
+import {IModuleMetadata} from "../src/v1/interfaces/IModuleMetadata.sol";
 
 contract MockToken is ERC20 {
     constructor() ERC20("Mock", "MOCK") {}

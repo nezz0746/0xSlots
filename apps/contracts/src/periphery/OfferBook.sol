@@ -2,24 +2,42 @@
 pragma solidity ^0.8.23;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SlotSellOrder} from "../base/SlotSellOrder.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {SellOrder} from "../SlotOrders.sol";
 
 interface ISellableSlot {
+    function sellOrderHash(SellOrder calldata order)
+        external
+        view
+        returns (bytes32);
+
     function occupant() external view returns (address);
     function price() external view returns (uint256);
     function currency() external view returns (address);
     function sell(
-        SlotSellOrder.SellOrder calldata order,
+        SellOrder calldata order,
         bytes calldata signature
     ) external;
-    function sellOrderNonce(address buyer) external view returns (uint256);
-    function sellOrderUsed(address buyer, uint256 nonce)
+    function orderNonce(address buyer) external view returns (uint256);
+    function orderUsed(address buyer, uint256 nonce)
         external
         view
         returns (bool);
 }
 
 /// @title OfferBook — standing bids an occupant can sell into
+///
+/// @dev Ported to the hook-based protocol. The port is an interface rename and
+///      an import: `SellOrder` is field-for-field identical across the two, and
+///      the slot's nonce accessors lost their `sell` prefix. Nothing in the
+///      book's own logic is protocol-specific — it stores bids and reads
+///      allowances, and the core still knows nothing about it.
+///
+///      Worth stating plainly, because it was nearly deleted as retired: a
+///      SIGNED ORDER IS NOT AN OFFER BOOK. The signature is the settlement
+///      mechanism; this is the discovery mechanism. Without it an order is a
+///      blob a buyer has to hand to an occupant out of band, nobody can see
+///      what a slot has been bid, and there is no best to accept.
 ///
 /// @notice Anyone may post "I will take that slot at this price". The occupant
 ///         reads the best one and calls `Slot.sell(bidder, price, deposit)`.
@@ -176,10 +194,10 @@ contract OfferBook {
     function orderOf(address slot, uint256 id)
         public
         view
-        returns (SlotSellOrder.SellOrder memory order, bytes memory signature)
+        returns (SellOrder memory order, bytes memory signature)
     {
         Offer storage o = _offers[slot][id];
-        order = SlotSellOrder.SellOrder({
+        order = SellOrder({
             slot: slot,
             buyer: o.bidder,
             price: o.price,
@@ -207,7 +225,7 @@ contract OfferBook {
         returns (
             bool found,
             uint256 id,
-            SlotSellOrder.SellOrder memory order,
+            SellOrder memory order,
             bytes memory signature
         )
     {
@@ -299,6 +317,33 @@ contract OfferBook {
         return _offers[slot].length;
     }
 
+    /// @notice Whether one offer could actually be accepted right now.
+    ///
+    /// @dev The distinction `fundable` does NOT make. `fundable` asks only
+    ///      whether the bidder can pay; this also refuses a cancelled or
+    ///      expired offer, one whose author is already the occupant, and one
+    ///      whose nonce the slot has burned by filling it. A client listing
+    ///      offers wants this — showing a filled order as fundable is a button
+    ///      that lies, which is the same failure `_live` was written to avoid
+    ///      inside `best`.
+    function isLive(address slot, uint256 id) external view returns (bool) {
+        Offer[] storage list = _offers[slot];
+        if (id >= list.length) return false;
+        return _live(slot, list[id], ISellableSlot(slot).occupant());
+    }
+
+    /// @notice How many offers on `slot` could be accepted right now.
+    /// @dev The number to render beside "Orders". `offerCount` includes
+    ///      cancelled, expired and already-filled bids, so counting with it
+    ///      overstates the book and never goes back down.
+    function liveCount(address slot) external view returns (uint256 n) {
+        Offer[] storage list = _offers[slot];
+        address occupant = ISellableSlot(slot).occupant();
+        for (uint256 i; i < list.length; ++i) {
+            if (_live(slot, list[i], occupant)) ++n;
+        }
+    }
+
     function offerAt(address slot, uint256 id) external view returns (Offer memory) {
         return _offers[slot][id];
     }
@@ -347,8 +392,45 @@ contract OfferBook {
         // what makes a filled offer dead ON ITS OWN, rather than merely hidden
         // while its author happens to be the occupant — no cleanup call, no
         // window in which it could come back.
-        if (ISellableSlot(slot).sellOrderUsed(o.bidder, o.nonce)) return false;
+        if (ISellableSlot(slot).orderUsed(o.bidder, o.nonce)) return false;
+        if (!_signed(slot, o)) return false;
         return _fundable(slot, o);
+    }
+
+    /**
+     * @dev Whether the stored signature actually authorises the stored terms.
+     *
+     *      The predicate checked funding, expiry, cancellation and the burnt
+     *      nonce — every precondition of `Slot.sell` except the only one that
+     *      decides whether it can execute. `offer` stores the signature and
+     *      the terms from separate arguments and never binds them, so a funded
+     *      bidder could post the top of the board with a garbage signature:
+     *      `bestOrder` handed the occupant an order that reverts, and the real
+     *      best bid stayed hidden underneath it.
+     *
+     *      Checked here rather than in `offer` so a signature that stops being
+     *      valid later — a contract wallet changing its mind under ERC-1271 —
+     *      also drops out of the board.
+     */
+    function _signed(address slot, Offer storage o) internal view returns (bool) {
+        SellOrder memory order = SellOrder({
+            slot: slot,
+            buyer: o.bidder,
+            price: o.price,
+            deposit: o.deposit,
+            nonce: o.nonce,
+            deadline: o.expiry
+        });
+        try ISellableSlot(slot).sellOrderHash(order) returns (bytes32 digest) {
+            return
+                SignatureChecker.isValidSignatureNow(
+                    o.bidder,
+                    digest,
+                    o.signature
+                );
+        } catch {
+            return false;
+        }
     }
 
     function _fundable(address slot, Offer storage o) internal view returns (bool) {
@@ -357,7 +439,16 @@ contract OfferBook {
         // `SellNeedsErc20`, because there is no allowance to pull against.
         if (currency == address(0)) return false;
 
-        uint256 owed = o.price + o.deposit;
+        // Guarded, because `offer` puts no ceiling on either number and this
+        // predicate sits on every read path. A single free offer at
+        // `price = type(uint256).max` made the checked addition panic, and
+        // `best`, `bestOrder`, `board`, `liveCount` and `isLive` reverted for
+        // that slot for ever — the array has no removal path and `cancel` is
+        // bidder-only, so nobody could clear it.
+        uint256 owed;
+        unchecked { owed = o.price + o.deposit; }
+        if (owed < o.price) return false;
+
         return
             IERC20(currency).balanceOf(o.bidder) >= owed &&
             IERC20(currency).allowance(o.bidder, slot) >= owed;

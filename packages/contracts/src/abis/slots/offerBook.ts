@@ -1,4 +1,4 @@
-// Generated from src/slots/periphery/OfferBook.sol. Do not edit.
+// Generated from src/periphery/OfferBook.sol. Do not edit.
 export const offerBookAbi = [
     {
       "type": "function",

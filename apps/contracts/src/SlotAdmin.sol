@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {MAX_TAX_BPS} from "./SlotStorage.sol";
 import "./SlotErrors.sol";
 import {SlotEscrow} from "./SlotEscrow.sol";
 

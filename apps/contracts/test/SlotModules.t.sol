@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {SlotModules, IModuleRegistry} from "../src/SlotModules.sol";
-import {IModuleLifecycle, IModuleTopics} from "../src/interfaces/IModuleLifecycle.sol";
+import {SlotModules, IModuleRegistry} from "../src/v1/SlotModules.sol";
+import {IModuleLifecycle, IModuleTopics} from "../src/v1/interfaces/IModuleLifecycle.sol";
 
 // ───────────────────────────── doubles ──────────────────────────────────────
 

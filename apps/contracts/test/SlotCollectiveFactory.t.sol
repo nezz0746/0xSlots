@@ -10,8 +10,8 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 
 /// @dev Storage-compatible successor, used to prove a beacon upgrade actually
 ///      moves the code every existing manager runs.

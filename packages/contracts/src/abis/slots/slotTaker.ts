@@ -1,4 +1,4 @@
-// Generated from src/slots/periphery/SlotTaker.sol. Do not edit.
+// Generated from src/periphery/SlotTaker.sol. Do not edit.
 export const slotTakerAbi = [
     {
       "type": "function",

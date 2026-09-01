@@ -4,11 +4,11 @@ pragma solidity ^0.8.20;
 import {BaseScript, console2} from "./Base.s.sol";
 import {LocalBootstrap} from "./LocalBootstrap.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {MetadataModule} from "../src/modules/MetadataModule.sol";
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {MetadataModule} from "../src/v1/modules/MetadataModule.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 
 /**

@@ -5,11 +5,11 @@ import {BaseScript, console2} from "./Base.s.sol";
 import {OfferBook} from "../src/periphery/OfferBook.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotSellOrder} from "../src/base/SlotSellOrder.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {MetadataModule} from "../src/modules/MetadataModule.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotSellOrder} from "../src/v1/base/SlotSellOrder.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {MetadataModule} from "../src/v1/modules/MetadataModule.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
 
 /// Local-only test currency. Freely mintable; never deploy to a real network.
 contract LocalToken is ERC20 {

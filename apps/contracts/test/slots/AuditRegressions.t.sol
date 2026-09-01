@@ -5,11 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {ISlotHook, SlotContext, HookFlags} from "../../src/slots/ISlotHook.sol";
-import {CompositeHook} from "../../src/slots/hooks/CompositeHook.sol";
-import {OfferBook} from "../../src/slots/periphery/OfferBook.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
+import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
+import {OfferBook} from "../../src/periphery/OfferBook.sol";
 
 /// @dev 2 decimals, like GUSD — small units make truncation reachable.
 contract Small is ERC20 {

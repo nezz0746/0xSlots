@@ -1,4 +1,4 @@
-// Generated from src/SlotCollective.sol. Do not edit.
+// Generated from src/collectives/SlotCollective.sol. Do not edit.
 export const slotCollectiveAbi = [
     {
       "type": "constructor",

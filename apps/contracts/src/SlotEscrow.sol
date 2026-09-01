@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISlotHook} from "./ISlotHook.sol";
-import {MAX_PRICE} from "./SlotStorage.sol";
 import "./SlotErrors.sol";
 import {SlotOccupancy} from "./SlotOccupancy.sol";
 

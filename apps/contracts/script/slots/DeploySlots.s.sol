@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Slot} from "../../src/slots/Slot.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {MinimumTenureHook} from "../../src/slots/hooks/MinimumTenureHook.sol";
-import {MinimumTenureHookFactory} from "../../src/slots/hooks/MinimumTenureHookFactory.sol";
-import {OfferBook} from "../../src/slots/periphery/OfferBook.sol";
-import {SlotTaker} from "../../src/slots/periphery/SlotTaker.sol";
+import {Slot} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
+import {MinimumTenureHookFactory} from "../../src/hooks/MinimumTenureHookFactory.sol";
+import {OfferBook} from "../../src/periphery/OfferBook.sol";
+import {SlotTaker} from "../../src/periphery/SlotTaker.sol";
 
 contract SlotsTestToken is ERC20 {
     constructor() ERC20("Slots Test USD", "USDX") {}

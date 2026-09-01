@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {ISlotHook, SlotContext, HookFlags} from "../../src/slots/ISlotHook.sol";
-import {IDescribedHook, HookDescriptor} from "../../src/slots/IDescribedHook.sol";
-import {MinimumTenureHook} from "../../src/slots/hooks/MinimumTenureHook.sol";
-import {CompositeHook} from "../../src/slots/hooks/CompositeHook.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
+import {IDescribedHook, HookDescriptor} from "../../src/IDescribedHook.sol";
+import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
+import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 
 /// @dev A hook that works but describes nothing — the case a client must
 ///      degrade on rather than fail on.

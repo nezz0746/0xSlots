@@ -6,11 +6,11 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {HookDescriptor} from "../../src/slots/IDescribedHook.sol";
-import {MinimumTenureHook} from "../../src/slots/hooks/MinimumTenureHook.sol";
-import {MinimumTenureHookFactory} from "../../src/slots/hooks/MinimumTenureHookFactory.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {HookDescriptor} from "../../src/IDescribedHook.sol";
+import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
+import {MinimumTenureHookFactory} from "../../src/hooks/MinimumTenureHookFactory.sol";
 
 contract FT is ERC20 {
     constructor() ERC20("FT", "FT") {}

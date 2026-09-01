@@ -5,11 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {MetadataModule} from "../src/modules/MetadataModule.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
-import {IUtility} from "../src/interfaces/IUtility.sol";
+import {MetadataModule} from "../src/v1/modules/MetadataModule.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
+import {IUtility} from "../src/v1/interfaces/IUtility.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 contract MockERC20 is ERC20 {

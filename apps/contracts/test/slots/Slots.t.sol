@@ -6,12 +6,12 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {SlotOrders, SellOrder} from "../../src/slots/SlotOrders.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/slots/ISlotHook.sol";
-import {CompositeHook} from "../../src/slots/hooks/CompositeHook.sol";
-import "../../src/slots/SlotErrors.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {SlotOrders, SellOrder} from "../../src/SlotOrders.sol";
+import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
+import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
+import "../../src/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}

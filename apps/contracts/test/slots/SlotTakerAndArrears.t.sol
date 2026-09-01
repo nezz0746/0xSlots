@@ -5,12 +5,12 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
 // `abi.encodeCall` needs the contract that DECLARES the function, not the one
 // that inherits it — these live on the occupancy layer now.
-import {SlotOccupancy} from "../../src/slots/SlotOccupancy.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {SlotTaker} from "../../src/slots/periphery/SlotTaker.sol";
+import {SlotOccupancy} from "../../src/SlotOccupancy.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {SlotTaker} from "../../src/periphery/SlotTaker.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}

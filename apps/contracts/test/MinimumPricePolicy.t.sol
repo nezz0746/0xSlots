@@ -6,12 +6,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
-import {IOccupancyPolicy} from "../src/interfaces/IOccupancyPolicy.sol";
-import {MinimumPricePolicy} from "../src/policies/MinimumPricePolicy.sol";
-import {MinimumPricePolicyFactory} from "../src/policies/MinimumPricePolicyFactory.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
+import {IOccupancyPolicy} from "../src/v1/interfaces/IOccupancyPolicy.sol";
+import {MinimumPricePolicy} from "../src/v1/policies/MinimumPricePolicy.sol";
+import {MinimumPricePolicyFactory} from "../src/v1/policies/MinimumPricePolicyFactory.sol";
 
 contract MPMockERC20 is ERC20 {
     uint8 private immutable _dec;

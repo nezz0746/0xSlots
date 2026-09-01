@@ -3,8 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Test} from "forge-std/Test.sol";
 
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";

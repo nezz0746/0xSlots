@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {ISlotHook} from "./ISlotHook.sol";
 import {SellOrder} from "./SlotOrders.sol";
-import {MAX_PRICE} from "./SlotStorage.sol";
 import "./SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
 

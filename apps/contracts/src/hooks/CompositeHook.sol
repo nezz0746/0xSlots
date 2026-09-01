@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
-import {HOOK_GAS} from "../SlotStorage.sol";
+import {SlotConstants} from "../SlotConstants.sol";
 
 /**
  * @title CompositeHook
@@ -31,7 +31,7 @@ import {HOOK_GAS} from "../SlotStorage.sol";
  *      others still run, mirroring how the slot treats this contract. Without
  *      it, one broken observer would silence every other one.
  */
-contract CompositeHook is ISlotHook, IDescribedHook {
+contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
     address public immutable owner;
 
     address[] public children;

@@ -5,10 +5,10 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
-import {SellOrder} from "../../src/slots/SlotOrders.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
-import {OfferBook} from "../../src/slots/periphery/OfferBook.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SellOrder} from "../../src/SlotOrders.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {OfferBook} from "../../src/periphery/OfferBook.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}

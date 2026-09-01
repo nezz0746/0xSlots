@@ -1,4 +1,4 @@
-// Generated from src/SlotCollectiveFactory.sol. Do not edit.
+// Generated from src/collectives/SlotCollectiveFactory.sol. Do not edit.
 export const slotCollectiveFactoryAbi = [
     {
       "type": "constructor",

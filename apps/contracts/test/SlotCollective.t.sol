@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotGovernance, IManagedSlot, Dimension} from "../src/SlotGovernance.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotGovernance, IManagedSlot, Dimension} from "../src/collectives/SlotGovernance.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";

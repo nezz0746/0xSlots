@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
-import {BASIS_POINTS, MONTH} from "../SlotStorage.sol";
+import {SlotConstants} from "../SlotConstants.sol";
 
 /**
  * @title MinimumTenureHook
@@ -57,7 +57,7 @@ import {BASIS_POINTS, MONTH} from "../SlotStorage.sol";
  *      Funding is still enforced on `sell`, so the channel cannot be used to
  *      seat someone underfunded and restart protection on the cheap.
  */
-contract MinimumTenureHook is ISlotHook, IDescribedHook {
+contract MinimumTenureHook is ISlotHook, IDescribedHook, SlotConstants {
     /// @notice Protection window in seconds.
     uint256 public immutable tenureSeconds;
 

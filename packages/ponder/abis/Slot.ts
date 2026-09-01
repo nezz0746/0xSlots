@@ -11,6 +11,97 @@ export const SlotAbi = [
     },
     {
       "type": "function",
+      "name": "BASIS_POINTS",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "HOOK_GAS",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "MAX_PRICE",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "MAX_TAX_BPS",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "MONTH",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "PAYOUT_GAS",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "TERMS_DELAY",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "arrearsOf",
       "inputs": [
         {
@@ -142,6 +233,243 @@ export const SlotAbi = [
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "getSlotConstants",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "c",
+          "type": "tuple",
+          "internalType": "struct SlotConstantsInfo",
+          "components": [
+            {
+              "name": "maxPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxTaxBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "basisPoints",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "month",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "hookGas",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "payoutGas",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "termsDelay",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "pure"
+    },
+    {
+      "type": "function",
+      "name": "getSlotInfo",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "info",
+          "type": "tuple",
+          "internalType": "struct SlotInfo",
+          "components": [
+            {
+              "name": "recipient",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "currency",
+              "type": "address",
+              "internalType": "contract IERC20"
+            },
+            {
+              "name": "manager",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "taxPercentage",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "minDepositSeconds",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "mutableTax",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "mutableHook",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "hook",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "hookFlags",
+              "type": "tuple",
+              "internalType": "struct HookFlags",
+              "components": [
+                {
+                  "name": "beforeBuy",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "beforeSell",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "beforeSelfAssess",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "afterBuy",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "afterSell",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "afterRelease",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "afterLiquidate",
+                  "type": "bool",
+                  "internalType": "bool"
+                },
+                {
+                  "name": "afterSettle",
+                  "type": "bool",
+                  "internalType": "bool"
+                }
+              ]
+            },
+            {
+              "name": "occupant",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "price",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "deposit",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "occupiedSince",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "tenureId",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "lastSettled",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "taxOwed",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "collectedTax",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "isVacant",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "isInsolvent",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "secondsUntilLiquidation",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "pendingTaxPercentage",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "pendingHook",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "pendingHasTax",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "pendingHasHook",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "pendingProposedAt",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "pendingApplies",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ]
         }
       ],
       "stateMutability": "view"

@@ -1,88 +1,121 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {FactoryDeployer} from "./factory/FactoryDeployer.sol";
-import {FactoryRegistry} from "./factory/FactoryRegistry.sol";
-import {FactoryHub} from "./factory/FactoryHub.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Slot, SlotInit} from "./Slot.sol";
+import "./SlotErrors.sol";
 
-/// @title SlotFactory — Deploy Harberger-taxed slots via Beacon Proxy
-/// @notice UUPS-upgradeable factory. All slots delegate to a shared beacon.
-///         Upgrading the beacon upgrades all slots.
-///
-/// @dev The creation surface is two functions — `createSlot` and `createSlots`
-///      — and is meant to stay that way. A new slot parameter goes into
-///      `SlotInitParams`, which both already carry, never into a new suffixed
-///      entry point. A versioned creator is a permanent tax on every caller,
-///      every published ABI and every integration, paid to avoid changing one
-///      struct once.
-///
-///      ── Reading this contract ─────────────────────────────────────────────
-///
-///      The behaviour is split across bases, each answering one question:
-///
-///        FactoryStorage    what the factory remembers, and in what order
-///        FactoryRegistry   what it vouches for (modules, policies)
-///        FactoryDeployer   how a slot is created and validated
-///        FactoryHub        the shared event bus and batch helpers
-///
-///      What stays HERE is governance: who the admin is, and the two powers
-///      that reach every deployment at once — upgrading the beacon (which
-///      rewrites the implementation behind all 237+ live slots) and upgrading
-///      the factory itself. They are kept together, in the smallest file,
-///      because they are the ones worth re-reading before every release.
-///
-///      ── Why the inheritance order is not stylistic ───────────────────────
-///
-///      Solidity allocates base storage before the derived contract's own, in
-///      linearization order. `FactoryStorage` must therefore be reached first,
-///      which it is: every other base descends from it, and all of them are
-///      storage-free. Adding an ordinary state variable to any base other than
-///      `FactoryStorage` shifts this proxy's live state and is unrecoverable.
-///      `forge inspect SlotFactory storage` is the gate.
-contract SlotFactory is FactoryDeployer, FactoryRegistry, FactoryHub {
-    // ═══════════════════════════════════════════════════════════
-    // INITIALIZATION
-    // ═══════════════════════════════════════════════════════════
+/**
+ * @title SlotFactory
+ * @notice Deploys slots behind a shared beacon, and is the protocol's event hub.
+ *
+ * @dev ── One creation function ────────────────────────────────────────────
+ *
+ *      A new slot parameter goes into `SlotInit`, never into a suffixed second
+ *      creator. A versioned entry point is a permanent tax on every caller,
+ *      every published ABI and every integration, paid to avoid changing one
+ *      struct once — and it also splits the indexer, which then has to register
+ *      every handler twice to cover both eras.
+ */
+contract SlotFactory is Initializable, UUPSUpgradeable {
+    /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
+    UpgradeableBeacon public beacon;
+
+    /// @notice May upgrade the beacon, upgrade this factory, and attest hooks.
+    address public admin;
+
+    /// @notice Slots this factory created. The event hub's guest list.
+    mapping(address => bool) public isSlot;
+
+    /// @notice Hooks the admin has attested.
+    /// @dev Advisory, and deliberately so. A slot creator may point at any hook
+    ///      with code; this records an opinion for clients to surface, not a
+    ///      permission. Enforcing it would make the admin a gatekeeper on what
+    ///      anyone may build, which is the opposite of the point.
+    mapping(address => bool) public attestedHooks;
+
+    uint256 public slotCount;
+
+    event SlotCreated(
+        address indexed slot,
+        address indexed recipient,
+        address indexed creator,
+        address currency,
+        address hook
+    );
+    event HookAttested(address indexed hook, bool attested);
+    event AdminTransferred(address indexed from, address indexed to);
+    event BeaconUpgraded(address indexed implementation);
+
+    modifier onlyAdmin() {
+        if (msg.sender != admin) revert NotManager();
+        _;
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
-        _initialized = true; // Disable init on implementation
+        _disableInitializers();
     }
 
-    /// @notice Initialize the factory (called once via proxy)
-    /// @param _admin Admin address (owns beacon + can upgrade factory + verify utilities)
-    /// @param _slotImplementation Address of the Slot implementation contract
-    function initialize(address _admin, address _slotImplementation) external {
-        if (_initialized) revert AlreadyInitialized();
-        _initialized = true;
-
-        admin = _admin;
-        beacon = new UpgradeableBeacon(_slotImplementation, _admin);
+    function initialize(address admin_, address implementation)
+        external
+        initializer
+    {
+        if (admin_ == address(0)) revert InvalidRecipient();
+        admin = admin_;
+        // The FACTORY owns the beacon, not the admin EOA. Handing beacon
+        // ownership straight to `admin_` reads like the simpler thing and
+        // breaks two ways: `upgradeBeacon` below can then never succeed, since
+        // the caller OZ sees is this contract; and beacon ownership would be
+        // frozen at whoever deployed, so `transferAdmin` would hand over an
+        // admin role that silently no longer carries the power to upgrade.
+        beacon = new UpgradeableBeacon(implementation, address(this));
+        emit AdminTransferred(address(0), admin_);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // ADMIN
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Transfer admin role
-    function transferAdmin(address newAdmin) external onlyAdmin {
-        admin = newAdmin;
-        emit AdminTransferred(admin, newAdmin);
+    function createSlot(SlotInit calldata init) external returns (address slot) {
+        slot = address(
+            new BeaconProxy(
+                address(beacon),
+                abi.encodeCall(Slot.initialize, (init))
+            )
+        );
+        isSlot[slot] = true;
+        unchecked {
+            ++slotCount;
+        }
+        emit SlotCreated(
+            slot,
+            init.recipient,
+            msg.sender,
+            address(init.currency),
+            init.hook
+        );
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // BEACON UPGRADES
-    // ═══════════════════════════════════════════════════════════
+    function attestHook(address hook, bool attested) external onlyAdmin {
+        attestedHooks[hook] = attested;
+        emit HookAttested(hook, attested);
+    }
 
-    /// @notice Upgrade the beacon (admin only). Requires the factory to own it.
-    /// @dev Beacon ownership starts with `admin` (see `initialize`). Transfer it
-    ///      to this factory with `UpgradeableBeacon.transferOwnership` to enable
-    ///      this. Authority is unchanged either
-    ///      way — `onlyAdmin` here is the same address that owned the beacon.
-    function upgradeBeacon(address newImplementation) external onlyAdmin {
-        beacon.upgradeTo(newImplementation);
-        emit BeaconUpgraded(newImplementation);
+    function transferAdmin(address next) external onlyAdmin {
+        if (next == address(0)) revert InvalidRecipient();
+        emit AdminTransferred(admin, next);
+        admin = next;
+    }
+
+    /// @notice Point every slot at new code. The single most consequential
+    ///         action in the protocol.
+    function upgradeBeacon(address implementation) external onlyAdmin {
+        beacon.upgradeTo(implementation);
+        emit BeaconUpgraded(implementation);
+    }
+
+    function implementation() external view returns (address) {
+        return beacon.implementation();
     }
 
     function _authorizeUpgrade(address) internal override onlyAdmin {}

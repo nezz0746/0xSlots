@@ -8,11 +8,11 @@ import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20P
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import {MetadataModule} from "../src/modules/MetadataModule.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
-import "../src/interfaces/SlotErrors.sol";
+import {MetadataModule} from "../src/v1/modules/MetadataModule.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
+import "../src/v1/interfaces/SlotErrors.sol";
 
 contract PermitToken is ERC20, ERC20Permit {
     constructor() ERC20("Permit", "PRM") ERC20Permit("Permit") {}

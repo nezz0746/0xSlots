@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {MinimumTenurePolicy} from "../src/policies/MinimumTenurePolicy.sol";
-import {MinimumTenurePolicyFactory} from "../src/policies/MinimumTenurePolicyFactory.sol";
-import {IOccupancyPolicy} from "../src/interfaces/IOccupancyPolicy.sol";
+import {MinimumTenurePolicy} from "../src/v1/policies/MinimumTenurePolicy.sol";
+import {MinimumTenurePolicyFactory} from "../src/v1/policies/MinimumTenurePolicyFactory.sol";
+import {IOccupancyPolicy} from "../src/v1/interfaces/IOccupancyPolicy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 contract MinimumTenurePolicyFactoryTest is Test {

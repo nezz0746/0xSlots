@@ -1,5 +1,4 @@
-// Generated from apps/contracts/src/slots/SlotFactory.sol. Copied from
-// packages/contracts/src/abis/slots/slotFactory.ts.
+// Copied from packages/contracts/src/abis/slots/slotFactory.ts. Do not edit.
 export const SlotFactoryAbi = [
     {
       "type": "constructor",

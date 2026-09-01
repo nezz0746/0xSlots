@@ -8,12 +8,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotCollective} from "../../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../../src/SlotCollectiveFactory.sol";
-import {IManagedSlot} from "../../src/SlotGovernance.sol";
+import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
+import {IManagedSlot} from "../../src/collectives/SlotGovernance.sol";
 
-import {Slot, SlotInit} from "../../src/slots/Slot.sol";
-import {SlotFactory} from "../../src/slots/SlotFactory.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
 
 /**
  * @title DeployAndDriveCollective

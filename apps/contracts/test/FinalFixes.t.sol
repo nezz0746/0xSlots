@@ -7,13 +7,13 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotModules} from "../src/SlotModules.sol";
-import "../src/interfaces/SlotErrors.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams, SlotInfo} from "../src/interfaces/ISlot.sol";
-import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
-import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotModules} from "../src/v1/SlotModules.sol";
+import "../src/v1/interfaces/SlotErrors.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams, SlotInfo} from "../src/v1/interfaces/ISlot.sol";
+import {IOccupancyPolicy, OccupancyContext} from "../src/v1/interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "../src/v1/interfaces/IModuleMetadata.sol";
 
 contract FFMockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") { _mint(msg.sender, 1_000_000 ether); }
