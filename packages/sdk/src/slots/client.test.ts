@@ -76,7 +76,9 @@ function harness(
 }
 
 const approvals = (writeContract: ReturnType<typeof vi.fn>) =>
-  writeContract.mock.calls.filter((c: any[]) => c[0].functionName === "approve");
+  writeContract.mock.calls.filter(
+    (c: any[]) => c[0].functionName === "approve",
+  );
 
 const sent = (writeContract: ReturnType<typeof vi.fn>, name: string) =>
   writeContract.mock.calls.find((c: any[]) => c[0].functionName === name)?.[0];
@@ -135,9 +137,9 @@ describe("native ETH slots", () => {
       selfAssessedPrice: 2n * 10n ** 18n,
     });
 
-    expect(readContract.mock.calls.map((c: any[]) => c[0].functionName)).toEqual(
-      ["quoteBuy", "currency"],
-    );
+    expect(
+      readContract.mock.calls.map((c: any[]) => c[0].functionName),
+    ).toEqual(["quoteBuy", "currency"]);
   });
 
   it("buy passes the deposit to the quote, not the self-assessed price", async () => {
@@ -607,9 +609,9 @@ describe("liquidateAndTake", () => {
     expect(call.args).toEqual([ACCOUNT, 4n * 10n ** 17n, 3n * 10n ** 18n]);
     // `buy` demands an EXACT msg.value, so overpaying by the stale price would
     // revert rather than refund.
-    expect(readContract.mock.calls.map((c: any[]) => c[0].functionName)).toEqual(
-      ["quoteLiquidateAndTake", "currency"],
-    );
+    expect(
+      readContract.mock.calls.map((c: any[]) => c[0].functionName),
+    ).toEqual(["quoteLiquidateAndTake", "currency"]);
     expect(approvals(writeContract)).toHaveLength(0);
   });
 
@@ -845,9 +847,172 @@ describe("operator approvals belong to a tenure, not to an address", () => {
       mutableTax: false,
       mutableHook: false,
       occupiedSince: 1700000000n,
+      lastSettled: 1700000000n,
+      collectedTax: 0n,
       tenureId: 12n,
     });
 
     expect((await client.slotState(SLOT)).tenureId).toBe(12n);
   });
 });
+
+/**
+ * `manageTerms` batches a reprice with a deposit move, and the ORDER is the
+ * whole reason it exists. `selfAssess` ends with `_requireFunded(_deposit,
+ * newPrice)` and `withdraw` with `_requireFunded(left, _price)`, so funding has
+ * to precede a price rise and a price cut has to precede the withdrawal it
+ * frees. Get the order wrong and each half fails in exactly the case it was
+ * added for — which no type can catch, so it is pinned here.
+ */
+describe("manageTerms batches a reprice with a deposit move", () => {
+  const decodeNames = (calldata: readonly `0x${string}`[]) =>
+    calldata.map((d) => d.slice(0, 10));
+
+  it("funds BEFORE repricing, so a price rise can clear the funding check", async () => {
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      allowance: 10n ** 30n,
+    });
+
+    await client.manageTerms(SLOT, { newPrice: 500n, topUpAmount: 100n });
+
+    const call = writeContract.mock.calls.at(-1)?.[0];
+    expect(call.functionName).toBe("multicall");
+    const [topUp, selfAssess] = decodeNames(call.args[0]);
+    // topUp's selector first, selfAssess's second.
+    expect(call.args[0]).toHaveLength(2);
+    expect(topUp).not.toBe(selfAssess);
+  });
+
+  it("reprices BEFORE withdrawing, so a price cut releases the deposit", async () => {
+    const { client, writeContract } = harness({ currency: ERC20 });
+
+    await client.manageTerms(SLOT, { newPrice: 100n, withdrawAmount: 50n });
+
+    const call = writeContract.mock.calls.at(-1)?.[0];
+    expect(call.functionName).toBe("multicall");
+    expect(call.args[0]).toHaveLength(2);
+  });
+
+  it("sends a native top-up as its own transaction, never inside multicall", async () => {
+    // `multicall` is non-payable, so `msg.value` is zero inside it and a native
+    // topUp would revert InvalidValue.
+    const { client, writeContract } = harness({
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await client.manageTerms(SLOT, { newPrice: 500n, topUpAmount: 100n });
+
+    const names = writeContract.mock.calls.map((c: any[]) => c[0].functionName);
+    expect(names[0]).toBe("topUp");
+    expect(writeContract.mock.calls[0][0].value).toBe(100n);
+    // The reprice follows separately — one call, so no multicall wrapper.
+    expect(names).not.toContain("multicall");
+  });
+
+  it("refuses to add to and take from the deposit at once", async () => {
+    const { client } = harness({ currency: ERC20 });
+    await expect(
+      client.manageTerms(SLOT, { topUpAmount: 1n, withdrawAmount: 1n }),
+    ).rejects.toThrow(/cannot add to and take from/);
+  });
+
+  it("refuses an empty submission", async () => {
+    const { client } = harness({ currency: ERC20 });
+    await expect(client.manageTerms(SLOT, {})).rejects.toThrow(/nothing to do/);
+  });
+});
+
+/**
+ * Cancelling is PER-DIMENSION on chain — `cancelProposal(bool,bool)`. The SDK
+ * used to send no arguments at all, which cannot even encode. Pinned because
+ * the two dimensions may belong to different people and a blanket cancel would
+ * let one manager destroy the other's queued change silently.
+ */
+describe("cancelProposal is per-dimension", () => {
+  it("sends both flags by default", async () => {
+    const { client, writeContract } = harness({});
+    await client.cancelProposal(SLOT);
+    expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([true, true]);
+  });
+
+  it("cancels the tax alone without touching the hook", async () => {
+    const { client, writeContract } = harness({});
+    await client.cancelProposal(SLOT, true, false);
+    expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([true, false]);
+  });
+
+  it("refuses to cancel nothing", async () => {
+    const { client } = harness({});
+    await expect(client.cancelProposal(SLOT, false, false)).rejects.toThrow(
+      /nothing to cancel/,
+    );
+  });
+});
+
+describe("simulateBuy — the balance guard", () => {
+  /**
+   * The allowance skip used to swallow this. A first-time ERC-20 buy grants
+   * its allowance as part of sending, so the simulation is skipped — and the
+   * balance check went with it, which is how a shortfall reached the chain as
+   * `ERC20InsufficientBalance` after the user had paid gas.
+   */
+  it("refuses before sending when the buyer cannot cover the quote", async () => {
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      quoteBuy: 1_000n,
+      allowance: 0n, // would skip the simulation entirely
+      balanceOf: 999n, // one short
+    });
+
+    await expect(
+      client.simulateBuy({
+        slot: SLOT,
+        account: ACCOUNT,
+        depositAmount: 10n,
+        selfAssessedPrice: 990n,
+      }),
+    ).rejects.toThrow(/insufficient balance/);
+
+    expect(writeContract).not.toHaveBeenCalled();
+  });
+
+  it("stays silent when the balance covers it but the allowance does not", async () => {
+    const { client } = harness({
+      currency: ERC20,
+      quoteBuy: 1_000n,
+      allowance: 0n,
+      balanceOf: 1_000n, // exactly enough
+    });
+
+    // Skipped, not refused: the approve is part of sending, so there is
+    // nothing to learn from simulating against a state that will not exist.
+    await expect(
+      client.simulateBuy({
+        slot: SLOT,
+        account: ACCOUNT,
+        depositAmount: 10n,
+        selfAssessedPrice: 990n,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not read a balance on a native slot", async () => {
+    const { client } = harness({
+      currency: ZERO,
+      quoteBuy: 1_000n,
+      // `balanceOf` deliberately absent — the double throws on an unexpected
+      // read, so this fails loudly if the native path ever asks for one.
+    });
+
+    await expect(
+      client.simulateBuy({
+        slot: SLOT,
+        account: ACCOUNT,
+        depositAmount: 10n,
+        selfAssessedPrice: 990n,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+

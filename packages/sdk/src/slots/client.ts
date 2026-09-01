@@ -7,6 +7,7 @@ import {
 import {
   type Address,
   type Chain,
+  encodeFunctionData,
   erc20Abi,
   type Hash,
   type PublicClient,
@@ -90,7 +91,10 @@ function encodeSlotInit(init: SlotInit) {
 /** Throw on the initialisations `Slot.initialize` refuses, before spending gas. */
 export function assertSlotInit(init: SlotInit): void {
   if (init.recipient === zeroAddress)
-    throw new SlotsError("createSlot", "recipient must not be the zero address");
+    throw new SlotsError(
+      "createSlot",
+      "recipient must not be the zero address",
+    );
   if (init.taxPercentage <= 0n || init.taxPercentage > MAX_TAX_BPS)
     throw new SlotsError(
       "createSlot",
@@ -250,6 +254,29 @@ export interface SlotState {
   /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
   occupiedSince: bigint;
   /**
+   * Tax already settled into the contract and awaiting a `collect`.
+   *
+   * Distinct from `taxOwed`, which is what is still accruing OUT of the
+   * deposit. What a `collect` actually pays the recipient is this plus whatever
+   * `_settle` can still take, so a UI gating the button on either half alone
+   * hides it in a real case: on `collectedTax` alone it vanishes for any slot
+   * untouched since occupancy, and on `taxOwed` alone it strands tax already
+   * settled on a slot that has since been vacated.
+   */
+  collectedTax: bigint;
+  /**
+   * Unix seconds of the last settlement — the anchor `taxOwed` is measured from.
+   *
+   * Exposed because `taxOwed` is a pure function of it and the block timestamp:
+   *
+   *   price * taxPercentage * (now - lastSettled) / (MONTH * BASIS_POINTS)
+   *
+   * so a client holding this can reproduce the figure for any instant without
+   * asking the chain again. That is what lets a runway actually count down
+   * between reads instead of sitting still until the next poll.
+   */
+  lastSettled: bigint;
+  /**
    * Bumped on every seating. Operator approvals are keyed to it, so a change
    * here silently voids every one of them.
    */
@@ -378,7 +405,11 @@ export class SlotsClient {
   // READ
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private read<T>(slot: Address, functionName: string, args?: readonly unknown[]) {
+  private read<T>(
+    slot: Address,
+    functionName: string,
+    args?: readonly unknown[],
+  ) {
     return this.publicClient.readContract({
       address: slot,
       abi: slotAbi,
@@ -553,6 +584,8 @@ export class SlotsClient {
       mutableTax,
       mutableHook,
       occupiedSince,
+      lastSettled,
+      collectedTax,
       tenureId,
     ] = await Promise.all([
       this.occupant(slot),
@@ -573,6 +606,8 @@ export class SlotsClient {
       this.read<boolean>(slot, "mutableTax"),
       this.read<boolean>(slot, "mutableHook"),
       this.read<bigint>(slot, "occupiedSince"),
+      this.read<bigint>(slot, "lastSettled"),
+      this.read<bigint>(slot, "collectedTax"),
       this.tenureId(slot),
     ]);
 
@@ -595,6 +630,8 @@ export class SlotsClient {
       mutableTax,
       mutableHook,
       occupiedSince,
+      lastSettled,
+      collectedTax,
       tenureId,
     };
   }
@@ -606,6 +643,25 @@ export class SlotsClient {
    * short window on a low price rounds DOWN to zero, and rounding down is what
    * once made a funding requirement vanish.
    */
+  /**
+   * The smallest deposit `buy` or `sell` will accept at `price`, asked of the
+   * slot itself.
+   *
+   * Prefer this over {@link minDepositFor} anywhere a BUY is being sized.
+   * Entry is an occupancy transition, so `_applyPending` runs before the
+   * funding check — a buyer funds the terms they are buying INTO, not the ones
+   * currently on display. Sizing from `taxPercentage()` underquotes through
+   * exactly the window where a tax rise is queued, and the buy then reverts
+   * `InvalidDeposit` for reasons nothing on screen explains.
+   *
+   * `selfAssess` is deliberately not covered by it: repricing is not a
+   * transition, applies nothing, and is checked against current terms — that is
+   * what {@link minDepositFor} is still for.
+   */
+  minDepositForBuy(slot: Address, price: bigint): Promise<bigint> {
+    return this.read<bigint>(slot, "minDepositForBuy", [price]);
+  }
+
   minDepositFor(
     price: bigint,
     taxPercentage: bigint,
@@ -730,12 +786,37 @@ export class SlotsClient {
     // run against a state the real call will not be made from, so it is skipped
     // rather than reported.
     if (!isNativeCurrency(currency)) {
-      const allowance = await this.publicClient.readContract({
-        address: currency,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [this.account, params.slot],
-      });
+      const [allowance, balance] = await Promise.all([
+        this.publicClient.readContract({
+          address: currency,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [this.account, params.slot],
+        }),
+        this.publicClient.readContract({
+          address: currency,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [this.account],
+        }),
+      ]);
+
+      // Balance is checked BEFORE the allowance skip below, and that ordering
+      // is the whole point. Skipping the simulation for a missing allowance
+      // also skipped this, so a buyer short on the token learned it as
+      // `ERC20InsufficientBalance` from a mined, reverted transaction — a
+      // selector, after paying gas, for something knowable up front. The
+      // allowance is genuinely unknowable before sending because the approve
+      // is part of the send; the balance never was.
+      if (balance < amount) {
+        throw new SlotsError(
+          functionName,
+          new Error(
+            `insufficient balance: need ${amount} of ${currency}, hold ${balance}`,
+          ),
+        );
+      }
+
       if (allowance < amount) return;
     }
 
@@ -786,7 +867,11 @@ export class SlotsClient {
    * ERC-20 only. Payment is pulled on the buyer's allowance and native ETH has
    * none, which is why {@link signSellOrder} refuses to sign one at all.
    */
-  sell(slot: Address, order: SellOrder, signature: `0x${string}`): Promise<Hash> {
+  sell(
+    slot: Address,
+    order: SellOrder,
+    signature: `0x${string}`,
+  ): Promise<Hash> {
     return this.write(slot, "sell", [order, signature]);
   }
 
@@ -887,7 +972,11 @@ export class SlotsClient {
    * event marking it. There is nothing to revoke afterwards, and nothing an
    * incoming occupant has to clean up before setting their own.
    */
-  setOperator(slot: Address, operator: Address, allowed: boolean): Promise<Hash> {
+  setOperator(
+    slot: Address,
+    operator: Address,
+    allowed: boolean,
+  ): Promise<Hash> {
     return this.write(slot, "setOperator", [operator, allowed]);
   }
 
@@ -948,9 +1037,30 @@ export class SlotsClient {
     ]);
   }
 
-  /** Drop whatever is queued. Manager only. */
-  cancelProposal(slot: Address): Promise<Hash> {
-    return this.write(slot, "cancelProposal", []);
+  /**
+   * Retract queued terms, one dimension at a time. Manager only.
+   *
+   * Two flags rather than an all-or-nothing cancel, mirroring the contract:
+   * the two dimensions are proposed independently and may belong to different
+   * people. A collective splits tax and hook across separate roles, and a
+   * blanket cancel would let the hook manager destroy the tax manager's queued
+   * change as a side effect of retracting their own, with nothing to signal it
+   * happened. Cancelling must not reach further than proposing does.
+   *
+   * Defaults to both, which is the right answer for the single-manager case
+   * and matches what a caller passing nothing plainly means.
+   */
+  async cancelProposal(
+    slot: Address,
+    cancelTax = true,
+    cancelHook = true,
+  ): Promise<Hash> {
+    if (!cancelTax && !cancelHook)
+      throw new SlotsError(
+        "cancelProposal",
+        "nothing to cancel — pass cancelTax, cancelHook, or both",
+      );
+    return this.write(slot, "cancelProposal", [cancelTax, cancelHook]);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -964,7 +1074,10 @@ export class SlotsClient {
 
   /** Whether a nonce has been burned — by a fill, or by {@link cancelSellOrder}. */
   orderUsed(slot: Address, nonce: bigint, buyer?: Address): Promise<boolean> {
-    return this.read<boolean>(slot, "orderUsed", [buyer ?? this.account, nonce]);
+    return this.read<boolean>(slot, "orderUsed", [
+      buyer ?? this.account,
+      nonce,
+    ]);
   }
 
   /** The digest the slot will check, straight from the slot. */
@@ -1053,6 +1166,111 @@ export class SlotsClient {
     await this.ensureAllowance(currency, slot, params.price + params.deposit);
 
     return this.signSellOrder(slot, params);
+  }
+
+  /**
+   * Reprice and refund the deposit in one submission.
+   *
+   * ── Why these are not three independent calls ────────────────────────────
+   *
+   * Because the contract does not treat them as independent. `selfAssess` ends
+   * with `_requireFunded(_deposit, newPrice)`, so the deposit still standing
+   * after settlement has to cover the minimum at the NEW price — raising your
+   * valuation, the most ordinary thing an occupant wants to do, reverts with
+   * the funding error unless the deposit was already large enough. `withdraw`
+   * is the same coupling from the other side: it refuses to leave the deposit
+   * under the minimum at the current price, so how much may be taken back is a
+   * function of the valuation, and LOWERING the valuation is precisely what
+   * frees deposit to take.
+   *
+   * ── The order is load-bearing ────────────────────────────────────────────
+   *
+   * topUp → selfAssess → withdraw, which is the only order satisfying both
+   * checks. Funding first is what lets a price RISE pass `_requireFunded`;
+   * repricing before the withdrawal is what lets a price CUT release the
+   * deposit it just freed. Reversed, each half fails in exactly the case it was
+   * added for.
+   *
+   * ── Why a native top-up is its own transaction ───────────────────────────
+   *
+   * `multicall` is non-payable, so `msg.value` is zero inside it and a native
+   * `topUp` would revert `InvalidValue`. It is NOT made payable for the reason
+   * `liquidateAndTake` exists: every delegatecall sees the same `msg.value`, so
+   * one ETH payment would satisfy two calls and the second would be funded out
+   * of the contract's own balance. So on a native slot a top-up goes first and
+   * alone, and the caller is told to expect two confirmations.
+   *
+   * @returns The hash of the final transaction — the one carrying the reprice.
+   */
+  async manageTerms(
+    slot: Address,
+    params: {
+      /** Omit to leave the price alone. */
+      newPrice?: bigint;
+      topUpAmount?: bigint;
+      withdrawAmount?: bigint;
+    },
+  ): Promise<Hash> {
+    const topUpAmount = params.topUpAmount ?? 0n;
+    const withdrawAmount = params.withdrawAmount ?? 0n;
+    const { newPrice } = params;
+
+    if (newPrice !== undefined) this.assertPrice(newPrice, "newPrice");
+    if (topUpAmount > 0n && withdrawAmount > 0n)
+      throw new SlotsError(
+        "manageTerms",
+        "cannot add to and take from the deposit in the same submission",
+      );
+    if (newPrice === undefined && topUpAmount === 0n && withdrawAmount === 0n)
+      throw new SlotsError("manageTerms", "nothing to do");
+
+    const currency = await this.currency(slot);
+    const native = isNativeCurrency(currency);
+    const calls: {
+      functionName: "topUp" | "selfAssess" | "withdraw";
+      args: readonly unknown[];
+    }[] = [];
+
+    if (topUpAmount > 0n) {
+      if (native) {
+        // Alone, with value, and awaited — the reprice below depends on the
+        // deposit it lands, so racing them would fail the funding check.
+        const hash = await this.write(
+          slot,
+          "topUp",
+          [topUpAmount],
+          topUpAmount,
+        );
+        await this.publicClient.waitForTransactionReceipt({ hash });
+        if (newPrice === undefined) return hash;
+      } else {
+        await this.ensureAllowance(currency, slot, topUpAmount);
+        calls.push({ functionName: "topUp", args: [topUpAmount] });
+      }
+    }
+
+    if (newPrice !== undefined)
+      calls.push({ functionName: "selfAssess", args: [newPrice] });
+
+    if (withdrawAmount > 0n)
+      calls.push({ functionName: "withdraw", args: [withdrawAmount] });
+
+    // One call needs no batching wrapper, and sending it bare keeps the revert
+    // reason attributable to the function that produced it rather than to
+    // `multicall` — which is the difference between "InvalidDeposit" and "the
+    // batch failed".
+    if (calls.length === 1)
+      return this.write(slot, calls[0].functionName, calls[0].args);
+
+    return this.write(slot, "multicall", [
+      calls.map((c) =>
+        encodeFunctionData({
+          abi: slotAbi,
+          functionName: c.functionName,
+          args: c.args as never,
+        }),
+      ),
+    ]);
   }
 
   /**
