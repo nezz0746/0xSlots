@@ -1,6 +1,6 @@
 {
   "name": "@0xslots/contracts",
-  "version": "0.20.0",
+  "version": "0.22.0",
   "description": "Contract ABIs and addresses for 0xSlots protocol",
   "author": "Nezz",
   "license": "MIT",
@@ -22,6 +22,10 @@
     "./addresses": {
       "types": "./dist/addresses.d.ts",
       "import": "./dist/addresses.js"
+    },
+    "./slots": {
+      "types": "./dist/slots.d.ts",
+      "import": "./dist/slots.js"
     }
   },
   "publishConfig": {

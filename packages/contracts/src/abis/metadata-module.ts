@@ -6,8 +6,95 @@ export const metadataModuleAbi = [
   },
   {
     type: "function",
+    name: "buyAndUpdate",
+    inputs: [
+      {
+        name: "slot",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "depositAmount",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "selfAssessedPrice",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "uri",
+        type: "string",
+        internalType: "string",
+      },
+    ],
+    outputs: [],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "buyAndUpdateWithPermit",
+    inputs: [
+      {
+        name: "slot",
+        type: "address",
+        internalType: "address",
+      },
+      {
+        name: "depositAmount",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "selfAssessedPrice",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "uri",
+        type: "string",
+        internalType: "string",
+      },
+      {
+        name: "permitValue",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "deadline",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      {
+        name: "v",
+        type: "uint8",
+        internalType: "uint8",
+      },
+      {
+        name: "r",
+        type: "bytes32",
+        internalType: "bytes32",
+      },
+      {
+        name: "s",
+        type: "bytes32",
+        internalType: "bytes32",
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "initialize",
-    inputs: [],
+    inputs: [
+      {
+        name: "initialOwner",
+        type: "address",
+        internalType: "address",
+      },
+    ],
     outputs: [],
     stateMutability: "nonpayable",
   },
@@ -332,7 +419,17 @@ export const metadataModuleAbi = [
   },
   {
     type: "error",
+    name: "NativeSlotHasNoPermit",
+    inputs: [],
+  },
+  {
+    type: "error",
     name: "NotOccupant",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "UnexpectedValue",
     inputs: [],
   },
 ] as const;

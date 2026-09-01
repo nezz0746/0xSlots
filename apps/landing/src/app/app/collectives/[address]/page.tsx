@@ -7,7 +7,9 @@ import { useParams } from "next/navigation";
 import { useCallback } from "react";
 import { type Address, isAddress } from "viem";
 import { useAccount } from "wagmi";
+import { CollectiveNameHeading } from "@/components/collective-name";
 import { CollectiveRoleCard } from "@/components/collective-role-card";
+import { CollectiveSplitEditor } from "@/components/collective-split-editor";
 import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +64,17 @@ export default function CollectivePage() {
       ?.members.some((m) => m.account.toLowerCase() === me.toLowerCase()) ??
       false);
 
+  // Editing the split is gated the same way the contract gates `setSplit`:
+  // `onlyRoleOrAdmin(SPLIT_MANAGER_ROLE)`. Admin qualifies because it admins
+  // every role, so it is folded in here rather than checked separately.
+  const canManageSplit =
+    isAdmin ||
+    (!!me &&
+      (roles
+        ?.find((g) => g.label === "SPLIT_MANAGER")
+        ?.members.some((m) => m.account.toLowerCase() === me.toLowerCase()) ??
+        false));
+
   return (
     <div className="min-h-screen">
       <PageHeader>
@@ -75,12 +88,18 @@ export default function CollectivePage() {
           </NavLink>
           <Users className="size-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0">
-            <h1 className="text-xl font-bold leading-tight tracking-tight">
-              Collective
-            </h1>
+            {/* Renameable in place, but only once the address is real — a name
+                is stored against it, so there is nothing to name otherwise. */}
+            {valid ? (
+              <CollectiveNameHeading address={address} />
+            ) : (
+              <h1 className="text-xl font-bold leading-tight tracking-tight">
+                Collective
+              </h1>
+            )}
             {valid && (
               <div className="text-muted-foreground">
-                <CopyAddress address={address} truncate={false} />
+                <CopyAddress address={address} truncate={false} ens />
               </div>
             )}
           </div>
@@ -108,7 +127,7 @@ export default function CollectivePage() {
       <div className="w-full space-y-4 px-3 py-4 md:px-5">
         {!valid && (
           <Notice title="Not an address">
-            <code className="font-mono">{address}</code> is not a valid address.
+            <span className="break-all">{address}</span> is not a valid address.
           </Notice>
         )}
 
@@ -186,7 +205,7 @@ export default function CollectivePage() {
                         key={`${r.index}-${r.account}`}
                         className="flex items-center justify-between gap-3 px-3 py-2"
                       >
-                        <CopyAddress address={r.account} />
+                        <CopyAddress address={r.account} ens />
                         <div className="flex items-center gap-3">
                           <span className="tabular-nums text-[10px] text-muted-foreground">
                             {r.allocation}
@@ -200,6 +219,13 @@ export default function CollectivePage() {
                   </div>
                 )}
               </div>
+
+              <CollectiveSplitEditor
+                collective={address as Address}
+                recipients={collective.recipients}
+                canManage={canManageSplit}
+                onChanged={handleChanged}
+              />
             </section>
 
             {/* ── Provenance ─────────────────────────────────── */}
@@ -209,13 +235,13 @@ export default function CollectivePage() {
               </h2>
               <dl className="grid gap-2 border p-3 sm:grid-cols-2">
                 <Fact label="Deployed by">
-                  <CopyAddress address={collective.deployer} />
+                  <CopyAddress address={collective.deployer} ens />
                 </Fact>
                 <Fact
                   label="Founding admin"
                   hint="At deployment. Roles move afterwards — the live answer is above."
                 >
-                  <CopyAddress address={collective.admin} />
+                  <CopyAddress address={collective.admin} ens />
                 </Fact>
               </dl>
             </section>

@@ -4,6 +4,8 @@ import {
   MINIMUM_TENURE_POLICY_FACTORY,
   minimumPricePolicyFactoryAbi,
   minimumTenurePolicyFactoryAbi,
+  offerBookAbi,
+  offerBookAddress,
   slotAbi,
   slotFactoryAbi,
 } from "@0xslots/contracts";
@@ -19,11 +21,43 @@ import {
   zeroAddress as ZERO_ADDRESS,
 } from "viem";
 import { SlotsError } from "./errors";
-import * as Gen from "./generated/graphql";
+import type * as Gen from "./generated/graphql";
 import { getSdk } from "./generated/graphql";
 import { FeedModuleClient } from "./modules/feed";
 import { MetadataModuleClient } from "./modules/metadata";
 import { isNativeCurrency } from "./native";
+
+// ─── Signed sell orders ───────────────────────────────────────────────────────
+
+/**
+ * Terms a buyer signs so an occupant may sell them a slot.
+ *
+ * The occupant chooses nothing here: `price` AND `deposit` are both in the
+ * signed digest, so the split is fixed by the party whose money it is. That
+ * pairing is the point — an earlier design let the occupant repartition an
+ * exact approval, taking the escrow half as their own proceeds and seating the
+ * buyer insolvent.
+ */
+export interface SellOrder {
+  slot: Address;
+  buyer: Address;
+  price: bigint;
+  deposit: bigint;
+  nonce: bigint;
+  deadline: bigint;
+}
+
+/** EIP-712 type definition. Must match `SlotSellOrder.SELL_ORDER_TYPEHASH`. */
+export const SELL_ORDER_TYPES = {
+  SellOrder: [
+    { name: "slot", type: "address" },
+    { name: "buyer", type: "address" },
+    { name: "price", type: "uint256" },
+    { name: "deposit", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint64" },
+  ],
+} as const;
 
 // ─── Indexer meta ─────────────────────────────────────────────────────────────
 
@@ -537,7 +571,6 @@ export class SlotsClient {
     );
   }
 
-
   // ═══════════════════════════════════════════════════════════════════════════
   // READ — On-chain (RPC)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -800,6 +833,207 @@ export class SlotsClient {
     });
   }
 
+  // ─── Standing offers ────────────────────────────────────────────────────────
+
+  /**
+   * Post a standing offer on a slot, replacing your previous one.
+   *
+   * Goes through {@link ensureAllowance} for the same reason `buy` does: the
+   * allowance is granted to the SLOT, not to the book, because the slot is what
+   * pulls when the occupant sells. Re-approving a spender that already has
+   * enough is a wallet confirmation that buys nothing, so a bidder raising a
+   * bid inside an allowance they already granted signs once, not twice.
+   *
+   * The book itself never checks the allowance — an unfunded offer is legal and
+   * simply never executes. Granting it here is what makes the offer real.
+   *
+   * @throws {SlotsError} On a native slot, which cannot be sold into at all.
+   */
+  async offer(
+    slot: Address,
+    price: bigint,
+    deposit: bigint,
+    expiry: bigint,
+  ): Promise<Hash> {
+    this.assertPositive(price, "price");
+    const book = this.offerBook();
+
+    const currency = await this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "currency",
+    });
+    if (isNativeCurrency(currency)) {
+      throw new SlotsError(
+        "This slot is priced in native ETH. Selling into an offer pulls the " +
+          "bidder's funds on an allowance, and native ETH has none.",
+        "NATIVE_SLOT_HAS_NO_OFFERS",
+      );
+    }
+
+    await this.ensureAllowance(currency, slot, price + deposit);
+
+    // The order is signed off-chain, for free. An allowance authorises
+    // spending; it never authorised a price the counterparty picks, which is
+    // why `Slot.sell` now demands the buyer's own signature over exact terms.
+    const { order, signature } = await this.signSellOrder(
+      slot,
+      price,
+      deposit,
+      expiry,
+    );
+
+    return this.wallet.writeContract({
+      address: book,
+      abi: offerBookAbi,
+      functionName: "offer",
+      args: [slot, price, deposit, expiry, order.nonce, signature],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Sign a sell order for `slot` as the connected account.
+   *
+   * @dev The EIP-712 `verifyingContract` is the SLOT, not the book — every
+   *      slot is its own domain, so a signature can never be replayed onto a
+   *      different one. The nonce is read from the slot, and the slot burns it
+   *      on execution, which is what makes a filled order dead for good.
+   */
+  async signSellOrder(
+    slot: Address,
+    price: bigint,
+    deposit: bigint,
+    deadline: bigint,
+  ): Promise<{ order: SellOrder; signature: `0x${string}` }> {
+    const nonce = await this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "sellOrderNonce",
+      args: [this.account],
+    });
+
+    const order: SellOrder = {
+      slot,
+      buyer: this.account,
+      price,
+      deposit,
+      nonce,
+      deadline,
+    };
+
+    const signature = await this.wallet.signTypedData({
+      account: this.account,
+      domain: {
+        name: "0xSlots",
+        version: "1",
+        chainId: this.chain.id,
+        verifyingContract: slot,
+      },
+      types: SELL_ORDER_TYPES,
+      primaryType: "SellOrder",
+      message: order,
+    });
+
+    return { order, signature };
+  }
+
+  /** The next nonce this account should sign with on `slot`. */
+  async sellOrderNonce(slot: Address, buyer?: Address): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "sellOrderNonce",
+      args: [buyer ?? this.account],
+    });
+  }
+
+  /**
+   * Invalidate a signature you already gave out.
+   *
+   * @dev A signed order is a standing authorisation that lives wherever it was
+   *      published. Cancelling the book entry only removes one copy; burning
+   *      the nonce kills every copy at once.
+   */
+  async cancelSellOrder(slot: Address, nonce: bigint): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "cancelSellOrder",
+      args: [nonce],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /** Withdraw your standing offer on a slot. */
+  async cancelOffer(slot: Address, id: bigint): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.offerBook(),
+      abi: offerBookAbi,
+      functionName: "cancel",
+      args: [slot, id],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Sell the slot you occupy into a buyer's signed order.
+   *
+   * @dev No allowance of your own is needed: the buyer's is what gets pulled.
+   *      Pass the order and signature exactly as the buyer produced them — the
+   *      slot re-verifies, so altering either fails rather than executing on
+   *      different terms.
+   */
+  async sell(
+    slot: Address,
+    order: SellOrder,
+    signature: `0x${string}`,
+  ): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "sell",
+      args: [order, signature],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * The best standing offer on `slot`, ready to hand to {@link sell}.
+   *
+   * @dev A view on the book. The book cannot execute the trade itself —
+   *      `Slot.sell` is `onlyOccupant`, so it would arrive as the wrong
+   *      caller — which is exactly the authority the design denies it.
+   */
+  async bestOrder(
+    slot: Address,
+  ): Promise<{ order: SellOrder; signature: `0x${string}` } | null> {
+    const [found, , order, signature] = (await this.publicClient.readContract({
+      address: this.offerBook(),
+      abi: offerBookAbi,
+      functionName: "bestOrder",
+      args: [slot],
+    })) as readonly [boolean, bigint, SellOrder, `0x${string}`];
+
+    return found ? { order, signature } : null;
+  }
+
+  /** The book for this chain, or a clear error naming the chain that lacks one. */
+  private offerBook(): Address {
+    const book = (offerBookAddress as Record<number, Address>)[this.chain.id];
+    if (!book) {
+      throw new SlotsError(
+        `No offer book is deployed on ${this.chain.name}.`,
+        "NO_OFFER_BOOK",
+      );
+    }
+    return book;
+  }
+
   /**
    * Self-assess a new price for an occupied slot (occupant only).
    * @param slot - The slot contract address.
@@ -832,6 +1066,147 @@ export class SlotsClient {
       abi: slotAbi,
       functionName: "topUp",
       args: [amount],
+    });
+  }
+
+  /**
+   * Reprice and top up as one action.
+   *
+   * ── Why these are not two calls ──────────────────────────────────────────
+   *
+   * Because the contract does not treat them as independent. `selfAssess` ends
+   * with `_enforceMinDepositExisting(newPrice)`, so the deposit still standing
+   * after settlement has to cover the minimum at the NEW price. Raising your
+   * valuation — the most ordinary thing an occupant wants to do — therefore
+   * reverts with `InsufficientDeposit` unless the deposit already happened to be
+   * large enough, and the fix is a top-up the caller had no way to know was
+   * needed.
+   *
+   * So the two travel together, in the only order that works: top up, then
+   * reprice. On an ERC-20 slot they go through the slot's own `multicall`, which
+   * delegatecalls each entry in turn — the reprice reads the deposit the top-up
+   * just added, in the same block, with no window for tax to accrue between them
+   * and nothing for a lagging RPC to miss.
+   *
+   * Only the top-up direction has this constraint. Native slots cannot batch a
+   * DEPOSIT: OpenZeppelin's `Multicall.multicall` is not payable, so there is no
+   * value to forward and `topUp` would reject the mismatch. There the two stay
+   * separate transactions, sent in the same order, with the first confirmed
+   * before the second is offered.
+   *
+   * ── Withdrawing runs the other way round ─────────────────────────────────
+   *
+   * `withdraw` settles and then refuses to leave the deposit below the minimum
+   * AT THE CURRENT PRICE — so when it travels with a reprice the reprice has to
+   * go FIRST, or the ceiling is computed against a valuation that is about to
+   * change. Lowering your valuation is exactly what frees deposit to take back,
+   * and doing it in the other order would refuse the withdrawal that the new
+   * valuation permits.
+   *
+   * Neither call is payable, so this direction batches on every slot, native
+   * included.
+   *
+   * A top-up and a withdrawal together are refused rather than netted. They are
+   * opposite intentions and the netting would be silent — a caller asking for
+   * both has a bug, and returning one transaction that does neither is the worst
+   * way to find out.
+   *
+   * @param slot - The slot contract address.
+   * @param params.newPrice - The new self-assessed price, or omitted to leave it.
+   * @param params.topUpAmount - Extra deposit to add first. Zero to add none.
+   * @param params.withdrawAmount - Deposit to take back after. Zero to take none.
+   * @returns The hash of the last transaction sent.
+   * @throws {SlotsError} If nothing was asked for, or both directions were.
+   */
+  async manageTerms(
+    slot: Address,
+    params: {
+      newPrice?: bigint;
+      topUpAmount?: bigint;
+      withdrawAmount?: bigint;
+    },
+  ): Promise<Hash> {
+    const topUpAmount = params.topUpAmount ?? 0n;
+    const withdrawAmount = params.withdrawAmount ?? 0n;
+    const reprice = params.newPrice !== undefined;
+
+    if (topUpAmount > 0n && withdrawAmount > 0n) {
+      throw new SlotsError(
+        "manageTerms",
+        "cannot add and take back deposit in one call",
+      );
+    }
+
+    if (!reprice && topUpAmount <= 0n && withdrawAmount <= 0n) {
+      throw new SlotsError(
+        "manageTerms",
+        "nothing to do — pass a new price, a deposit change, or both",
+      );
+    }
+
+    if (withdrawAmount > 0n) {
+      if (!reprice) return this.withdraw(slot, withdrawAmount);
+
+      // Reprice first — see above. Both calls are plain, so this is one
+      // transaction whatever the slot is priced in.
+      return this.multicall(slot, [
+        { functionName: "selfAssess", args: [params.newPrice!] },
+        { functionName: "withdraw", args: [withdrawAmount] },
+      ]);
+    }
+
+    // One-sided cases are the plain calls, so the batching path only ever runs
+    // when there is something to batch.
+    if (topUpAmount <= 0n) return this.selfAssess(slot, params.newPrice!);
+    if (!reprice) return this.topUp(slot, topUpAmount);
+
+    const currency = await this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "currency",
+    });
+
+    const selfAssessData = encodeFunctionData({
+      abi: slotAbi,
+      functionName: "selfAssess",
+      args: [params.newPrice!],
+    });
+
+    if (isNativeCurrency(currency)) {
+      const topUpTx = await this.wallet.writeContract({
+        address: slot,
+        abi: slotAbi,
+        functionName: "topUp",
+        args: [topUpAmount],
+        value: topUpAmount,
+        account: this.account,
+        chain: this.chain,
+      });
+      // Confirmed before the reprice is sent: `selfAssess` checks the deposit,
+      // and offering it against a top-up still in the mempool is the exact
+      // revert this method exists to prevent.
+      await this.publicClient.waitForTransactionReceipt({ hash: topUpTx });
+      return this.selfAssess(slot, params.newPrice!);
+    }
+
+    await this.ensureAllowance(currency, slot, topUpAmount);
+
+    return this.wallet.writeContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "multicall",
+      args: [
+        [
+          encodeFunctionData({
+            abi: slotAbi,
+            functionName: "topUp",
+            args: [topUpAmount],
+          }),
+          selfAssessData,
+        ],
+      ],
+      account: this.account,
+      chain: this.chain,
     });
   }
 
@@ -900,6 +1275,40 @@ export class SlotsClient {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // WRITE — Factory Admin
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Mark a utility verified or unverified in the factory's registry (factory
+   * admin only).
+   *
+   * The registry is informational: an unverified utility still works, and this
+   * flag blocks nothing. It is the badge the explorer reads.
+   *
+   * Reverts unless the utility answers ERC-165 for BOTH `IUtility` and
+   * `IModuleMetadata` — the factory checks the two separately because an
+   * interface id covers only its own selectors, so the hooks id says nothing
+   * about `name()`/`version()`/`metadataURI()`, which the emitted event reads
+   * immediately. Callers should surface the revert rather than pre-flight it;
+   * the check is cheap on-chain and four extra reads per row is not.
+   *
+   * @param utility - The utility contract address (an ARGUMENT — the call goes
+   *   to the factory).
+   * @param verified - The flag to set.
+   * @returns Transaction hash.
+   */
+  async setUtilityVerified(utility: Address, verified: boolean): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "setUtilityVerified",
+      args: [utility, verified],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // WRITE — Manager Functions
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -921,40 +1330,70 @@ export class SlotsClient {
   }
 
   /**
-   * Propose a utility update (manager only, slot must have mutableUtility).
-   * @param slot - The slot contract address.
-   * @param newUtility - The new utility contract address, or the zero address
-   *   to remove the utility entirely.
-   * @returns Transaction hash.
+   * Queue a module for installation on `slot`.
+   *
+   * @dev Replaces `proposeUtilityUpdate`, which the slot retired. That function
+   *      checked only that the address had code, so it was an unverified back
+   *      door into the same hooks this one guards: the slot refuses any module
+   *      its factory has not verified.
+   *
+   *      Deferred, not immediate. The install lands on the slot's next
+   *      occupancy transition, so an occupant never has modules added under
+   *      them mid-tenure. Read {@link pendingModules} to show what is queued.
    */
-  async proposeUtilityUpdate(
-    slot: Address,
-    newUtility: Address,
-  ): Promise<Hash> {
+  async addModule(slot: Address, module: Address): Promise<Hash> {
     return this.wallet.writeContract({
       address: slot,
       abi: slotAbi,
-      functionName: "proposeUtilityUpdate",
-      args: [newUtility],
+      functionName: "addModule",
+      args: [module],
       account: this.account,
       chain: this.chain,
     });
   }
 
   /**
-   * @deprecated Use {@link proposeUtilityUpdate}. Kept for one release; it
-   * targets the slot's deprecated `proposeModuleUpdate` selector, which simply
-   * forwards to the same place.
+   * Detach a module from `slot`, effective immediately.
+   *
+   * @dev Immediate where installing defers: adding imposes cost on the
+   *      occupant, removing only withdraws it, so there is nobody to protect by
+   *      waiting — and this is the lever for detaching a module found to be
+   *      broken, which must not wait out a tenure.
+   *
+   *      Passing the slot's legacy `utility` vacates it. That is one-way: the
+   *      head can be emptied but never refilled.
    */
-  async proposeModuleUpdate(slot: Address, newModule: Address): Promise<Hash> {
+  async removeModule(slot: Address, module: Address): Promise<Hash> {
     return this.wallet.writeContract({
       address: slot,
       abi: slotAbi,
-      functionName: "proposeModuleUpdate",
-      args: [newModule],
+      functionName: "removeModule",
+      args: [module],
       account: this.account,
       chain: this.chain,
     });
+  }
+
+  /// @dev Named `slotModules`, not `modules`: `client.modules` is already the
+  ///      SDK's namespace for the metadata/feed sub-clients.
+  /** Every module a slot notifies, `utility` head first. */
+  async slotModules(slot: Address): Promise<readonly Address[]> {
+    return this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "modules",
+      args: [],
+    }) as Promise<readonly Address[]>;
+  }
+
+  /** Installs waiting on the slot's next occupancy transition. */
+  async pendingModules(slot: Address): Promise<readonly Address[]> {
+    return this.publicClient.readContract({
+      address: slot,
+      abi: slotAbi,
+      functionName: "pendingModules",
+      args: [],
+    }) as Promise<readonly Address[]>;
   }
 
   /**
@@ -1019,26 +1458,6 @@ export class SlotsClient {
       address: slot,
       abi: slotAbi,
       functionName: "cancelPendingUpdates",
-      account: this.account,
-      chain: this.chain,
-    });
-  }
-
-  /**
-   * Set liquidation bounty bps (manager only).
-   * @param slot - The slot contract address.
-   * @param newBps - The new bounty in basis points (0-10000).
-   * @returns Transaction hash.
-   * @throws {SlotsError} If newBps is outside 0-10000, or the transaction fails.
-   */
-  async setLiquidationBounty(slot: Address, newBps: bigint): Promise<Hash> {
-    if (newBps < 0n || newBps > 10000n)
-      throw new SlotsError("setLiquidationBounty", "newBps must be 0-10000");
-    return this.wallet.writeContract({
-      address: slot,
-      abi: slotAbi,
-      functionName: "setLiquidationBounty",
-      args: [newBps],
       account: this.account,
       chain: this.chain,
     });
@@ -1118,42 +1537,7 @@ export class SlotsClient {
       });
     }
 
-    const allowance = await this.publicClient.readContract({
-      address: currency,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [this.account, spender],
-    });
-
-    if (allowance < amount) {
-      const approveTx = await this.wallet.writeContract({
-        address: currency,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [spender, amount],
-        account: this.account,
-        chain: this.chain,
-      });
-      await this.publicClient.waitForTransactionReceipt({ hash: approveTx });
-
-      // Poll until the allowance is visible on this RPC node (handles node lag).
-      const confirmed = await this.pollUntil(
-        () =>
-          this.publicClient.readContract({
-            address: currency,
-            abi: erc20Abi,
-            functionName: "allowance",
-            args: [this.account, spender],
-          }),
-        (value) => value >= amount,
-      );
-      if (confirmed < amount) {
-        throw new SlotsError(
-          "withPayment",
-          "Approval confirmed but on-chain allowance is still insufficient after retries",
-        );
-      }
-    }
+    await this.ensureAllowance(currency, spender, amount);
 
     return this.wallet.writeContract({
       address: call.to,
@@ -1163,6 +1547,59 @@ export class SlotsClient {
       account: this.account,
       chain: this.chain,
     });
+  }
+
+  /**
+   * Grant `spender` an allowance of at least `amount`, if it does not have one.
+   *
+   * Split out of {@link withPayment} because the batched reprice needs exactly
+   * this and none of the rest: it sends the slot's own `multicall` rather than a
+   * single named function, so it cannot go through a helper whose last act is to
+   * call one.
+   *
+   * Re-approving a spender that already has enough is a wallet confirmation that
+   * buys nothing, which is what the read is for.
+   */
+  private async ensureAllowance(
+    currency: Address,
+    spender: Address,
+    amount: bigint,
+  ): Promise<void> {
+    const allowance = await this.publicClient.readContract({
+      address: currency,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [this.account, spender],
+    });
+    if (allowance >= amount) return;
+
+    const approveTx = await this.wallet.writeContract({
+      address: currency,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, amount],
+      account: this.account,
+      chain: this.chain,
+    });
+    await this.publicClient.waitForTransactionReceipt({ hash: approveTx });
+
+    // Poll until the allowance is visible on this RPC node (handles node lag).
+    const confirmed = await this.pollUntil(
+      () =>
+        this.publicClient.readContract({
+          address: currency,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [this.account, spender],
+        }),
+      (value) => value >= amount,
+    );
+    if (confirmed < amount) {
+      throw new SlotsError(
+        "ensureAllowance",
+        "Approval confirmed but on-chain allowance is still insufficient after retries",
+      );
+    }
   }
 
   /** Poll `check` every `delayMs` until it returns a truthy value or `maxAttempts` is exhausted. */

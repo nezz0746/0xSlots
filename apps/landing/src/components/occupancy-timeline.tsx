@@ -15,6 +15,11 @@ import { formatDuration } from "@/hooks/use-duration";
  * filling and marking where a buy had been committed. Epoch scheduling was
  * removed in v4 — buys apply immediately — so there is no longer a window to
  * draw.
+ *
+ * Under the hook-based protocol the window comes from a MinimumTenureHook
+ * rather than from an occupancy policy: `tenureSeconds()` on the hook, measured
+ * from the slot's own `occupiedSince`. The drawing is unchanged, because the
+ * fact being drawn is.
  */
 
 /**

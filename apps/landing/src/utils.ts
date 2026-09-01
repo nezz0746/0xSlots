@@ -58,6 +58,38 @@ export function formatAmount(
 export const formatPrice = formatAmount;
 export const formatBalance = formatAmount;
 
+/**
+ * How many decimal places a plain number needs to stay legible.
+ *
+ * Two fixed places suit a stablecoin and erase anything smaller than a cent:
+ * 0.001 ETH renders as "0.00", which reads as a broken field rather than a
+ * small number. Below 1, count the leading zeros and keep two significant
+ * digits past them — the same rule {@link formatAmount} applies to raw units.
+ *
+ * Capped at 18, the most decimals any supported currency has.
+ */
+export function decimalPlacesFor(n: number): number {
+  const abs = Math.abs(n);
+  if (!Number.isFinite(abs) || abs === 0 || abs >= 1) return 2;
+  const leadingZeros = -Math.floor(Math.log10(abs)) - 1;
+  return Math.min(leadingZeros + 2, 18);
+}
+
+/**
+ * Format a plain number for display, adapting precision to its magnitude.
+ *
+ * Deliberately never switches to exponential notation, unlike
+ * {@link formatAmount}. This backs an editable field, and "1.2e-7" is not
+ * something a user can sensibly type back in.
+ */
+export function formatNumber(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: decimalPlacesFor(n),
+  });
+}
+
 /** Normalize decimal separators (comma → dot) for locales like French. */
 export function normalizeDecimal(value: string): string {
   return value.replace(",", ".");

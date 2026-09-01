@@ -1,13 +1,13 @@
 import type { Context } from "ponder:registry";
+import { account, accountChain, accountSlot, currency, hook } from "ponder:schema";
 import {
-  account,
-  accountChain,
-  accountSlot,
-  currency,
-  module,
-} from "ponder:schema";
-import { type Address, getAddress, type Hex, toFunctionSelector } from "viem";
-import { ERC20Abi } from "../abis";
+  type Abi,
+  type Address,
+  getAddress,
+  type Hex,
+  toFunctionSelector,
+} from "viem";
+import { ERC20Abi, SlotAbi, SlotHookAbi } from "../abis";
 
 // Function selector for splitHash() — used to detect 0xSplits contracts
 // by scanning bytecode (avoids noisy failed eth_calls on non-Splits contracts).
@@ -60,8 +60,8 @@ export async function getOrCreateAccount(
     type,
     slotCount: 0,
     occupiedCount: 0,
-    metadataUpdateCount: 0n,
     totalHoldTime: 0n,
+    taxPaidTotal: 0n,
   });
 }
 
@@ -129,7 +129,6 @@ export async function getOrCreateAccountSlot(
     account: acc,
     slot: slt,
     chainId,
-    metadataUpdateCount: 0n,
     taxPaid: 0n,
     holdTime: 0n,
     lastOccupiedAt: null,
@@ -147,7 +146,18 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
   let symbol: string | null = null;
   let decimals = 18;
 
-  if (id !== ZERO_ADDR) {
+  if (id === ZERO_ADDR) {
+    // The native-ETH sentinel. There is no contract to ask, so the reads below
+    // are skipped — but skipping them silently left `name` and `symbol` null,
+    // and every consumer rendering `currencyRef.symbol` printed nothing beside
+    // the price. `decimals` only looked handled because 18 is also the generic
+    // default here, not because native was considered.
+    //
+    // Named statically instead. Every chain this indexes is ETH-denominated;
+    // a chain with a different native token would need this keyed by chainId.
+    name = "Ether";
+    symbol = "ETH";
+  } else {
     const checksum = getAddress(id);
     const abi = ERC20Abi as unknown as readonly unknown[];
 
@@ -238,58 +248,238 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
   return ctx.db.insert(currency).values({ id, name, symbol, decimals });
 }
 
-export async function getOrCreateModule(
+// ═══════════════════════════════════════════════════════════════════════════
+// HOOKS, AND THE STATE `SlotCreated` DOES NOT CARRY
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** The eight subscriptions a hook may declare. */
+export type HookFlagSet = {
+  beforeBuy: boolean;
+  beforeSell: boolean;
+  beforeSelfAssess: boolean;
+  afterBuy: boolean;
+  afterSell: boolean;
+  afterRelease: boolean;
+  afterLiquidate: boolean;
+  afterSettle: boolean;
+};
+
+/** What a slot with no hook obeys: nothing. */
+export const NO_HOOK_FLAGS: HookFlagSet = {
+  beforeBuy: false,
+  beforeSell: false,
+  beforeSelfAssess: false,
+  afterBuy: false,
+  afterSell: false,
+  afterRelease: false,
+  afterLiquidate: false,
+  afterSettle: false,
+};
+
+function asFlags(value: unknown): HookFlagSet | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const keys = Object.keys(NO_HOOK_FLAGS) as (keyof HookFlagSet)[];
+  const out = { ...NO_HOOK_FLAGS };
+  for (const k of keys) {
+    if (typeof v[k] !== "boolean") return null;
+    out[k] = v[k] as boolean;
+  }
+  return out;
+}
+
+/**
+ * Read several view functions off one contract.
+ *
+ * Multicall where the chain declares Multicall3, N plain `eth_call`s where it
+ * does not — the local anvil has no Multicall3, and letting the multicall fail
+ * and catching it is NOT equivalent: ponder retries a failed `context.client`
+ * action with backoff before the error surfaces, so every miss costs hundreds
+ * of milliseconds. The same check `getOrCreateCurrency` makes, for the same
+ * reason.
+ *
+ * `undefined` in the returned array means that one read did not answer.
+ */
+async function readMany(
   ctx: Context,
-  moduleAddr: Hex,
-  factoryAddr: Hex,
-  chainId: number,
+  address: Address,
+  abi: Abi,
+  functionNames: readonly string[],
+): Promise<unknown[]> {
+  const hasMulticall3 = Boolean(
+    (
+      ctx.client as {
+        chain?: { contracts?: { multicall3?: { address?: string } } };
+      }
+    ).chain?.contracts?.multicall3?.address,
+  );
+
+  if (hasMulticall3) {
+    try {
+      const results = await ctx.client.multicall({
+        allowFailure: true,
+        contracts: functionNames.map((functionName) => ({
+          address,
+          abi,
+          functionName,
+        })),
+      });
+      return results.map((r) =>
+        r.status === "success" ? r.result : undefined,
+      );
+    } catch {
+      // Fall through to individual reads.
+    }
+  }
+
+  return Promise.all(
+    functionNames.map(async (functionName) => {
+      try {
+        return await ctx.client.readContract({ address, abi, functionName });
+      } catch {
+        return undefined;
+      }
+    }),
+  );
+}
+
+/**
+ * A hook's own declaration of what it subscribes to.
+ *
+ * `null` when `hooks()` does not answer. That is not a hypothetical: a hook
+ * whose `hooks()` reverts is REFUSED at attach time — `_readHookFlags` is
+ * deliberately fail-closed — so seeing null here means either a hook that was
+ * attested but never attached, or one that has since been upgraded into
+ * something that no longer answers.
+ */
+export async function readHookFlags(
+  ctx: Context,
+  hookAddr: Hex,
+): Promise<HookFlagSet | null> {
+  const [raw] = await readMany(
+    ctx,
+    getAddress(lower(hookAddr)),
+    SlotHookAbi as unknown as Abi,
+    ["hooks"],
+  );
+  return asFlags(raw);
+}
+
+/**
+ * The terms `SlotCreated` leaves out.
+ *
+ * The event carries slot, recipient, creator, currency and hook — and nothing
+ * about the economics. Tax, the deposit floor, which dimensions are mutable and
+ * who may move them all have to be read back from the slot itself.
+ *
+ * This is six eth_calls per slot creation, at the event's own block, so the
+ * answer is the state as of birth and ponder caches it like any other read.
+ * It is also the single most avoidable cost in this indexer — see the note in
+ * src/factory.ts.
+ */
+export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
+  const address = getAddress(lower(slotAddr));
+  const [tax, minDeposit, mutTax, mutHook, manager, flags] = await readMany(
+    ctx,
+    address,
+    SlotAbi as unknown as Abi,
+    [
+      "taxPercentage",
+      "minDepositSeconds",
+      "mutableTax",
+      "mutableHook",
+      "manager",
+      "hookFlags",
+    ],
+  );
+
+  const managerAddr =
+    typeof manager === "string" && lower(manager as Hex) !== ZERO_ADDR
+      ? lower(manager as Hex)
+      : null;
+
+  return {
+    taxPercentage: typeof tax === "bigint" ? tax : 0n,
+    minDepositSeconds: typeof minDeposit === "bigint" ? minDeposit : 0n,
+    mutableTax: mutTax === true,
+    mutableHook: mutHook === true,
+    /// NULL means every term is frozen forever. The contract enforces the
+    /// pairing — `initialize` reverts if a manager is set with nothing mutable,
+    /// and reverts if something is mutable with no manager — so this is a fact
+    /// about the slot, not missing data.
+    manager: managerAddr,
+    /// The snapshot THIS SLOT obeys, which is what `hookFlags()` returns and
+    /// is not re-read from the hook afterwards.
+    flags: asFlags(flags) ?? NO_HOOK_FLAGS,
+  };
+}
+
+/**
+ * The `hook` row, created on first sight with its declared flags read once.
+ *
+ * Keyed by (address, chainId): a hook is code, not an identity, and the same
+ * address on two chains is two deployments whose immutables may differ.
+ */
+export async function getOrCreateHook(
+  ctx: Context,
+  hookAddrRaw: Hex,
+  timestamp: bigint,
 ) {
-  const id = lower(moduleAddr);
-  const existing = await ctx.db.find(module, { id });
+  const id = lower(hookAddrRaw);
+  const chainId = ctx.chain.id;
+  const existing = await ctx.db.find(hook, { id, chainId });
   if (existing) return existing;
-  return ctx.db.insert(module).values({
+
+  const declared = await readHookFlags(ctx, id);
+  const f = declared ?? NO_HOOK_FLAGS;
+
+  return ctx.db.insert(hook).values({
     id,
     chainId,
-    factory: lower(factoryAddr),
-    verified: false,
-    name: "",
-    version: "",
-    feeBps: 0n,
-    metadataURI: null,
-    image: null,
-    description: null,
-    totalFeesCollected: 0n,
+    declaredKnown: declared !== null,
+    declaredBeforeBuy: f.beforeBuy,
+    declaredBeforeSell: f.beforeSell,
+    declaredBeforeSelfAssess: f.beforeSelfAssess,
+    declaredAfterBuy: f.afterBuy,
+    declaredAfterSell: f.afterSell,
+    declaredAfterRelease: f.afterRelease,
+    declaredAfterLiquidate: f.afterLiquidate,
+    declaredAfterSettle: f.afterSettle,
+    attested: false,
+    attestedAt: null,
+    slotCount: 0,
+    failedCallCount: 0,
+    firstSeenAt: timestamp,
+    updatedAt: timestamp,
   });
 }
 
-export async function tryFetchIpfsJson(uri: string): Promise<string | null> {
-  let cid: string | null = null;
-  if (uri.startsWith("ipfs://")) cid = uri.slice(7);
-  else if (uri.startsWith("Qm") || uri.startsWith("bafy")) cid = uri;
-  else if (uri.startsWith("{")) return uri;
-  if (!cid) return null;
-  try {
-    const res = await fetch(`https://ipfs.io/ipfs/${cid}`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
+/** Move a hook's slot count, creating the row if this is its first slot. */
+export async function bumpHookSlotCount(
+  ctx: Context,
+  hookAddrRaw: Hex,
+  timestamp: bigint,
+  delta: number,
+) {
+  const id = lower(hookAddrRaw);
+  if (id === ZERO_ADDR) return;
+  await getOrCreateHook(ctx, id, timestamp);
+  await ctx.db
+    .update(hook, { id, chainId: ctx.chain.id })
+    .set((row) => ({
+      slotCount: Math.max(0, row.slotCount + delta),
+      updatedAt: timestamp,
+    }));
 }
 
-export function extractCid(uri: string): string | null {
-  if (uri.startsWith("Qm") || uri.startsWith("bafy")) return uri;
-  if (uri.startsWith("ipfs://")) return uri.slice(7);
-  return null;
-}
-
-export function extractAdType(rawJson: string): string | null {
-  try {
-    const obj = JSON.parse(rawJson);
-    return typeof obj?.type === "string" ? obj.type : null;
-  } catch {
-    return null;
-  }
-}
+/** Columns for `slot`, from a flag snapshot. */
+export const hookFlagColumns = (f: HookFlagSet) => ({
+  hookBeforeBuy: f.beforeBuy,
+  hookBeforeSell: f.beforeSell,
+  hookBeforeSelfAssess: f.beforeSelfAssess,
+  hookAfterBuy: f.afterBuy,
+  hookAfterSell: f.afterSell,
+  hookAfterRelease: f.afterRelease,
+  hookAfterLiquidate: f.afterLiquidate,
+  hookAfterSettle: f.afterSettle,
+});

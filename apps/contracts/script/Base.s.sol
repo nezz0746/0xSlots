@@ -71,6 +71,19 @@ abstract contract BaseScript is Script {
     vm.stopBroadcast();
   }
 
+  /// @dev `startBlock` here is a LOWER BOUND, not the creation block.
+  ///
+  ///      `block.number` during a broadcast script is the block forge forked at
+  ///      when the script began — the transactions are only sent afterwards, so
+  ///      on a live chain they land some blocks later. Measured: the collective
+  ///      factory recorded 49962971 on base and was actually created in 49962974,
+  ///      and 45393268 vs 45393270 on base-sepolia. Anvil shows no skew because
+  ///      nothing else is producing blocks.
+  ///
+  ///      Safe for an indexer startBlock, which is the only consumer — too early
+  ///      costs a few empty `eth_getLogs` and can never miss a log. NOT safe as
+  ///      "the block this was created in": confirm against the broadcast receipt
+  ///      before quoting it as that.
   function _saveDeployment(
     address contractAddress,
     string memory contractName

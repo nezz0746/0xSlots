@@ -1,13 +1,14 @@
+import { findKnownHook } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
-import { Clock, Coins, HandCoins, Puzzle, Sparkles } from "lucide-react";
+import { Clock, Coins, HandCoins, KeyRound, Plug } from "lucide-react";
 import { useFormContext } from "react-hook-form";
-import { isAddress } from "viem";
+import { type Address, isAddress } from "viem";
 import { SplitBar } from "@/components/split-recipients-bar";
 import { Separator } from "@/components/ui/separator";
 import { truncateAddress } from "@/utils";
 import { useResolveAddress } from "../address-input";
 import { useErc20Check } from "../hooks/use-erc20-check";
-import type { CreateSlotFormValues } from "../schema";
+import { type CreateSlotFormValues, formatValueUnit } from "../schema";
 import { type SectionId, scrollToSection } from "../sections";
 import { ErrorSummary } from "./error-summary";
 import { OccupancySummaryRows } from "./occupancy-summary-rows";
@@ -22,6 +23,14 @@ interface SummaryCardProps {
   chainId: number;
 }
 
+/**
+ * The whole slot, on one sticky card, with every line a link back to the field
+ * that produced it.
+ *
+ * This is the last thing read before signing something immutable, so it says
+ * what the slot IS rather than what was filled in: "Instant buy" rather than a
+ * blank occupancy row, "No manager" rather than an omitted one.
+ */
 export function SummaryCard({
   slotCount,
   setSlotCount,
@@ -36,14 +45,14 @@ export function SummaryCard({
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
   const taxPercentage = form.watch("taxPercentage");
-  const bounty = form.watch("liquidationBountyPercent");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
-  const moduleMode = form.watch("moduleMode");
-  const module = form.watch("module");
+  const hookMode = form.watch("hookMode");
+  const hook = form.watch("hook");
   const mutableTax = form.watch("mutableTax");
-  const mutableModule = form.watch("mutableModule");
+  const mutableHook = form.watch("mutableHook");
+  const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
   const effectiveRecipient =
@@ -55,9 +64,9 @@ export function SummaryCard({
   const erc20 = useErc20Check(currencyMode === "custom" ? customCurrency : "");
   const currencyLabel =
     currencyMode === "preset" && presetToken
-      ? `${presetToken.symbol}`
+      ? presetToken.symbol
       : erc20.data
-        ? `${erc20.data.symbol}`
+        ? erc20.data.symbol
         : null;
   const currencySubLabel =
     currencyMode === "preset" && presetToken
@@ -66,10 +75,16 @@ export function SummaryCard({
         ? erc20.data.name
         : null;
 
-  const hasMutable = mutableTax || mutableModule;
+  const knownHook = findKnownHook(chainId, hook as Address);
+  const hasMutable = mutableTax || mutableHook;
 
   return (
-    <div className="hidden lg:block w-72 shrink-0">
+    // `self-stretch` is what makes the `sticky` below actually stick. A sticky
+    // element can only travel inside its containing block, and the parent form
+    // is `items-start` — which sizes this column to its own content, leaving the
+    // card exactly as tall as its wrapper and therefore nowhere to move. The
+    // column has to span the form's full height for the card to ride down it.
+    <div className="hidden w-72 shrink-0 self-stretch lg:block">
       <div className="sticky top-8 rounded-lg border">
         <div className="bg-muted/50 border-b px-3 py-3">
           <p className="text-xs text-muted-foreground font-semibold">Summary</p>
@@ -91,9 +106,9 @@ export function SummaryCard({
                 <span className="truncate max-w-32 inline-block align-bottom">
                   {recipientMode === "group"
                     ? "Group"
-                    : isAddress(effectiveRecipient as `0x${string}`)
+                    : isAddress(effectiveRecipient, { strict: false })
                       ? truncateAddress(effectiveRecipient)
-                      : "—"}
+                      : "My Account"}
                 </span>
               </SummaryRow>
               {recipientMode === "group" &&
@@ -131,28 +146,13 @@ export function SummaryCard({
               )}
             </SummaryRow>
 
-            {/* Module */}
-            {moduleMode !== "none" && module && (
-              <SummaryRow
-                section="module"
-                label="Module"
-                icon={<Puzzle className="size-3" />}
-              >
-                <span className="truncate max-w-32 inline-block align-bottom">
-                  {moduleMode === "verified"
-                    ? "Metadata"
-                    : truncateAddress(module)}
-                </span>
-              </SummaryRow>
-            )}
-
             {/* Tax Rate */}
             <SummaryRow
               section="economics"
               label="Tax Rate"
               icon={<HandCoins className="size-3" />}
             >
-              {taxPercentage || "0"}%/mo
+              {taxPercentage || "0"}% / 30d
             </SummaryRow>
 
             {/* Min Deposit */}
@@ -161,30 +161,52 @@ export function SummaryCard({
               label="Min Deposit"
               icon={<Clock className="size-3" />}
             >
-              {minDepositValue || "0"} {minDepositUnit}
+              {formatValueUnit(minDepositValue || "0", minDepositUnit)}
             </SummaryRow>
 
-            <OccupancySummaryRows />
+            {/* Hook — the address; the row below says what it MEANS. */}
+            <SummaryRow
+              section="hook"
+              label="Hook"
+              icon={<Plug className="size-3" />}
+            >
+              <span className="truncate max-w-32 inline-block align-bottom">
+                {hookMode === "none" || !hook
+                  ? "None"
+                  : (knownHook?.name ??
+                    (isAddress(hook, { strict: false })
+                      ? truncateAddress(hook)
+                      : "—"))}
+              </span>
+            </SummaryRow>
 
-            {/* Mutable — only show if something is mutable */}
-            {hasMutable && (
-              <SummaryRow section="permissions" label="Mutable">
-                {mutableTax && mutableModule
-                  ? "Tax + Module"
-                  : mutableTax
-                    ? "Tax"
-                    : "Module"}
-              </SummaryRow>
-            )}
+            <OccupancySummaryRows onJump={scrollToSection} />
 
-            {/* Liq. Bounty */}
+            {/* Mutability. Always stated, both ways round: "No manager" is the
+                stronger promise of the two and the one worth reading twice. */}
             <SummaryRow
               section="permissions"
-              label="Liq. Bounty"
-              icon={<Sparkles className="size-3 text-amber-500" />}
+              label="Mutable"
+              icon={<KeyRound className="size-3" />}
             >
-              {bounty || "0"}%
+              {hasMutable
+                ? mutableTax && mutableHook
+                  ? "Tax + Hook"
+                  : mutableTax
+                    ? "Tax"
+                    : "Hook"
+                : "Nothing — immutable"}
             </SummaryRow>
+
+            {hasMutable && (
+              <SummaryRow section="permissions" label="Manager">
+                <span className="truncate max-w-32 inline-block align-bottom">
+                  {isAddress(manager, { strict: false })
+                    ? truncateAddress(manager)
+                    : "—"}
+                </span>
+              </SummaryRow>
+            )}
 
             {/* Total */}
             <div className="flex justify-between border-t pt-2 mt-2">
@@ -195,7 +217,10 @@ export function SummaryCard({
 
           <Separator />
 
-          <ErrorSummary onJump={scrollToSection} />
+          <ErrorSummary
+            onJump={scrollToSection}
+            initError={submitState.initError}
+          />
 
           <SubmitButton
             state={submitState}

@@ -5,7 +5,6 @@ import { Check, ChevronDown, Menu, User } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { IndexerStatus } from "@/components/indexer-status";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -115,9 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       style={{ paddingBottom: safeBottom, paddingTop: 5 }}
     >
       {chainSelector}
-      <div className="flex items-center gap-2">
-        <IndexerStatus />
-      </div>
+      <div className="flex items-center gap-2"></div>
     </nav>
   );
 

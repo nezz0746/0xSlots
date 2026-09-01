@@ -1,15 +1,16 @@
+import { findKnownHook } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
 import {
   ChevronUp,
   Clock,
   Coins,
   HandCoins,
-  Puzzle,
-  Sparkles,
+  KeyRound,
+  Plug,
 } from "lucide-react";
 import { useState } from "react";
 import { useFormContext } from "react-hook-form";
-import { isAddress } from "viem";
+import { type Address, isAddress } from "viem";
 import { useAccount } from "wagmi";
 import { SplitBar } from "@/components/split-recipients-bar";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import { truncateAddress } from "@/utils";
 import { useResolveAddress } from "../address-input";
 import { useErc20Check } from "../hooks/use-erc20-check";
-import type { CreateSlotFormValues } from "../schema";
+import { type CreateSlotFormValues, formatValueUnit } from "../schema";
 import { type SectionId, scrollToSection } from "../sections";
 import { ErrorSummary } from "./error-summary";
 import { OccupancySummaryRows } from "./occupancy-summary-rows";
@@ -41,6 +42,13 @@ interface MobileBottomBarProps {
   chainId: number;
 }
 
+/**
+ * The summary card, for a viewport with no room for a sticky column.
+ *
+ * Same rows, same order, same jump targets — deliberately, because the desktop
+ * card is where the pre-signing read happens and a mobile user is entitled to
+ * the same read. The one thing that differs is that it starts collapsed.
+ */
 export function MobileBottomBar({
   slotCount,
   setSlotCount,
@@ -57,14 +65,14 @@ export function MobileBottomBar({
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
   const taxPercentage = form.watch("taxPercentage");
-  const bounty = form.watch("liquidationBountyPercent");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
-  const moduleMode = form.watch("moduleMode");
-  const module = form.watch("module");
+  const hookMode = form.watch("hookMode");
+  const hook = form.watch("hook");
   const mutableTax = form.watch("mutableTax");
-  const mutableModule = form.watch("mutableModule");
+  const mutableHook = form.watch("mutableHook");
+  const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
   const effectiveRecipient =
@@ -89,10 +97,11 @@ export function MobileBottomBar({
         ? erc20.data.name
         : null;
 
-  const hasMutable = mutableTax || mutableModule;
+  const knownHook = findKnownHook(chainId, hook as Address);
+  const hasMutable = mutableTax || mutableHook;
   // Nothing is sequential any more, so "ready" means the form actually
   // validates — not that you reached the last of three steps.
-  const ready = submitState.isFormValid;
+  const ready = submitState.isFormValid && !submitState.initError;
 
   // The sheet covers the form, so it has to get out of the way before the
   // scroll — otherwise the jump lands behind it and looks like nothing
@@ -149,7 +158,7 @@ export function MobileBottomBar({
                 >
                   {recipientMode === "group"
                     ? "Group"
-                    : isAddress(effectiveRecipient as `0x${string}`)
+                    : isAddress(effectiveRecipient, { strict: false })
                       ? truncateAddress(effectiveRecipient)
                       : "My Account"}
                 </SummaryRow>
@@ -190,22 +199,6 @@ export function MobileBottomBar({
                 )}
               </SummaryRow>
 
-              {/* Module */}
-              {moduleMode !== "none" && module && (
-                <SummaryRow
-                  section="module"
-                  label="Module"
-                  icon={<Puzzle className="size-3" />}
-                  onJump={jumpTo}
-                >
-                  <span className="truncate max-w-32 inline-block align-bottom">
-                    {moduleMode === "verified"
-                      ? "Metadata"
-                      : truncateAddress(module)}
-                  </span>
-                </SummaryRow>
-              )}
-
               {/* Tax Rate */}
               <SummaryRow
                 section="economics"
@@ -213,7 +206,7 @@ export function MobileBottomBar({
                 icon={<HandCoins className="size-3" />}
                 onJump={jumpTo}
               >
-                {taxPercentage || "0"}%/mo
+                {taxPercentage || "0"}% / 30d
               </SummaryRow>
 
               {/* Min Deposit */}
@@ -223,35 +216,57 @@ export function MobileBottomBar({
                 icon={<Clock className="size-3" />}
                 onJump={jumpTo}
               >
-                {minDepositValue || "0"} {minDepositUnit}
+                {formatValueUnit(minDepositValue || "0", minDepositUnit)}
               </SummaryRow>
 
-              <OccupancySummaryRows />
+              {/* Hook */}
+              <SummaryRow
+                section="hook"
+                label="Hook"
+                icon={<Plug className="size-3" />}
+                onJump={jumpTo}
+              >
+                <span className="truncate max-w-32 inline-block align-bottom">
+                  {hookMode === "none" || !hook
+                    ? "None"
+                    : (knownHook?.name ??
+                      (isAddress(hook, { strict: false })
+                        ? truncateAddress(hook)
+                        : "—"))}
+                </span>
+              </SummaryRow>
 
-              {/* Mutable — only show if something is mutable */}
+              <OccupancySummaryRows onJump={jumpTo} />
+
+              {/* Mutability */}
+              <SummaryRow
+                section="permissions"
+                label="Mutable"
+                icon={<KeyRound className="size-3" />}
+                onJump={jumpTo}
+              >
+                {hasMutable
+                  ? mutableTax && mutableHook
+                    ? "Tax + Hook"
+                    : mutableTax
+                      ? "Tax"
+                      : "Hook"
+                  : "Nothing — immutable"}
+              </SummaryRow>
+
               {hasMutable && (
                 <SummaryRow
                   section="permissions"
-                  label="Mutable"
+                  label="Manager"
                   onJump={jumpTo}
                 >
-                  {mutableTax && mutableModule
-                    ? "Tax + Module"
-                    : mutableTax
-                      ? "Tax"
-                      : "Module"}
+                  <span className="truncate max-w-32 inline-block align-bottom">
+                    {isAddress(manager, { strict: false })
+                      ? truncateAddress(manager)
+                      : "—"}
+                  </span>
                 </SummaryRow>
               )}
-
-              {/* Liq. Bounty */}
-              <SummaryRow
-                section="permissions"
-                label="Liq. Bounty"
-                icon={<Sparkles className="size-3 text-amber-500" />}
-                onJump={jumpTo}
-              >
-                {bounty || "0"}%
-              </SummaryRow>
 
               {/* Total */}
               <div className="flex justify-between border-t pt-2 mt-2">
@@ -262,7 +277,7 @@ export function MobileBottomBar({
           </div>
 
           <DrawerFooter>
-            <ErrorSummary onJump={jumpTo} />
+            <ErrorSummary onJump={jumpTo} initError={submitState.initError} />
             <SubmitButton
               state={submitState}
               switchChain={switchChain}

@@ -2,9 +2,9 @@
 
 import { slotCollectiveFactoryAbi } from "@0xslots/contracts";
 import { Plus, Trash2, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { type Address, isAddress } from "viem";
+import { type Address, isAddress, parseEventLogs } from "viem";
 import {
   useAccount,
   useWaitForTransactionReceipt,
@@ -17,7 +17,12 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useChain } from "@/context/chain";
 import { NavLink } from "@/context/navigation";
+import {
+  MAX_COLLECTIVE_NAME,
+  setCollectiveName,
+} from "@/hooks/use-collective-names";
 import { cn } from "@/lib/utils";
 
 /**
@@ -45,7 +50,7 @@ const ROLE_FIELDS = [
   {
     key: "taxManagers",
     label: "Tax",
-    hint: "May change the tax rate and the liquidation bounty.",
+    hint: "May change the tax rate.",
   },
   {
     key: "policyManagers",
@@ -68,8 +73,10 @@ type RoleKey = (typeof ROLE_FIELDS)[number]["key"];
 
 export default function CreateCollectivePage() {
   const { address: connected } = useAccount();
+  const { chainId } = useChain();
   const factory = useCollectiveFactory();
 
+  const [name, setName] = useState("");
   const [payees, setPayees] = useState<Payee[]>([
     { address: "", shares: "50" },
     { address: "", shares: "50" },
@@ -83,9 +90,42 @@ export default function CreateCollectivePage() {
   });
 
   const { writeContract, data: hash, isPending, error } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  });
+  const {
+    data: receipt,
+    isLoading: isConfirming,
+    isSuccess,
+  } = useWaitForTransactionReceipt({ hash });
+
+  /**
+   * The collective's address, read out of the receipt.
+   *
+   * The factory returns it, but a write only ever hands back a hash, so the
+   * address has to be recovered from `SlotCollectiveDeployed`. Worth doing for
+   * its own sake — it turns "Collective created" into a link — and it is the
+   * only moment the name typed above can be attached to anything.
+   */
+  const created = useMemo(() => {
+    if (!receipt) return undefined;
+    const [log] = parseEventLogs({
+      abi: slotCollectiveFactoryAbi,
+      eventName: "SlotCollectiveDeployed",
+      logs: receipt.logs,
+    });
+    return log?.args.manager;
+  }, [receipt]);
+
+  // Written once per deployment. The field stays editable afterwards — the
+  // success line offers a link and the user may still be looking at it — so
+  // this re-runs on `name` and keeps the stored label in step, but only for the
+  // collective this transaction actually produced.
+  const namedRef = useRef<Address | undefined>(undefined);
+  useEffect(() => {
+    if (!created) return;
+    const label = name.trim();
+    if (!label && namedRef.current !== created) return;
+    namedRef.current = created;
+    setCollectiveName(chainId, created, label);
+  }, [created, name, chainId]);
 
   const totalShares = useMemo(
     () => payees.reduce((sum, p) => sum + (Number(p.shares) || 0), 0),
@@ -201,6 +241,29 @@ export default function CreateCollectivePage() {
       </PageHeader>
 
       <div className="w-full px-3 md:px-5 py-4 pb-24">
+        {/* ── Name ─────────────────────────────────────────── */}
+        <section className="mb-4 border">
+          <header className="border-b px-3 py-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider">
+              What to call it
+            </h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Optional, and only for you. A collective has no on-chain name, so
+              this is stored in this browser to save reading the address —
+              nobody else sees it, and it does not follow you to another device.
+            </p>
+          </header>
+          <div className="p-3">
+            <Input
+              placeholder="Treasury, Studio, Season 1…"
+              value={name}
+              maxLength={MAX_COLLECTIVE_NAME}
+              onChange={(e) => setName(e.target.value)}
+              className="text-xs md:max-w-sm"
+            />
+          </div>
+        </section>
+
         <div className="flex flex-col lg:flex-row gap-4 items-start">
           {/* ── Payouts ──────────────────────────────────────── */}
           <section className="flex-1 min-w-0 border w-full">
@@ -353,9 +416,16 @@ export default function CreateCollectivePage() {
           )}
           {isSuccess && (
             <p className="text-[11px] text-emerald-600 dark:text-emerald-500">
-              Collective created.{" "}
-              <NavLink href="/app/collectives" className="underline">
-                See it in My Collectives
+              {name.trim()
+                ? `“${name.trim()}” created.`
+                : "Collective created."}{" "}
+              <NavLink
+                href={
+                  created ? `/app/collectives/${created}` : "/app/collectives"
+                }
+                className="underline"
+              >
+                {created ? "Open it" : "See it in My Collectives"}
               </NavLink>
             </p>
           )}

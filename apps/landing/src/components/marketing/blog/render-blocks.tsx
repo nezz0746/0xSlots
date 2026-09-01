@@ -156,7 +156,10 @@ export function RenderBlocks({
 
           case "code":
             return (
-              <div key={key} className="my-8 border-2 border-foreground bg-foreground">
+              <div
+                key={key}
+                className="my-8 border-2 border-foreground bg-foreground"
+              >
                 {block.language && (
                   <p className="border-b border-muted-foreground/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                     {block.language}

@@ -4,19 +4,6 @@ import { ParcelField } from "@/components/marketing/parcel-field";
 import { Button } from "@/components/ui/button";
 import { MARKETING_LINKS } from "@/lib/external-links";
 
-/**
- * One entry per rendered line.
- *
- * Each must fit on a single line at the clamp below. A wrapped entry is not
- * just a layout risk — every entry gets its own animation delay, so one that
- * spans two lines makes those two rise together while the rest arrive
- * separately, and the stagger stops reading as a stagger.
- *
- * This headline is much longer than the one it replaced, so the clamp is
- * smaller and the column wider to keep four honest lines.
- */
-const HEADLINE = ["Making", "collective", "ownership", "easy to use"];
-
 export function Hero() {
   return (
     <section className="relative flex flex-1 flex-col overflow-hidden">
@@ -32,7 +19,7 @@ export function Hero() {
           `flex-1` grows into the space; min-height still resolves to the
           content, so a viewport too short for the copy scrolls rather than
           clipping it. */}
-      <div className="relative mx-auto grid w-full max-w-4xl flex-1 content-center gap-14 px-4 py-16 md:px-6 md:py-20">
+      <div className="relative mx-auto grid w-full max-w-6xl flex-1 content-center gap-14 px-4 py-10 md:px-6 md:py-16">
         <div>
           <p
             className="eyebrow animate-raise"
@@ -41,16 +28,13 @@ export function Hero() {
             Partial common ownership · Base
           </p>
 
-          <h1 className="mt-5 display text-[clamp(2.1rem,6vw,4rem)]">
-            {HEADLINE.map((line, i) => (
-              <span
-                key={line}
-                className="block animate-raise"
-                style={{ animationDelay: `${120 + i * 90}ms` }}
-              >
-                {line}
-              </span>
-            ))}
+          {/* Flat and unanimated: the line wraps wherever the measure puts it
+              rather than being broken into fixed lines, so the clamp can do its
+              job at any width. */}
+          <h1 className="mt-5 display text-[clamp(2.1rem,6vw,3.2rem)] max-w-2xl">
+            Making{" "}
+            <span className="text-destructive">collective ownership</span> easy
+            to use
           </h1>
 
           {/* Plain language, no jargon and no mechanism the reader has to work
@@ -61,17 +45,9 @@ export function Hero() {
             className="mt-7 max-w-xl animate-raise text-lg leading-relaxed text-foreground/80"
             style={{ animationDelay: "420ms" }}
           >
-            Name your price and pay a small tax on it. Anyone can buy it from
-            you at that price, any time — so nothing sits idle and everything
-            stays honestly valued.
-          </p>
-
-          <p
-            className="mt-4 max-w-xl animate-raise text-lg leading-relaxed text-foreground/80"
-            style={{ animationDelay: "480ms" }}
-          >
-            Collectives let a group share what those assets earn and govern them
-            together.
+            Slots are a flexible and composable collective ownership primitive
+            that make it easy for you to experiment with different ways of
+            sharing and governing digital assets.
           </p>
 
           <div

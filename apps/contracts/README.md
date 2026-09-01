@@ -1,69 +1,125 @@
-# PCO Protocol — Contracts
+# 0xSlots — Contracts
 
-Foundry-based smart contracts for the Partial Common Ownership protocol.
+Foundry smart contracts for the 0xSlots protocol: partial common ownership
+slots, where the occupant declares a price, pays continuous tax on it from a
+deposit, and anyone may buy at that price.
 
 ## Setup
 
 ```bash
-# Install submodule dependencies (required after cloning)
 cd apps/contracts
-forge install
-
-# Build
+forge install   # lib/ holds git submodules and is not checked in
 forge build
-
-# Test
 forge test
 ```
 
-> **Note:** The `lib/` directory contains git submodules and is not checked in. You must run `forge install` after cloning to fetch dependencies.
-
 ## Architecture
 
-- **Harberger.sol** — Core PCO primitive. Manages slots with self-assessed pricing and continuous Superfluid tax streams.
-- **HarbergerHub.sol** — Factory and registry. Deploys Harberger instances, manages allowed modules and currencies.
-- **HarbergerStreamSuperApp.sol** — Superfluid Super App that handles tax stream routing and automatic slot release on insufficient flow.
+### Core
 
-### Layer 1: PCO Primitive
+- **`Slot.sol`** — one slot, one contract, deployed as a BeaconProxy. Holds the
+  occupant, the declared price, the deposit and the tax accounting. Tax accrues
+  per second at `taxPercentage` basis points per 30 days and is charged against
+  the deposit at the start of every mutating call — nothing runs on a timer, and
+  a charge is capped by the remaining deposit.
+- **`SlotFactory.sol`** — UUPS-upgradeable factory. Deploys slots behind one
+  shared beacon, so `upgradeBeacon` moves every slot at once and storage is
+  strictly append-only. Also holds the informational verified-utility and
+  verified-policy registries.
+- **`SlotCollective.sol`** — a 0xSplits PushSplit wearing a role-gated control
+  panel. Fills both of a slot's named addresses: `recipient` (tax flows to it)
+  and `manager` (it may propose changes). Ownership is bound to the contract
+  itself and cannot move — that is what makes the inherited `execCalls`
+  unreachable and the roles meaningful.
+- **`SlotCollectiveFactory.sol`** — mints collectives from one implementation
+  behind an upgradeable beacon, mirroring `SlotFactory`.
 
-The core protocol is unopinionated about what slots represent. It handles:
+### The two pluggable contracts
 
-- Slot creation with configurable tax rates, currencies, and modules
-- Self-assessment: occupants set their own price, pay proportional tax
-- Continuous tax streaming via Superfluid CFA (per-second, no epochs)
-- Atomic transfers: anyone can buy at the self-assessed price
-- Automatic slot release when streams are insufficient
+A slot can plug in exactly two things, and they are deliberately asymmetric.
 
-### Layer 2: Modules
+| | Answers | On failure |
+| --- | --- | --- |
+| **Utility** (`IUtility`) | what holding the slot *grants* | fails **open** — hooks are gas-capped and reverts are swallowed |
+| **Occupancy policy** (`IOccupancyPolicy`) | *who* may hold it, and when | fails **closed** — a revert blocks the action |
 
-Modules implement `IHarbergerModule` and receive callbacks:
+A broken utility degrades to a slot that grants nothing; it can never block a
+buy, a release or a liquidation. A policy answers yes or no and nothing else —
+it can never move funds, change the price or redirect the buyer.
 
-- `onTransfer(slotId, from, to)` — when ownership changes
-- `onRelease(slotId, previousOccupant)` — when a slot is released
-- `onPriceUpdate(slotId, oldPrice, newPrice)` — when price is self-assessed
+Both describe themselves through **`IModuleMetadata`** (`name`, `version`,
+`metadataURI`). That inheritance narrows each child's ERC-165 id to its own
+behaviour, so `SlotFactory.setUtilityVerified` and `setPolicyVerified` assert
+*both* ids — checking one alone would verify a contract that cannot describe
+itself.
 
-Example: **AdLand** module adds ad metadata/content management on top of PCO slots.
+`ISlotsModule` is the former name for `IUtility`, kept as an ABI-identical alias
+so existing utilities keep compiling.
 
-## Key Concepts
+### Utility hooks
 
-| Concept | Description |
-|---------|-------------|
-| **Slot** | A PCO position within a Harberger instance |
-| **Self-assessment** | Occupant sets price; higher price = more tax but harder to buy |
-| **Continuous tax** | Streamed per-second via Superfluid CFA |
-| **Always for sale** | Anyone can buy at the self-assessed price + protocol fee |
-| **Tax distributor** | Super App that routes tax streams to the beneficiary |
+```solidity
+function onTransfer(uint256 slotId, address from, address to) external;
+function onPriceUpdate(uint256 slotId, uint256 oldPrice, uint256 newPrice) external;
+function onRelease(uint256 slotId, address from) external;
+function onSettle(uint256 slotId, address occupant, uint256 owed, uint256 paid) external;
+```
+
+`slotId` is always `0` — one slot is one contract, so the caller is `msg.sender`.
+
+`onSettle` is the economic hook and the only one that reports money moving.
+`paid` is capped by the remaining deposit and is the sound basis for accounting;
+`owed - paid` is non-zero exactly when the occupant has run dry. It fires
+mid-transaction, from inside the settle that begins every mutating call, so
+treat anything read there as in flux.
+
+Because utility calls are swallowed on failure, a utility must never be the
+source of truth for anything financial. Reduce over the `TaxPaid` event, which
+always fires.
+
+### Shipped utilities and policies
+
+- **`MetadataModule`** — a URI and structured metadata per slot, set by the
+  occupant, cleared on release.
+- **`FeedPostModule`**, **`FeedRouter`**, **`FeedSocialGroup`** — posting rights
+  into a feed.
+- **`MinimumTenurePolicy`** — requires the whole window's tax up front and
+  blocks buy-outs before it elapses; also blocks price cuts while protected.
+- **`MinimumPricePolicy`** — a price floor, bound to a currency because the
+  floor is a bare integer whose meaning depends on the token's decimals.
+
+Policies are immutable and deployed per set of terms at a CREATE2 address
+derived from those terms, by a factory implementing `IPolicyFactory` — so a
+client can ask any factory "did you make this?" without per-kind knowledge.
+
+### Peripherals
+
+- **`BatchCollector.sol`** — collect tax from many slots in one transaction.
+- **`ERC721Slots.sol`** / **`ERC721SlotsFactory.sol`** — ERC-721 wrapper.
+
+## Deploying
+
+```bash
+forge script script/DeployLocal.s.sol   # local anvil, pinned addresses
+forge script script/SeedLocal.s.sol     # test token + sample slots
+```
+
+`LocalBootstrap.sol` explains why the local addresses survive edits to the
+Solidity, which a plain CREATE2 would not — CREATE2 hashes the init code and so
+moves whenever the contract changes.
+
+From the repo root, `pnpm dev:local` runs a chain, deploys and indexes in one go.
 
 ## Security
 
-See [Audit/2026-02-08-k-security-audit.md](./Audit/2026-02-08-k-security-audit.md) for the security audit report.
+- [K Security audit, Feb 2026](./Audit/2026-02-08-k-security-audit.md)
+- [v2 security audit, Feb 2026](./Audit/2026-02-17-v2-security-audit.md)
+- [v3 occupancy review, Jul 2026](./Audit/2026-07-29-v3-occupancy-review.md)
 
 ## Dependencies
 
-- [Superfluid Protocol](https://github.com/superfluid-finance/protocol-monorepo)
 - [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts)
-- [OpenZeppelin Upgradeable](https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable)
-- [Forge Std](https://github.com/foundry-rs/forge-std)
+  and [Upgradeable](https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable)
 - [0xSplits](https://github.com/0xSplits/splits-contracts-monorepo)
-- [Uniswap V3 Core](https://github.com/Uniswap/v3-core)
 - [Solady](https://github.com/vectorized/solady)
+- [Forge Std](https://github.com/foundry-rs/forge-std)

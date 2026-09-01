@@ -5,8 +5,11 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, monospace;
+  /* Both point at next/font variables set on <html> in layout.tsx. They have to
+     be defined on the SAME element this block targets (:root), or the reference
+     resolves to nothing and the property is dropped entirely. */
+  --font-sans: var(--font-urbanist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 
   /* Carried over from vitrine — the marketing hero staggers on these. */
   --animate-raise: raise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;

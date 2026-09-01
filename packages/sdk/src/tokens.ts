@@ -55,16 +55,16 @@ export const NATIVE_CURRENCY: TokenInfo = {
 export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
   [SlotsChain.ANVIL]: [
     {
-      // LocalToken, deployed by apps/contracts/script/SeedLocal.s.sol.
+      // The test token deployed by `script/slots/DeploySlots.s.sol`, the
+      // hook-protocol local stack.
       //
       // Plain CREATE, so the address derives from (deployer, nonce) and is
       // independent of the contract's bytecode — it survives edits to the
-      // Solidity, and moves whenever the deployer's nonce count changes. That
-      // nonce is shared with DeployLocal, which runs first: adding a contract
-      // THERE moves this address too. SeedLocal asserts the value so drift
-      // fails the seed loudly instead of leaving the app pointed at nothing —
-      // when it fires, update both this and EXPECTED_LOCAL_TOKEN.
-      address: "0x9A676e781A523b5d0C0e43731313A708CB607508",
+      // Solidity and moves only when the deploy script changes what it
+      // deploys, or in what order. See
+      // docs/plans/2026-09-01-slots-local-runbook.md, which is the source of
+      // truth for every local address.
+      address: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
       name: "0xSlots Test USD",
       symbol: "USDX",
       decimals: 18,

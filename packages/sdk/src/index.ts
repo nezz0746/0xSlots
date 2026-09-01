@@ -1,18 +1,21 @@
 // Unified client (read + write)
+
+export type { SellOrder } from "./client";
 export {
   type BuyParams,
+  type ChainStatus,
   type CreateSlotParams,
   type CreateSlotsParams,
   createSlotsClient,
+  DEFAULT_API_URL,
+  type IndexerMeta,
+  LOCAL_API_URL,
+  SELL_ORDER_TYPES,
   type SlotConfig,
   type SlotInitParams,
   SlotsChain,
   SlotsClient,
   type SlotsClientConfig,
-  type ChainStatus,
-  DEFAULT_API_URL,
-  LOCAL_API_URL,
-  type IndexerMeta,
   UpdateKind,
 } from "./client";
 // Errors

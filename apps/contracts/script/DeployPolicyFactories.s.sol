@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {BaseScript, console2} from "./Base.s.sol";
-import {IPolicyFactory} from "../src/interfaces/IPolicyFactory.sol";
-import {MinimumPricePolicyFactory} from "../src/policies/MinimumPricePolicyFactory.sol";
-import {MinimumTenurePolicyFactory} from "../src/policies/MinimumTenurePolicyFactory.sol";
+import {IPolicyFactory} from "../src/v1/interfaces/IPolicyFactory.sol";
+import {MinimumPricePolicyFactory} from "../src/v1/policies/MinimumPricePolicyFactory.sol";
+import {MinimumTenurePolicyFactory} from "../src/v1/policies/MinimumTenurePolicyFactory.sol";
 
 /**
  * @title DeployPolicyFactories

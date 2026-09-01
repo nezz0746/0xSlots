@@ -15,10 +15,34 @@ export function Mark({ className }: { className?: string }) {
     >
       <g transform="rotate(45 50 50)">
         <rect x="20" y="20" width="60" height="60" fill="currentColor" />
-        <rect x="22" y="22" width="16" height="16" className="fill-background" />
-        <rect x="42" y="22" width="16" height="16" className="fill-background" />
-        <rect x="22" y="42" width="16" height="16" className="fill-background" />
-        <rect x="42" y="42" width="16" height="16" className="fill-background" />
+        <rect
+          x="22"
+          y="22"
+          width="16"
+          height="16"
+          className="fill-background"
+        />
+        <rect
+          x="42"
+          y="22"
+          width="16"
+          height="16"
+          className="fill-background"
+        />
+        <rect
+          x="22"
+          y="42"
+          width="16"
+          height="16"
+          className="fill-background"
+        />
+        <rect
+          x="42"
+          y="42"
+          width="16"
+          height="16"
+          className="fill-background"
+        />
       </g>
     </svg>
   );

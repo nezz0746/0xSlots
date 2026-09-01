@@ -4,9 +4,8 @@ import { CHAINS } from "@0xslots/contracts";
 import {
   Check,
   ChevronDown,
-  FlaskConical,
   PlusIcon,
-  Scale,
+  Trophy,
   User,
   Users,
 } from "lucide-react";
@@ -14,7 +13,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
 import { DevTimeWarp } from "@/components/dev-time-warp";
-import { IndexerStatus } from "@/components/indexer-status";
 import { TestnetFaucet } from "@/components/testnet-faucet";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +46,7 @@ import {
 } from "@/context/explorer-section";
 import { NavLink, useNavigation } from "@/context/navigation";
 import { EXTERNAL_LINKS } from "@/lib/external-links";
+import { REWARDS_ENABLED } from "@/lib/features";
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -55,7 +54,8 @@ export function AppSidebar() {
   const { chainId, setChain } = useChain();
   const { section, setSection } = useExplorerSection();
 
-  const onExplorer = pathname === "/";
+  // The explorer index moved to /app when the marketing site took the root.
+  const onExplorer = pathname === "/app";
 
   const selectSection = (id: string) => {
     setSection(id);
@@ -84,7 +84,11 @@ export function AppSidebar() {
           0xSlots
         </NavLink>
 
-        <Button size="sm" className="w-full" onClick={() => push("/app/create")}>
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={() => push("/app/create")}
+        >
           <PlusIcon className="size-4" />
           Create Slot
         </Button>
@@ -111,31 +115,21 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               ))}
 
-              {/* Sits with the sections because it answers the same kind of
-                  question — what a slot's terms can be, alongside what a slot
-                  can do. It is a ROUTE, not a section: it pushes rather than
-                  setting explorer state, so `isActive` reads the path. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/policies")}
-                  onClick={() => push("/app/policies")}
-                >
-                  <Scale className="size-4" />
-                  <span>Policies</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* A sandbox, not a product surface — hence the dashed styling
-                  and the honest label. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/lab")}
-                  onClick={() => push("/app/lab")}
-                >
-                  <FlaskConical className="size-4" />
-                  <span>Lab</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {/* A ROUTE rather than a section: the reward leaderboard
+                  is program-wide, so it sits with the other "how the protocol
+                  works" destinations rather than the explorer tabs. Behind a
+                  flag while the program is still local-only. */}
+              {REWARDS_ENABLED && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/app/rewards")}
+                    onClick={() => push("/app/rewards")}
+                  >
+                    <Trophy className="size-4" />
+                    <span>Rewards</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -147,7 +141,7 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={pathname === "/profile"}
+                  isActive={pathname === "/app/profile"}
                   onClick={() => push("/app/profile")}
                 >
                   <User className="size-4" />
@@ -156,7 +150,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={pathname.startsWith("/collectives")}
+                  isActive={pathname.startsWith("/app/collectives")}
                   onClick={() => push("/app/collectives")}
                 >
                   <Users className="size-4" />
@@ -228,7 +222,6 @@ export function AppSidebar() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <IndexerStatus />
         </div>
       </SidebarFooter>
     </Sidebar>

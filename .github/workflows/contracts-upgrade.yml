@@ -1,0 +1,91 @@
+name: contracts-upgrade
+
+# Deliberately manual, and deliberately testnet-only.
+#
+# A beacon upgrade replaces the code behind every slot in one transaction.
+# That signature belongs to whoever owns the protocol, from a wallet they
+# control, having read the calldata — not to a repository secret. So this
+# workflow upgrades testnets unattended, and for anything else it PREPARES:
+# deploys and validates the implementation, prints the address and calldata,
+# and stops.
+on:
+  workflow_dispatch:
+    inputs:
+      chain:
+        description: "Chain id (must have deployments/config/<id>.json)"
+        required: true
+        type: string
+      contract:
+        description: "SlotFactory | OfferBook | Slot | SlotCollectiveFactory"
+        required: true
+        type: string
+      broadcast:
+        description: "Send it (testnets only; mainnet always prepares)"
+        type: boolean
+        default: false
+
+defaults:
+  run:
+    working-directory: apps/contracts
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    # Dispatch only from `develop`. A chain-touching job launched off an
+    # arbitrary branch is a way to ship unreviewed code to a live network with
+    # one dropdown; requiring develop means whatever runs here has been through
+    # the gates at least once.
+    environment: ${{ inputs.broadcast && 'deploy' || 'simulate' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Refuse anything but develop
+        if: github.ref != 'refs/heads/develop'
+        run: |
+          echo "upgrades are dispatched from develop, not ${{ github.ref }}"
+          exit 1
+
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Resolve the chain's RPC from its config
+        id: cfg
+        run: |
+          CFG="deployments/config/${{ inputs.chain }}.json"
+          test -f "$CFG" || { echo "no config for chain ${{ inputs.chain }}"; exit 1; }
+          echo "rpc_env=$(jq -r .rpcEnv "$CFG")" >> "$GITHUB_OUTPUT"
+          echo "testnet=$(jq -r .testnet "$CFG")" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to broadcast to a non-testnet
+        if: inputs.broadcast && steps.cfg.outputs.testnet != 'true'
+        run: |
+          echo "chain ${{ inputs.chain }} is not a testnet — prepare only."
+          exit 1
+
+      - name: Simulate (always)
+        env:
+          RPC: ${{ secrets[steps.cfg.outputs.rpc_env] }}
+        run: |
+          forge script script/protocol/UpgradeProtocol.s.sol:UpgradeProtocol \
+            --sig "run(string)" "${{ inputs.contract }}" --rpc-url "$RPC"
+
+      - name: Broadcast (testnets only)
+        if: inputs.broadcast && steps.cfg.outputs.testnet == 'true'
+        env:
+          RPC: ${{ secrets[steps.cfg.outputs.rpc_env] }}
+          PK: ${{ secrets.TESTNET_DEPLOYER_KEY }}
+        run: |
+          forge script script/protocol/UpgradeProtocol.s.sol:UpgradeProtocol \
+            --sig "run(string)" "${{ inputs.contract }}" \
+            --rpc-url "$RPC" --private-key "$PK" --broadcast
+
+      - name: Commit the updated address book
+        if: inputs.broadcast && steps.cfg.outputs.testnet == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployments/${{ inputs.chain }}
+          git diff --cached --quiet || git commit -m "chore(deploy): ${{ inputs.contract }} on chain ${{ inputs.chain }}"
+          git push

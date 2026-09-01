@@ -1,148 +1,192 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { createConfig, factory, loadBalance, rateLimit } from "ponder";
-import { http, type Hex, parseAbiItem, type Transport, webSocket } from "viem";
+import { createConfig, factory } from "ponder";
+import { parseAbiItem } from "viem";
 import {
-  FeedAbi,
-  FeedHubAbi,
-  FeedPostModuleAbi,
   SlotAbi,
   SlotCollectiveAbi,
   SlotCollectiveFactoryAbi,
   SlotFactoryAbi,
-  slotFactoryLegacyAbi,
 } from "./abis";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE HOOK-BASED SLOTS PROTOCOL
+//
+// ── One creation function, one source ──────────────────────────────────────
+//
+// The previous protocol had two live `SlotDeployed` signatures — a struct
+// gained a field, which changed topic0 — so every handler had to be registered
+// twice and every child-address `factory()` declared twice. `SlotFactory` now
+// has exactly ONE creation function taking one `SlotInit` struct, and one
+// `SlotCreated` event. There is a single `Slot` source below, and src/slot.ts
+// registers each handler once. A new slot parameter goes into `SlotInit`; it
+// must never become a suffixed second creator, because that splits this file
+// again.
+//
+// ── Discovering slots: factory() on SlotCreated ────────────────────────────
+//
+// Slots are BeaconProxies, so their addresses are only knowable from the
+// factory's own log. `factory()` on `SlotCreated` watches every slot address
+// directly, which keeps viem's typed decoding and keeps `event.log.address`
+// meaning the slot.
+//
+// The factory briefly carried a re-emit — `emitEvent` / `SlotEvent`, one
+// watched address for the whole protocol with every event hand-decoded from
+// `bytes` — and nothing in `src/slots` ever called it. It is gone from the
+// contracts now rather than left as a supported-looking path that emitted
+// nothing, so this is the only way in and there is no second stream to
+// accidentally index alongside it and double-count every transition.
+// ═══════════════════════════════════════════════════════════════════════════
 
 // ──────────────────────────────────────────
 // Local mode
 //
-// PONDER_LOCAL=1 indexes an anvil chain INSTEAD of base/base-sepolia, reading
-// addresses from the forge deploy output rather than the constants below. It is
-// a full replacement, not an addition: pulling years of mainnet history while
-// iterating on a local chain burns an Alchemy quota to answer questions the
-// local chain answers in seconds.
+// PONDER_LOCAL=1 indexes an anvil chain INSTEAD of base/base-sepolia. It is a
+// full replacement, not an addition: pulling remote history while iterating on
+// a local chain burns a provider quota to answer questions the local chain
+// answers in seconds.
 // ──────────────────────────────────────────
 
 const LOCAL = process.env.PONDER_LOCAL === "1";
 const ANVIL_RPC = process.env.ANVIL_RPC_URL ?? "http://127.0.0.1:8545";
 
-function localDeployment(name: string): { address: Hex; startBlock: number } {
-  const path = fileURLToPath(
-    new URL(
-      `../../apps/contracts/deployments/31337/${name}.json`,
-      import.meta.url,
-    ),
-  );
+/**
+ * The local factory, pinned rather than read from disk.
+ *
+ * `apps/contracts/deployments/31337/SlotFactory.json` is written by
+ * `DeployLocal.s.sol`, which still deploys the RETIRED `src/SlotFactory.sol` —
+ * so that file currently names an address with no code at it on the running
+ * chain. Reading it would produce a log filter that silently matches nothing,
+ * which is the worst failure available here. Pinned to the address the hooks
+ * deploy actually produces, overridable while the two are out of step.
+ */
+const ANVIL_SLOT_FACTORY = (process.env.SLOTS_FACTORY_ANVIL ??
+  "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0") as `0x${string}`;
+const ANVIL_START_BLOCK = Number(process.env.SLOTS_START_BLOCK_ANVIL ?? 0);
+
+/**
+ * The local collective factory, which cannot be pinned the way the slot
+ * factory is.
+ *
+ * `DeploySlots.s.sol` does not deploy it — collectives need a
+ * `SplitsWarehouse`, which the protocol deploy has no business creating — so it
+ * comes up separately, from `script/slots/DeployAndDriveCollective.s.sol`,
+ * against a chain whose nonce is already wherever the seed left it. Its address
+ * is therefore a function of when it was deployed, not of the deploy script,
+ * and a hardcoded constant would be wrong on the second run.
+ *
+ * Resolved in order: the env var, then the deployment file that script writes,
+ * then nothing. The file outliving its chain is the same hazard called out
+ * above for `SlotFactory` — a filter that silently matches nothing — so the
+ * resolved address is ANNOUNCED at boot with where it came from. That turns a
+ * stale address into one line of output you can check against `cast codesize`,
+ * instead of an empty table with no explanation.
+ */
+function anvilCollectiveFactory(): Deployment {
+  const fromEnv = process.env.SLOTS_COLLECTIVE_FACTORY_ANVIL as
+    | `0x${string}`
+    | undefined;
+  if (fromEnv) {
+    const block = Number(process.env.SLOTS_COLLECTIVE_START_BLOCK_ANVIL ?? 0);
+    console.log(`[local] collective factory ${fromEnv} from block ${block} (env)`);
+    return { address: fromEnv, startBlock: block };
+  }
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    throw new Error(
-      `PONDER_LOCAL=1 but ${path} is missing. Run the local deploy first:\n` +
-        `  cd apps/contracts && forge script script/DeployLocal.s.sol:DeployLocal --broadcast`,
+    const raw = readFileSync(
+      "../../apps/contracts/deployments/31337/SlotCollectiveFactory.json",
+      "utf8",
     );
+    const { address, startBlock } = JSON.parse(raw) as Deployment;
+    console.log(
+      `[local] collective factory ${address} from block ${startBlock} ` +
+        `(deployments/31337) — verify with: cast codesize ${address}`,
+    );
+    // The recorded block, not 0. The collective factory comes up long after
+    // the protocol does — it is a second script against an already-running
+    // chain — so starting at 0 would be a thousand empty `eth_getLogs` before
+    // the first log it can possibly match.
+    return { address, startBlock };
+  } catch {
+    console.log(
+      "[local] no collective factory: set SLOTS_COLLECTIVE_FACTORY_ANVIL, or " +
+        "run script/slots/DeployAndDriveCollective.s.sol",
+    );
+    return { address: UNDEPLOYED, startBlock: 0 };
   }
 }
 
 // ──────────────────────────────────────────
-// Per-chain factory addresses (mirror packages/subgraph/config/*.json)
+// Per-chain factory addresses
+//
+// The hook-based factory is NOT DEPLOYED on base or base-sepolia yet. The
+// addresses that used to live here belong to the retired protocol and are
+// deliberately gone — pointing this config at them would index the old event
+// set against the new schema and write nothing but errors.
+//
+// Until the deploy happens, each remote chain reads its address from an env
+// var and falls back to `startBlock: "latest"`, so an unconfigured chain costs
+// a log filter at the tip rather than a full historical scan for an address
+// that has no code.
 // ──────────────────────────────────────────
 
-const BASE_SEPOLIA_SLOT_FACTORY =
-  "0x6D87C1647f228Baf8DE0374FCd7FdEBF6900fdFF" as const;
-const BASE_SEPOLIA_SLOT_FACTORY_START_BLOCK = 39341061;
+const UNDEPLOYED = "0x0000000000000000000000000000000000000000" as const;
 
-const BASE_SLOT_FACTORY = "0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e" as const;
-const BASE_SLOT_FACTORY_START_BLOCK = 43581441;
+type Deployment = {
+  address: `0x${string}`;
+  startBlock: number | "latest";
+};
 
-// SlotCollectiveFactory, deployed 2026-08-12. Its own start block rather than
-// the slot factory's: collectives did not exist for the ~6M blocks before this,
-// and starting earlier would be that many pointless eth_getLogs.
-const BASE_SEPOLIA_COLLECTIVE_FACTORY =
-  "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d" as const;
-const BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK = 45393270;
+function remoteFactory(env: string, blockEnv: string): Deployment {
+  const address = process.env[env] as `0x${string}` | undefined;
+  if (!address) return { address: UNDEPLOYED, startBlock: "latest" };
+  const block = process.env[blockEnv];
+  return { address, startBlock: block ? Number(block) : "latest" };
+}
 
-// FeedHub — base-sepolia only.
+const BASE_SEPOLIA_SLOT_FACTORY = remoteFactory(
+  "SLOTS_FACTORY_BASE_SEPOLIA",
+  "SLOTS_START_BLOCK_BASE_SEPOLIA",
+);
+const BASE_SLOT_FACTORY = remoteFactory(
+  "SLOTS_FACTORY_BASE",
+  "SLOTS_START_BLOCK_BASE",
+);
+
+// ──────────────────────────────────────────
+// Collective factories
 //
-// packages/subgraph/config/base.json carries a mainnet entry, but it is an
-// explicit placeholder reusing this same address with a note that there is no
-// code at it on mainnet. Indexing that would mean a log filter that can never
-// match; the source is added here when the mainnet hub actually ships.
-const BASE_SEPOLIA_FEED_HUB =
-  "0xE4c0c374E3233b5174a1600AF1321cDa9b6B5cF8" as const;
-const BASE_SEPOLIA_FEED_HUB_START_BLOCK = 44088994;
+// Env-driven for the same reason the slot factories above are, and it is NOT
+// the same reason it looks like. Collective factories ARE deployed on base and
+// base-sepolia — the addresses are in this file's history — but what is behind
+// them is the PRE-PORT collective: three manager roles, a three-member
+// `UpdateKind`, and a `LiquidationBountyRelayed` that no longer exists.
+//
+// `UpdateRelayed(address,address,uint8,bytes32)` is byte-identical across the
+// port, so pointing this at a legacy factory would not fail — it would decode
+// old `Policy` (ordinal 2) proposals against a two-member `Dimension` and
+// quietly write a null `kind`. Silence, not an error. So the addresses are
+// gone until a ported factory is deployed, and each chain reads its own.
+// ──────────────────────────────────────────
 
-const FEED_CREATED_EVENT = parseAbiItem(
-  "event FeedCreated(uint256 indexed index, address indexed feed, address indexed owner)",
+const BASE_SEPOLIA_COLLECTIVE_FACTORY = remoteFactory(
+  "COLLECTIVE_FACTORY_BASE_SEPOLIA",
+  "COLLECTIVE_START_BLOCK_BASE_SEPOLIA",
+);
+const BASE_COLLECTIVE_FACTORY = remoteFactory(
+  "COLLECTIVE_FACTORY_BASE",
+  "COLLECTIVE_START_BLOCK_BASE",
 );
 
 // ──────────────────────────────────────────
 // Event signatures used to derive child addresses via factory()
 // ──────────────────────────────────────────
 
-// Two live `SlotDeployed` signatures. `SlotConfig` gained `mutablePolicy` and
-// `SlotInitParams` gained `occupancyPolicy`, which changed both tuple types and
-// therefore topic0 — two distinct events that happen to share a name.
-//
-// Both are load-bearing, and each needs its OWN source on both sides:
-//
-//   * `factory()` derives child addresses from exactly one event, so a single
-//     entry registers only that era's slots as children.
-//   * `ponder.on("<source>:SlotDeployed")` resolves against that source's ABI,
-//     so a single entry writes slot rows for only that era.
-//
-// Getting these two out of step is worse than either gap alone: children
-// registered from one signature while rows are written from the other means
-// every slot event fires against a row that was never inserted, and `loadSlot`
-// throws rather than skipping.
-//
-// 64 slots on base and 237 on base-sepolia were created under the legacy
-// signature, against exactly one each under the current one — 301 of 303.
-const SLOT_DEPLOYED_EVENT = parseAbiItem(
-  "event SlotDeployed(address indexed slot, address indexed recipient, address indexed currency, (bool,bool,bool,address) config, (uint256,address,uint256,uint256,address) initParams)",
+const SLOT_CREATED_EVENT = parseAbiItem(
+  "event SlotCreated(address indexed slot, address indexed recipient, address indexed creator, address currency, address hook)",
 );
 
-const SLOT_DEPLOYED_LEGACY_EVENT = parseAbiItem(
-  "event SlotDeployed(address indexed slot, address indexed recipient, address indexed currency, (bool,bool,address) config, (uint256,address,uint256,uint256) initParams)",
-);
-
-const MODULE_VERIFIED_EVENT = parseAbiItem(
-  "event ModuleVerified(address indexed module, bool verified, string name, string version, uint256 feeBps, string metadataURI)",
-);
-
-// Collectives. One signature, one source — none of the dual-era complication
-// above, because nothing is deployed yet and this is the shape it ships with.
 const COLLECTIVE_DEPLOYED_EVENT = parseAbiItem(
   "event SlotCollectiveDeployed(address indexed manager, address indexed admin, address indexed deployer)",
 );
-
-type WatchedEvent =
-  | typeof COLLECTIVE_DEPLOYED_EVENT
-  | typeof SLOT_DEPLOYED_EVENT
-  | typeof SLOT_DEPLOYED_LEGACY_EVENT
-  | typeof MODULE_VERIFIED_EVENT;
-
-// Helper: build per-chain factory() override for slot-factory-spawned contracts
-const slotChildAddress = (
-  event: WatchedEvent,
-  parameter: "slot" | "module",
-) => ({
-  baseSepolia: {
-    address: factory({
-      address: BASE_SEPOLIA_SLOT_FACTORY,
-      event,
-      parameter,
-    }),
-    startBlock: BASE_SEPOLIA_SLOT_FACTORY_START_BLOCK,
-  },
-  base: {
-    address: factory({
-      address: BASE_SLOT_FACTORY,
-      event,
-      parameter,
-    }),
-    startBlock: BASE_SLOT_FACTORY_START_BLOCK,
-  },
-});
 
 // ──────────────────────────────────────────
 // RPC endpoints
@@ -152,51 +196,138 @@ const slotChildAddress = (
 //   1. PONDER_RPC_URL_BASE / PONDER_RPC_URL_BASE_SEPOLIA — a complete URL.
 //      Preferred for a deployment: paste what the provider gave you and no
 //      secret has to be reassembled here.
-//   2. ALCHEMY_API_KEY (or ALCHEMY_KEY, which is what turbo.json and the rest
-//      of the repo use) — the URL is built around it.
+//   2. COINBASE_API_KEY, else ALCHEMY_API_KEY (or ALCHEMY_KEY, which is what
+//      turbo.json and the rest of the repo use) — the URL is built around it.
 //
 // Missing credentials used to resolve to `.../v2/` and fail on every request
 // with "Must be authenticated!", eight retries per chain, forever. That reads
 // like a provider outage rather than an unset variable, so it now throws at
 // boot naming the variables involved.
 //
-// Alchemy is the default provider — base-sepolia.publicnode.com works too, but
-// Coinbase's https://sepolia.base.org has a broken eth_getLogs.
+// ── Endpoints go to ponder as URLs, never as a viem Transport ────────────────
+//
+// `chain.rpc` takes `string | string[] | Transport`, and the three are not
+// equivalent. From ponder/dist/esm/rpc/index.js, a URL (or a list of them)
+// becomes one tracked *bucket* per endpoint:
+//
+//   * per-provider adaptive rate limiting, starting at 20 rps and moving with
+//     the provider's own answers (`maxRequestsPerSecond` is deprecated —
+//     "Handled automatically instead")
+//   * deactivation with exponential backoff on 429 or timeout, and
+//     reactivation afterwards
+//   * selection by `expectedLatency`, which divides total latency by the
+//     SUCCESSFUL count — so a provider that errors is scored worse and drifts
+//     out of rotation, while 10% epsilon exploration keeps re-testing it
+//   * a fresh bucket per retry, up to 9, so one provider's refusal is a retry
+//     rather than a dead end
+//   * the provider's hostname in every log line
+//
+// A viem Transport gets none of that. It is wrapped as a single bucket named
+// `custom_transport` and ponder treats the whole pool as one provider, which
+// is exactly what `loadBalance()` used to hand it here. That is what turned a
+// blocked endpoint into a stalled sync — see PUBLIC_RPCS below.
 // ──────────────────────────────────────────
 
 const ALCHEMY_KEY =
   process.env.ALCHEMY_API_KEY ?? process.env.ALCHEMY_KEY ?? "";
 
 /**
- * How hard to lean on Alchemy when public endpoints are also in the pool.
+ * Coinbase Developer Platform, and the one that wins when both are set.
  *
- * Backfill is `eth_getLogs`-heavy and wants a provider that answers wide ranges
- * reliably; steady state is just block polling, which any public node serves.
- * Capping Alchemy and load-balancing the rest keeps the paid quota for the work
- * that actually needs it.
+ * The key rides in the URL path — it is CDP's *client* key, the one their docs
+ * describe as safe in frontend code — so it needs no header support and slots
+ * into the same URL list as everything else. Documented ceiling is 7,500 BU per
+ * 5 seconds per project, and CDP documents no eth_getLogs limits at all, which
+ * is not the same as having none: the address-list ceiling that publicnode
+ * enforces below was undocumented too. Verify before trusting it as the only
+ * provider on a chain (see the probe recipe in PUBLIC_RPCS).
  */
-const ALCHEMY_RPS = Number(process.env.ALCHEMY_RPS ?? 25);
+const COINBASE_KEY = process.env.COINBASE_API_KEY ?? "";
+
+/** Per-chain path segment for each paid provider. */
+const PAID_ENDPOINTS: Record<
+  "base" | "base_sepolia",
+  { alchemy: string; coinbase: string }
+> = {
+  base: { alchemy: "base-mainnet", coinbase: "base" },
+  base_sepolia: { alchemy: "base-sepolia", coinbase: "base-sepolia" },
+};
+
+// ALCHEMY_RPS is gone with the `rateLimit()` wrapper it configured. Capping
+// Alchemy never reduced the bill anyway — the credits a backfill costs are set
+// by how many requests the data needs, not by how fast they are sent — and the
+// wrapper forced the single-bucket path above. Ponder now rate-limits each
+// provider on its own evidence, and Alchemy's 429s are what tell it to slow
+// down.
 
 /**
- * Public endpoints — OPT-IN, via PONDER_PUBLIC_RPCS=1.
+ * Public endpoints — OPT-IN, via PONDER_PUBLIC_RPCS=1, and never the whole
+ * pool on their own.
  *
- * Not the default, because most of them refuse the one method that matters.
- * Measured against the exact `eth_getLogs` ponder issues during backfill:
+ * Most of them refuse the one method that matters. Measured 2026-08-20 with
+ * this indexer's own filter shape — 50 factory-derived addresses, 23 topic0s,
+ * against a window at the chain tip:
  *
  *   mainnet.base.org                  ok
- *   base.api.onfinality.io/public     -32029, needs an API key
- *   api.zan.top/base-mainnet          -32012, "not available for
- *                                     unregistered accounts"
+ *   base.drpc.org                     ok
+ *   base-rpc.publicnode.com           -32602 "Request blocked" (HTTP 403)
+ *   base-sepolia-rpc.publicnode.com   -32602 "Request blocked" (HTTP 403)
+ *   base-sepolia.gateway.tenderly.co  ok at 25, 1k and 10k-block windows
+ *   base-sepolia.drpc.org             408 "Request timeout on the free tier",
+ *                                     intermittently — 1k ok, 25 and 10k not
+ *   base.api.onfinality.io/public     -32029, needs an API key (earlier)
+ *   api.zan.top/base-mainnet          -32012, unregistered (earlier)
  *
- * Mixed into the pool by default they produced 48 errors and zero progress:
- * load balancing spreads requests round-robin, so a provider that rejects
- * eth_getLogs does not degrade throughput, it stalls the sync outright.
+ * Mixed into the pool they once produced 48 errors and zero progress, because
+ * `loadBalance()` is round-robin with no failover — @ponder/utils hands the
+ * request to `transports[index++]` and returns whatever comes back, error
+ * included. Handing ponder the URLs instead (see above) makes a refusal cost
+ * one retry against a different bucket, so a bad member degrades throughput
+ * rather than stopping the sync. That is what makes them safe to keep here —
+ * as a cheap tier UNDER a provider that answers everything, not as a
+ * replacement for one.
  *
- * They remain useful for the realtime phase, which is block polling and cheap
- * for anyone to serve — see the note on staged backfill below.
+ * ── What publicnode actually refuses ─────────────────────────────────────────
  *
- * Coinbase's https://sepolia.base.org is excluded entirely: its eth_getLogs is
- * broken for some contracts, which is a wrong answer rather than an error.
+ * Both base-sepolia rows here were publicnode (wss and https are one
+ * provider), and on 2026-08-20 production had it rejecting every log query the
+ * indexer makes: -32602, "Details: Request blocked", over a 25-block window at
+ * the tip (0x2b9c5f8 -> 0x2b9c610) carrying 50 addresses.
+ *
+ * Bisecting the request shows the limit is the ADDRESS LIST, and nothing else:
+ *
+ *   1..9 addresses    ok          23 topic0s      ok
+ *   10+ addresses     blocked     10,000 blocks   ok
+ *
+ * So the span rules out an archive-depth limit and ponder's "use
+ * ethGetLogsBlockRange" tip with it — no block range is small enough, because
+ * the range was never the problem. Ponder batches factory children ~50 at a
+ * time, so every log query the `Slot` source emits is over the line, on BOTH
+ * chains: base-rpc.publicnode.com blocks the same shape.
+ *
+ * publicnode stays in the base pool, where two other members answer the heavy
+ * method and it still serves the block polling that is most of the volume. It
+ * is gone from base-sepolia, where it was the entire pool and there was
+ * nothing to absorb the refusal.
+ *
+ * Coinbase's https://sepolia.base.org is excluded for a different reason: its
+ * eth_getLogs is broken for some contracts, which is a wrong answer rather
+ * than an error.
+ *
+ * ── Vetting a candidate ──────────────────────────────────────────────────────
+ *
+ * Reachability proves nothing here; every endpoint above answers
+ * eth_blockNumber. Ask it for the shape this indexer actually sends — a long
+ * address list — and compare a 25-block window against a 10,000-block one:
+ *
+ *   ADDRS=$(printf '"0x%040d",%.0s' 1 $(seq 1 49))"0x$(printf '%040d' 50)"
+ *   curl -s "$URL" -H 'content-type: application/json' --data @- <<JSON | head -c 300
+ *   {"jsonrpc":"2.0","id":1,"method":"eth_getLogs","params":[{"address":[$ADDRS],
+ *    "fromBlock":"0x2b9c5f8","toBlock":"0x2b9c610"}]}
+ *   JSON
+ *
+ * A JSON-RPC error, an HTTP 403 or a timeout all disqualify it. Anything that
+ * only fails on the wide window is a rate-limit story, not a capability one.
  */
 const PUBLIC_RPCS: Record<string, string[]> = {
   base: [
@@ -204,32 +335,55 @@ const PUBLIC_RPCS: Record<string, string[]> = {
     "wss://base.drpc.org",
     "https://mainnet.base.org",
   ],
-  base_sepolia: [
-    "wss://base-sepolia-rpc.publicnode.com",
-    "https://base-sepolia-rpc.publicnode.com",
-  ],
+  // Tenderly is the one free base-sepolia endpoint that answered the real
+  // filter shape at every window size tried. One provider's worth of evidence
+  // from one afternoon, so it is a cheap tier under Alchemy, not a substitute
+  // for it. base-sepolia.drpc.org is deliberately absent: its free tier timed
+  // out on two of the three windows, which is a slow stall rather than a fast
+  // error.
+  base_sepolia: ["https://base-sepolia.gateway.tenderly.co"],
 };
 
 const USE_PUBLIC_RPCS = process.env.PONDER_PUBLIC_RPCS === "1";
 
-console.log(`USE_PUBLIC_RPCS: ${USE_PUBLIC_RPCS}`);
-
-const toTransport = (url: string): Transport =>
-  url.startsWith("ws") ? webSocket(url) : http(url);
+/**
+ * Names the providers actually in play, key redacted.
+ *
+ * The previous build logged the flag alone, so attributing a stalled sync to
+ * its endpoint took a production log dump. Hostnames are safe to print; the
+ * Alchemy URL's path is the credential.
+ */
+const announce = (label: string, urls: string[]) => {
+  const hosts = urls.map((u) => {
+    try {
+      return new URL(u).hostname;
+    } catch {
+      return "<unparseable url>";
+    }
+  });
+  console.log(`[rpc] ${label}: ${hosts.join(", ")}`);
+};
 
 /**
- * The transport pool for a chain.
+ * The endpoint list for a chain, as URLs for ponder to manage.
  *
  *   1. PONDER_RPC_URL_<CHAIN> — comma-separated, and the complete answer when
  *      set. Nothing else is added, so a deployment can pin exactly what it
- *      wants and balance across paid providers.
- *   2. Otherwise Alchemy, plus the public pool when PONDER_PUBLIC_RPCS=1.
+ *      wants.
+ *   2. Otherwise Alchemy, plus the public tier when PONDER_PUBLIC_RPCS=1.
+ *
+ * The paid endpoint — Coinbase if its key is set, else Alchemy — goes FIRST.
+ * Order is not priority: ponder scores buckets by observed latency, so this
+ * only decides who serves the opening requests before there is any evidence to
+ * score. Starting on the provider that answers everything is the difference
+ * between a sync that begins and one that spends its first minute discovering
+ * which members are refusing it.
  *
  * ── Spending Alchemy only on the backfill ────────────────────────────────────
  *
- * Ponder has no per-phase transport hook, so this cannot be expressed in
- * config. It is an operational sequence instead: deploy with Alchemy alone, let
- * the historical sync finish, then set PONDER_PUBLIC_RPCS=1 and redeploy.
+ * Ponder has no per-phase endpoint hook, so this cannot be expressed in config.
+ * It is an operational sequence instead: deploy with Alchemy alone, let the
+ * historical sync finish, then set PONDER_PUBLIC_RPCS=1 and redeploy.
  *
  * What that saves is narrower than it first looks. The RPC cache lives in its
  * own `ponder_sync` schema, keyed by chain rather than by app, so a new app
@@ -242,212 +396,143 @@ const toTransport = (url: string): Transport =>
 function rpcPool(
   label: "base" | "base_sepolia",
   explicit: string | undefined,
-  alchemySubdomain: string,
-): Transport {
+): string[] {
   const explicitUrls = (explicit ?? "")
     .split(",")
     .map((url) => url.trim())
     .filter(Boolean);
   if (explicitUrls.length > 0) {
-    return loadBalance(explicitUrls.map(toTransport));
+    announce(`${label} (explicit)`, explicitUrls);
+    return explicitUrls;
   }
 
-  const pool: Transport[] = [];
-  if (ALCHEMY_KEY) {
-    const alchemy = http(
-      `https://${alchemySubdomain}.g.alchemy.com/v2/${ALCHEMY_KEY}`,
-    );
-    // Only worth capping when something else can absorb the overflow.
+  // Coinbase REPLACES Alchemy rather than outranking it, because ordering here
+  // buys less than it looks like it does: ponder picks buckets by observed
+  // latency, so a pool of [coinbase, alchemy] converges on whichever answers
+  // faster, not on the one named first. Exclusivity is the only way to say
+  // "use Coinbase" and have it hold. To run both as peers instead, make this
+  // an `if` and drop the `else`.
+  const pool: string[] = [];
+  const paid = PAID_ENDPOINTS[label];
+  if (COINBASE_KEY) {
     pool.push(
-      USE_PUBLIC_RPCS
-        ? rateLimit(alchemy, { requestsPerSecond: ALCHEMY_RPS })
-        : alchemy,
+      `https://api.developer.coinbase.com/rpc/v1/${paid.coinbase}/${COINBASE_KEY}`,
     );
+  } else if (ALCHEMY_KEY) {
+    pool.push(`https://${paid.alchemy}.g.alchemy.com/v2/${ALCHEMY_KEY}`);
   }
   if (USE_PUBLIC_RPCS) {
-    pool.push(...(PUBLIC_RPCS[label] ?? []).map(toTransport));
+    pool.push(...(PUBLIC_RPCS[label] ?? []));
   }
 
   if (pool.length === 0) {
     throw new Error(
       `No RPC endpoint for ${label}. Set PONDER_RPC_URL_${label.toUpperCase()} ` +
-        `to a URL (or a comma-separated list), or ALCHEMY_API_KEY ` +
-        `(ALCHEMY_KEY is also accepted). PONDER_PUBLIC_RPCS=1 adds public ` +
-        `endpoints, which are suitable for realtime but not for backfill.`,
+        `to a URL (or a comma-separated list), or COINBASE_API_KEY, or ` +
+        `ALCHEMY_API_KEY (ALCHEMY_KEY is also accepted). ` +
+        `PONDER_PUBLIC_RPCS=1 adds this chain's public tier, where it has one.`,
     );
   }
-  return pool.length === 1 ? pool[0]! : loadBalance(pool);
+  announce(label, pool);
+  return pool;
 }
 
 const remoteConfig = createConfig({
   chains: {
     baseSepolia: {
       id: 84532,
-      rpc: rpcPool(
-        "base_sepolia",
-        process.env.PONDER_RPC_URL_BASE_SEPOLIA,
-        "base-sepolia",
-      ),
+      rpc: rpcPool("base_sepolia", process.env.PONDER_RPC_URL_BASE_SEPOLIA),
     },
     base: {
       id: 8453,
-      rpc: rpcPool("base", process.env.PONDER_RPC_URL_BASE, "base-mainnet"),
+      rpc: rpcPool("base", process.env.PONDER_RPC_URL_BASE),
     },
   },
   contracts: {
-    // startBlock stays at the factory deployment rather than moving up to the
-    // v3 upgrade (base 49494932, base-sepolia 44825297). Every module was
-    // verified before its chain's upgrade — base at 44653646 — and the module
-    // source derives its watched addresses from ModuleVerified, so starting
-    // later would register no modules and metadata would silently produce
-    // nothing. The saving would be trivial regardless: a log filter over the
-    // skipped range is a few hundred chunked eth_getLogs, since only blocks
-    // that actually match cost a full-block request.
     SlotFactory: {
       abi: SlotFactoryAbi,
       chain: {
-        baseSepolia: {
-          address: BASE_SEPOLIA_SLOT_FACTORY,
-          startBlock: BASE_SEPOLIA_SLOT_FACTORY_START_BLOCK,
-        },
-        base: {
-          address: BASE_SLOT_FACTORY,
-          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
-        },
+        baseSepolia: BASE_SEPOLIA_SLOT_FACTORY,
+        base: BASE_SLOT_FACTORY,
       },
     },
-    // Same address as SlotFactory, legacy-only ABI. Two entries rather than one
-    // merged ABI: `ponder.on` can disambiguate overloads by full signature, but
-    // a merged ABI would still need one source per signature for factory()
-    // anyway, and spelling tuple-heavy signatures out as handler keys is far
-    // more brittle than one narrow ABI per era.
-    SlotFactoryLegacy: {
-      abi: slotFactoryLegacyAbi,
+    // Every slot the factory has made, discovered from `SlotCreated`. One
+    // source, one signature — see the note at the top of this file.
+    Slot: {
+      abi: SlotAbi,
       chain: {
         baseSepolia: {
-          address: BASE_SEPOLIA_SLOT_FACTORY,
-          startBlock: BASE_SEPOLIA_SLOT_FACTORY_START_BLOCK,
+          address: factory({
+            address: BASE_SEPOLIA_SLOT_FACTORY.address,
+            event: SLOT_CREATED_EVENT,
+            parameter: "slot",
+          }),
+          startBlock: BASE_SEPOLIA_SLOT_FACTORY.startBlock,
         },
         base: {
-          address: BASE_SLOT_FACTORY,
-          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
+          address: factory({
+            address: BASE_SLOT_FACTORY.address,
+            event: SLOT_CREATED_EVENT,
+            parameter: "slot",
+          }),
+          startBlock: BASE_SLOT_FACTORY.startBlock,
         },
       },
     },
-    // ── Collectives ──────────────────────────────────────────────────────
-    //
-    // Live on base-sepolia. NOT deployed on base: that entry is pointed at the
-    // slot factory address, which is valid and simply never emits
-    // `SlotCollectiveDeployed`, so it indexes nothing. The same device the
-    // local config uses for FeedHub, and for the same reason — src/collective.ts
-    // registers its handlers unconditionally, and ponder rejects a handler
-    // whose source is missing.
-    //
-    // When base ships, swap its two entries for the real address and startBlock.
     SlotCollectiveFactory: {
       abi: SlotCollectiveFactoryAbi,
       chain: {
-        baseSepolia: {
-          address: BASE_SEPOLIA_COLLECTIVE_FACTORY,
-          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
-        },
-        base: {
-          address: BASE_SLOT_FACTORY,
-          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
-        },
+        baseSepolia: BASE_SEPOLIA_COLLECTIVE_FACTORY,
+        base: BASE_COLLECTIVE_FACTORY,
       },
     },
+    // Every collective the factory has made. Same shape as `Slot` above and
+    // for the same reason: collectives are BeaconProxies, so their addresses
+    // exist only in the factory's own log.
     SlotCollective: {
       abi: SlotCollectiveAbi,
       chain: {
         baseSepolia: {
           address: factory({
-            address: BASE_SEPOLIA_COLLECTIVE_FACTORY,
+            address: BASE_SEPOLIA_COLLECTIVE_FACTORY.address,
             event: COLLECTIVE_DEPLOYED_EVENT,
             parameter: "manager",
           }),
-          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
+          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY.startBlock,
         },
         base: {
           address: factory({
-            address: BASE_SLOT_FACTORY,
+            address: BASE_COLLECTIVE_FACTORY.address,
             event: COLLECTIVE_DEPLOYED_EVENT,
             parameter: "manager",
           }),
-          startBlock: BASE_SLOT_FACTORY_START_BLOCK,
-        },
-      },
-    },
-    Slot: {
-      abi: SlotAbi,
-      chain: slotChildAddress(SLOT_DEPLOYED_EVENT, "slot"),
-    },
-    // The 301 pre-occupancy-layer slots. Same ABI — the Slot contract itself is
-    // beacon-upgraded, so both eras emit the current event set; only the
-    // factory event that birthed them differs.
-    SlotLegacy: {
-      abi: SlotAbi,
-      chain: slotChildAddress(SLOT_DEPLOYED_LEGACY_EVENT, "slot"),
-    },
-    // Every verified module, watched for MetadataUpdated. FeedPostModule's ABI
-    // carries both the V1 (slot, uri) and V2 (slot, updatedBy, uri) overloads,
-    // so this single source covers MetadataModule contracts too — handlers
-    // disambiguate by full signature in src/metadata.ts.
-    FeedPostModule: {
-      abi: FeedPostModuleAbi,
-      chain: slotChildAddress(MODULE_VERIFIED_EVENT, "module"),
-    },
-    FeedHub: {
-      abi: FeedHubAbi,
-      chain: {
-        baseSepolia: {
-          address: BASE_SEPOLIA_FEED_HUB,
-          startBlock: BASE_SEPOLIA_FEED_HUB_START_BLOCK,
-        },
-      },
-    },
-    // Beacon-proxy feeds, derived from the hub's FeedCreated.
-    Feed: {
-      abi: FeedAbi,
-      chain: {
-        baseSepolia: {
-          address: factory({
-            address: BASE_SEPOLIA_FEED_HUB,
-            event: FEED_CREATED_EVENT,
-            parameter: "feed",
-          }),
-          startBlock: BASE_SEPOLIA_FEED_HUB_START_BLOCK,
+          startBlock: BASE_COLLECTIVE_FACTORY.startBlock,
         },
       },
     },
   },
 });
 
-/**
- * The anvil equivalent: same five sources, one chain, addresses read from disk.
- *
- * `SlotFactoryLegacy` and `SlotLegacy` are declared here too even though a
- * fresh chain only ever emits the current signature. The handlers in src/ are
- * registered unconditionally and ponder rejects a handler whose source is
- * absent, so the alternative would be conditional registration for no gain.
- * They cost one log filter that never matches.
- */
+/** The anvil equivalent: the same two sources, one chain, the hooks deploy. */
 function buildLocalConfig() {
-  const { address, startBlock } = localDeployment("SlotFactory");
-  const at = { address, startBlock };
-  const collectiveAt = localDeployment("SlotCollectiveFactory");
-  const child = (event: WatchedEvent, parameter: "slot" | "module") => ({
-    anvil: {
-      address: factory({ address, event, parameter }),
-      startBlock,
-    },
-  });
+  const at = {
+    address: ANVIL_SLOT_FACTORY,
+    startBlock: ANVIL_START_BLOCK,
+  };
+
+  // A collective factory that has not been deployed yet is watched at the zero
+  // address rather than dropped from the config. Dropping it would change the
+  // set of registered sources, and ponder rejects handlers for a source that
+  // does not exist — so `src/collective.ts` would have to be conditionally
+  // imported, and a local run without collectives would stop type-checking the
+  // handlers it is not running. One filter that matches nothing is cheaper.
+  const collectiveAt = anvilCollectiveFactory();
 
   return createConfig({
     chains: {
       anvil: {
         id: 31337,
-        rpc: http(ANVIL_RPC),
+        rpc: ANVIL_RPC,
         // A fresh anvil reuses block numbers from the previous run with
         // entirely different contents, so a warm cache serves the old chain's
         // blocks for the new one.
@@ -456,19 +541,19 @@ function buildLocalConfig() {
     },
     contracts: {
       SlotFactory: { abi: SlotFactoryAbi, chain: { anvil: at } },
-      SlotFactoryLegacy: { abi: slotFactoryLegacyAbi, chain: { anvil: at } },
-      Slot: { abi: SlotAbi, chain: child(SLOT_DEPLOYED_EVENT, "slot") },
-      SlotLegacy: {
+      Slot: {
         abi: SlotAbi,
-        chain: child(SLOT_DEPLOYED_LEGACY_EVENT, "slot"),
+        chain: {
+          anvil: {
+            address: factory({
+              address: ANVIL_SLOT_FACTORY,
+              event: SLOT_CREATED_EVENT,
+              parameter: "slot",
+            }),
+            startBlock: ANVIL_START_BLOCK,
+          },
+        },
       },
-      FeedPostModule: {
-        abi: FeedPostModuleAbi,
-        chain: child(MODULE_VERIFIED_EVENT, "module"),
-      },
-      // Unlike the remote chains, the collective factory IS deployed locally —
-      // DeployLocal step 7 — so this indexes real rows and the create-collective
-      // flow is exercisable end to end.
       SlotCollectiveFactory: {
         abi: SlotCollectiveFactoryAbi,
         chain: { anvil: collectiveAt },
@@ -486,12 +571,6 @@ function buildLocalConfig() {
           },
         },
       },
-      // No FeedHub is deployed locally, so these never match. Declared anyway
-      // for the same reason as the legacy sources: src/feed.ts registers its
-      // handlers unconditionally and ponder rejects a handler whose source is
-      // missing. Pointed at the slot factory purely so the address is valid.
-      FeedHub: { abi: FeedHubAbi, chain: { anvil: at } },
-      Feed: { abi: FeedAbi, chain: { anvil: at } },
     },
   });
 }
@@ -500,10 +579,11 @@ function buildLocalConfig() {
  * The remote config is the type witness even when running locally.
  *
  * Ponder derives `context.chain` from `config.contracts[source].chain`, so
- * exporting a union of the two configs collapses every handler's `context.chain`
- * to `unknown`. Pinning the type to one of them keeps all of src/ inferring
- * correctly; the two differ only in chain identity, and handlers read nothing
- * from `context.chain` but `.id`, which is a number in both.
+ * exporting a union of the two configs collapses every handler's
+ * `context.chain` to `unknown`. Pinning the type to one of them keeps all of
+ * src/ inferring correctly; the two differ only in chain identity, and
+ * handlers read nothing from `context.chain` but `.id`, which is a number in
+ * both.
  */
 export default LOCAL
   ? (buildLocalConfig() as unknown as typeof remoteConfig)

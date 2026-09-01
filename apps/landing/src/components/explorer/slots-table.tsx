@@ -1,12 +1,11 @@
 "use client";
 
-import { formatDistanceToNow } from "date-fns";
+import { findKnownHook } from "@0xslots/contracts/slots";
 import { ArrowDown, ArrowUp, Check, Filter, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { isAddress, stringify } from "viem";
-import { AccountTypeIcon } from "@/components/account-type-icon";
-import { EnsAddress } from "@/components/ens-address";
+import { isAddress } from "viem";
 import { SlotRow } from "@/components/explorer/slot-row";
+import { SlotsTable as ChainSlotsTable } from "@/components/slots/slots-table";
 import { TablePagination } from "@/components/table-pagination";
 import { TableEmpty, TableSkeleton } from "@/components/table-states";
 import { Badge } from "@/components/ui/badge";
@@ -25,28 +24,50 @@ import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useChain } from "@/context/chain";
 import { useNavigation } from "@/context/navigation";
-import type { SlotFilters, SlotSort } from "@/hooks/use-v3";
-import { useModules, useSlots } from "@/hooks/use-v3";
+import type { SlotFilters, SlotSort } from "@/hooks/use-explorer";
+import { useExplorerSlots, useHooks } from "@/hooks/use-explorer";
 import { loadStorage, saveStorage } from "@/lib/storage";
-import { formatPrice, truncateAddress } from "@/utils";
+import { truncateAddress } from "@/utils";
 
-const STORAGE_KEY = "0xslots:slot-filters";
+/**
+ * A NEW key, not the old `0xslots:slot-filters`.
+ *
+ * The stored shape changed — `moduleIds` became `hooks` — and a browser that
+ * used the previous app still holds the old value. Reusing the key would
+ * silently restore a filter naming contracts that no longer exist, and the
+ * table would come up empty for reasons nothing on screen explains.
+ */
+const STORAGE_KEY = "0xslots:slot-filters:hooks";
 
+/**
+ * The explorer's slots table: filtered, sorted and paged by the indexer.
+ *
+ * The other table — `components/slots/slots-table.tsx` — reads `SlotCreated`
+ * logs straight from the node and asks each slot for its own state. Both are
+ * kept, and this one falls back to it, because they fail in opposite
+ * directions: the log-reading table cannot filter, sort or page and scans from
+ * block zero, but it works with no indexer at all; this one works at any size
+ * and shows nothing when the indexer is down or has not caught up. Which is why
+ * an indexer error here renders the other rather than an empty state — a live
+ * chain with a cold indexer is the normal condition right after a deploy, and
+ * "no slots found" would be a lie.
+ */
 export function SlotsTable() {
   const { push } = useNavigation();
+  const { chainId } = useChain();
   const [filters, setFilters] = useState<SlotFilters>({});
   const [sort, setSort] = useState<SlotSort | undefined>(undefined);
   const [addressInput, setAddressInput] = useState("");
   const [addressField, setAddressField] = useState<
     "recipient" | "occupant" | null
   >(null);
-  const { data: modules } = useModules();
+  const { data: hooks } = useHooks();
 
   useEffect(() => {
     setFilters(loadStorage<SlotFilters>(STORAGE_KEY, {}));
@@ -55,8 +76,7 @@ export function SlotsTable() {
   const updateFilters = (next: SlotFilters) => {
     // Clean empty values
     const clean: SlotFilters = {};
-    if (next.moduleIds && next.moduleIds.length > 0)
-      clean.moduleIds = next.moduleIds;
+    if (next.hooks && next.hooks.length > 0) clean.hooks = next.hooks;
     if (next.recipient) clean.recipient = next.recipient;
     if (next.occupant) clean.occupant = next.occupant;
     setFilters(clean);
@@ -64,29 +84,56 @@ export function SlotsTable() {
   };
 
   const hasFilters =
-    (filters.moduleIds && filters.moduleIds.length > 0) ||
+    (filters.hooks && filters.hooks.length > 0) ||
     !!filters.recipient ||
     !!filters.occupant;
 
-  const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
+  /**
+   * One cursor per page visited, `null` for the first.
+   *
+   * Ponder pages by cursor and has no offset, so a page number alone cannot
+   * address a page — going back means remembering where each one started. The
+   * stack is reset, not rewound, whenever the filters or the sort change,
+   * because the cursors of the previous ordering address nothing in the new
+   * one.
+   */
+  const [cursors, setCursors] = useState<(string | null)[]>([null]);
+  const [page, setPage] = useState(0);
 
-  // Reset to page 0 whenever filters or sort change
   useEffect(() => {
+    setCursors([null]);
     setPage(0);
   }, [filters, sort]);
 
-  const { data: slots, isLoading } = useSlots(
+  const { data, isLoading, isError } = useExplorerSlots(
     hasFilters ? filters : undefined,
     sort,
-    { first: pageSize + 1, skip: page * pageSize },
+    { limit: pageSize, after: cursors[page] ?? null },
   );
 
-  const hasMore = (slots?.length ?? 0) > pageSize;
-  const paged = (slots ?? []).slice(0, pageSize);
+  const slots = data?.items ?? [];
+  const hasMore = data?.pageInfo?.hasNextPage ?? false;
+
+  const goToPage = (next: number) => {
+    if (next < 0) return;
+    if (next < cursors.length) {
+      setPage(next);
+      return;
+    }
+    // Forward past the end of what we have seen: remember this page's end as
+    // the next one's start.
+    const endCursor = data?.pageInfo?.endCursor;
+    if (!endCursor) return;
+    setCursors((prev) => [...prev, endCursor]);
+    setPage(next);
+  };
 
   const changePageSize = (size: number) => {
     setPageSize(size);
+    // Cursors are sized to the page they were taken from, so they do not
+    // survive a resize.
+    setCursors([null]);
     setPage(0);
   };
 
@@ -100,12 +147,12 @@ export function SlotsTable() {
     }
   };
 
-  const toggleModule = (moduleId: string) => {
-    const current = filters.moduleIds ?? [];
-    const next = current.includes(moduleId)
-      ? current.filter((id) => id !== moduleId)
-      : [...current, moduleId];
-    updateFilters({ ...filters, moduleIds: next });
+  const toggleHook = (hookId: string) => {
+    const current = filters.hooks ?? [];
+    const next = current.includes(hookId)
+      ? current.filter((id) => id !== hookId)
+      : [...current, hookId];
+    updateFilters({ ...filters, hooks: next });
   };
 
   const applyAddress = () => {
@@ -118,8 +165,8 @@ export function SlotsTable() {
   };
 
   const removeFilter = (key: keyof SlotFilters, value?: string) => {
-    if (key === "moduleIds" && value) {
-      toggleModule(value);
+    if (key === "hooks" && value) {
+      toggleHook(value);
     } else {
       const next = { ...filters };
       delete next[key];
@@ -133,7 +180,22 @@ export function SlotsTable() {
     setAddressField(null);
   };
 
-  if (isLoading) return <TableSkeleton />;
+  const hookLabel = (id: string) =>
+    findKnownHook(chainId, id as `0x${string}`)?.name ?? truncateAddress(id);
+
+  if (isLoading && !data) return <TableSkeleton />;
+
+  if (isError) {
+    return (
+      <div>
+        <p className="mb-2 text-xs text-muted-foreground">
+          The indexer is unreachable, so filtering and sorting are unavailable.
+          Reading slots from the chain instead.
+        </p>
+        <ChainSlotsTable emptyMessage="No slots on this chain yet. Create the first one." />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -142,20 +204,17 @@ export function SlotsTable() {
         {/* Active filter pills */}
         {hasFilters && (
           <>
-            {filters.moduleIds?.map((id) => {
-              const mod = modules?.find((m) => m.id === id);
-              return (
-                <Badge
-                  key={`mod-${id}`}
-                  variant="secondary"
-                  className="gap-1 text-xs cursor-pointer"
-                  onClick={() => removeFilter("moduleIds", id)}
-                >
-                  {mod?.name || truncateAddress(id)}
-                  <X className="size-3" />
-                </Badge>
-              );
-            })}
+            {filters.hooks?.map((id) => (
+              <Badge
+                key={`hook-${id}`}
+                variant="secondary"
+                className="gap-1 text-xs cursor-pointer"
+                onClick={() => removeFilter("hooks", id)}
+              >
+                {hookLabel(id)}
+                <X className="size-3" />
+              </Badge>
+            ))}
             {filters.recipient && (
               <Badge
                 variant="secondary"
@@ -228,7 +287,7 @@ export function SlotsTable() {
               Filters
               {hasFilters && (
                 <Badge variant="secondary" className="text-[9px] px-1 py-0">
-                  {(filters.moduleIds?.length ?? 0) +
+                  {(filters.hooks?.length ?? 0) +
                     (filters.recipient ? 1 : 0) +
                     (filters.occupant ? 1 : 0)}
                 </Badge>
@@ -269,32 +328,31 @@ export function SlotsTable() {
 
             <DropdownMenuSeparator />
 
-            {/* Module filters */}
-            <DropdownMenuLabel className="text-xs">Utility</DropdownMenuLabel>
-            {modules?.map((m) => (
+            {/* Hook filters. Was "Utility", and listed modules — a slot has one
+                hook now, so this is a one-of dimension rather than a gallery. */}
+            <DropdownMenuLabel className="text-xs">Hook</DropdownMenuLabel>
+            {hooks?.map((h) => (
               <DropdownMenuCheckboxItem
-                key={m.id}
-                checked={filters.moduleIds?.includes(m.id) ?? false}
-                onCheckedChange={() => toggleModule(m.id)}
+                key={h.id}
+                checked={filters.hooks?.includes(h.id) ?? false}
+                onCheckedChange={() => toggleHook(h.id)}
               >
-                <span className="truncate">
-                  {m.name || truncateAddress(m.id)}
-                </span>
-                {m.verified && (
+                <span className="truncate">{hookLabel(h.id)}</span>
+                {h.attested && (
                   <span className="ml-auto text-[10px] text-green-600">✓</span>
                 )}
               </DropdownMenuCheckboxItem>
             ))}
-            {(!modules || modules.length === 0) && (
+            {(!hooks || hooks.length === 0) && (
               <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                No utilities found
+                No hooks in use
               </p>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {!slots || slots.length === 0 ? (
+      {slots.length === 0 ? (
         <TableEmpty
           message={hasFilters ? "No slots match filters" : "No slots found"}
         />
@@ -334,14 +392,48 @@ export function SlotsTable() {
                     )}
                   </span>
                 </TableHead>
-                <TableHead className="text-right">Price / Tax</TableHead>
-                <TableHead>Utility</TableHead>
+                <TableHead
+                  className={`text-right cursor-pointer select-none hover:text-foreground ${
+                    sort?.orderBy === "price"
+                      ? "text-foreground font-semibold"
+                      : ""
+                  }`}
+                  onClick={() => cycleSort("price")}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Price / Tax
+                    {sort?.orderBy === "price" &&
+                      (sort.orderDirection === "desc" ? (
+                        <ArrowDown className="size-3.5" />
+                      ) : (
+                        <ArrowUp className="size-3.5" />
+                      ))}
+                  </span>
+                </TableHead>
+                <TableHead>Hook</TableHead>
                 <TableHead>Flags</TableHead>
-                <TableHead className="text-right">Created</TableHead>
+                <TableHead
+                  className={`text-right cursor-pointer select-none hover:text-foreground ${
+                    sort?.orderBy === "createdAt"
+                      ? "text-foreground font-semibold"
+                      : ""
+                  }`}
+                  onClick={() => cycleSort("createdAt")}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Created
+                    {sort?.orderBy === "createdAt" &&
+                      (sort.orderDirection === "desc" ? (
+                        <ArrowDown className="size-3.5" />
+                      ) : (
+                        <ArrowUp className="size-3.5" />
+                      ))}
+                  </span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paged.map((slot) => (
+              {slots.map((slot) => (
                 <SlotRow
                   key={slot.id}
                   slot={slot}
@@ -354,7 +446,7 @@ export function SlotsTable() {
             page={page}
             pageSize={pageSize}
             hasMore={hasMore}
-            onPageChange={setPage}
+            onPageChange={goToPage}
             onPageSizeChange={changePageSize}
           />
         </div>

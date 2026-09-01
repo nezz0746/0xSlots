@@ -30,13 +30,31 @@ export const slotFactoryAddress = {
  * X" message straight from these keys, so shipping to a new chain is one entry
  * and every screen updates with it.
  *
- * base is deliberately absent — not yet deployed there.
+ * ADMIN IS STILL THE DEPLOYER EOA on both chains. That key can `upgradeBeacon`
+ * and so replace the logic of every collective at once — see `transferAdmin`,
+ * and the M-2 finding in docs/audits. Move it to a multisig before collectives
+ * hold anything worth taking.
  */
 export const slotCollectiveFactoryAddress = {
+  // Deployed 2026-08-13, block 49962974.
+  [base.id]: "0x9DE033C5E2FAC9e096c91a83635d7a7Cf21b4486",
   // Deployed 2026-08-12, block 45393270. Beacon-backed, admin is the deployer.
   [baseSepolia.id]: "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d",
   // Local anvil, pinned by `apps/contracts/script/DeployLocal.s.sol` step 7.
   [anvil.id]: "0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d",
+} as const;
+
+/**
+ * OfferBook — standing bids an occupant can sell into with `Slot.sell`.
+ *
+ * Local only for now. Deliberately NOT pinned like the factories: the book
+ * holds no funds and no slots and nothing on chain references it, so a moved
+ * address costs a re-read of the deployment file. It is deployed after
+ * LocalToken in `SeedLocal` precisely so that IT absorbs nonce drift rather
+ * than the pinned token.
+ */
+export const offerBookAddress = {
+  [anvil.id]: "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d",
 } as const;
 
 export const batchCollectorAddress = {
@@ -169,3 +187,27 @@ export const POLICY_FACTORIES: Partial<
     "0xF1cA0Fe72269AaEf1E5e34bfF484269f18e1b777", // Price, pre-native-ETH floors
   ],
 };
+
+/**
+ * Morpho Universal Rewards Distributor — where adland's publishers claim from.
+ *
+ * MUST match `apps/contracts/deployments/<chainId>/PublisherUrd.json`.
+ *
+ * This is NOT protocol infrastructure: a slot's tax goes to its recipient, and
+ * whether that recipient happens to be a rewards distributor is adland's
+ * business, not the protocol's. It lives here because the address has to be
+ * agreed on by the deploy script, the admin panel and the epoch job, and one
+ * wrong character means publishers are told to claim from an empty contract.
+ *
+ * Deployed at tag v1.0.0 — the audited release. Owner is nezzar.eth; the
+ * timelock is 24h, so a root submitted by the API's updater key cannot take
+ * effect until a day later. See apps/contracts/script/DeployPublisherUrd.s.sol.
+ */
+export const publisherUrdAddress = {
+  [base.id]: "0x1eCec1727c10e6Aa318909A2700229cEd7f85fD3",
+} as const satisfies Partial<Record<number, Address>>;
+
+/** The factory that created it, kept so a second one can be traced to us. */
+export const urdFactoryAddress = {
+  [base.id]: "0xE0fc27F5B4071d434dadBeD254EC769bC2F7e77A",
+} as const satisfies Partial<Record<number, Address>>;

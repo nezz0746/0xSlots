@@ -1,0 +1,9 @@
+{
+  "name": "base",
+  "chainId": 8453,
+  "rpcEnv": "BASE_RPC_URL",
+  "admin": "0x0000000000000000000000000000000000000000",
+  "explorerVerify": true,
+  "testnet": false,
+  "splitsWarehouse": "0x8fb66F38cF86A3d5e8768f8F1754A24A6c661Fb8"
+}

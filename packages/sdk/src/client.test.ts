@@ -1,3 +1,4 @@
+import { getSlotsHubAddress } from "@0xslots/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { SlotsChain, SlotsClient } from "./client";
 import { NATIVE_CURRENCY_ADDRESS } from "./tokens";
@@ -5,6 +6,7 @@ import { NATIVE_CURRENCY_ADDRESS } from "./tokens";
 const SLOT = "0x1111111111111111111111111111111111111111" as const;
 const ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
 const ERC20 = "0x3333333333333333333333333333333333333333" as const;
+const UTILITY = "0x4444444444444444444444444444444444444444" as const;
 
 /**
  * A viem-shaped double. `reads` maps functionName -> value, so a test states
@@ -12,7 +14,10 @@ const ERC20 = "0x3333333333333333333333333333333333333333" as const;
  * rather than silently returning a default, which is half the point of these
  * tests.
  */
-function harness(reads: Record<string, unknown>) {
+function harness(
+  reads: Record<string, unknown>,
+  chainId: SlotsChain = SlotsChain.BASE,
+) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which
   // is a property of the fake, not of the code under test.
@@ -30,8 +35,10 @@ function harness(reads: Record<string, unknown>) {
     return state[functionName];
   });
 
+  const signTypedData = vi.fn(async (_args: any) => "0xsignature" as const);
+
   const client = new SlotsClient({
-    chainId: SlotsChain.BASE,
+    chainId,
     apiUrl: "http://localhost/never-called",
     publicClient: {
       readContract,
@@ -39,12 +46,13 @@ function harness(reads: Record<string, unknown>) {
     } as any,
     walletClient: {
       writeContract,
+      signTypedData,
       account: { address: ACCOUNT },
-      chain: { id: SlotsChain.BASE },
+      chain: { id: chainId },
     } as any,
   });
 
-  return { client, writeContract, readContract };
+  return { client, writeContract, readContract, signTypedData };
 }
 
 const approvals = (writeContract: ReturnType<typeof vi.fn>) =>
@@ -121,5 +129,131 @@ describe("ERC-20 slots are unchanged", () => {
     });
 
     expect(approvals(writeContract)).toHaveLength(0);
+  });
+});
+
+describe("factory admin", () => {
+  it("setUtilityVerified writes to the factory, not to the utility", async () => {
+    const { client, writeContract } = harness({});
+
+    await client.setUtilityVerified(UTILITY, true);
+
+    const call = sent(writeContract, "setUtilityVerified");
+    // The utility address is an ARGUMENT here, never the target. Sending this
+    // to the utility itself would be a call to a function it does not have —
+    // the revert is silent about which of the two addresses was wrong.
+    expect(call.address).toBe(getSlotsHubAddress(SlotsChain.BASE));
+    expect(call.args).toEqual([UTILITY, true]);
+  });
+
+  it("setUtilityVerified passes the flag through for unverify", async () => {
+    const { client, writeContract } = harness({});
+
+    await client.setUtilityVerified(UTILITY, false);
+
+    expect(sent(writeContract, "setUtilityVerified").args).toEqual([
+      UTILITY,
+      false,
+    ]);
+  });
+});
+
+describe("standing offers", () => {
+  const DAY = 86_400n;
+  // Anvil is the only chain with an OfferBook deployed today, so these run
+  // there. On a chain without one, `offer` refuses by design — see the last
+  // test in this block.
+  const onBookChain = (reads: Record<string, unknown>) =>
+    harness(reads, SlotsChain.ANVIL);
+
+  it("approves the SLOT, not the book — the slot is what pulls on a sell", async () => {
+    const { client, writeContract } = onBookChain({
+      currency: ERC20,
+      allowance: 0n,
+      sellOrderNonce: 0n,
+    });
+
+    await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
+
+    const approve = sent(writeContract, "approve");
+    expect(approve.args[0]).toBe(SLOT);
+    expect(approve.args[1]).toBe(70n * 10n ** 6n + 10n ** 6n);
+  });
+
+  it("skips the approval when the allowance already covers it", async () => {
+    const { client, writeContract } = onBookChain({
+      currency: ERC20,
+      allowance: 10n ** 30n,
+      sellOrderNonce: 0n,
+    });
+
+    await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
+
+    // Raising a bid inside an allowance you already granted is one wallet
+    // prompt, not two. This is the behaviour `buy` has always had and the
+    // hand-rolled offer path did not.
+    expect(approvals(writeContract)).toHaveLength(0);
+    expect(sent(writeContract, "offer")).toBeDefined();
+  });
+
+  it("refuses on a chain with no book, naming the chain", async () => {
+    const { client, writeContract } = harness({});
+    await expect(client.offer(SLOT, 1n, 1n, DAY)).rejects.toThrow(
+      /No offer book/i,
+    );
+    expect(sent(writeContract, "offer")).toBeUndefined();
+  });
+
+  it("refuses a native slot rather than posting an offer nobody can fill", async () => {
+    const { client, writeContract } = onBookChain({
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await expect(
+      client.offer(SLOT, 10n ** 18n, 10n ** 17n, DAY),
+    ).rejects.toThrow(/native ETH/i);
+    expect(sent(writeContract, "offer")).toBeUndefined();
+  });
+
+  it("selling needs no allowance of the seller's own", async () => {
+    const { client, writeContract } = onBookChain({});
+
+    // The buyer's signed order is passed through verbatim. The seller supplies
+    // no terms of their own — that is the whole point of the signature.
+    const order = {
+      slot: SLOT,
+      buyer: ACCOUNT,
+      price: 70n * 10n ** 6n,
+      deposit: 10n ** 6n,
+      nonce: 0n,
+      deadline: DAY,
+    };
+    await client.sell(SLOT, order, "0xsig");
+
+    expect(approvals(writeContract)).toHaveLength(0);
+    expect(sent(writeContract, "sell").args).toEqual([order, "0xsig"]);
+  });
+
+  it("posting an offer signs the exact terms, and sends the nonce with it", async () => {
+    const { client, writeContract, signTypedData } = onBookChain({
+      currency: ERC20,
+      allowance: 10n ** 30n,
+      sellOrderNonce: 7n,
+    });
+
+    await client.offer(SLOT, 70n * 10n ** 6n, 10n ** 6n, DAY);
+
+    // Signed over the slot's domain, not the book's: a signature can never be
+    // replayed onto a different slot.
+    const signed = signTypedData.mock.calls[0]![0] as any;
+    expect(signed.domain.verifyingContract).toBe(SLOT);
+    expect(signed.message.price).toBe(70n * 10n ** 6n);
+    expect(signed.message.deposit).toBe(10n ** 6n);
+    expect(signed.message.nonce).toBe(7n);
+
+    // ...and the nonce travels with the offer so the occupant can rebuild it.
+    const offer = sent(writeContract, "offer");
+    expect(offer.args[4]).toBe(7n);
+    expect(offer.args[5]).toBe("0xsignature");
   });
 });

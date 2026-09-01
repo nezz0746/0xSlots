@@ -1,0 +1,67 @@
+name: contracts
+
+# The gate. Everything here runs without a key and without touching a chain,
+# because the point is to be able to say no before anything is signed.
+# Branch model:
+#   feature/*  ->  develop   gates run on the PR
+#   develop              integration; testnet upgrades are dispatched from here
+#   develop    ->  main     gates run again; main is release-only
+#   main                 publishes packages. It NEVER touches a chain.
+on:
+  pull_request:
+    branches: [develop, main]
+    paths: ["apps/contracts/**", ".github/workflows/contracts.yml"]
+  push:
+    branches: [develop, main]
+    paths: ["apps/contracts/**", ".github/workflows/contracts.yml"]
+
+defaults:
+  run:
+    working-directory: apps/contracts
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+      # The OZ upgrades validator shells out to a Node CLI.
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - run: forge build --sizes
+      - run: forge test -vv
+
+  upgrade-safety:
+    # Storage layout is the check that stands between a bad merge and every
+    # deployed proxy. It runs on its own job so a failure here is unmistakable.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Validate storage layout of every upgradeable contract
+        run: forge test --match-path "test/upgrades/*" -vv
+
+      - name: Layout snapshot must match what is committed
+        # `forge inspect storage` for each upgradeable contract, diffed against
+        # a committed snapshot. A PR that moves a slot has to move the snapshot
+        # too, which makes it visible in review rather than at upgrade time.
+        run: |
+          ./scripts/layout-snapshot.sh --check
+
+  version-bump:
+    # A contract whose bytecode changed must say so. Catches the upgrade that
+    # ships identical code, and the one that ships older code off a stale
+    # branch — neither of which reverts on its own.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive, fetch-depth: 0 }
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: ./scripts/check-version-bump.sh "${{ github.event.pull_request.base.sha }}"

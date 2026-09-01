@@ -7,6 +7,7 @@ import type {
   BuyParams,
   CreateSlotParams,
   CreateSlotsParams,
+  SellOrder,
   SlotsChain,
 } from "../client";
 import { UpdateKind } from "../client";
@@ -160,10 +161,15 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
    * Ensure the minimum-tenure policy for `tenureSeconds` exists, then create the
    * slot pointing at it. Two transactions only the first time anyone uses that
    * duration — afterwards the policy already exists and this is a single tx.
+   *
+   * `count` batches through `createSlots` instead. The policy is deployed once
+   * per duration protocol-wide and is stateless, so every slot in the batch can
+   * point at the same address — there is nothing per-slot to deploy.
    */
   const createSlotWithTenure = useCallback(
-    async (params: CreateSlotParams, tenureSeconds: bigint) => {
-      const pre = await preflight("Create slot", async () => ({
+    async (params: CreateSlotParams, tenureSeconds: bigint, count = 1n) => {
+      const label = count > 1n ? "Create slots" : "Create slot";
+      const pre = await preflight(label, async () => ({
         policy: await client.predictTenurePolicy(tenureSeconds),
         exists: await client.isTenurePolicyDeployed(tenureSeconds),
       }));
@@ -177,11 +183,11 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
         // `policy` and would otherwise fail a second time, more confusingly.
         if (!deployed) return undefined;
       }
-      return exec("Create slot", () =>
-        client.createSlot({
-          ...params,
-          initParams: { ...params.initParams, occupancyPolicy: policy },
-        }),
+      const initParams = { ...params.initParams, occupancyPolicy: policy };
+      return exec(label, () =>
+        count > 1n
+          ? client.createSlots({ ...params, initParams, count })
+          : client.createSlot({ ...params, initParams }),
       );
     },
     [client, exec, preflight],
@@ -195,10 +201,14 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
    *
    * `currency` must be the slot's own currency — the policy checks it on every
    * call and reverts `WrongCurrency` otherwise.
+   *
+   * `count` batches through `createSlots`. Every slot in the batch shares the
+   * currency the floor was priced against, so one policy serves all of them.
    */
   const createSlotWithPriceFloor = useCallback(
-    async (params: CreateSlotParams, minPrice: bigint) => {
-      const pre = await preflight("Create slot", async () => ({
+    async (params: CreateSlotParams, minPrice: bigint, count = 1n) => {
+      const label = count > 1n ? "Create slots" : "Create slot";
+      const pre = await preflight(label, async () => ({
         policy: await client.predictPricePolicy(params.currency, minPrice),
         exists: await client.isPricePolicyDeployed(params.currency, minPrice),
       }));
@@ -212,11 +222,11 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
         // at `policy` and would otherwise fail a second time, more confusingly.
         if (!deployed) return undefined;
       }
-      return exec("Create slot", () =>
-        client.createSlot({
-          ...params,
-          initParams: { ...params.initParams, occupancyPolicy: policy },
-        }),
+      const initParams = { ...params.initParams, occupancyPolicy: policy };
+      return exec(label, () =>
+        count > 1n
+          ? client.createSlots({ ...params, initParams, count })
+          : client.createSlot({ ...params, initParams }),
       );
     },
     [client, exec, preflight],
@@ -243,6 +253,24 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
       exec("Top up", () => client.topUp(slot, amount)),
     [exec, client],
   );
+  /**
+   * Reprice and move the deposit together — see `client.manageTerms`.
+   *
+   * One label rather than three because it is one intention: the deposit change
+   * is what the new valuation costs to hold, or what the lower one frees up, not
+   * a separate decision the occupant made.
+   */
+  const manageTerms = useCallback(
+    (
+      slot: Address,
+      params: {
+        newPrice?: bigint;
+        topUpAmount?: bigint;
+        withdrawAmount?: bigint;
+      },
+    ) => exec("Update terms", () => client.manageTerms(slot, params)),
+    [exec, client],
+  );
   const withdraw = useCallback(
     (slot: Address, amount: bigint) =>
       exec("Withdraw", () => client.withdraw(slot, amount)),
@@ -261,21 +289,52 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     [exec, client],
   );
 
+  // ─── Standing offers ──────────────────────────────────────────────────────
+  // Routed through `exec` like every other action, which is the whole point:
+  // the label drives the toast, the receipt drives the shared post-transaction
+  // refresh, and a rejected wallet prompt surfaces as an error instead of an
+  // unhandled promise rejection that leaves the button looking dead.
+
+  const offer = useCallback(
+    (slot: Address, price: bigint, deposit: bigint, expiry: bigint) =>
+      exec("Offer", () => client.offer(slot, price, deposit, expiry)),
+    [exec, client],
+  );
+  const cancelOffer = useCallback(
+    (slot: Address, id: bigint) =>
+      exec("Cancel offer", () => client.cancelOffer(slot, id)),
+    [exec, client],
+  );
+  const sell = useCallback(
+    (slot: Address, order: SellOrder, signature: `0x${string}`) =>
+      exec("Sell slot", () => client.sell(slot, order, signature)),
+    [exec, client],
+  );
+
   // Manager
   const proposeTaxUpdate = useCallback(
     (slot: Address, newPct: bigint) =>
       exec("Propose tax", () => client.proposeTaxUpdate(slot, newPct)),
     [exec, client],
   );
-  const proposeUtilityUpdate = useCallback(
-    (slot: Address, newUtility: Address) =>
-      exec("Propose utility", () =>
-        client.proposeUtilityUpdate(slot, newUtility),
-      ),
+  /// Replaces `proposeUtilityUpdate`, which the slot retired: it checked only
+  /// for code at the address, so it was an unverified route into the same hooks
+  /// `addModule` guards.
+  const addModule = useCallback(
+    (slot: Address, module: Address) =>
+      exec("Add module", () => client.addModule(slot, module)),
     [exec, client],
   );
-  /** @deprecated use `proposeUtilityUpdate` */
-  const proposeModuleUpdate = proposeUtilityUpdate;
+  const removeModule = useCallback(
+    (slot: Address, module: Address) =>
+      exec("Remove module", () => client.removeModule(slot, module)),
+    [exec, client],
+  );
+  const cancelSellOrder = useCallback(
+    (slot: Address, nonce: bigint) =>
+      exec("Cancel order", () => client.cancelSellOrder(slot, nonce)),
+    [exec, client],
+  );
   const proposePolicyUpdate = useCallback(
     (slot: Address, newPolicy: Address) =>
       exec("Propose policy", () => client.proposePolicyUpdate(slot, newPolicy)),
@@ -296,9 +355,21 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
       exec("Cancel updates", () => client.cancelPendingUpdates(slot)),
     [exec, client],
   );
-  const setLiquidationBounty = useCallback(
-    (slot: Address, newBps: bigint) =>
-      exec("Set bounty", () => client.setLiquidationBounty(slot, newBps)),
+
+  // Factory admin
+  /**
+   * Flip a utility's verified flag in the factory registry.
+   *
+   * Labelled by direction rather than one "Set verified" for both: the table
+   * that calls this shows a spinner next to the label, and "Set verified"
+   * spinning next to a row you just UNverified reads as the opposite of what
+   * is happening.
+   */
+  const setUtilityVerified = useCallback(
+    (utility: Address, verified: boolean) =>
+      exec(verified ? "Verify utility" : "Unverify utility", () =>
+        client.setUtilityVerified(utility, verified),
+      ),
     [exec, client],
   );
 
@@ -320,18 +391,23 @@ export function useSlotAction(opts?: SlotActionCallbacks) {
     buy,
     selfAssess,
     topUp,
+    manageTerms,
     withdraw,
     release,
+    offer,
+    cancelOffer,
+    sell,
     collect,
     liquidate,
     proposeTaxUpdate,
-    proposeUtilityUpdate,
+    addModule,
+    removeModule,
+    cancelSellOrder,
     proposePolicyUpdate,
     /** @deprecated use `proposeUtilityUpdate` */
-    proposeModuleUpdate,
     cancelPendingUpdate,
     cancelPendingUpdates,
-    setLiquidationBounty,
+    setUtilityVerified,
     updateMetadata,
     // Executor
     exec,

@@ -1,6 +1,6 @@
 "use client";
 
-import { LandPlot, List, type LucideIcon, Puzzle, User } from "lucide-react";
+import { LandPlot, type LucideIcon, Users } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -20,17 +20,18 @@ export interface ExplorerSection {
 }
 
 export const EXPLORER_SECTIONS: ExplorerSection[] = [
+  // The module gallery used to be a third section, and it is gone for good:
+  // modules do not exist in this protocol — a slot has ONE extension point,
+  // chosen at creation — so there is no gallery to browse. The hook a slot
+  // points at is a column and a filter on the slots table instead.
+  //
+  // Events are deliberately NOT a section. They are not a different thing to
+  // explore, they are the same slots seen as a stream of what happened to them,
+  // so they live as a tab inside Slots. See `explorer/slots-events.tsx`.
   { id: "slots", label: "Slots", icon: LandPlot },
-  { id: "recipients", label: "Recipients", icon: User },
-  // Label says Utilities, id stays `modules`. The id is URL-facing
-  // (`?section=modules`) and keys `SECTION_CONTENT` on the explorer, so
-  // renaming it would break every shared link for a word change. The contracts
-  // did NOT make the same trade for the metadata getter: `moduleURI()` and
-  // `policyURI()` became one `IModuleMetadata.metadataURI()`, accepting a wire
-  // break because every deployed value was empty and the utilities are
-  // upgradeable proxies. A URL is not, which is why this id stays.
-  { id: "modules", label: "Utilities", icon: Puzzle },
-  { id: "events", label: "Events", icon: List },
+  // Who the tax goes to, which is the one question the slots table answers
+  // worst: it is per-slot, and a recipient with forty slots is forty rows.
+  { id: "recipients", label: "Recipients", icon: Users },
 ];
 
 const DEFAULT_SECTION = EXPLORER_SECTIONS[0].id;

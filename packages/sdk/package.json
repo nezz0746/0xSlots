@@ -1,6 +1,6 @@
 {
   "name": "@0xslots/sdk",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Type-safe SDK for the 0xSlots protocol — reads (subgraph) + writes (viem)",
   "author": "Nezz",
   "license": "MIT",
@@ -18,6 +18,14 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
+    },
+    "./slots": {
+      "types": "./dist/slots/index.d.ts",
+      "import": "./dist/slots/index.js"
+    },
+    "./slots/react": {
+      "types": "./dist/slots/react.d.ts",
+      "import": "./dist/slots/react.js"
     }
   },
   "publishConfig": {

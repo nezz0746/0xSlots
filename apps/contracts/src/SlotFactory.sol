@@ -1,356 +1,140 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {Slot} from "./Slot.sol";
-import {SlotConfig, SlotInitParams, ISlotEvents} from "./interfaces/ISlot.sol";
-import {IUtility} from "./interfaces/IUtility.sol";
-import {IOccupancyPolicy} from "./interfaces/IOccupancyPolicy.sol";
-import {IModuleMetadata} from "./interfaces/IModuleMetadata.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {Slot, SlotInit} from "./Slot.sol";
+import "./SlotErrors.sol";
+import {Versioned} from "./Versioned.sol";
 
-/// @title SlotFactory — Deploy Harberger-taxed slots via Beacon Proxy
-/// @notice UUPS-upgradeable factory. All slots delegate to a shared beacon.
-///         Upgrading the beacon upgrades all slots.
-///
-/// @dev The creation surface is two functions — `createSlot` and `createSlots`
-///      — and is meant to stay that way. A new slot parameter goes into
-///      `SlotInitParams`, which both already carry, never into a new suffixed
-///      entry point. A versioned creator is a permanent tax on every caller,
-///      every published ABI and every integration, paid to avoid changing one
-///      struct once.
-contract SlotFactory is UUPSUpgradeable {
-    // ═══════════════════════════════════════════════════════════
-    // ERRORS
-    // ═══════════════════════════════════════════════════════════
+/**
+ * @title SlotFactory
+ * @notice Deploys slots behind a shared beacon, and is the protocol's event hub.
+ *
+ * @dev ── One creation function ────────────────────────────────────────────
+ *
+ *      A new slot parameter goes into `SlotInit`, never into a suffixed second
+ *      creator. A versioned entry point is a permanent tax on every caller,
+ *      every published ABI and every integration, paid to avoid changing one
+ *      struct once — and it also splits the indexer, which then has to register
+ *      every handler twice to cover both eras.
+ */
+contract SlotFactory is Initializable, UUPSUpgradeable, Versioned {
 
-    error InvalidConfig_ManagerRequired();
-    error InvalidConfig_ManagerMustBeZero();
-    error InvalidTaxPercentage();
-    error InvalidCount();
-    error NotAdmin();
-    error AlreadyInitialized();
-    error InvalidModule_NoCode();
+    /// @inheritdoc Versioned
+    /// @dev Bump in the same commit as any change to this contract's code.
+    function version() public pure virtual override returns (uint64) {
+        return 1;
+    }
 
-    // ═══════════════════════════════════════════════════════════
-    // EVENTS
-    // ═══════════════════════════════════════════════════════════
+    /// @notice Which migration has run against THIS proxy's storage.
+    /// @dev OpenZeppelin already tracks this and already refuses to run a
+    ///      `reinitializer(N)` twice or out of order — so an upgrade that
+    ///      needs new state gets its monotonicity enforced by the library
+    ///      rather than by a script. Exposed because it is otherwise
+    ///      internal, and during an incident you want both numbers.
+    function initializedVersion() external view returns (uint64) {
+        return _getInitializedVersion();
+    }
 
-    event SlotDeployed(
-        address indexed slot,
-        address indexed recipient,
-        address indexed currency,
-        SlotConfig config,
-        SlotInitParams initParams
-    );
-
-    event ModuleVerified(
-        address indexed utility,
-        bool verified,
-        string name,
-        string version,
-        uint256 feeBps,
-        string metadataURI
-    );
-    event AdminTransferred(
-        address indexed previousAdmin,
-        address indexed newAdmin
-    );
-    event SlotEvent(address indexed slot, uint8 indexed eventType, bytes data);
-    event BeaconUpgraded(address indexed newImplementation);
-
-    // ═══════════════════════════════════════════════════════════
-    // STATE
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice The UpgradeableBeacon that all slot proxies point to
+    /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
     UpgradeableBeacon public beacon;
 
-    /// @notice Verified utilities registry (informational, non-blocking)
-    mapping(address => bool) public verifiedUtilities;
-
-    /// @notice Factory admin (can upgrade factory, upgrade beacon, verify utilities)
+    /// @notice May upgrade the beacon, upgrade this factory, and attest hooks.
     address public admin;
 
-    bool private _initialized;
-
-    /// @notice Tracks deployed slots for emitEvent authorization
+    /// @notice Slots this factory created. The event hub's guest list.
     mapping(address => bool) public isSlot;
 
-    // ═══════════════════════════════════════════════════════════
-    // INITIALIZATION
-    // ═══════════════════════════════════════════════════════════
+    /// @notice Hooks the admin has attested.
+    /// @dev Advisory, and deliberately so. A slot creator may point at any hook
+    ///      with code; this records an opinion for clients to surface, not a
+    ///      permission. Enforcing it would make the admin a gatekeeper on what
+    ///      anyone may build, which is the opposite of the point.
+    mapping(address => bool) public attestedHooks;
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _initialized = true; // Disable init on implementation
-    }
+    uint256 public slotCount;
 
-    /// @notice Initialize the factory (called once via proxy)
-    /// @param _admin Admin address (owns beacon + can upgrade factory + verify utilities)
-    /// @param _slotImplementation Address of the Slot implementation contract
-    function initialize(address _admin, address _slotImplementation) external {
-        if (_initialized) revert AlreadyInitialized();
-        _initialized = true;
-
-        admin = _admin;
-        beacon = new UpgradeableBeacon(_slotImplementation, _admin);
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // MODIFIERS
-    // ═══════════════════════════════════════════════════════════
+    event SlotCreated(
+        address indexed slot,
+        address indexed recipient,
+        address indexed creator,
+        address currency,
+        address hook
+    );
+    event HookAttested(address indexed hook, bool attested);
+    event AdminTransferred(address indexed from, address indexed to);
+    event BeaconUpgraded(address indexed implementation);
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotAdmin();
+        if (msg.sender != admin) revert NotManager();
         _;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // ADMIN
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Transfer admin role
-    function transferAdmin(address newAdmin) external onlyAdmin {
-        emit AdminTransferred(admin, newAdmin);
-        admin = newAdmin;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // DEPLOYMENT
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Deploy a new Slot as a BeaconProxy
-    function createSlot(
-        address recipient,
-        IERC20 currency,
-        SlotConfig memory config,
-        SlotInitParams memory initParams
-    ) external returns (address slot) {
-        _validateConfig(config, initParams);
-        slot = _deploySlot(recipient, currency, config, initParams);
+    function initialize(address admin_, address implementation)
+        external
+        initializer
+    {
+        if (admin_ == address(0)) revert InvalidRecipient();
+        admin = admin_;
+        // The FACTORY owns the beacon, not the admin EOA. Handing beacon
+        // ownership straight to `admin_` reads like the simpler thing and
+        // breaks two ways: `upgradeBeacon` below can then never succeed, since
+        // the caller OZ sees is this contract; and beacon ownership would be
+        // frozen at whoever deployed, so `transferAdmin` would hand over an
+        // admin role that silently no longer carries the power to upgrade.
+        beacon = new UpgradeableBeacon(implementation, address(this));
+        emit AdminTransferred(address(0), admin_);
     }
 
-    /// @notice Deploy multiple Slot BeaconProxies with the same params
-    function createSlots(
-        address recipient,
-        IERC20 currency,
-        SlotConfig memory config,
-        SlotInitParams memory initParams,
-        uint256 count
-    ) external returns (address[] memory slots) {
-        if (count == 0) revert InvalidCount();
-        _validateConfig(config, initParams);
-
-        slots = new address[](count);
-        for (uint256 i = 0; i < count; i++) {
-            slots[i] = _deploySlot(recipient, currency, config, initParams);
+    function createSlot(SlotInit calldata init) external returns (address slot) {
+        slot = address(
+            new BeaconProxy(
+                address(beacon),
+                abi.encodeCall(Slot.initialize, (init))
+            )
+        );
+        isSlot[slot] = true;
+        unchecked {
+            ++slotCount;
         }
+        emit SlotCreated(
+            slot,
+            init.recipient,
+            msg.sender,
+            address(init.currency),
+            init.hook
+        );
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // VIEWS
-    // ═══════════════════════════════════════════════════════════
+    function attestHook(address hook, bool attested) external onlyAdmin {
+        attestedHooks[hook] = attested;
+        emit HookAttested(hook, attested);
+    }
 
-    /// @notice Current Slot implementation address (from beacon)
+    function transferAdmin(address next) external onlyAdmin {
+        if (next == address(0)) revert InvalidRecipient();
+        emit AdminTransferred(admin, next);
+        admin = next;
+    }
+
+    /// @notice Point every slot at new code. The single most consequential
+    ///         action in the protocol.
+    function upgradeBeacon(address implementation) external onlyAdmin {
+        beacon.upgradeTo(implementation);
+        emit BeaconUpgraded(implementation);
+    }
+
     function implementation() external view returns (address) {
         return beacon.implementation();
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // MODULE REGISTRY (informational, non-blocking)
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Mark a utility as verified/unverified (admin only)
-    function setUtilityVerified(
-        address _utility,
-        bool verified
-    ) public onlyAdmin {
-        // NOTE: must be IUtility's id — the ISlotsModule alias interface is
-        // empty, and ERC165 ids exclude inherited members, so its own id is
-        // meaningless. IUtility's id equals the historical ISlotsModule id
-        // (same selectors), which is what deployed utilities answer to.
-        IUtility mod = IUtility(_utility);
-        // Both ids, because an ERC165 id covers only an interface's OWN
-        // selectors: `IUtility` inherits its name/version/metadataURI from
-        // `IModuleMetadata`, so its own id no longer says anything about them.
-        // Checking one alone would verify a utility that cannot describe
-        // itself — and this event immediately reads all three.
-        require(
-            mod.supportsInterface(type(IUtility).interfaceId),
-            "not IUtility"
-        );
-        require(
-            mod.supportsInterface(type(IModuleMetadata).interfaceId),
-            "not IModuleMetadata"
-        );
-        verifiedUtilities[_utility] = verified;
-        emit ModuleVerified(
-            _utility,
-            verified,
-            mod.name(),
-            mod.version(),
-            mod.feeBps(),
-            mod.metadataURI()
-        );
-    }
-
-    /// @notice Check if a utility is verified
-    function isUtilityVerified(address _utility) external view returns (bool) {
-        return verifiedUtilities[_utility];
-    }
-
-    // ── deprecated names ────────────────────────────────────────
-    // Selectors deployed callers and old ABIs hold. Remove next major.
-
-    /// @notice Deprecated name for `setUtilityVerified`.
-    function setModuleVerified(address _utility, bool verified) external {
-        setUtilityVerified(_utility, verified);
-    }
-
-    /// @notice Deprecated name for `isUtilityVerified`.
-    function isModuleVerified(address _utility) external view returns (bool) {
-        return verifiedUtilities[_utility];
-    }
-
-    /// @notice Deprecated name for `verifiedUtilities`.
-    function verifiedModules(address _utility) external view returns (bool) {
-        return verifiedUtilities[_utility];
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // OCCUPANCY POLICY REGISTRY (informational, non-blocking)
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Verified occupancy policies (informational, non-blocking)
-    mapping(address => bool) public verifiedPolicies;
-
-    event PolicyVerified(
-        address indexed policy,
-        bool verified,
-        string name,
-        string version,
-        string metadataURI
-    );
-
-    /// @notice Mark an occupancy policy verified/unverified (admin only)
-    function setPolicyVerified(address _policy, bool verified) external onlyAdmin {
-        IOccupancyPolicy p = IOccupancyPolicy(_policy);
-        // See `setUtilityVerified` — same two-id reasoning.
-        require(
-            p.supportsInterface(type(IOccupancyPolicy).interfaceId),
-            "not IOccupancyPolicy"
-        );
-        require(
-            p.supportsInterface(type(IModuleMetadata).interfaceId),
-            "not IModuleMetadata"
-        );
-        verifiedPolicies[_policy] = verified;
-        emit PolicyVerified(_policy, verified, p.name(), p.version(), p.metadataURI());
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // BATCH OPERATIONS
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Collect tax from multiple slots in a single transaction
-    /// @param slots Array of slot addresses to collect from
-    /// @return collected Amount collected from each slot (0 if skipped or nothing to collect)
-    function collectAll(
-        address[] calldata slots
-    ) external returns (uint256[] memory collected) {
-        collected = new uint256[](slots.length);
-        for (uint256 i = 0; i < slots.length; i++) {
-            if (!isSlot[slots[i]]) continue;
-            Slot s = Slot(slots[i]);
-            uint256 tax = s.collectedTax() + s.taxOwed();
-            if (tax == 0) continue;
-            try s.collect() {
-                collected[i] = tax;
-            } catch {}
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // PROTOCOL EVENT HUB
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Emit a protocol-wide event (called by slots)
-    function emitEvent(uint8 eventType, bytes calldata data) external {
-        require(isSlot[msg.sender], "not a slot");
-        emit SlotEvent(msg.sender, eventType, data);
-    }
-
-    /// @notice Register pre-existing slots deployed before this upgrade (admin only)
-    function registerSlots(address[] calldata slots) external onlyAdmin {
-        for (uint256 i = 0; i < slots.length; i++) {
-            isSlot[slots[i]] = true;
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // BEACON UPGRADES
-    // ═══════════════════════════════════════════════════════════
-
-    /// @notice Upgrade the beacon (admin only). Requires the factory to own it.
-    /// @dev Beacon ownership starts with `admin` (see `initialize`). Transfer it
-    ///      to this factory with `UpgradeableBeacon.transferOwnership` to enable
-    ///      this. Authority is unchanged either
-    ///      way — `onlyAdmin` here is the same address that owned the beacon.
-    function upgradeBeacon(address newImplementation) external onlyAdmin {
-        beacon.upgradeTo(newImplementation);
-        emit BeaconUpgraded(newImplementation);
-    }
-
     function _authorizeUpgrade(address) internal override onlyAdmin {}
-
-    // ═══════════════════════════════════════════════════════════
-    // INTERNAL
-    // ═══════════════════════════════════════════════════════════
-
-    function _validateConfig(
-        SlotConfig memory config,
-        SlotInitParams memory initParams
-    ) internal view {
-        if (config.mutableTax || config.mutableUtility || config.mutablePolicy) {
-            if (config.manager == address(0))
-                revert InvalidConfig_ManagerRequired();
-        } else {
-            if (config.manager != address(0))
-                revert InvalidConfig_ManagerMustBeZero();
-        }
-        if (initParams.taxPercentage == 0) revert InvalidTaxPercentage();
-
-        // Reject non-contract utility addresses (e.g. EOA, wrong-chain address).
-        // Without this check, getSlotInfo() will revert on the resulting slot.
-        if (initParams.utility != address(0) && initParams.utility.code.length == 0)
-            revert InvalidModule_NoCode();
-    }
-
-    function _deploySlot(
-        address recipient,
-        IERC20 currency,
-        SlotConfig memory config,
-        SlotInitParams memory initParams
-    ) internal returns (address slot) {
-        // `factory` is set inside `initialize` now, in the proxy constructor —
-        // atomically with creation, so a new slot is never briefly claimable.
-        bytes memory initData = abi.encodeCall(
-            Slot.initialize,
-            (recipient, currency, config, initParams, address(this))
-        );
-        BeaconProxy proxy = new BeaconProxy(address(beacon), initData);
-        slot = address(proxy);
-        isSlot[slot] = true;
-        emit SlotDeployed(
-            slot,
-            recipient,
-            address(currency),
-            config,
-            initParams
-        );
-    }
 }

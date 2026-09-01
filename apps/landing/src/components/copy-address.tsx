@@ -2,6 +2,7 @@
 
 import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useEnsName } from "@/lib/ens";
 import { cn } from "@/lib/utils";
 import { truncateAddress } from "@/utils";
 
@@ -20,6 +21,7 @@ export function CopyAddress({
   className,
   truncate = true,
   showAddress = true,
+  ens = false,
 }: {
   address: string;
   className?: string;
@@ -32,9 +34,24 @@ export function CopyAddress({
    * the ability to take it is still wanted.
    */
   showAddress?: boolean;
+  /**
+   * Show the ENS name where one exists, and drop the monospace.
+   *
+   * These travel together deliberately. Mono is right for a hex string —
+   * fixed-width digits are what make two addresses comparable at a glance — and
+   * wrong for a name, where it just looks like a terminal. Opting into ENS is
+   * opting into "this is somebody", so the type follows.
+   *
+   * Off by default: the hook is disabled unless asked, so nothing that renders
+   * a hundred addresses starts making a hundred mainnet lookups.
+   */
+  ens?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Passing undefined leaves the query disabled — see `enabled` in lib/ens.
+  const { data: ensName } = useEnsName(ens ? address : undefined);
 
   // Clearing on unmount matters here: rows unmount as the accordion collapses,
   // and a pending timer would call setState on a gone component.
@@ -62,8 +79,13 @@ export function CopyAddress({
   return (
     <span className={cn("inline-flex items-center gap-1.5", className)}>
       {showAddress && (
-        <span className="font-mono text-xs">
-          {truncate ? truncateAddress(address) : address}
+        <span
+          className={cn("text-xs", !ensName && !ens && "font-mono")}
+          // The name replaces the address on screen, so the address has to stay
+          // reachable — and `truncate={false}` callers already show it in full.
+          title={truncate ? address : undefined}
+        >
+          {ensName ?? (truncate ? truncateAddress(address) : address)}
         </span>
       )}
       <button

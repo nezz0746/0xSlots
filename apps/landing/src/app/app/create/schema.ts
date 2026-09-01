@@ -1,5 +1,23 @@
 import { isAddress } from "viem";
 import { z } from "zod";
+import { type TimeUnit, timeUnits } from "./sections";
+
+/**
+ * The create form's shape, as the form holds it — strings, modes and toggles.
+ *
+ * NOT the shape the protocol takes. `SlotInit` is eight resolved values, and
+ * the translation happens once, at submit, in `page.tsx`. Two things follow:
+ *
+ *  - This schema is about *fillability*: is there enough here, and is it
+ *    well-formed enough, to build an init at all. It must never contradict
+ *    `assertSlotInit` in `@0xslots/sdk/slots`, which is the authority on what
+ *    the chain will accept. Where they overlap — the tax bounds, the manager
+ *    rule — the bounds here are copied from there rather than invented.
+ *  - Fields with no counterpart in `SlotInit` still belong here. A recipient
+ *    *group* becomes one split address before it ever reaches the protocol,
+ *    and the split's own rules (at least two members, allocations summing to
+ *    100%) are only checkable at this layer.
+ */
 
 function isValidAddressOrEns(val: string) {
   const v = val.trim();
@@ -9,23 +27,6 @@ function isValidAddressOrEns(val: string) {
   return false;
 }
 
-export const timeDenominations = [
-  "seconds",
-  "minutes",
-  "hours",
-  "days",
-  "months",
-] as const;
-export type TimeDenomination = (typeof timeDenominations)[number];
-
-export const TIME_MULTIPLIERS: Record<TimeDenomination, number> = {
-  seconds: 1,
-  minutes: 60,
-  hours: 3600,
-  days: 86400,
-  months: 2592000, // 30 days
-};
-
 export const splitRecipientSchema = z.object({
   address: z.string(),
   percentAllocation: z.number(),
@@ -33,17 +34,24 @@ export const splitRecipientSchema = z.object({
 
 export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
 
-export const moduleModes = ["none", "verified", "custom"] as const;
-export type ModuleMode = (typeof moduleModes)[number];
-
-export const occupancyPolicyModes = [
-  "none",
-  "tenure",
-  "price",
-  "known",
-  "custom",
-] as const;
-export type OccupancyPolicyMode = (typeof occupancyPolicyModes)[number];
+/**
+ * How the hook field is being filled.
+ *
+ * The old form had this same trio for *modules*, and the shape survives the
+ * protocol change unchanged because the question is the same one: none, one we
+ * can name, or an address you brought yourself. What changed is that there is
+ * now exactly one of them per slot, so "none" is a real and common answer
+ * rather than a way of opting out of a list.
+ *
+ * `tenure` is the successor to the old occupancy-policy picker. The creator
+ * names a duration and the address is DERIVED — `MinimumTenureHookFactory`
+ * places one hook per duration at a CREATE2 address, so picking "7 days" twice
+ * anywhere in the world yields the same hook rather than a second copy of it.
+ * That is why it is its own mode rather than a preset in the known list: the
+ * list is addresses someone already deployed, and this one may not exist yet.
+ */
+export const hookModes = ["none", "known", "tenure", "custom"] as const;
+export type HookMode = (typeof hookModes)[number];
 
 export const createSlotSchema = z
   .object({
@@ -58,72 +66,65 @@ export const createSlotSchema = z
     customCurrency: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
-    moduleMode: z.enum(moduleModes),
+    // Both bounds mirror `assertSlotInit`: the rate is basis points per 30 days
+    // and must land in 1..10000, so 0.01% is the floor and 100% the ceiling.
+    // Without them the form happily submits a rate the contract rejects, and
+    // the user meets a revert where a field error belongs.
+    //
+    // The FLOOR is the one worth stating out loud: a zero-tax slot accrues
+    // nothing, so nobody could ever be liquidated off it — it would be a slot
+    // that can be taken once and then held for free forever.
     taxPercentage: z
       .string()
       .min(1, "Required")
       .refine(
-        (v) => !isNaN(Number(v)) && Number(v) >= 0,
-        "Must be a non-negative number",
-      ),
-    liquidationBountyPercent: z
-      .string()
-      .min(1, "Required")
+        (v) => !Number.isNaN(Number(v)) && Number(v) > 0,
+        "Must be above zero — a slot taxing nothing could never liquidate anybody",
+      )
+      .refine((v) => Number(v) <= 100, "Must be at most 100% per 30 days")
       .refine(
-        (v) => !isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 100,
-        "Must be 0–100",
+        (v) => Math.round(Number(v) * 100) >= 1,
+        "Smallest expressible rate is 0.01%",
       ),
     minDepositValue: z
       .string()
       .min(1, "Required")
       .refine(
-        (v) => !isNaN(Number(v)) && Number(v) >= 0,
+        (v) => !Number.isNaN(Number(v)) && Number(v) >= 0,
         "Must be a non-negative number",
       ),
-    minDepositUnit: z.enum(timeDenominations),
-    module: z.string().refine(isValidAddressOrEns, {
-      message: "Enter a valid address (0x…) or ENS name",
-    }),
-    // ── Occupancy layer ──
-    // Timing is expressed entirely by policy vetoes; there is no scheduling
-    // dial. "none" means instant buy, which is what every pre-v3 slot does.
-    occupancyPolicyMode: z.enum(occupancyPolicyModes),
-    // Only read when occupancyPolicyMode === "tenure". The policy contract for
-    // this duration is deployed on demand at a CREATE2 address derived from it.
+    minDepositUnit: z.enum(timeUnits),
+    hookMode: z.enum(hookModes),
+    /** Minimum-tenure duration, when `hookMode` is "tenure". */
     tenureValue: z
       .string()
       .refine(
-        (v) => !isNaN(Number(v)) && Number(v) > 0,
-        "Must be greater than zero",
-      ),
-    tenureUnit: z.enum(timeDenominations),
-    // Only read when occupancyPolicyMode === "price". Denominated in the slot's
-    // own currency; the policy contract is deployed on demand at a CREATE2
-    // address derived from (currency, minPrice).
-    minPriceValue: z
-      .string()
-      .refine(
         (v) => !Number.isNaN(Number(v)) && Number(v) > 0,
-        "Must be greater than zero",
+        "Must be a positive number",
       ),
-    occupancyPolicy: z.string().refine(isValidAddressOrEns, {
+    tenureUnit: z.enum(timeUnits),
+    hook: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
     mutableTax: z.boolean(),
-    mutableModule: z.boolean(),
-    mutablePolicy: z.boolean(),
+    mutableHook: z.boolean(),
     manager: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
   })
+  // The manager rule, in the only form a schema can express it.
+  //
+  // `assertSlotInit` enforces BOTH halves — a manager is required when
+  // something is mutable and forbidden when nothing is. Only the first half
+  // belongs here: the second is satisfied by construction, because the form
+  // sends `zeroAddress` rather than whatever is sitting in a hidden field.
   .refine(
     (d) => {
-      if (d.mutableTax || d.mutableModule || d.mutablePolicy)
-        return d.manager.length > 0;
+      if (d.mutableTax || d.mutableHook) return d.manager.trim().length > 0;
       return true;
     },
     {
-      message: "Manager is required when mutability is enabled",
+      message: "A manager is required when something is mutable",
       path: ["manager"],
     },
   )
@@ -134,6 +135,20 @@ export const createSlotSchema = z
       return true;
     },
     { message: "Currency is required", path: ["presetCurrency"] },
+  )
+  // A hook chosen by address must actually be one. The factory rejects an
+  // address with no code, and a hook subscribing to no callbacks at all is
+  // rejected outright — but neither is knowable from a string, so all this
+  // layer can insist on is that something was entered.
+  .refine(
+    (d) => {
+      if (d.hookMode === "none") return true;
+      // A tenure hook's address is derived from the duration, so there is
+      // nothing in `hook` to insist on until the prediction resolves.
+      if (d.hookMode === "tenure") return Number(d.tenureValue) > 0;
+      return d.hook.trim().length > 0;
+    },
+    { message: "Choose a hook or switch to none", path: ["hook"] },
   )
   .refine(
     (d) => {
@@ -193,7 +208,7 @@ export const createSlotSchema = z
 export type CreateSlotFormValues = z.input<typeof createSlotSchema>;
 
 export const defaultValues: CreateSlotFormValues = {
-  recipientMode: "single" as const,
+  recipientMode: "single",
   recipient: "",
   splitRecipients: [
     { address: "", percentAllocation: 50 },
@@ -203,41 +218,29 @@ export const defaultValues: CreateSlotFormValues = {
   currencyMode: "preset",
   presetCurrency: "",
   customCurrency: "",
-  moduleMode: "none",
+  // 1% per 30 days, funded a day ahead: a slot that plainly works, and every
+  // number visible on first paint rather than a form of empty required fields.
   taxPercentage: "1",
-  liquidationBountyPercent: "5",
   minDepositValue: "1",
   minDepositUnit: "days",
-  module: "",
-  // Default to instant buy — the pre-v3 behaviour. A policy is opt-in, so an
-  // unchanged form produces exactly the slot it always did.
-  occupancyPolicyMode: "none",
+  // No hook — a plain instant-buy slot. An untouched form produces the
+  // simplest thing the protocol can make, which is also the one whose rules a
+  // reader can hold in their head.
+  hookMode: "none",
+  hook: "",
   tenureValue: "7",
   tenureUnit: "days",
-  minPriceValue: "1",
-  occupancyPolicy: "",
   mutableTax: false,
-  mutableModule: false,
-  mutablePolicy: false,
+  mutableHook: false,
   manager: "",
 };
-
-/** "5" → 500n */
-export function percentToBps(percent: string): bigint {
-  return BigInt(Math.round(Number(percent) * 100));
-}
-
-/** ("1", "days") → 86400n */
-export function toSeconds(value: string, unit: TimeDenomination): bigint {
-  return BigInt(Math.round(Number(value) * TIME_MULTIPLIERS[unit]));
-}
 
 /**
  * ("1", "hours") → "1 hour". Echoes back what was typed rather than
  * normalising it, so "90 minutes" does not come back as "1h 30m" and leave the
  * reader checking whether the form understood them.
  */
-export function formatValueUnit(value: string, unit: TimeDenomination): string {
+export function formatValueUnit(value: string, unit: TimeUnit): string {
   const singular = Number(value) === 1 ? unit.replace(/s$/, "") : unit;
   return `${value} ${singular}`;
 }
