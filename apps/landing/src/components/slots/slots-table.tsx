@@ -19,8 +19,8 @@ import {
   type CreatedSlot,
   useCreatedSlots,
   useCurrencyMeta,
-  useSlotsFactory,
   useSlotState,
+  useSlotsFactory,
 } from "@/hooks/slots/use-slots";
 import { formatBalance, formatBps, truncateAddress } from "@/utils";
 
@@ -60,7 +60,9 @@ function StatusCell({
 function SlotRow({ slot }: { slot: CreatedSlot }) {
   const { chainId } = useChain();
   const { push } = useNavigation();
-  const { data: state } = useSlotState(slot.address, { refetchInterval: 15_000 });
+  const { data: state } = useSlotState(slot.address, {
+    refetchInterval: 15_000,
+  });
   const currency = useCurrencyMeta(slot.currency);
   const hook = findKnownHook(chainId, slot.hook);
 
@@ -83,11 +85,7 @@ function SlotRow({ slot }: { slot: CreatedSlot }) {
         )}
       </TableCell>
       <TableCell className="font-mono text-xs text-muted-foreground">
-        {state
-          ? state.isVacant
-            ? "—"
-            : truncateAddress(state.occupant)
-          : "…"}
+        {state ? (state.isVacant ? "—" : truncateAddress(state.occupant)) : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
         {state

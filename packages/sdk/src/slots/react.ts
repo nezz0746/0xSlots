@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Address, Hash } from "viem";
-import { usePublicClient, useWaitForTransactionReceipt, useWalletClient } from "wagmi";
+import {
+  usePublicClient,
+  useWaitForTransactionReceipt,
+  useWalletClient,
+} from "wagmi";
 import type {
   BuyParams,
   ProposeTermsParams,
   SellOrder,
-  SignSellOrderParams,
   SignedSellOrder,
+  SignSellOrderParams,
   SlotInit,
 } from "./client";
 import { SlotsClient } from "./client";
@@ -24,6 +28,11 @@ export interface UseSlotsClientConfig {
    * factory would deploy the wrong kind of slot without complaining.
    */
   factoryAddress?: Address;
+  /**
+   * The periphery `SlotTaker`. Only `liquidateAndTake` on a NATIVE slot needs
+   * it — an ERC-20 slot composes the same sequence through its own `multicall`.
+   */
+  takerAddress?: Address;
   /** Chain override. Defaults to the connected chain. */
   chainId?: number;
 }
@@ -37,10 +46,11 @@ export function useSlotsClient(config: UseSlotsClientConfig = {}): SlotsClient {
     () =>
       new SlotsClient({
         factoryAddress: config.factoryAddress,
+        takerAddress: config.takerAddress,
         publicClient: publicClient ?? undefined,
         walletClient: walletClient ?? undefined,
       }),
-    [config.factoryAddress, publicClient, walletClient],
+    [config.factoryAddress, config.takerAddress, publicClient, walletClient],
   );
 }
 
@@ -71,6 +81,29 @@ function decodedRevert(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Reverts whose SELECTOR is not the useful part of the answer.
+ *
+ * The rule is still "show the contract's own error", because it names what
+ * refused. These are the cases where the name alone leaves the reader with
+ * nothing to do next, so the name is replaced by what happened.
+ *
+ * `PaymentAboveMax` is the one that matters. It means the total moved above the
+ * ceiling the client sent — which is only possible because the sitting price is
+ * read at EXECUTION, so the occupant raised it between the quote and inclusion.
+ * That is the ceiling working: the alternative was paying the new price out of
+ * the allowance, silently. A buyer told "PaymentAboveMax" learns nothing; a
+ * buyer told the price moved knows to look at it again.
+ */
+const NAMED_REVERTS: Record<string, string> = {
+  PaymentAboveMax:
+    "The price moved before this landed. It went above the total you were quoted, so nothing was charged — check the new price and try again.",
+  NotInsolvent:
+    "The occupant is not insolvent — their deposit still covers what they owe, so there is nothing to evict.",
+  CannotBuyFromYourself:
+    "That address already holds this slot. Reprice instead of buying it from yourself.",
+};
+
 function extractErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("User rejected") || message.includes("User denied"))
@@ -79,7 +112,7 @@ function extractErrorMessage(error: unknown): string {
   // The decoded custom error first: it names WHAT refused, which is the only
   // part a reader can act on.
   const decoded = decodedRevert(error);
-  if (decoded) return decoded;
+  if (decoded) return NAMED_REVERTS[decoded] ?? decoded;
 
   // viem ContractFunctionExecutionError: prefer the shortMessage or reason.
   // A hook's veto arrives here — `_before` bubbles the hook's own revert reason
@@ -147,7 +180,10 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
   }, [isPending, isConfirming, isSuccess, isError]);
 
   const exec = useCallback(
-    async (label: string, fn: () => Promise<Hash>): Promise<Hash | undefined> => {
+    async (
+      label: string,
+      fn: () => Promise<Hash>,
+    ): Promise<Hash | undefined> => {
       labelRef.current = label;
       setActiveAction(label);
       setIsPending(true);
@@ -247,6 +283,24 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     [exec, client],
   );
   /**
+   * Reprice and move the deposit as one submission.
+   *
+   * One label for what may be two wallet prompts on a native slot, because it
+   * is one intention — the panel says how many confirmations to expect rather
+   * than pretending the second one is a separate action.
+   */
+  const manageTerms = useCallback(
+    (
+      slot: Address,
+      params: {
+        newPrice?: bigint;
+        topUpAmount?: bigint;
+        withdrawAmount?: bigint;
+      },
+    ) => exec("Update terms", () => client.manageTerms(slot, params)),
+    [exec, client],
+  );
+  /**
    * Labelled by direction rather than one "Set operator" for both: the row that
    * calls this shows a spinner next to the label, and "Set operator" spinning
    * beside an operator you just revoked reads as the opposite of what happened.
@@ -278,9 +332,24 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
       exec("Propose terms", () => client.proposeTerms(slot, params)),
     [exec, client],
   );
+  /**
+   * Retract one queued dimension, or both.
+   *
+   * Labelled by dimension rather than one "Cancel proposal" for all three
+   * shapes, because the label is what a per-row spinner keys off: a tax row and
+   * a hook row cancelling under one shared label spin together, and the reader
+   * cannot tell which retraction is actually in flight.
+   */
   const cancelProposal = useCallback(
-    (slot: Address) =>
-      exec("Cancel proposal", () => client.cancelProposal(slot)),
+    (slot: Address, cancelTax = true, cancelHook = true) =>
+      exec(
+        cancelTax && cancelHook
+          ? "Cancel proposal"
+          : cancelTax
+            ? "Cancel tax update"
+            : "Cancel hook update",
+        () => client.cancelProposal(slot, cancelTax, cancelHook),
+      ),
     [exec, client],
   );
 
@@ -328,6 +397,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     selfAssess,
     topUp,
     withdraw,
+    manageTerms,
     setOperator,
     // Money out
     collect,

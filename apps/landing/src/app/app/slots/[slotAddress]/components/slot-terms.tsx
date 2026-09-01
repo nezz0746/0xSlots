@@ -1,100 +1,15 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
 import type { SlotState } from "@0xslots/sdk/slots";
-import { formatDistanceToNow } from "date-fns";
-import { Hourglass, Settings2, X } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import { useState } from "react";
 import { type Address, isAddress, zeroAddress } from "viem";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useChain } from "@/context/chain";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
-import { formatBps } from "@/utils";
-import { AddressText, Field, NumberField, Panel } from "./panel";
+import { NumberField, Panel } from "./panel";
 
 type Actions = ReturnType<typeof useSlotsAction>;
-
-function hookLabel(chainId: number, hook: Address) {
-  if (hook === zeroAddress) return "none — detached";
-  return findKnownHook(chainId, hook)?.name ?? hook;
-}
-
-/**
- * Terms the manager has queued.
- *
- * Rendered as PENDING and never folded into the terms above it. The deferral is
- * a promise the protocol makes to the occupant — the terms they bought into
- * hold for their whole tenure — and a queued change drawn as a live one turns
- * that promise into a surprise.
- */
-export function PendingTermsPanel({ state }: { state: SlotState }) {
-  const { chainId } = useChain();
-  const { pending } = state;
-  if (pending.isEmpty) return null;
-
-  const proposedAt = new Date(Number(pending.proposedAt) * 1000);
-
-  return (
-    <Panel
-      icon={Hourglass}
-      title="Pending terms"
-      tint="bg-amber-500/15 text-amber-600 dark:text-amber-400"
-      actions={
-        <Badge className="gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-400">
-          not yet in force
-        </Badge>
-      }
-    >
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        Queued, not applied. These land at the{" "}
-        <strong className="font-medium text-foreground">
-          next occupancy transition
-        </strong>{" "}
-        — a buy, a sell, a release or a liquidation. Until then this slot runs on
-        the terms shown above, and{" "}
-        {state.isVacant
-          ? "the next person to take it will be the first to pay them."
-          : "the current occupant keeps the ones they bought into."}
-      </p>
-
-      {pending.hasTax ? (
-        <Field
-          label="Tax will become"
-          value={`${formatBps(Number(pending.taxPercentage))} / 30 days`}
-          hint={`from ${formatBps(Number(state.taxPercentage))}`}
-          emphasis
-        />
-      ) : null}
-      {pending.hasHook ? (
-        <Field
-          label="Hook will become"
-          value={
-            pending.hook === zeroAddress ? (
-              "none — detached"
-            ) : (
-              <span className="inline-flex items-center gap-1.5">
-                {findKnownHook(chainId, pending.hook)?.name ?? "Unrecognised"}
-                <AddressText address={pending.hook} />
-              </span>
-            )
-          }
-          hint={`from ${hookLabel(chainId, state.hook)}`}
-          emphasis
-        />
-      ) : null}
-      <Field
-        label="Proposed"
-        value={
-          pending.proposedAt === 0n
-            ? "—"
-            : `${formatDistanceToNow(proposedAt)} ago`
-        }
-      />
-    </Panel>
-  );
-}
 
 /**
  * The manager's controls.
@@ -121,7 +36,9 @@ export function ManageTermsPanel({
   const hookTrimmed = hook.trim();
   // A blank hook field means DETACH, which is a real intention and the exact
   // case a truthiness check would silently drop.
-  const hookAddress = (hookTrimmed === "" ? zeroAddress : hookTrimmed) as Address;
+  const hookAddress = (
+    hookTrimmed === "" ? zeroAddress : hookTrimmed
+  ) as Address;
 
   const taxValid = !changeTax || (taxBps > 0n && taxBps <= 10_000n);
   const hookValid = !changeHook || isAddress(hookAddress);
@@ -206,17 +123,6 @@ export function ManageTermsPanel({
         >
           Propose
         </Button>
-        {!state.pending.isEmpty ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={actions.busy}
-            onClick={() => actions.cancelProposal(slot)}
-          >
-            <X className="size-3.5" />
-            Cancel proposal
-          </Button>
-        ) : null}
       </div>
       <p className="text-[10px] leading-snug text-muted-foreground">
         A proposal never applies immediately. It waits for the next occupancy

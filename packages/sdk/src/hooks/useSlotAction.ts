@@ -7,10 +7,10 @@ import type {
   BuyParams,
   CreateSlotParams,
   CreateSlotsParams,
+  SellOrder,
   SlotsChain,
 } from "../client";
 import { UpdateKind } from "../client";
-import type { SellOrder } from "../client";
 import { useSlotsClient } from "./useSlotsClient";
 
 const CANCEL_LABELS: Record<UpdateKind, string> = {

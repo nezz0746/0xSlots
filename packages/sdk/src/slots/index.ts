@@ -33,6 +33,7 @@ export {
   type SlotState,
   SlotsClient,
   type SlotsClientConfig,
+  TERMS_DELAY_SECONDS,
 } from "./client";
 
 // The MinimumTenureHook factory: a duration in, a hook address out, so a

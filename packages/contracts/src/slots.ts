@@ -14,6 +14,9 @@ export {
   offerBookAbi,
   slotAbi,
   slotFactoryAbi,
+  // Evict-and-take, composed from OUTSIDE the slot. `liquidateAndTake` was a
+  // core entry point and is not one any more; this is where it lives.
+  slotTakerAbi,
 } from "./abis/slots";
 
 import type { Address } from "viem";
@@ -56,6 +59,28 @@ export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
   {
     [anvil.id]: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
   };
+
+/**
+ * The `SlotTaker` for a chain, if one is deployed there.
+ *
+ * Evict-and-take, from outside the core. `Slot.liquidateAndTake` existed
+ * briefly and was removed under audit: "evict, then buy" composes from two
+ * public entry points, and the core carrying a second seating path meant a
+ * second quote and a second set of invariants to keep in step with `buy`. The
+ * only thing composition could not reach was a NATIVE slot, because OZ's
+ * `Multicall` is non-payable — so this contract is payable and forwards value,
+ * and an ERC-20 slot still composes through the inherited `multicall`.
+ *
+ * Optional per chain, exactly like the book. A chain without one can still
+ * evict and take on ERC-20; it is native slots that lose the atomic path.
+ *
+ * The anvil address is deterministic from a fresh chain driven by account 0,
+ * as `script/slots/DeploySlots.s.sol` deploys it — recorded in
+ * `apps/contracts/deployments/31337/SlotTaker.json`.
+ */
+export const slotTakerAddress: Partial<Record<number, Address>> = {
+  [anvil.id]: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+};
 
 /**
  * The on-chain `OfferBook` for a chain, if one is deployed there.

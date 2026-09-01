@@ -66,7 +66,8 @@ export function DevAccountSwitcher() {
     } catch {
       return;
     }
-    if (saved && config.connectors.some((c) => c.id === saved)) void pick(saved);
+    if (saved && config.connectors.some((c) => c.id === saved))
+      void pick(saved);
   }, [isLocal, connector, config.connectors, pick]);
 
   if (!isLocal) return null;

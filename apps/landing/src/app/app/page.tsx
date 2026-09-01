@@ -2,25 +2,40 @@
 
 import { PlusIcon } from "lucide-react";
 import { useAccount } from "wagmi";
+import { RecipientsTable } from "@/components/explorer/recipients-table";
+import { SlotsEvents } from "@/components/explorer/slots-events";
+import { StatsBar } from "@/components/explorer/stats-bar";
+import { TabStrip } from "@/components/explorer-tabs";
+import { IndexerStatus } from "@/components/indexer-status";
 import { PageHeader } from "@/components/page-header";
-import { SlotsTable } from "@/components/slots/slots-table";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
+import {
+  EXPLORER_SECTIONS,
+  useExplorerSection,
+} from "@/context/explorer-section";
 import { NavLink } from "@/context/navigation";
-import { useSlotCount, useSlotsFactory } from "@/hooks/slots/use-slots";
+import { useSlotsFactory } from "@/hooks/slots/use-slots";
 import { truncateAddress } from "@/utils";
 
 /**
- * Every slot the factory has made.
+ * The explorer.
  *
- * Read from `SlotCreated` logs, not an indexer: the indexer serves the previous
- * protocol, and rows from it would look identical and be entirely wrong.
+ * Rows come from the indexer, which is what makes them filterable, sortable and
+ * pageable; each row tops that up with a live chain read for the one fact no
+ * event can carry — solvency. When the indexer is unreachable the slots table
+ * falls back to reading `SlotCreated` logs from the node, so the page still
+ * lists slots on a chain whose indexer has not caught up.
+ *
+ * The section (Slots / Recipients) is held in `ExplorerSectionProvider` so the
+ * desktop sidebar and the mobile tab strip below drive the same selection, and
+ * so it survives a reload in the URL.
  */
 export default function Explorer() {
   const { chain } = useAccount();
   const { chainId } = useChain();
   const factory = useSlotsFactory();
-  const { data: count } = useSlotCount();
+  const { section, setSection } = useExplorerSection();
 
   return (
     <div className="min-h-screen">
@@ -35,30 +50,32 @@ export default function Explorer() {
               {factory ? ` · factory ${truncateAddress(factory)}` : ""}
             </p>
           </div>
-          {count !== undefined ? (
-            <>
-              <div className="hidden h-6 w-px bg-border md:flex" />
-              <div className="flex flex-col">
-                <span className="text-lg font-semibold tabular-nums leading-tight">
-                  {count.toString()}
-                </span>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  created
-                </span>
-              </div>
-            </>
-          ) : null}
+          {/* Totals for the whole chain, not for the page you are looking at. */}
+          <StatsBar />
         </div>
-        <NavLink href="/app/create">
-          <Button size="sm">
-            <PlusIcon className="size-4" />
-            Create slot
-          </Button>
-        </NavLink>
+        <div className="flex items-center gap-3">
+          {/* How far behind the rows below are. Silent when synced. */}
+          <IndexerStatus />
+          <NavLink href="/app/create">
+            <Button size="sm">
+              <PlusIcon className="size-4" />
+              Create slot
+            </Button>
+          </NavLink>
+        </div>
       </PageHeader>
 
       <div className="px-3 py-3 md:px-5">
-        <SlotsTable emptyMessage="No slots on this chain yet. Create the first one." />
+        {/* Below md there is no sidebar, so the sections render as a strip
+            driving the very same state the sidebar drives above it. */}
+        <TabStrip
+          tabs={EXPLORER_SECTIONS}
+          active={section}
+          onSelect={setSection}
+          className="md:hidden"
+        />
+
+        {section === "recipients" ? <RecipientsTable /> : <SlotsEvents />}
       </div>
     </div>
   );

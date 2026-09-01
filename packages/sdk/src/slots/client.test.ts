@@ -1,3 +1,5 @@
+import { slotAbi } from "@0xslots/contracts/slots";
+import { encodeFunctionData } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { NATIVE_CURRENCY_ADDRESS } from "../native";
 import {
@@ -14,6 +16,7 @@ const ERC20 = "0x3333333333333333333333333333333333333333" as const;
 const HOOK = "0x4444444444444444444444444444444444444444" as const;
 const FACTORY = "0x5555555555555555555555555555555555555555" as const;
 const MANAGER = "0x6666666666666666666666666666666666666666" as const;
+const TAKER = "0x9999999999999999999999999999999999999999" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 const CHAIN_ID = 8453;
@@ -59,6 +62,9 @@ function harness(
 
   const client = new SlotsClient({
     factoryAddress: FACTORY,
+    // Evict-and-take is periphery now. Wired here so every test exercises the
+    // real routing rather than a client that quietly has nowhere to send it.
+    takerAddress: TAKER,
     publicClient: {
       readContract,
       simulateContract: vi.fn(async () => ({ result: SLOT })),
@@ -102,6 +108,63 @@ describe("native ETH slots", () => {
     expect(approvals(writeContract)).toHaveLength(0);
   });
 
+  it("buy sends the quote as `maxPayment` — the ceiling is ON by default", async () => {
+    // The whole point of the fourth argument. The sitting price is read at
+    // EXECUTION, so an occupant can raise it into a pending buy; without a
+    // ceiling an ERC-20 buy pays the new price out of the whole allowance. A
+    // client that sends 0 here reintroduces exactly that, and every other
+    // assertion in this file would still pass.
+    const { client, writeContract } = harness({
+      quoteBuy: 15n * 10n ** 17n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 5n * 10n ** 17n,
+      selfAssessedPrice: 2n * 10n ** 18n,
+    });
+
+    const buy = sent(writeContract, "buy");
+    expect(buy.args).toHaveLength(4);
+    const maxPayment = buy.args[3] as bigint;
+    expect(maxPayment).not.toBe(0n);
+    // Not merely non-zero: it is the figure this call was quoted, so the
+    // transaction pays what it was told or it reverts `PaymentAboveMax`.
+    expect(maxPayment).toBe(15n * 10n ** 17n);
+  });
+
+  it("an explicit `maxPayment` wins, including 0n to opt out", async () => {
+    // Opting out is spelled as a value, not as an absence: omitting the field
+    // gets the protection and only `0n` gives it up.
+    const optedOut = harness({
+      quoteBuy: 1_000n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+    await optedOut.client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 10n,
+      selfAssessedPrice: 990n,
+      maxPayment: 0n,
+    });
+    expect(sent(optedOut.writeContract, "buy").args[3]).toBe(0n);
+
+    const headroom = harness({
+      quoteBuy: 1_000n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+    await headroom.client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 10n,
+      selfAssessedPrice: 990n,
+      maxPayment: 1_200n,
+    });
+    expect(sent(headroom.writeContract, "buy").args[3]).toBe(1_200n);
+  });
+
   it("buy sends the quote VERBATIM, whatever it says", async () => {
     // The regression guard for the whole change. `quoteBuy` here is not
     // `price + deposit` for any price — a client still doing its own arithmetic
@@ -142,7 +205,7 @@ describe("native ETH slots", () => {
     ).toEqual(["quoteBuy", "currency"]);
   });
 
-  it("buy passes the deposit to the quote, not the self-assessed price", async () => {
+  it("buy quotes for the SEATED account, with the deposit", async () => {
     const { client, readContract } = harness({
       quoteBuy: 1n,
       currency: NATIVE_CURRENCY_ADDRESS,
@@ -158,7 +221,34 @@ describe("native ETH slots", () => {
     const quote = readContract.mock.calls.find(
       (c: any[]) => c[0].functionName === "quoteBuy",
     )![0];
-    expect(quote.args).toEqual([5n * 10n ** 17n]);
+    // Account FIRST, mirroring the contract. `quoteBuy` carries the seated
+    // account's arrears now, so quoting for anyone else answers a different
+    // question — and on a native slot, where msg.value is checked for
+    // EQUALITY, answering it means the buy reverts.
+    expect(quote.args).toEqual([ACCOUNT, 5n * 10n ** 17n]);
+  });
+
+  it("buy quotes for the seat, not for the payer", async () => {
+    const { client, readContract } = harness({
+      quoteBuy: 1n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+    const seated = "0x7777777777777777777777777777777777777777" as const;
+
+    await client.buy({
+      slot: SLOT,
+      account: seated,
+      depositAmount: 1n,
+      selfAssessedPrice: 10n,
+    });
+
+    const quote = readContract.mock.calls.find(
+      (c: any[]) => c[0].functionName === "quoteBuy",
+    )![0];
+    // The connected wallet pays; `seated` occupies and owes any arrears. A
+    // client quoting `this.account` here under-quotes a debtor's re-entry and
+    // invents a debt for a payer who owes nothing.
+    expect(quote.args[0]).toBe(seated);
   });
 
   it("buy seats `account` while the connected wallet pays", async () => {
@@ -259,6 +349,7 @@ describe("signed sell orders", () => {
       currency: ERC20,
       allowance: 0n,
       orderNonce: 0n,
+      arrearsOf: 0n,
     });
 
     await client.makeSellOrder(SLOT, {
@@ -274,11 +365,35 @@ describe("signed sell orders", () => {
     expect(approve.args[1]).toBe(PRICE + DEPOSIT);
   });
 
+  it("makeSellOrder funds the signer's ARREARS as well as the order", async () => {
+    // `sell` charges the incoming occupant's carried arrears in the same pull.
+    // The debt is a fact about the SIGNER and appears nowhere in the order they
+    // signed — funding only `price + deposit` leaves a perfectly valid
+    // signature the occupant cannot fill.
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      allowance: 0n,
+      orderNonce: 0n,
+      arrearsOf: 5n * 10n ** 6n,
+    });
+
+    await client.makeSellOrder(SLOT, {
+      price: PRICE,
+      deposit: DEPOSIT,
+      deadline: DAY,
+    });
+
+    expect(sent(writeContract, "approve").args[1]).toBe(
+      PRICE + DEPOSIT + 5n * 10n ** 6n,
+    );
+  });
+
   it("makeSellOrder skips the approval when the allowance already covers it", async () => {
     const { client, writeContract, signTypedData } = harness({
       currency: ERC20,
       allowance: 10n ** 30n,
       orderNonce: 0n,
+      arrearsOf: 0n,
     });
 
     await client.makeSellOrder(SLOT, {
@@ -506,14 +621,23 @@ describe("creation", () => {
 
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
-    const { client } = harness({ pending: [0n, ZERO, false, false, 0n] });
+    const { client } = harness({
+      pending: [0n, ZERO, false, false, 0n],
+      pendingApplies: false,
+    });
     const pending = await client.pending(SLOT);
     expect(pending.isEmpty).toBe(true);
     expect(pending.hook).toBe(ZERO);
+    expect(pending.applies).toBe(false);
+    // Nothing queued has no ripening date to show.
+    expect(pending.appliesAt).toBe(0n);
   });
 
   it("pending unpacks a queued hook change", async () => {
-    const { client } = harness({ pending: [0n, HOOK, false, true, 1234n] });
+    const { client } = harness({
+      pending: [0n, HOOK, false, true, 1234n],
+      pendingApplies: false,
+    });
     const pending = await client.pending(SLOT);
     expect(pending).toEqual({
       taxPercentage: 0n,
@@ -521,8 +645,38 @@ describe("reads", () => {
       hasTax: false,
       hasHook: true,
       proposedAt: 1234n,
+      // proposedAt + TERMS_DELAY (1 day).
+      appliesAt: 1234n + 86_400n,
+      applies: false,
       isEmpty: false,
     });
+  });
+
+  it("pending asks the CHAIN whether the queued terms are ripe", async () => {
+    // `TERMS_DELAY` split two facts that used to be one: what is queued, and
+    // whether the next transition will take it. A client inferring the second
+    // from `proposedAt` infers it against the browser's clock, which is not the
+    // clock `_applyPending` reads.
+    const { client, readContract } = harness({
+      pending: [500n, ZERO, true, false, 1234n],
+      pendingApplies: true,
+    });
+
+    const pending = await client.pending(SLOT);
+    expect(pending.applies).toBe(true);
+    expect(
+      readContract.mock.calls.map((c: any[]) => c[0].functionName),
+    ).toContain("pendingApplies");
+  });
+
+  it("arrearsOf is asked per account", async () => {
+    const { client, readContract } = harness({ arrearsOf: 42n });
+    expect(await client.arrearsOf(SLOT, MANAGER)).toBe(42n);
+    const read = readContract.mock.calls.find(
+      (c: any[]) => c[0].functionName === "arrearsOf",
+    )![0];
+    // The debt follows the ACCOUNT, not the seat.
+    expect(read.args).toEqual([MANAGER]);
   });
 
   it("hookFlags passes the snapshotted struct through", async () => {
@@ -585,14 +739,14 @@ describe("guards", () => {
   });
 });
 
-describe("liquidateAndTake", () => {
-  it("pays its OWN quote on a native slot, and never reads the price", async () => {
+describe("liquidateAndTake — periphery, not a slot entry point", () => {
+  it("a NATIVE slot goes through the SlotTaker, paying the taker's own quote", async () => {
     // `price` and `quoteBuy` are both absent from the double. The eviction
     // vacates the slot before the buy half runs, so what is owed is neither the
     // live price nor what `buy` would charge — reaching for either is the bug,
     // and here each is an unexpected read that throws.
     const { client, writeContract, readContract } = harness({
-      quoteLiquidateAndTake: 4n * 10n ** 17n,
+      quote: 4n * 10n ** 17n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
 
@@ -604,20 +758,56 @@ describe("liquidateAndTake", () => {
     });
 
     const call = sent(writeContract, "liquidateAndTake");
-    expect(call.address).toBe(SLOT);
+    // The TAKER, not the slot. `Slot.liquidateAndTake` was removed under audit;
+    // a client still addressing the slot calls a function that is not there.
+    expect(call.address).toBe(TAKER);
     expect(call.value).toBe(4n * 10n ** 17n);
-    expect(call.args).toEqual([ACCOUNT, 4n * 10n ** 17n, 3n * 10n ** 18n]);
+    expect(call.args).toEqual([
+      SLOT,
+      ACCOUNT,
+      4n * 10n ** 17n,
+      3n * 10n ** 18n,
+      // The ceiling, defaulted to the quote exactly as `buy` does it.
+      4n * 10n ** 17n,
+    ]);
     // `buy` demands an EXACT msg.value, so overpaying by the stale price would
     // revert rather than refund.
     expect(
       readContract.mock.calls.map((c: any[]) => c[0].functionName),
-    ).toEqual(["quoteLiquidateAndTake", "currency"]);
+    ).toEqual(["currency", "quote"]);
     expect(approvals(writeContract)).toHaveLength(0);
   });
 
-  it("approves the SLOT for the deposit on an ERC-20 slot, and sends no value", async () => {
+  it("quotes the TAKER, for the seated account", async () => {
+    const { client, readContract } = harness({
+      quote: 1n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+    const seated = "0x7777777777777777777777777777777777777777" as const;
+
+    await client.liquidateAndTake({
+      slot: SLOT,
+      account: seated,
+      depositAmount: 9n,
+      selfAssessedPrice: 10n,
+    });
+
+    const quote = readContract.mock.calls.find(
+      (c: any[]) => c[0].functionName === "quote",
+    )![0];
+    expect(quote.address).toBe(TAKER);
+    // `SlotTaker.quote(slot, account, deposit)` — the deposit plus whatever
+    // arrears that account carries, which is why the account is in the query.
+    expect(quote.args).toEqual([SLOT, seated, 9n]);
+  });
+
+  it("an ERC-20 slot composes through the slot's own multicall", async () => {
+    // The taker is payable and forwards value, which is the one thing
+    // `multicall` cannot do. The reverse is also true: `multicall`
+    // delegatecalls, so the buy half pulls on the caller's allowance to the
+    // SLOT and needs no taker at all.
     const { client, writeContract } = harness({
-      quoteLiquidateAndTake: 5n * 10n ** 6n,
+      quote: 5n * 10n ** 6n,
       currency: ERC20,
       allowance: 0n,
     });
@@ -629,13 +819,31 @@ describe("liquidateAndTake", () => {
       selfAssessedPrice: 20n * 10n ** 6n,
     });
 
+    // The allowance goes to the slot, NOT to the taker — the taker never
+    // touches an ERC-20 slot and holds no balance to pull from.
     expect(sent(writeContract, "approve").args).toEqual([SLOT, 5n * 10n ** 6n]);
-    expect(sent(writeContract, "liquidateAndTake").value).toBeUndefined();
+    const call = sent(writeContract, "multicall");
+    expect(call.address).toBe(SLOT);
+    expect(call.value).toBeUndefined();
+    const [calls] = call.args as [readonly `0x${string}`[]];
+    expect(calls).toHaveLength(2);
+    // liquidate() first, then buy(...) — the order IS the composition.
+    expect(calls[0]).toBe(
+      encodeFunctionData({ abi: slotAbi, functionName: "liquidate" }),
+    );
+    expect(calls[1]).toBe(
+      encodeFunctionData({
+        abi: slotAbi,
+        functionName: "buy",
+        args: [ACCOUNT, 5n * 10n ** 6n, 20n * 10n ** 6n, 5n * 10n ** 6n],
+      }),
+    );
+    expect(sent(writeContract, "liquidateAndTake")).toBeUndefined();
   });
 
-  it("skips the approval when the allowance already covers the deposit", async () => {
+  it("skips the approval when the allowance already covers the quote", async () => {
     const { client, writeContract } = harness({
-      quoteLiquidateAndTake: 5n * 10n ** 6n,
+      quote: 5n * 10n ** 6n,
       currency: ERC20,
       allowance: 10n ** 30n,
     });
@@ -648,12 +856,12 @@ describe("liquidateAndTake", () => {
     });
 
     expect(approvals(writeContract)).toHaveLength(0);
-    expect(sent(writeContract, "liquidateAndTake")).toBeDefined();
+    expect(sent(writeContract, "multicall")).toBeDefined();
   });
 
   it("seats `account` while the connected wallet pays, exactly as buy does", async () => {
     const { client, writeContract } = harness({
-      quoteLiquidateAndTake: 1n,
+      quote: 1n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
     const seated = "0x7777777777777777777777777777777777777777" as const;
@@ -666,7 +874,7 @@ describe("liquidateAndTake", () => {
     });
 
     const call = sent(writeContract, "liquidateAndTake");
-    expect(call.args[0]).toBe(seated);
+    expect(call.args[1]).toBe(seated);
     expect(call.account).toBe(ACCOUNT);
   });
 
@@ -683,27 +891,53 @@ describe("liquidateAndTake", () => {
     expect(readContract).not.toHaveBeenCalled();
   });
 
+  it("says so when there is no taker, rather than failing obscurely", async () => {
+    // A chain with no deployed taker still evicts and takes on ERC-20; it is
+    // native slots that lose the atomic path, and that is worth naming.
+    const client = new SlotsClient({
+      publicClient: {
+        readContract: async ({ functionName }: any) =>
+          functionName === "currency" ? NATIVE_CURRENCY_ADDRESS : 1n,
+      } as any,
+      walletClient: {
+        writeContract: async () => "0xhash",
+        account: { address: ACCOUNT },
+        chain: { id: CHAIN_ID },
+      } as any,
+    });
+
+    await expect(
+      client.liquidateAndTake({
+        slot: SLOT,
+        account: ACCOUNT,
+        depositAmount: 1n,
+        selfAssessedPrice: 10n,
+      }),
+    ).rejects.toThrow(/takerAddress/);
+  });
+
   it("plain liquidate still sends no value and takes no arguments", async () => {
-    // The atomic path is an ADDITION; `liquidate` keeps its old signature for
-    // keepers that genuinely only want the slot vacated.
+    // Leaving the slot VACANT is a different outcome, and it stays one call on
+    // the slot. Only the atomic path moved to the periphery.
     const { client, writeContract } = harness({});
     await client.liquidate(SLOT);
     const call = sent(writeContract, "liquidate");
+    expect(call.address).toBe(SLOT);
     expect(call.args).toEqual([]);
     expect(call.value).toBeUndefined();
   });
 });
 
 describe("the two quotes are not interchangeable", () => {
-  it("buy and liquidateAndTake each ask their OWN quote for the same deposit", async () => {
-    // Both stubs present and deliberately different. This is the distinction the
-    // contract split into two functions because it is invisible from outside —
-    // a client that called one quote for both paths would pass every other test
-    // in this file.
+  it("buy asks the SLOT and liquidateAndTake asks the TAKER, for the same deposit", async () => {
+    // Both stubs present and deliberately different. This is the distinction
+    // the audit kept when it moved the entry point out: the eviction vacates
+    // the slot first, so the purchase half has nobody to buy out — a client
+    // reusing one quote for both paths passes every other test in this file.
     const deposit = 10n ** 6n;
     const reads = {
       quoteBuy: 900n,
-      quoteLiquidateAndTake: 7n,
+      quote: 7n,
       currency: NATIVE_CURRENCY_ADDRESS,
     };
     const params = {
@@ -844,6 +1078,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         afterSettle: false,
       },
       pending: [0n, ZERO, false, false, 0n],
+      pendingApplies: false,
       mutableTax: false,
       mutableHook: false,
       occupiedSince: 1700000000n,

@@ -3,6 +3,7 @@ import {
   minimumTenureHookAbi,
   slotAbi,
   slotFactoryAbi,
+  slotTakerAbi,
 } from "@0xslots/contracts/slots";
 import {
   type Address,
@@ -31,6 +32,16 @@ export const MAX_TAX_BPS = 10_000n;
 export const BASIS_POINTS = 10_000n;
 /** The tax period. Basis points are per 30 days, not per year. */
 export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
+/**
+ * How long queued terms must sit before a transition may apply them.
+ *
+ * `pending.proposedAt + TERMS_DELAY` is the instant `pendingApplies()` starts
+ * answering true. Mirrored here so a UI can say WHEN a queued change becomes
+ * ripe without a second round trip — but whether it IS ripe should still come
+ * from {@link SlotsClient.pendingApplies}, which asks the chain's clock rather
+ * than the browser's.
+ */
+export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
@@ -142,6 +153,25 @@ export interface PendingTerms {
   hasTax: boolean;
   hasHook: boolean;
   proposedAt: bigint;
+  /**
+   * The instant this becomes ripe — `proposedAt + TERMS_DELAY`.
+   *
+   * Zero when nothing is queued. Derived locally, so it is the right thing to
+   * RENDER ("applies after…") and the wrong thing to branch on; branch on
+   * {@link applies}, which the chain answered against its own clock.
+   */
+  appliesAt: bigint;
+  /**
+   * `pendingApplies()` — whether the next occupancy transition will actually
+   * land these terms.
+   *
+   * FALSE IS THE INTERESTING CASE and it is new. A proposal used to bind the
+   * moment it was made, so "queued" and "in force at the next transition" were
+   * the same fact; `TERMS_DELAY` split them. A buyer told "buying now applies
+   * these to you" inside the delay window is being told something the contract
+   * will refuse to do.
+   */
+  applies: boolean;
   /** True when nothing is queued — both `hasTax` and `hasHook` are false. */
   isEmpty: boolean;
 }
@@ -222,6 +252,21 @@ export interface BuyParams {
   account: Address;
   depositAmount: bigint;
   selfAssessedPrice: bigint;
+  /**
+   * A ceiling on the TOTAL charged. Omit and the client uses the quote it just
+   * read, which is what you almost always want.
+   *
+   * The sitting price is read at EXECUTION, not when you quoted it, so the
+   * occupant can raise it between your simulation and your inclusion and take
+   * the whole allowance you granted. Native slots are incidentally safe — `buy`
+   * checks `msg.value` for equality — but an ERC-20 buy had nothing bounding it
+   * at all, which is the hole this closes.
+   *
+   * `0n` DISABLES the ceiling. It is spelled as a value rather than as an
+   * absence so that opting out is a thing a caller did on purpose: omitting the
+   * field gets the protection, and only `maxPayment: 0n` gives it up.
+   */
+  maxPayment?: bigint;
 }
 
 /** Everything a slot will tell you about itself, in one call. */
@@ -286,6 +331,15 @@ export interface SlotState {
 export interface SlotsClientConfig {
   /** The hook-protocol `SlotFactory`. Only `createSlot` needs it. */
   factoryAddress?: Address;
+  /**
+   * The periphery `SlotTaker`. Only the evict-and-take path needs it.
+   *
+   * Optional, and its absence is not fatal: an ERC-20 slot composes the same
+   * sequence through the slot's own `multicall`, so only a NATIVE slot actually
+   * requires a deployed taker. {@link SlotsClient.liquidateAndTake} says so
+   * when it is missing rather than failing somewhere less legible.
+   */
+  takerAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
@@ -312,6 +366,21 @@ const SIMULATION_ABI = [
 ] as const;
 
 /**
+ * The same treatment for the taker, whose reverts come from the SLOT.
+ *
+ * `SlotTaker` has one error of its own and forwards everything else: a
+ * `PaymentAboveMax` from the ceiling, a `NotInsolvent` from the eviction, a
+ * hook's veto from the buy. Simulating against `slotTakerAbi` alone would
+ * resolve the function and then fail to name any of them.
+ */
+const TAKER_SIMULATION_ABI = [
+  ...slotTakerAbi,
+  ...slotAbi.filter((entry) => entry.type === "error"),
+  ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
+  ...compositeHookAbi.filter((entry) => entry.type === "error"),
+] as const;
+
+/**
  * Client for the hook-based Slots protocol.
  *
  * Reads go straight to the chain. There is no indexer namespace here on purpose:
@@ -328,11 +397,13 @@ export class SlotsClient {
   private readonly _publicClient?: PublicClient;
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
+  private readonly _taker?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
+    this._taker = config.takerAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -353,6 +424,22 @@ export class SlotsClient {
     if (!this._factory)
       throw new SlotsError("SlotsClient", "No factoryAddress provided");
     return this._factory;
+  }
+
+  private get taker(): Address {
+    if (!this._taker)
+      throw new SlotsError(
+        "SlotsClient",
+        "No takerAddress provided. Evicting and taking in one transaction goes " +
+          "through the periphery `SlotTaker` now — `Slot.liquidateAndTake` was " +
+          "removed under audit. Deploy one, or evict and buy as two transactions.",
+      );
+    return this._taker;
+  }
+
+  /** Whether an atomic evict-and-take is reachable on a NATIVE slot. */
+  get hasTaker(): boolean {
+    return !!this._taker;
   }
 
   private get account(): Address {
@@ -470,23 +557,68 @@ export class SlotsClient {
    * stated. Reading it turns a silent overpay into a mismatch the chain
    * reports.
    */
-  quoteBuy(slot: Address, depositAmount: bigint): Promise<bigint> {
-    return this.read<bigint>(slot, "quoteBuy", [depositAmount]);
+  quoteBuy(
+    slot: Address,
+    account: Address,
+    depositAmount: bigint,
+  ): Promise<bigint> {
+    return this.read<bigint>(slot, "quoteBuy", [account, depositAmount]);
+  }
+
+  /**
+   * Tax `account` still owes from an occupancy their deposit could not cover.
+   *
+   * Charged on RE-ENTRY, which is the point: settling can only take what the
+   * deposit holds, and the remainder used to be written off — so running dry
+   * and retaking the vacated seat was the cheapest way to hold a slot. It is
+   * carried on the ACCOUNT, not on the seat, and it is part of
+   * {@link quoteBuy}'s answer for that account. Quote for the address being
+   * SEATED, not for the one paying: they need not be the same, and the debt
+   * follows the seat's occupant.
+   */
+  arrearsOf(slot: Address, account: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "arrearsOf", [account]);
+  }
+
+  /**
+   * Whether queued terms are ripe enough to land at the next transition.
+   *
+   * A transition is WHERE terms land; `TERMS_DELAY` is WHEN they may. Before
+   * this existed a proposal bound the very next buyer in the same block, which
+   * is what the timelock was written to stop. Anything that prices against the
+   * pending rate — `minDepositForBuy` on-chain, a deposit sizer off it — has to
+   * agree with `_applyPending` about this, in both directions.
+   *
+   * False when nothing at all is queued.
+   */
+  pendingApplies(slot: Address): Promise<boolean> {
+    return this.read<boolean>(slot, "pendingApplies");
   }
 
   /**
    * What {@link liquidateAndTake} will charge for `depositAmount`.
    *
-   * A different number from {@link quoteBuy}, and the difference is invisible
-   * from outside: the eviction vacates the slot before the purchase reads the
-   * price, so there is no occupant left to buy out — while `price()` still
-   * reads non-zero right up until the call lands.
+   * Asked of the PERIPHERY now — `Slot.quoteLiquidateAndTake` went with the
+   * entry point it quoted. A different number from {@link quoteBuy}, and the
+   * difference is invisible from outside: the eviction vacates the slot before
+   * the purchase reads the price, so there is no occupant left to buy out —
+   * while `price()` still reads non-zero right up until the call lands. What
+   * remains is the deposit, plus whatever arrears `account` carries.
    *
-   * A quote, not a permission. It does not check solvency, and
-   * `liquidateAndTake` still reverts unless the occupant is insolvent.
+   * A quote, not a permission. It does not check solvency, and the write still
+   * reverts unless the occupant is insolvent.
    */
-  quoteLiquidateAndTake(slot: Address, depositAmount: bigint): Promise<bigint> {
-    return this.read<bigint>(slot, "quoteLiquidateAndTake", [depositAmount]);
+  quoteLiquidateAndTake(
+    slot: Address,
+    account: Address,
+    depositAmount: bigint,
+  ): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.taker,
+      abi: slotTakerAbi,
+      functionName: "quote",
+      args: [slot, account, depositAmount],
+    }) as Promise<bigint>;
   }
 
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
@@ -505,18 +637,34 @@ export class SlotsClient {
     return this.read<HookFlags>(slot, "hookFlags");
   }
 
-  /** Terms the manager has queued for the next occupancy transition. */
+  /**
+   * Terms the manager has queued for the next occupancy transition.
+   *
+   * Two reads, not one, and the second is the whole reason: the struct says
+   * WHAT is queued and `pendingApplies()` says whether the next transition will
+   * take it. Those were the same fact until `TERMS_DELAY` was wired up, and a
+   * caller left to infer the second from `proposedAt` and its own clock is
+   * inferring it against the wrong clock.
+   */
   async pending(slot: Address): Promise<PendingTerms> {
-    const [taxPercentage, hook, hasTax, hasHook, proposedAt] = await this.read<
-      readonly [bigint, Address, boolean, boolean, bigint]
-    >(slot, "pending");
+    const [[taxPercentage, hook, hasTax, hasHook, proposedAt], applies] =
+      await Promise.all([
+        this.read<readonly [bigint, Address, boolean, boolean, bigint]>(
+          slot,
+          "pending",
+        ),
+        this.pendingApplies(slot),
+      ]);
+    const isEmpty = !hasTax && !hasHook;
     return {
       taxPercentage,
       hook,
       hasTax,
       hasHook,
       proposedAt,
-      isEmpty: !hasTax && !hasHook,
+      appliesAt: isEmpty ? 0n : proposedAt + TERMS_DELAY_SECONDS,
+      applies,
+      isEmpty,
     };
   }
 
@@ -727,6 +875,15 @@ export class SlotsClient {
    *
    * The amount moved comes from {@link quoteBuy} rather than from arithmetic
    * here — see that method for why the client no longer derives it.
+   *
+   * ── The ceiling is on by default ─────────────────────────────────────────
+   *
+   * The quote this call just read is also sent as `maxPayment`, so the
+   * transaction pays what it was quoted or it reverts `PaymentAboveMax`. The
+   * price is read at execution, so an occupant can raise it into a pending buy
+   * and take the buyer's whole ERC-20 allowance; a client sending `0` there
+   * reintroduces exactly that. Pass `maxPayment` yourself for headroom, or
+   * `0n` to disable the ceiling deliberately.
    */
   async buy(params: BuyParams): Promise<Hash> {
     this.assertPositive(params.depositAmount, "depositAmount");
@@ -734,11 +891,23 @@ export class SlotsClient {
     if (params.account === zeroAddress)
       throw new SlotsError("buy", "account must not be the zero address");
 
-    const amount = await this.quoteBuy(params.slot, params.depositAmount);
+    // Quoted for the account being SEATED. Arrears live on that account, and
+    // quoting for the payer instead would miss a debt the buy is about to
+    // charge — or invent one the seated account does not owe.
+    const amount = await this.quoteBuy(
+      params.slot,
+      params.account,
+      params.depositAmount,
+    );
 
     return this.withPayment(params.slot, amount, {
       functionName: "buy",
-      args: [params.account, params.depositAmount, params.selfAssessedPrice],
+      args: [
+        params.account,
+        params.depositAmount,
+        params.selfAssessedPrice,
+        params.maxPayment ?? amount,
+      ],
     });
   }
 
@@ -758,13 +927,20 @@ export class SlotsClient {
     return this.simulateTake("buy", params);
   }
 
-  /** {@link simulateBuy}, for the eviction path. */
+  /**
+   * {@link simulateBuy}, for the eviction path.
+   *
+   * Simulated against whatever {@link liquidateAndTake} will actually send —
+   * the periphery taker on a native slot, the slot's own `multicall` on an
+   * ERC-20 one. Simulating the other shape would answer a question nobody is
+   * about to ask.
+   */
   simulateLiquidateAndTake(params: BuyParams): Promise<void> {
     return this.simulateTake("liquidateAndTake", params);
   }
 
   /**
-   * @dev The quote comes from the slot, exactly as the write path takes it —
+   * @dev The quote comes from the chain, exactly as the write path takes it —
    *      a simulation that guessed the payment differently would answer a
    *      question nobody is about to ask.
    */
@@ -775,8 +951,12 @@ export class SlotsClient {
     const [currency, amount] = await Promise.all([
       this.currency(params.slot),
       functionName === "buy"
-        ? this.quoteBuy(params.slot, params.depositAmount)
-        : this.quoteLiquidateAndTake(params.slot, params.depositAmount),
+        ? this.quoteBuy(params.slot, params.account, params.depositAmount)
+        : this.quoteLiquidateAndTake(
+            params.slot,
+            params.account,
+            params.depositAmount,
+          ),
     ]);
 
     // An ERC-20 buy grants its allowance as part of SENDING, so simulating
@@ -820,14 +1000,77 @@ export class SlotsClient {
       if (allowance < amount) return;
     }
 
+    const maxPayment = params.maxPayment ?? amount;
+
+    // A native evict-and-take goes through the periphery; everything else is
+    // sent to the slot. Same split as the write path, deliberately, so the
+    // simulation cannot pass on a shape the send will not use.
+    if (functionName === "liquidateAndTake" && isNativeCurrency(currency)) {
+      await this.publicClient.simulateContract({
+        address: this.taker,
+        abi: TAKER_SIMULATION_ABI,
+        functionName: "liquidateAndTake",
+        args: [
+          params.slot,
+          params.account,
+          params.depositAmount,
+          params.selfAssessedPrice,
+          maxPayment,
+        ],
+        account: this.account,
+        value: amount,
+      } as never);
+      return;
+    }
+
     await this.publicClient.simulateContract({
       address: params.slot,
       abi: SIMULATION_ABI,
-      functionName,
-      args: [params.account, params.depositAmount, params.selfAssessedPrice],
+      ...(functionName === "buy"
+        ? {
+            functionName: "buy",
+            args: [
+              params.account,
+              params.depositAmount,
+              params.selfAssessedPrice,
+              maxPayment,
+            ],
+          }
+        : {
+            functionName: "multicall",
+            args: [this.takeCalls(params, maxPayment)],
+          }),
       account: this.account,
       ...(isNativeCurrency(currency) ? { value: amount } : {}),
     } as never);
+  }
+
+  /**
+   * `liquidate()` then `buy(…)`, encoded for the slot's inherited `multicall`.
+   *
+   * The ERC-20 half of evict-and-take. `multicall` delegatecalls, so both halves
+   * run as the caller and the buy pulls on the caller's own allowance to the
+   * SLOT — which is why this needs no taker and no second approval. It is also
+   * why it cannot serve a native slot: OZ's `Multicall` is non-payable, so
+   * `msg.value` is zero inside it and the buy reverts `InvalidValue`.
+   */
+  private takeCalls(
+    params: BuyParams,
+    maxPayment: bigint,
+  ): readonly `0x${string}`[] {
+    return [
+      encodeFunctionData({ abi: slotAbi, functionName: "liquidate" }),
+      encodeFunctionData({
+        abi: slotAbi,
+        functionName: "buy",
+        args: [
+          params.account,
+          params.depositAmount,
+          params.selfAssessedPrice,
+          maxPayment,
+        ],
+      }),
+    ];
   }
 
   /**
@@ -900,14 +1143,27 @@ export class SlotsClient {
    * the keeper vacates the slot and loses the race for it to whoever is watching
    * the mempool.
    *
+   * ── This is no longer one call on the slot ───────────────────────────────
+   *
+   * `Slot.liquidateAndTake` was removed under audit: it was a second seating
+   * path in the core, with its own quote and its own invariants to keep in step
+   * with `buy`, for what is a composition of two public entry points. So this
+   * composes, and how it composes depends on the currency:
+   *
+   * - ERC-20 — the slot's own inherited `multicall`, which delegatecalls, so
+   *   the buy pulls on the caller's existing allowance to the SLOT.
+   * - Native — the periphery `SlotTaker`, because OZ's `Multicall` is
+   *   non-payable and a native buy inside it reverts `InvalidValue`. Needs
+   *   `takerAddress`; the client says so if it is missing.
+   *
    * Charges {@link quoteLiquidateAndTake}, which is a DIFFERENT number from
    * {@link quoteBuy} — the eviction vacates the slot before the purchase reads
-   * the price, so there is no occupant left to buy out. Neither path derives its
-   * amount from `price()` any more, and there are tests asserting exactly that
-   * by omitting `price` from the double entirely.
+   * the price, so there is no occupant left to buy out, and what remains is the
+   * deposit plus any arrears the seated account carries. Neither path derives
+   * its amount from `price()`, and there are tests asserting exactly that by
+   * omitting `price` from the double entirely.
    *
-   * Both currencies work. `multicall` deliberately does not cover this: OZ's is
-   * non-payable, so it was silently unreachable for native slots.
+   * The ceiling defaults to that quote, exactly as in {@link buy}.
    */
   async liquidateAndTake(params: BuyParams): Promise<Hash> {
     this.assertPositive(params.depositAmount, "depositAmount");
@@ -918,15 +1174,39 @@ export class SlotsClient {
         "account must not be the zero address",
       );
 
-    const amount = await this.quoteLiquidateAndTake(
-      params.slot,
-      params.depositAmount,
-    );
+    const [currency, amount] = await Promise.all([
+      this.currency(params.slot),
+      this.quoteLiquidateAndTake(
+        params.slot,
+        params.account,
+        params.depositAmount,
+      ),
+    ]);
+    const maxPayment = params.maxPayment ?? amount;
 
-    return this.withPayment(params.slot, amount, {
-      functionName: "liquidateAndTake",
-      args: [params.account, params.depositAmount, params.selfAssessedPrice],
-    });
+    if (isNativeCurrency(currency))
+      return this.wallet.writeContract({
+        address: this.taker,
+        abi: slotTakerAbi,
+        functionName: "liquidateAndTake",
+        args: [
+          params.slot,
+          params.account,
+          params.depositAmount,
+          params.selfAssessedPrice,
+          maxPayment,
+        ],
+        value: amount,
+        account: this.account,
+        chain: this.chain,
+      } as never);
+
+    // The allowance goes to the SLOT, not to the taker: the buy half runs
+    // inside the slot's own delegatecall and pulls from the caller directly.
+    await this.ensureAllowance(currency, params.slot, amount);
+    return this.write(params.slot, "multicall", [
+      this.takeCalls(params, maxPayment),
+    ]);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1145,9 +1425,16 @@ export class SlotsClient {
    * chain checks it — an unfunded order is perfectly legal and simply never
    * executes — so granting it here is what makes the order real.
    *
-   * Skips the approve when the existing allowance already covers `price +
-   * deposit`, because re-approving a spender that has enough is a wallet
+   * Skips the approve when the existing allowance already covers what will be
+   * pulled, because re-approving a spender that has enough is a wallet
    * confirmation that buys nothing.
+   *
+   * What gets pulled is `price + deposit + arrearsOf(buyer)`, not `price +
+   * deposit`. `sell` charges the incoming occupant's carried arrears in the same
+   * pull as everything else — an account that once ran a deposit dry on this
+   * slot owes the shortfall on RE-ENTRY, and that is a fact about the signer,
+   * invisible in the order they signed. Funding only the order leaves a
+   * perfectly valid signature the occupant cannot fill.
    */
   async makeSellOrder(
     slot: Address,
@@ -1163,7 +1450,12 @@ export class SlotsClient {
           "an allowance, and native ETH has none — the order could never be filled.",
       );
 
-    await this.ensureAllowance(currency, slot, params.price + params.deposit);
+    const arrears = await this.arrearsOf(slot, this.account);
+    await this.ensureAllowance(
+      currency,
+      slot,
+      params.price + params.deposit + arrears,
+    );
 
     return this.signSellOrder(slot, params);
   }
@@ -1195,9 +1487,9 @@ export class SlotsClient {
    *
    * `multicall` is non-payable, so `msg.value` is zero inside it and a native
    * `topUp` would revert `InvalidValue`. It is NOT made payable for the reason
-   * `liquidateAndTake` exists: every delegatecall sees the same `msg.value`, so
-   * one ETH payment would satisfy two calls and the second would be funded out
-   * of the contract's own balance. So on a native slot a top-up goes first and
+   * `SlotTaker` exists: every delegatecall sees the same `msg.value`, so one
+   * ETH payment would satisfy two calls and the second would be funded out of
+   * the contract's own balance. So on a native slot a top-up goes first and
    * alone, and the caller is told to expect two confirmations.
    *
    * @returns The hash of the final transaction — the one carrying the reprice.
@@ -1301,7 +1593,7 @@ export class SlotsClient {
     slot: Address,
     amount: bigint,
     call: {
-      functionName: "buy" | "topUp" | "liquidateAndTake";
+      functionName: "buy" | "topUp";
       args: readonly unknown[];
     },
   ): Promise<Hash> {

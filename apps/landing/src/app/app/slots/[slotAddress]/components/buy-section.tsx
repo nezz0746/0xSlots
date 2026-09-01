@@ -158,9 +158,11 @@ export function BuySection({
    *
    * The deposit itself is sized by the chain (below), but the price field shows
    * "costs X/mo" beside the figure and that caption has to agree with what the
-   * buyer is about to be charged. A queued rise is already in force by the time
-   * their buy lands; the sitting occupant has transitioned nothing, so their own
-   * rate still governs for them.
+   * buyer is about to be charged. A queued rise is in force by the time their buy
+   * lands ONLY once it is ripe — `TERMS_DELAY` means a proposal is not binding
+   * the moment it is made, and `_applyPending` refuses an unripe one. The
+   * sitting occupant has transitioned nothing, so their own rate still governs
+   * for them either way.
    */
   const effectiveTax =
     !isOccupant && state.pending.hasTax
@@ -212,33 +214,64 @@ export function BuySection({
   const bounds = useSlotBounds(slot);
   const overMaxPrice = bounds ? price > bounds.maxPrice : false;
 
-  /**
-   * Which entry point this is, which decides both the quote and the call.
-   *
-   * An insolvent occupant is evicted rather than bought out, and the two charge
-   * different amounts for the same deposit.
-   */
-  const mode = state.isInsolvent ? "liquidateAndTake" : "buy";
-  const { data: quote } = useTakeQuote(slot, deposit, mode);
-
-  // Derived from the quote rather than from `price`, so it is right on both
-  // paths without this panel having to know the rule: `liquidateAndTake`
-  // charges the deposit alone and the purchase half is simply zero.
-  const quotedPurchase = quote === undefined ? ZERO : quote - deposit;
-  // An offer pays what YOU named; a purchase pays what the occupant named.
-  const purchase = isOffer ? price : quotedPurchase;
-  const total = isOffer ? price + deposit : (quote ?? ZERO);
-
-  const usdPurchase = usdOfRaw(purchase);
-  const usdDeposit = usdOfRaw(deposit);
-  const usdTotal = usdOfRaw(total);
-
+  // Declared before the quotes, because both are asked FOR this address: it is
+  // the one being seated, it is the one carrying arrears, and it is not
+  // necessarily the one paying.
   const seatAddress = (showSeat && seat.trim() ? seat.trim() : address) as
     | Address
     | undefined;
   const seatValid = !!seatAddress && isAddress(seatAddress);
+  const quoteFor = seatValid ? seatAddress : undefined;
+
+  /**
+   * Which entry point this is, which decides both the quote and the call.
+   *
+   * An insolvent occupant is evicted rather than bought out, and the two charge
+   * different amounts for the same deposit — and they are two different
+   * contracts now: the slot for a buy, the periphery `SlotTaker` for the
+   * eviction.
+   */
+  const mode = state.isInsolvent ? "liquidateAndTake" : "buy";
+  const { data: quote } = useTakeQuote(slot, quoteFor, deposit, mode);
+
+  /**
+   * Tax the seated account still owes this slot from a previous occupancy.
+   *
+   * Inside both quotes already — this read is what lets it be shown as its own
+   * line. Folding it silently into the total would present someone paying off a
+   * default as someone paying a higher price, which is the one reading that
+   * makes the charge look like a bug.
+   */
+  const { data: arrears } = useArrears(slot, quoteFor);
+  const debt = arrears ?? ZERO;
+
+  // Derived from the quote rather than from `price`, so it is right on all
+  // paths without this panel having to know the rule: an eviction charges the
+  // deposit alone and the purchase half is simply zero. The arrears come out
+  // first — they are in the quote, and they are not part of what the occupant
+  // is being paid.
+  const quotedPurchase =
+    quote === undefined ? ZERO : quote - deposit - debt < ZERO
+      ? ZERO
+      : quote - deposit - debt;
+  // An offer pays what YOU named; a purchase pays what the occupant named.
+  const purchase = isOffer ? price : quotedPurchase;
+  const total = isOffer ? price + deposit + debt : (quote ?? ZERO);
+
+  const usdPurchase = usdOfRaw(purchase);
+  const usdDeposit = usdOfRaw(deposit);
+  const usdArrears = usdOfRaw(debt);
+  const usdTotal = usdOfRaw(total);
+
   const ready =
-    isConnected && seatValid && price > ZERO && deposit > ZERO && !overMaxPrice;
+    isConnected &&
+    seatValid &&
+    price > ZERO &&
+    deposit > ZERO &&
+    !overMaxPrice &&
+    // No ceiling without a quote. Sending the buy anyway would mean either no
+    // `maxPayment` at all or a guessed one, and both are the bug this closes.
+    (isOffer || quote !== undefined);
 
   /**
    * Simulate, then send.
@@ -304,6 +337,19 @@ export function BuySection({
       account: seatAddress as Address,
       depositAmount: deposit,
       selfAssessedPrice: price,
+      /**
+       * The ceiling, and it is the figure on screen rather than one the SDK
+       * re-reads for itself.
+       *
+       * The sitting price is read at EXECUTION. An occupant who sees this
+       * transaction coming can raise it and take the buyer's whole ERC-20
+       * allowance — native slots are incidentally safe because `msg.value` is
+       * checked for equality, ERC-20 slots were not protected at all. Sending
+       * the total the user agreed to means the buy either costs that or
+       * reverts `PaymentAboveMax`, which the toast renders as "the price
+       * moved".
+       */
+      maxPayment: quote as bigint,
     };
     const label = state.isInsolvent ? "Liquidate and take" : "Buy slot";
     const ok = await actions.preflight(label, async () => {
@@ -397,11 +443,19 @@ export function BuySection({
         symbol={symbol}
         disabled={actions.busy}
         note={
-          state.pending.hasTax
+          state.pending.hasTax && state.pending.applies
             ? `Sized at the queued ${formatBps(
                 Number(state.pending.taxPercentage),
               )}/mo, which takes effect on this buy`
-            : noMinimum
+            : state.pending.hasTax
+              ? // Queued but not yet ripe. `_applyPending` refuses it, so this
+                // buy is priced and funded at the CURRENT rate — saying
+                // otherwise would size the deposit against a rate the
+                // transition will not use.
+                `Sized at the current ${formatBps(
+                  Number(state.taxPercentage),
+                )}/mo — the queued rate is not binding yet`
+              : noMinimum
               ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."
               : undefined
         }
@@ -463,6 +517,26 @@ export function BuySection({
             )}
           </span>
         </div>
+
+        {/* Its own line, never folded into the total. The seated account owes
+            this from an occupancy whose deposit ran dry here; the protocol
+            carries it rather than forgiving it, and charges it on re-entry. A
+            total silently larger than price + deposit reads as a bug, and the
+            person paying off their own default is entitled to know that is
+            what they are doing. */}
+        {debt > ZERO && (
+          <div className="flex justify-between text-xs">
+            <span className="text-amber-700 dark:text-amber-400">
+              Arrears owed
+            </span>
+            <span className="tabular-nums text-amber-700 dark:text-amber-400">
+              {formatBalance(debt, decimals)} {symbol}
+              {usdArrears && (
+                <span className="opacity-70"> ≈ {usdArrears}</span>
+              )}
+            </span>
+          </div>
+        )}
         <div className="mt-1 flex justify-between border-t pt-1 text-sm font-bold">
           <span>Total</span>
           <span className="tabular-nums">
@@ -489,7 +563,22 @@ export function BuySection({
             : state.isVacant
               ? "The deposit alone — the slot is vacant."
               : "Your deposit, plus buying the occupant out at their own price."}
+          {debt > ZERO
+            ? ` Plus ${formatBalance(debt, decimals)} ${symbol} of tax ${
+                seatAddress?.toLowerCase() === address?.toLowerCase()
+                  ? "you still owe"
+                  : "that address still owes"
+              } from a previous occupancy here, which the slot charges on
+               re-entry.`
+            : ""}
         </p>
+        {quote !== undefined && !isOffer ? (
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            This total is sent as a ceiling. If the occupant raises their price
+            before the transaction lands, it reverts rather than charging you
+            the new one.
+          </p>
+        ) : null}
         <div className="flex justify-between pt-1 text-[11px] text-muted-foreground">
           <span>Your balance</span>
           <span className="tabular-nums">

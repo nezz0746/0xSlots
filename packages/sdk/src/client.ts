@@ -1,11 +1,11 @@
 import {
   getSlotsHubAddress,
   MINIMUM_PRICE_POLICY_FACTORY,
-  offerBookAbi,
-  offerBookAddress,
   MINIMUM_TENURE_POLICY_FACTORY,
   minimumPricePolicyFactoryAbi,
   minimumTenurePolicyFactoryAbi,
+  offerBookAbi,
+  offerBookAddress,
   slotAbi,
   slotFactoryAbi,
 } from "@0xslots/contracts";
@@ -979,7 +979,6 @@ export class SlotsClient {
     });
   }
 
-
   /**
    * Sell the slot you occupy into a buyer's signed order.
    *
@@ -1010,9 +1009,9 @@ export class SlotsClient {
    *      `Slot.sell` is `onlyOccupant`, so it would arrive as the wrong
    *      caller — which is exactly the authority the design denies it.
    */
-  async bestOrder(slot: Address): Promise<
-    { order: SellOrder; signature: `0x${string}` } | null
-  > {
+  async bestOrder(
+    slot: Address,
+  ): Promise<{ order: SellOrder; signature: `0x${string}` } | null> {
     const [found, , order, signature] = (await this.publicClient.readContract({
       address: this.offerBook(),
       abi: offerBookAbi,
@@ -1463,7 +1462,6 @@ export class SlotsClient {
       chain: this.chain,
     });
   }
-
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WRITE — Multicall

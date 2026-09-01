@@ -15,7 +15,7 @@ import { NumberField, Panel } from "./panel";
 type Actions = ReturnType<typeof useSlotsAction>;
 
 /** JSON with the bigints stringified, so an order survives a copy-paste. */
-function encodeOrder(signed: SignedSellOrder): string {
+export function encodeOrder(signed: SignedSellOrder): string {
   return JSON.stringify(
     {
       order: {
@@ -70,12 +70,15 @@ export function SellOrderPanel({
   currency,
   actions,
   isOccupant,
+  bare,
 }: {
   slot: Address;
   state: SlotState;
   currency: CurrencyMeta;
   actions: Actions;
   isOccupant: boolean;
+  /** Render without panel chrome, for the Orders tab that has its own header. */
+  bare?: boolean;
 }) {
   const { isConnected } = useAccount();
   const [price, setPrice] = useState("");
@@ -88,27 +91,29 @@ export function SellOrderPanel({
 
   const parsed = decodeOrder(paste);
 
-  if (currency.isNative)
-    return (
+  if (currency.isNative) {
+    const nativeNote = (
+      <p className="text-xs leading-snug text-muted-foreground">
+        Unavailable on a native-ETH slot. Filling an order pulls the
+        buyer&apos;s funds on an ERC-20 allowance, and native ETH has none — so
+        the order could never execute. Buying directly still works.
+      </p>
+    );
+    return bare ? (
+      nativeNote
+    ) : (
       <Panel
         icon={FileSignature}
         title="Signed sell orders"
         tint="bg-slate-500/10 text-slate-600 dark:text-slate-400"
       >
-        <p className="text-xs leading-snug text-muted-foreground">
-          Unavailable on a native-ETH slot. Filling an order pulls the buyer's
-          funds on an ERC-20 allowance, and native ETH has none — so the order
-          could never execute. Buying directly still works.
-        </p>
+        {nativeNote}
       </Panel>
     );
+  }
 
-  return (
-    <Panel
-      icon={FileSignature}
-      title="Signed sell orders"
-      tint="bg-slate-500/10 text-slate-600 dark:text-slate-400"
-    >
+  const body = (
+    <>
       {!isOccupant ? (
         <>
           <p className="text-[11px] leading-snug text-muted-foreground">
@@ -163,7 +168,9 @@ export function SellOrderPanel({
           {signed ? (
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium">Your signed order</span>
+                <span className="text-[11px] font-medium">
+                  Your signed order
+                </span>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -217,8 +224,8 @@ export function SellOrderPanel({
       ) : (
         <>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            Paste an order a buyer signed for this slot. You need no allowance of
-            your own — theirs is what gets pulled.
+            Paste an order a buyer signed for this slot. You need no allowance
+            of your own — theirs is what gets pulled.
           </p>
           <textarea
             value={paste}
@@ -268,6 +275,18 @@ export function SellOrderPanel({
           </Button>
         </>
       )}
+    </>
+  );
+
+  if (bare) return <div className="space-y-2">{body}</div>;
+
+  return (
+    <Panel
+      icon={FileSignature}
+      title="Signed sell orders"
+      tint="bg-slate-500/10 text-slate-600 dark:text-slate-400"
+    >
+      {body}
     </Panel>
   );
 }

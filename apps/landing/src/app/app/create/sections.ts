@@ -29,6 +29,10 @@ export interface SectionMeta {
  * One per field of `SlotInit`, and nothing else: the protocol takes eight
  * values at birth and the form's job is to collect exactly those. Policies,
  * modules and utility are gone with the protocol that had them.
+ *
+ * Single source of truth: the section headers, the summary card's jump links
+ * and the validation error summary all read from here, so an id can never
+ * drift between the anchor and the thing linking to it.
  */
 export const SECTIONS: SectionMeta[] = [
   {
@@ -72,6 +76,50 @@ export const SECTIONS: SectionMeta[] = [
 export const SECTION = Object.fromEntries(
   SECTIONS.map((s) => [s.id, s]),
 ) as Record<SectionId, SectionMeta>;
+
+/**
+ * Every schema field, mapped to the section that renders it.
+ *
+ * Exhaustive over `createSlotSchema`. A field missing from here would make its
+ * validation error invisible in the error summary — the one thing the removed
+ * wizard used to guarantee by forcing you through every step.
+ *
+ * The `module*` and `occupancyPolicy*` rows are gone with the concepts: one
+ * `hook` per slot is the whole extension surface now.
+ */
+const FIELD_SECTION: Record<string, SectionId> = {
+  recipientMode: "recipient",
+  recipient: "recipient",
+  splitRecipients: "recipient",
+  distributorFeePercent: "recipient",
+  currencyMode: "currency",
+  presetCurrency: "currency",
+  customCurrency: "currency",
+  taxPercentage: "economics",
+  minDepositValue: "economics",
+  minDepositUnit: "economics",
+  hookMode: "hook",
+  hook: "hook",
+  mutableTax: "permissions",
+  mutableHook: "permissions",
+  manager: "permissions",
+};
+
+export function scrollToSection(id: SectionId) {
+  document
+    .getElementById(`section-${id}`)
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** The distinct sections owning these schema field names, in page order. */
+export function sectionsForFields(fields: readonly string[]): SectionMeta[] {
+  const hit = new Set<SectionId>();
+  for (const field of fields) {
+    const id = FIELD_SECTION[field];
+    if (id) hit.add(id);
+  }
+  return SECTIONS.filter((s) => hit.has(s.id));
+}
 
 export const timeUnits = [
   "seconds",

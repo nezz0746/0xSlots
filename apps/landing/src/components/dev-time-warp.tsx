@@ -120,7 +120,8 @@ export function DevTimeWarp() {
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              Advance the chain by {step.label.replace("+", "")} and mine a block
+              Advance the chain by {step.label.replace("+", "")} and mine a
+              block
             </TooltipContent>
           </Tooltip>
         ))}

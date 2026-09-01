@@ -114,8 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       style={{ paddingBottom: safeBottom, paddingTop: 5 }}
     >
       {chainSelector}
-      <div className="flex items-center gap-2">
-      </div>
+      <div className="flex items-center gap-2"></div>
     </nav>
   );
 

@@ -1,139 +1,172 @@
 "use client";
 
-import { knownHooks } from "@0xslots/contracts/slots";
-import { getChainTokens } from "@0xslots/sdk";
-import { assertSlotInit, type SlotInit } from "@0xslots/sdk/slots";
-import { AlertCircle, Check, Loader2, Plug, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { type Address, isAddress, zeroAddress } from "viem";
-import { useAccount, useSwitchChain } from "wagmi";
-import { PageHeader } from "@/components/page-header";
-import { TokenLogo } from "@/components/token-logo";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  assertSlotInit,
+  getOrDeployTenureHook,
+  type SlotInit,
+} from "@0xslots/sdk/slots";
+import { SplitV2Type } from "@0xsplits/splits-sdk/types";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { type Address, getAddress, isAddress, zeroAddress } from "viem";
+import {
+  useAccount,
+  usePublicClient,
+  useSwitchChain,
+  useWalletClient,
+} from "wagmi";
+import { PageHeader } from "@/components/page-header";
+import { Form } from "@/components/ui/form";
 import { useChain } from "@/context/chain";
-import { NavLink, useNavigation } from "@/context/navigation";
+import { useNavigation } from "@/context/navigation";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
 import { useSlotsAction } from "@/hooks/slots/use-slots-action";
-import { truncateAddress } from "@/utils";
-import { AddressInput, useResolveAddress } from "./address-input";
+import { useSplitClient } from "@/hooks/use-split-client";
+import { resolveEnsAddress } from "@/lib/ens";
+import { useResolveAddress } from "./address-input";
 import { FormSection } from "./components/form-section";
-import { useErc20Check } from "./hooks/use-erc20-check";
+import { MobileBottomBar } from "./components/mobile-bottom-bar";
+import { SectionCurrency } from "./components/section-currency";
+import { SectionEconomics } from "./components/section-economics";
+import { SectionHook } from "./components/section-hook";
+import { SectionPermissions } from "./components/section-permissions";
+import { SectionRecipient } from "./components/section-recipient";
+import type { SubmitState } from "./components/submit-button";
+import { SummaryCard } from "./components/summary-card";
 import {
-  percentToBps,
-  SECTION,
-  type TimeUnit,
-  timeUnits,
-  toSeconds,
-} from "./sections";
+  type CreateSlotFormValues,
+  createSlotSchema,
+  defaultValues,
+} from "./schema";
+import { percentToBps, SECTION, toSeconds } from "./sections";
 
-const CUSTOM = "custom";
-const NO_HOOK = "none";
-
+/**
+ * Create a slot.
+ *
+ * One scrolling form of titled sections, not a wizard: the eight values are
+ * independent, and forcing them into an order taught nobody anything while
+ * hiding from every reader how few decisions there actually are. What the
+ * wizard did give for free — you could not reach the end without passing the
+ * middle — is paid back by the summary card's error list, which names the
+ * sections still blocking the button and jumps to them.
+ */
 export default function CreatePage() {
   const { push } = useNavigation();
-  const { address, isConnected, chainId: walletChainId } = useAccount();
+  const { address, isConnected, chainId: walletChainId, chain } = useAccount();
   const { switchChain } = useSwitchChain();
-  const { chainId } = useChain();
+  const { chainId: selectedChainId } = useChain();
+  // For the tenure-hook get-or-deploy, which needs both halves before the slot
+  // itself can be created.
+  const publicClient = usePublicClient({ chainId: selectedChainId });
+  const { data: walletClient } = useWalletClient({ chainId: selectedChainId });
+
   const factory = useSlotsFactory();
   const actions = useSlotsAction();
+  const splitClient = useSplitClient();
 
-  const tokens = getChainTokens(chainId);
-  const hooks = knownHooks[chainId] ?? [];
+  const [slotCount, setSlotCount] = useState(1);
+  const [creatingSplit, setCreatingSplit] = useState(false);
+  const [batchIndex, setBatchIndex] = useState(0);
+  const [allSubmitted, setAllSubmitted] = useState(false);
+  const createdAddress = useRef<Address | null>(null);
 
-  // ─── form state ───────────────────────────────────────────────────────────
-  const [recipient, setRecipient] = useState("");
-  const [useMyAccount, setUseMyAccount] = useState(true);
-  const [currencyChoice, setCurrencyChoice] = useState<string>("");
-  const [customCurrency, setCustomCurrency] = useState("");
-  const [tax, setTax] = useState("1");
-  const [minDepositValue, setMinDepositValue] = useState("1");
-  const [minDepositUnit, setMinDepositUnit] = useState<TimeUnit>("days");
-  const [hookChoice, setHookChoice] = useState<string>(NO_HOOK);
-  const [customHook, setCustomHook] = useState("");
-  const [mutableTax, setMutableTax] = useState(false);
-  const [mutableHook, setMutableHook] = useState(false);
-  const [manager, setManager] = useState("");
-  const [useMeAsManager, setUseMeAsManager] = useState(true);
+  const form = useForm<CreateSlotFormValues>({
+    resolver: zodResolver(createSlotSchema),
+    defaultValues,
+    mode: "onChange",
+  });
 
-  // Seed the chain's default currency, and re-seed on a chain change so a token
-  // from the previous network never survives the switch.
-  useEffect(() => {
-    const fallback = tokens[0]?.address;
-    if (!fallback) return;
-    setCurrencyChoice((current) =>
-      current === CUSTOM || tokens.some((t) => t.address === current)
-        ? current
-        : fallback,
-    );
-  }, [tokens]);
+  // Only watch what the page itself needs to build the init and submit it.
+  const recipientMode = form.watch("recipientMode");
+  const recipient = form.watch("recipient");
+  const currencyMode = form.watch("currencyMode");
+  const presetCurrency = form.watch("presetCurrency");
+  const customCurrency = form.watch("customCurrency");
+  const taxPercentage = form.watch("taxPercentage");
+  const minDepositValue = form.watch("minDepositValue");
+  const minDepositUnit = form.watch("minDepositUnit");
+  const hookMode = form.watch("hookMode");
+  const hook = form.watch("hook");
+  const manager = form.watch("manager");
+  const mutableTax = form.watch("mutableTax");
+  const mutableHook = form.watch("mutableHook");
 
+  // ENS resolution, for submission and for the preflight below.
   const recipientResolved = useResolveAddress(recipient);
-  const customCurrencyResolved = useResolveAddress(customCurrency);
+  const currencyResolved = useResolveAddress(customCurrency);
+  const hookResolved = useResolveAddress(hook);
   const managerResolved = useResolveAddress(manager);
-  const erc20 = useErc20Check(
-    currencyChoice === CUSTOM ? customCurrencyResolved.resolved : "",
-  );
 
-  const resolvedRecipient = (
-    useMyAccount ? address : recipientResolved.resolved
-  ) as Address | undefined;
+  // ── The one invariant a form gets wrong by default ────────────────────────
+  //
+  // A manager is REQUIRED when something is mutable and FORBIDDEN when nothing
+  // is: `initialize` reverts both ways. So the manager field is not "optional"
+  // — it is a function of the two checkboxes above it, and a form that always
+  // sent the connected wallet would revert the moment someone unticked both.
+  //
+  // Enforced HERE, at the single point where the value is produced, rather than
+  // in the section that renders the field: the section can hide an input, but
+  // only this can decide what is sent.
+  const needsManager = mutableTax || mutableHook;
+  const resolvedManager = (
+    needsManager ? managerResolved.resolved : zeroAddress
+  ) as Address;
 
   const resolvedCurrency = (
-    currencyChoice === CUSTOM ? customCurrencyResolved.resolved : currencyChoice
+    currencyMode === "preset" ? presetCurrency : currencyResolved.resolved
   ) as Address;
 
   const resolvedHook = (
-    hookChoice === NO_HOOK
-      ? zeroAddress
-      : hookChoice === CUSTOM
-        ? customHook.trim()
-        : hookChoice
+    hookMode === "none" ? zeroAddress : hookResolved.resolved
   ) as Address;
 
-  // ── The one invariant a form gets wrong by default ──────────────────────
-  //
-  // A manager is REQUIRED when something is mutable and FORBIDDEN when nothing
-  // is: `initialize` reverts `NotManager()` both ways. So the manager field is
-  // not "optional" — it is a function of the two checkboxes above it, and a
-  // form that always sent the connected wallet would revert the moment someone
-  // unticked both.
-  const needsManager = mutableTax || mutableHook;
-  const resolvedManager = (
-    !needsManager
-      ? zeroAddress
-      : useMeAsManager
-        ? (address ?? zeroAddress)
-        : managerResolved.resolved
-  ) as Address;
+  /**
+   * The recipient as far as the preflight can know it.
+   *
+   * In group mode the real recipient is a 0xSplits address that does not exist
+   * until submit, so there is nothing concrete to check. Everything else in
+   * `SlotInit` is known, and the only thing `assertSlotInit` asks of a
+   * recipient is that it is not the zero address — which every deployed split
+   * satisfies by construction. Standing the connected account in for it keeps
+   * the other seven checks live instead of switching the whole preflight off.
+   */
+  const previewRecipient = (
+    recipientMode === "group"
+      ? address
+      : recipient.trim()
+        ? recipientResolved.resolved
+        : address
+  ) as Address | undefined;
 
   const init = useMemo<SlotInit | null>(() => {
-    if (!resolvedRecipient || !isAddress(resolvedRecipient)) return null;
-    if (!isAddress(resolvedCurrency)) return null;
-    if (resolvedHook !== zeroAddress && !isAddress(resolvedHook)) return null;
+    if (!previewRecipient || !isAddress(previewRecipient, { strict: false }))
+      return null;
+    if (!isAddress(resolvedCurrency, { strict: false })) return null;
+    if (
+      resolvedHook !== zeroAddress &&
+      !isAddress(resolvedHook, { strict: false })
+    )
+      return null;
+    if (needsManager && !isAddress(resolvedManager, { strict: false }))
+      return null;
     return {
-      recipient: resolvedRecipient,
+      recipient: previewRecipient,
       currency: resolvedCurrency,
       manager: resolvedManager,
       hook: resolvedHook,
-      taxPercentage: percentToBps(tax),
+      taxPercentage: percentToBps(taxPercentage),
       minDepositSeconds: toSeconds(minDepositValue, minDepositUnit),
       mutableTax,
       mutableHook,
     };
   }, [
-    resolvedRecipient,
+    previewRecipient,
     resolvedCurrency,
     resolvedManager,
     resolvedHook,
-    tax,
+    needsManager,
+    taxPercentage,
     minDepositValue,
     minDepositUnit,
     mutableTax,
@@ -159,23 +192,224 @@ export default function CreatePage() {
     }
   }, [init]);
 
-  const resolving =
+  const wrongChain = isConnected && walletChainId !== selectedChainId;
+  const busy = actions.busy || creatingSplit;
+  const anyResolving =
     recipientResolved.isResolving ||
-    customCurrencyResolved.isResolving ||
+    currencyResolved.isResolving ||
+    hookResolved.isResolving ||
     managerResolved.isResolving;
 
-  const wrongChain = isConnected && walletChainId !== chainId;
-  const ready =
-    isConnected && !!factory && !!init && !initError && !resolving && !wrongChain;
-
-  const selectedToken = tokens.find((t) => t.address === currencyChoice);
+  // The chain's default currency is seeded by SectionCurrency, next to the
+  // FormField that registers `presetCurrency`. Seeding it from here silently
+  // did nothing: react-hook-form re-syncs unregistered fields back to their
+  // schema default during mount, so the write was undone before first paint.
 
   useEffect(() => {
-    if (actions.isSuccess) {
-      const t = setTimeout(() => push("/app"), 1200);
-      return () => clearTimeout(t);
+    // `isSuccess` tracks the LAST transaction's receipt, and a batch produces
+    // several — so the redirect waits for the loop to finish as well, or a
+    // three-slot batch would navigate away after the first one confirmed.
+    if (actions.isSuccess && allSubmitted) {
+      const target = createdAddress.current
+        ? `/app/slots/${createdAddress.current}`
+        : "/app";
+      const timeout = setTimeout(() => push(target), 1500);
+      return () => clearTimeout(timeout);
     }
-  }, [actions.isSuccess, push]);
+  }, [actions.isSuccess, allSubmitted, push]);
+
+  const submitState: SubmitState = {
+    isConnected,
+    wrongChain,
+    isSuccess: actions.isSuccess && allSubmitted,
+    isPending: actions.isPending,
+    isConfirming: actions.isConfirming,
+    creatingSplit,
+    busy,
+    anyResolving,
+    isFormValid: form.formState.isValid,
+    initError,
+    slotCount,
+    batchIndex,
+    recipientMode,
+  };
+
+  async function onSubmit(data: CreateSlotFormValues) {
+    if (!isConnected || wrongChain || !factory) return;
+
+    const currency =
+      data.currencyMode === "preset"
+        ? data.presetCurrency
+        : currencyResolved.resolved || data.customCurrency;
+    if (!isAddress(currency, { strict: false })) return;
+
+    // ── Recipient ──
+    //
+    // A group is a 0xSplits split, deployed first and then handed to the slot
+    // as a plain address. Nothing about it reaches the protocol: from the
+    // slot's side a split and a wallet are the same eight-field init.
+    let recipientAddress: string;
+
+    if (data.recipientMode === "group") {
+      setCreatingSplit(true);
+      try {
+        const resolvedRecipients = await Promise.all(
+          data.splitRecipients.map(async (r) => {
+            let addr = r.address.trim();
+            if (isAddress(addr, { strict: false })) {
+              addr = getAddress(addr);
+            } else {
+              addr = await resolveEnsAddress(addr);
+            }
+            return {
+              address: addr as Address,
+              percentAllocation: r.percentAllocation,
+            };
+          }),
+        );
+        const ZERO_SALT =
+          "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
+
+        const splitParams = {
+          recipients: resolvedRecipients,
+          splitType: SplitV2Type.Pull,
+          distributorFeePercent: data.distributorFeePercent,
+          salt: ZERO_SALT,
+        };
+        // 0xSplits does not deploy to every chain — notably not a local anvil,
+        // where the client is null rather than throwing on construction.
+        if (!splitClient) {
+          throw new Error(
+            "Splits are not available on this chain — pick a single recipient address instead.",
+          );
+        }
+        // The same members at the same allocations produce the same address, so
+        // a second slot for the same group costs no deployment.
+        const { splitAddress: predictedAddress, deployed } =
+          await splitClient.isDeployed(splitParams);
+
+        if (deployed) {
+          recipientAddress = predictedAddress;
+        } else {
+          const { splitAddress } = await splitClient.createSplit(splitParams);
+          recipientAddress = splitAddress;
+        }
+      } catch (err) {
+        console.error("Failed to create split:", err);
+        setCreatingSplit(false);
+        return;
+      }
+      setCreatingSplit(false);
+    } else {
+      recipientAddress =
+        (data.recipient.trim()
+          ? recipientResolved.resolved
+          : (address ?? "")) || "";
+    }
+
+    if (!isAddress(recipientAddress, { strict: false })) return;
+
+    /**
+     * The hook to attach, deploying it first if the creator chose a tenure that
+     * nobody has used yet.
+     *
+     * `MinimumTenureHookFactory` puts one hook per duration at a CREATE2
+     * address, so this is get-or-deploy rather than deploy: a common tenure
+     * already exists and costs nothing, and an unusual one costs one extra
+     * transaction that everybody choosing that duration afterwards reuses. The
+     * section says which case it is in before the button is pressed.
+     *
+     * Awaited before `createSlot` because the slot's `initialize` reads the
+     * hook's declared flags — pointing it at an address with no code yet
+     * reverts.
+     */
+    let hookAddress = (
+      data.hookMode === "none"
+        ? zeroAddress
+        : hookResolved.resolved || data.hook
+    ) as Address;
+
+    if (data.hookMode === "tenure") {
+      if (!publicClient || !walletClient) return;
+      const deployed = await actions.preflight("Deploy tenure hook", async () =>
+        getOrDeployTenureHook({
+          publicClient,
+          walletClient,
+          tenureSeconds: toSeconds(data.tenureValue, data.tenureUnit),
+        }),
+      );
+      if (!deployed) return;
+      // Wait for the deploy's own receipt when one was sent; `hash` is
+      // undefined when the hook was already there and nothing went out.
+      if (deployed.hash)
+        await publicClient.waitForTransactionReceipt({ hash: deployed.hash });
+      hookAddress = deployed.hook;
+    }
+
+    if (
+      hookAddress !== zeroAddress &&
+      !isAddress(hookAddress, { strict: false })
+    )
+      return;
+
+    const managerAddress = (
+      data.mutableTax || data.mutableHook
+        ? managerResolved.resolved || data.manager
+        : zeroAddress
+    ) as Address;
+
+    const slotInit: SlotInit = {
+      recipient: getAddress(recipientAddress),
+      currency: getAddress(currency),
+      manager:
+        managerAddress === zeroAddress
+          ? zeroAddress
+          : getAddress(managerAddress),
+      hook: hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
+      taxPercentage: percentToBps(data.taxPercentage),
+      minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
+      mutableTax: data.mutableTax,
+      mutableHook: data.mutableHook,
+    };
+
+    // The last gate before gas. `createSlot` asserts this again inside the SDK,
+    // so this is belt-and-braces — but it is the one that can still show the
+    // reason in the form rather than in a toast after a failed send.
+    try {
+      assertSlotInit(slotInit);
+    } catch (e) {
+      console.error("[create] refusing to send an init the chain rejects:", e);
+      return;
+    }
+
+    setAllSubmitted(false);
+    setBatchIndex(0);
+    createdAddress.current = null;
+
+    // A single slot gets a simulation first: the factory returns the address it
+    // will deploy to, and a transaction hash carries no return value — so
+    // asking now is the only way to land the user on their own slot afterwards
+    // instead of on the index. It also surfaces a hook's veto as that hook's
+    // own revert reason, which a sent-and-reverted transaction cannot.
+    if (slotCount === 1) {
+      const predicted = await actions.preflight("Preview slot", () =>
+        actions.client.simulateCreateSlot(slotInit),
+      );
+      if (!predicted) return;
+      createdAddress.current = predicted;
+    }
+
+    // There is one `createSlot(SlotInit)` and no batch entry point, so a count
+    // above one is n transactions. Sent in sequence and stopped on the first
+    // refusal, because a wallet rejection halfway through a strip should leave
+    // the slots already made and not queue five more prompts behind it.
+    for (let i = 0; i < slotCount; i++) {
+      setBatchIndex(i);
+      const hash = await actions.createSlot(slotInit);
+      if (!hash) return;
+    }
+    setAllSubmitted(true);
+  }
 
   if (!factory)
     return (
@@ -189,359 +423,67 @@ export default function CreatePage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader maxWidth="max-w-3xl">
-        <div className="flex flex-col">
-          <h1 className="text-xl font-bold leading-tight tracking-tight">
+      <PageHeader maxWidth="max-w-6xl">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight leading-tight">
             Create a slot
           </h1>
-          <p className="text-xs text-muted-foreground">
-            Eight values, fixed at birth except the ones you say may move.
+          <p className="text-muted-foreground text-xs">
+            Eight values, fixed at birth except the ones you say may move
+            {chain?.name ? ` · ${chain.name}` : ""}.
           </p>
         </div>
       </PageHeader>
 
-      <div className="mx-auto max-w-3xl px-3 py-4 md:px-5">
-        <div className="border bg-card">
-          {/* ── Recipient ─────────────────────────────────────────────── */}
-          <FormSection meta={SECTION.recipient}>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setUseMyAccount(true)}
-                className={`border-2 p-3 text-sm ${useMyAccount ? "border-primary bg-primary/5" : "border-border"}`}
-              >
-                My account
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseMyAccount(false)}
-                className={`border-2 p-3 text-sm ${!useMyAccount ? "border-primary bg-primary/5" : "border-border"}`}
-              >
-                Another address
-              </button>
-            </div>
-            {useMyAccount ? (
-              <p className="text-xs text-muted-foreground">
-                {address ? truncateAddress(address) : "Connect a wallet first."}
-              </p>
-            ) : (
-              <AddressInput
-                value={recipient}
-                onChange={setRecipient}
-                placeholder="0x… or vitalik.eth"
-                hint="A wallet, a split, or a collective — the protocol only cares that it is not the zero address."
-              />
-            )}
-            <p className="text-[10px] text-muted-foreground">
-              Want the tax governed by a group?{" "}
-              <NavLink
-                href="/app/collectives"
-                className="underline underline-offset-2"
-              >
-                <Users className="inline size-3" /> Create a collective
-              </NavLink>{" "}
-              first, then paste its address here.
-            </p>
-          </FormSection>
+      <div className="max-w-6xl mx-auto px-3 md:px-5 py-4 md:py-8 pb-24 lg:pb-8">
+        <Form {...form}>
+          <form
+            id="create-slot-form"
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="flex gap-6 items-start"
+          >
+            {/* Left: Form */}
+            {/* No divide-y: FormSection carries border-t first:border-t-0, so
+                the first section sits flush against the card's own border. */}
+            <div className="flex-1 min-w-0 rounded-lg border">
+              <FormSection meta={SECTION.recipient}>
+                <SectionRecipient />
+              </FormSection>
 
-          {/* ── Currency ──────────────────────────────────────────────── */}
-          <FormSection meta={SECTION.currency}>
-            <Select
-              value={currencyChoice}
-              onValueChange={(v) => setCurrencyChoice(v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a currency">
-                  {currencyChoice === CUSTOM ? (
-                    <>
-                      <TokenLogo />
-                      <span>Custom ERC-20</span>
-                    </>
-                  ) : selectedToken ? (
-                    <>
-                      <TokenLogo
-                        slug={selectedToken.logo}
-                        symbol={selectedToken.symbol}
-                      />
-                      <span>
-                        {selectedToken.name} ({selectedToken.symbol})
-                      </span>
-                    </>
-                  ) : null}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {tokens.map((token) => (
-                  <SelectItem key={token.address} value={token.address}>
-                    <TokenLogo slug={token.logo} symbol={token.symbol} />
-                    <span>
-                      {token.name} ({token.symbol})
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {token.address === zeroAddress
-                        ? "native"
-                        : truncateAddress(token.address)}
-                    </span>
-                  </SelectItem>
-                ))}
-                <SelectItem value={CUSTOM}>
-                  <TokenLogo />
-                  <span>Custom ERC-20</span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+              <FormSection meta={SECTION.currency}>
+                <SectionCurrency />
+              </FormSection>
 
-            {currencyChoice === CUSTOM ? (
-              <>
-                <AddressInput
-                  value={customCurrency}
-                  onChange={setCustomCurrency}
-                  placeholder="0x… ERC-20 address"
-                />
-                {erc20.isLoading ? (
-                  <p className="flex items-center gap-1.5 text-[10px] text-blue-500">
-                    <Loader2 className="size-3 animate-spin" /> Checking token…
-                  </p>
-                ) : null}
-                {erc20.data ? (
-                  <p className="flex items-center gap-1.5 text-[10px] text-green-600">
-                    <Check className="size-3" />
-                    {erc20.data.name} ({erc20.data.symbol}) ·{" "}
-                    {erc20.data.decimals} decimals
-                  </p>
-                ) : null}
-                {erc20.isError && erc20.isValidAddress ? (
-                  <p className="flex items-center gap-1.5 text-[10px] text-destructive">
-                    <AlertCircle className="size-3" /> Not an ERC-20 on this
-                    chain.
-                  </p>
-                ) : null}
-              </>
-            ) : null}
+              <FormSection meta={SECTION.economics}>
+                <SectionEconomics />
+              </FormSection>
 
-            {resolvedCurrency === zeroAddress ? (
-              <p className="text-[10px] leading-snug text-muted-foreground">
-                Native ETH. Buying pays by transaction value, and signed sell
-                orders are unavailable — filling one pulls an ERC-20 allowance,
-                which native ETH does not have.
-              </p>
-            ) : null}
-          </FormSection>
+              <FormSection meta={SECTION.hook}>
+                <SectionHook />
+              </FormSection>
 
-          {/* ── Economics ─────────────────────────────────────────────── */}
-          <FormSection meta={SECTION.economics}>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Tax rate</label>
-                <span className="text-sm font-semibold tabular-nums">
-                  {tax || 0}% / 30 days
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.01"
-                max="100"
-                step="0.01"
-                value={Number(tax) || 0.01}
-                onChange={(e) => setTax(e.target.value)}
-                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-secondary accent-primary"
-              />
-              <Input
-                value={tax}
-                inputMode="decimal"
-                onChange={(e) => setTax(e.target.value)}
-                className="mt-1"
-              />
-              {percentToBps(tax) <= 0n || percentToBps(tax) > 10_000n ? (
-                <p className="text-[10px] text-destructive">
-                  Must be above 0 and at most 100% per 30 days. A slot taxing
-                  nothing could never liquidate anybody.
-                </p>
-              ) : null}
+              <FormSection meta={SECTION.permissions}>
+                <SectionPermissions />
+              </FormSection>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">
-                Minimum funded runway
-              </label>
-              <div className="flex gap-0">
-                <Input
-                  value={minDepositValue}
-                  inputMode="decimal"
-                  onChange={(e) => setMinDepositValue(e.target.value)}
-                  className="rounded-r-none"
-                />
-                <Select
-                  value={minDepositUnit}
-                  onValueChange={(v) => setMinDepositUnit(v as TimeUnit)}
-                >
-                  <SelectTrigger className="w-28 rounded-l-none border-l-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {timeUnits.map((unit) => (
-                      <SelectItem key={unit} value={unit}>
-                        {unit}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <p className="text-[10px] leading-snug text-muted-foreground">
-                How far ahead a buyer must fund, and the floor a withdrawal may
-                not go below. Zero means no minimum.
-              </p>
-            </div>
-          </FormSection>
+            <SummaryCard
+              slotCount={slotCount}
+              setSlotCount={setSlotCount}
+              submitState={submitState}
+              switchChain={switchChain}
+              chainId={selectedChainId}
+            />
 
-          {/* ── Hook ──────────────────────────────────────────────────── */}
-          <FormSection meta={SECTION.hook}>
-            <Select value={hookChoice} onValueChange={setHookChoice}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_HOOK}>No hook</SelectItem>
-                {hooks.map((h) => (
-                  <SelectItem key={h.address} value={h.address}>
-                    {h.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value={CUSTOM}>Custom address</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {hookChoice === CUSTOM ? (
-              <Input
-                value={customHook}
-                placeholder="0x… hook address"
-                onChange={(e) => setCustomHook(e.target.value)}
-                className="font-mono text-xs"
-              />
-            ) : null}
-
-            {hooks.find((h) => h.address === hookChoice) ? (
-              <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
-                <Plug className="mt-0.5 size-3 shrink-0" />
-                {hooks.find((h) => h.address === hookChoice)?.description}
-              </p>
-            ) : null}
-
-            <p className="text-[10px] leading-snug text-muted-foreground">
-              A hook declares which callbacks it wants, and the slot snapshots
-              that list once at attach time. A hook that subscribes to nothing is
-              rejected outright, so an attached hook always does something.
-            </p>
-          </FormSection>
-
-          {/* ── Permissions ───────────────────────────────────────────── */}
-          <FormSection meta={SECTION.permissions}>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={mutableTax}
-                className="mt-1"
-                onChange={(e) => setMutableTax(e.target.checked)}
-              />
-              <span>
-                The tax rate may change
-                <span className="block text-[10px] text-muted-foreground">
-                  A manager may propose a new rate. It lands at the next
-                  occupancy transition, never on a sitting occupant.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={mutableHook}
-                className="mt-1"
-                onChange={(e) => setMutableHook(e.target.checked)}
-              />
-              <span>
-                The hook may change
-                <span className="block text-[10px] text-muted-foreground">
-                  A manager may attach, replace or detach the hook — again, at
-                  the next transition.
-                </span>
-              </span>
-            </label>
-
-            {needsManager ? (
-              <div className="space-y-2 border-t pt-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setUseMeAsManager(true)}
-                    className={`border-2 p-2 text-xs ${useMeAsManager ? "border-primary bg-primary/5" : "border-border"}`}
-                  >
-                    Me
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUseMeAsManager(false)}
-                    className={`border-2 p-2 text-xs ${!useMeAsManager ? "border-primary bg-primary/5" : "border-border"}`}
-                  >
-                    Another address
-                  </button>
-                </div>
-                {!useMeAsManager ? (
-                  <AddressInput
-                    value={manager}
-                    onChange={setManager}
-                    placeholder="0x… or a collective"
-                  />
-                ) : null}
-                <p className="text-[10px] leading-snug text-muted-foreground">
-                  Required, because something above is mutable. Somebody has to
-                  be able to exercise it.
-                </p>
-              </div>
-            ) : (
-              <p className="border-t pt-3 text-[11px] leading-snug text-muted-foreground">
-                <strong className="font-medium text-foreground">
-                  No manager.
-                </strong>{" "}
-                With nothing mutable this slot is immutable forever, and the
-                protocol refuses a manager on it — the absence of one is what
-                makes the promise real rather than a matter of somebody&apos;s
-                restraint.
-              </p>
-            )}
-          </FormSection>
-
-          {/* ── Submit ────────────────────────────────────────────────── */}
-          <div className="space-y-2 border-t px-3 py-4 md:px-6">
-            {initError ? (
-              <p className="flex items-start gap-1.5 text-xs text-destructive">
-                <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                {initError}
-              </p>
-            ) : null}
-            {wrongChain ? (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => switchChain({ chainId })}
-              >
-                Switch network
-              </Button>
-            ) : (
-              <Button
-                className="w-full"
-                disabled={!ready || actions.busy}
-                onClick={() => init && actions.createSlot(init)}
-              >
-                {actions.busy ? "Creating…" : "Create slot"}
-              </Button>
-            )}
-            {!isConnected ? (
-              <p className="text-[10px] text-muted-foreground">
-                Connect a wallet to create a slot.
-              </p>
-            ) : null}
-          </div>
-        </div>
+            <MobileBottomBar
+              slotCount={slotCount}
+              setSlotCount={setSlotCount}
+              submitState={submitState}
+              switchChain={switchChain}
+              chainId={selectedChainId}
+            />
+          </form>
+        </Form>
       </div>
     </div>
   );
