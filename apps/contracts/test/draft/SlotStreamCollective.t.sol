@@ -128,10 +128,28 @@ contract SlotStreamCollectiveTest is Test {
         vm.warp(clock);
     }
 
+    /// @dev The Base mainnet endpoint to fork, without requiring a key.
+    ///
+    ///      `vm.rpcUrl("base")` resolves the alias in foundry.toml, which
+    ///      interpolates `${ALCHEMY_KEY}`. With no key set, forge raises while
+    ///      EVALUATING THAT ARGUMENT — before `try` can catch anything — so the
+    ///      skip below never ran and CI failed 11 tests on a missing secret
+    ///      rather than skipping them. Resolve the URL first, then fork.
+    ///
+    ///      The public endpoint is the default deliberately: nothing in this
+    ///      repo should need a paid key to gate a PR. A key, when present, is
+    ///      still preferred — it is the one that survives rate limiting.
+    function _forkUrl() internal view returns (string memory) {
+        string memory key = vm.envOr("ALCHEMY_KEY", string(""));
+        if (bytes(key).length == 0) return "https://mainnet.base.org";
+        return vm.rpcUrl("base");
+    }
+
     /// @dev Returns false when there is no usable RPC, so every test can bail
     ///      out identically instead of each one re-implementing the skip.
     function _fork() internal returns (bool) {
-        try vm.createSelectFork(vm.rpcUrl("base")) {
+        string memory url = _forkUrl();
+        try vm.createSelectFork(url) {
             clock = block.timestamp;
             return true;
         } catch {
