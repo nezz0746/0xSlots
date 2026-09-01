@@ -10,6 +10,7 @@ import {SlotAdmin} from "./SlotAdmin.sol";
 import {ISlotHook, SlotContext} from "./ISlotHook.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "./SlotErrors.sol";
+import {Versioned} from "./Versioned.sol";
 
 /// @notice Everything a slot needs at birth.
 struct SlotInit {
@@ -45,7 +46,14 @@ struct SlotInit {
  *      A slot wanting several behaviours points at a composite that fans out,
  *      which keeps the loop in userland and out of the eviction path.
  */
-contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin {
+contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
+
+    /// @inheritdoc Versioned
+    /// @dev Bump in the same commit as any change to this contract's code.
+    function version() public pure virtual override returns (uint64) {
+        return 1;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();

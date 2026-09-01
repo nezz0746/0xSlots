@@ -18,8 +18,11 @@ import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.so
 contract SlotCollectiveV2 is SlotCollective {
     constructor(address warehouse) SlotCollective(warehouse) {}
 
-    function version() external pure returns (string memory) {
-        return "v2";
+    /// @dev Overrides the inherited version rather than shadowing it — the
+    ///      point of the test is that a beacon upgrade moves the CODE, and
+    ///      the version is now how you observe that.
+    function version() public pure override returns (uint64) {
+        return 2;
     }
 }
 
@@ -183,8 +186,8 @@ contract SlotCollectiveFactoryTest is Test {
         vm.prank(factoryAdmin);
         factory.upgradeBeacon(address(v2));
 
-        assertEq(SlotCollectiveV2(payable(address(a))).version(), "v2");
-        assertEq(SlotCollectiveV2(payable(address(b))).version(), "v2");
+        assertEq(SlotCollectiveV2(payable(address(a))).version(), 2);
+        assertEq(SlotCollectiveV2(payable(address(b))).version(), 2);
 
         // State survives the code swap.
         assertTrue(a.hasRole(a.DEFAULT_ADMIN_ROLE(), managerAdmin));

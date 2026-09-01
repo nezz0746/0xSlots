@@ -8,6 +8,7 @@ import {PushSplit} from "splits-v2/splitters/push/PushSplit.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotGovernance, IManagedSlot} from "./SlotGovernance.sol";
+import {Versioned} from "../Versioned.sol";
 
 /// @title SlotCollective — a collective that pays out through a 0xSplits split
 ///
@@ -66,7 +67,14 @@ import {SlotGovernance, IManagedSlot} from "./SlotGovernance.sol";
 ///      `receive()`, every native-ETH tax push from `Slot._payOrCredit` — a
 ///      deliberately gas-capped `call{gas: 30_000}` — would fail and silently
 ///      degrade into a `withdrawableOf` credit needing a manual `claim`.
-contract SlotCollective is PushSplit, SlotGovernance {
+contract SlotCollective is PushSplit, SlotGovernance, Versioned {
+
+    /// @inheritdoc Versioned
+    /// @dev Bump in the same commit as any change to this contract's code.
+    function version() public pure virtual override returns (uint64) {
+        return 1;
+    }
+
     using SplitV2Lib for SplitV2Lib.Split;
 
     // ═══════════════════════════════════════════════════════════

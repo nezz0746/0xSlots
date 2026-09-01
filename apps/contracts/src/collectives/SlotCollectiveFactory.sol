@@ -8,6 +8,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotCollective} from "./SlotCollective.sol";
+import {Versioned} from "../Versioned.sol";
 
 /// @title SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon
 ///
@@ -48,7 +49,14 @@ import {SlotCollective} from "./SlotCollective.sol";
 ///      problem — it gates the inherited `initialize` on `msg.sender == FACTORY`
 ///      — except `SlotCollective.initializeManager` does that work itself and never
 ///      touches it. See the constructor note over there.
-contract SlotCollectiveFactory is UUPSUpgradeable {
+contract SlotCollectiveFactory is UUPSUpgradeable, Versioned {
+
+    /// @inheritdoc Versioned
+    /// @dev Bump in the same commit as any change to this contract's code.
+    function version() public pure virtual override returns (uint64) {
+        return 1;
+    }
+
     // ═══════════════════════════════════════════════════════════
     // ERRORS
     // ═══════════════════════════════════════════════════════════

@@ -1,0 +1,9 @@
+{
+  "name": "anvil",
+  "chainId": 31337,
+  "rpcEnv": "ANVIL_RPC_URL",
+  "admin": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "explorerVerify": false,
+  "testnet": true,
+  "splitsWarehouse": "0x0000000000000000000000000000000000000000"
+}

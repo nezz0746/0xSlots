@@ -18,7 +18,9 @@ contract Tok is ERC20 {
 
 /// @dev A distinguishable implementation, so an upgrade is observable.
 contract OfferBookV2 is OfferBook {
-    function version() external pure returns (string memory) { return "v2"; }
+    function version() public pure override returns (uint64) {
+        return 2;
+    }
 }
 
 /**
@@ -74,7 +76,7 @@ contract OfferBookUpgradeTest is Test {
         address v2 = address(new OfferBookV2());
         vm.prank(admin);
         book.upgradeToAndCall(v2, "");
-        assertEq(OfferBookV2(address(book)).version(), "v2");
+        assertEq(OfferBookV2(address(book)).version(), 2);
     }
 
     function test_AStrangerCannotUpgradeTheBoard() public {
@@ -96,7 +98,7 @@ contract OfferBookUpgradeTest is Test {
 
         vm.prank(next);
         book.upgradeToAndCall(v2, "");
-        assertEq(OfferBookV2(address(book)).version(), "v2");
+        assertEq(OfferBookV2(address(book)).version(), 2);
     }
 
     function test_TheImplementationCannotBeInitialized() public {

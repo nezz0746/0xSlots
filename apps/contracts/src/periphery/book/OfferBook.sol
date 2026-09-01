@@ -6,6 +6,7 @@ import {SellOrder} from "../../SlotOrders.sol";
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
 import "./OfferBookErrors.sol";
+import {Versioned} from "../../Versioned.sol";
 
 /// @title OfferBook — standing bids an occupant can sell into
 ///
@@ -80,7 +81,24 @@ import "./OfferBookErrors.sol";
 ///      could lie about what is on the board; they could not spend a bidder's
 ///      allowance or seat anybody. Discovery is upgradeable, settlement is
 ///      not.
-contract OfferBook is OfferBookInternals {
+contract OfferBook is OfferBookInternals, Versioned {
+
+    /// @inheritdoc Versioned
+    /// @dev Bump in the same commit as any change to this contract's code.
+    function version() public pure virtual override returns (uint64) {
+        return 1;
+    }
+
+    /// @notice Which migration has run against THIS proxy's storage.
+    /// @dev OpenZeppelin already tracks this and already refuses to run a
+    ///      `reinitializer(N)` twice or out of order — so an upgrade that
+    ///      needs new state gets its monotonicity enforced by the library
+    ///      rather than by a script. Exposed because it is otherwise
+    ///      internal, and during an incident you want both numbers.
+    function initializedVersion() external view returns (uint64) {
+        return _getInitializedVersion();
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();

@@ -7,6 +7,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {Slot, SlotInit} from "./Slot.sol";
 import "./SlotErrors.sol";
+import {Versioned} from "./Versioned.sol";
 
 /**
  * @title SlotFactory
@@ -20,7 +21,24 @@ import "./SlotErrors.sol";
  *      struct once — and it also splits the indexer, which then has to register
  *      every handler twice to cover both eras.
  */
-contract SlotFactory is Initializable, UUPSUpgradeable {
+contract SlotFactory is Initializable, UUPSUpgradeable, Versioned {
+
+    /// @inheritdoc Versioned
+    /// @dev Bump in the same commit as any change to this contract's code.
+    function version() public pure virtual override returns (uint64) {
+        return 1;
+    }
+
+    /// @notice Which migration has run against THIS proxy's storage.
+    /// @dev OpenZeppelin already tracks this and already refuses to run a
+    ///      `reinitializer(N)` twice or out of order — so an upgrade that
+    ///      needs new state gets its monotonicity enforced by the library
+    ///      rather than by a script. Exposed because it is otherwise
+    ///      internal, and during an incident you want both numbers.
+    function initializedVersion() external view returns (uint64) {
+        return _getInitializedVersion();
+    }
+
     /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
     UpgradeableBeacon public beacon;
 

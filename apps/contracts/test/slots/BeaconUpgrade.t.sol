@@ -11,8 +11,11 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
 /// @dev A distinguishable implementation, so an upgrade is observable rather
 ///      than merely reported.
 contract SlotV2 is Slot {
-    function version() external pure returns (string memory) {
-        return "v2";
+    /// @dev Overrides rather than shadows: after a beacon upgrade, `version()`
+    ///      read through any slot proxy is how you tell which code it runs —
+    ///      the one thing a beacon upgrade cannot record in proxy storage.
+    function version() public pure override returns (uint64) {
+        return 2;
     }
 }
 
@@ -62,8 +65,8 @@ contract BeaconUpgradeTest is Test {
         factory.upgradeBeacon(v2);
 
         assertEq(factory.implementation(), v2);
-        assertEq(SlotV2(payable(address(a))).version(), "v2");
-        assertEq(SlotV2(payable(address(b))).version(), "v2", "all slots move together");
+        assertEq(SlotV2(payable(address(a))).version(), 2);
+        assertEq(SlotV2(payable(address(b))).version(), 2, "all slots move together");
     }
 
     /// @notice And nobody else can.

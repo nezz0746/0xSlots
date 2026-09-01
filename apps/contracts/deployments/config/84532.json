@@ -1,0 +1,9 @@
+{
+  "name": "base-sepolia",
+  "chainId": 84532,
+  "rpcEnv": "BASE_SEPOLIA_RPC_URL",
+  "admin": "0x0000000000000000000000000000000000000000",
+  "explorerVerify": true,
+  "testnet": true,
+  "splitsWarehouse": "0x8fb66F38cF86A3d5e8768f8F1754A24A6c661Fb8"
+}

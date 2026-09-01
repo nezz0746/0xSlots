@@ -5,3 +5,4 @@ prb/test/=lib/prb-test/src/
 solady/=lib/solady/src/
 splits-v2/=lib/splits-contracts-monorepo/packages/splits-v2/src/
 urd/=lib/universal-rewards-distributor/src/
+openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/

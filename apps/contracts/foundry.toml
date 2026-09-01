@@ -1,4 +1,10 @@
 [profile.default]
+# Required by openzeppelin-foundry-upgrades: it shells out to the OZ Upgrades
+# CLI, which reads the AST and build-info to validate storage layout.
+ffi = true
+ast = true
+build_info = true
+extra_output = ["storageLayout"]
 src = "src"
 out = "out"
 libs = ["lib"]
