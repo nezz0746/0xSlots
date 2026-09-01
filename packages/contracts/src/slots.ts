@@ -8,6 +8,7 @@
 export {
   compositeHookAbi,
   minimumTenureHookAbi,
+  minimumTenureHookFactoryAbi,
   slotAbi,
   slotFactoryAbi,
 } from "./abis/slots";
@@ -31,6 +32,27 @@ import { anvil } from "viem/chains";
 export const slotsFactoryAddress: Partial<Record<number, Address>> = {
   [anvil.id]: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
 };
+
+/**
+ * The `MinimumTenureHookFactory`, by chain.
+ *
+ * One canonical `MinimumTenureHook` per configuration, deployed on demand: a
+ * creator picks a duration in the UI and gets a hook for it without anybody
+ * deploying one by hand, and the second slot to want that duration reuses the
+ * first slot's hook rather than paying for its own.
+ *
+ * `predict(tenureSeconds)` is a `view`, so a client resolves the address with
+ * no transaction and only sends `getOrDeploy` when `isDeployed` says nothing is
+ * there yet.
+ *
+ * The anvil address is deterministic from a fresh chain driven by account 0, as
+ * `script/slots/DeploySlots.s.sol` deploys it — LAST, so the addresses above it
+ * do not move.
+ */
+export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
+  {
+    [anvil.id]: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+  };
 
 /**
  * A hook a client can offer by name instead of asking for an address.

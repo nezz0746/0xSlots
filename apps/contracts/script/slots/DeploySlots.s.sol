@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Slot} from "../../src/slots/Slot.sol";
 import {SlotFactory} from "../../src/slots/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/slots/hooks/MinimumTenureHook.sol";
+import {MinimumTenureHookFactory} from "../../src/slots/hooks/MinimumTenureHookFactory.sol";
 
 contract SlotsTestToken is ERC20 {
     constructor() ERC20("Slots Test USD", "USDX") {}
@@ -70,6 +71,18 @@ contract DeploySlots is Script {
         SlotsTestToken token = new SlotsTestToken();
         token.mint(deployer, 1_000_000e18);
 
+        // ── Appended, deliberately last ──────────────────────────────────────
+        //
+        // Every CREATE address above is a function of the deployer's nonce, and
+        // `scripts/slots-local.sh` and `packages/contracts/src/slots.ts` both
+        // assert the factory's. Inserting a deployment ANYWHERE above this line
+        // shifts all of them and breaks both. New deployments go at the end.
+        //
+        // Empty default metadata: nothing has been published for this family
+        // yet, and `IDescribedHook` says empty means exactly that. Passing a URI
+        // that resolves to nothing would look authoritative and be worse.
+        MinimumTenureHookFactory tenureHookFactory = new MinimumTenureHookFactory();
+
         vm.stopBroadcast();
 
         // The indexer's dev loop blocks until this file appears — that is what
@@ -80,12 +93,18 @@ contract DeploySlots is Script {
         _record("Slot", address(implementation), startBlock);
         _record("MinimumTenureHook", address(tenureHook), startBlock);
         _record("SlotsTestToken", address(token), startBlock);
+        _record(
+            "MinimumTenureHookFactory",
+            address(tenureHookFactory),
+            startBlock
+        );
 
         console2.log("");
         console2.log("SLOT_FACTORY       ", address(factory));
         console2.log("SLOT_IMPLEMENTATION", address(implementation));
         console2.log("MIN_TENURE_HOOK    ", address(tenureHook));
         console2.log("TEST_TOKEN         ", address(token));
+        console2.log("TENURE_HOOK_FACTORY", address(tenureHookFactory));
         console2.log("ADMIN              ", deployer);
         console2.log("START_BLOCK        ", startBlock);
     }

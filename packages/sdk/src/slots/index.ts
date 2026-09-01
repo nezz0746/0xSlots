@@ -9,6 +9,9 @@
  *
  * React bindings live at `@0xslots/sdk/slots/react`.
  */
+
+export { SlotsError } from "../errors";
+export { isNativeCurrency, NATIVE_CURRENCY_ADDRESS } from "../native";
 export {
   assertSlotInit,
   BASIS_POINTS,
@@ -24,12 +27,23 @@ export {
   SELL_ORDER_DOMAIN_VERSION,
   SELL_ORDER_TYPES,
   type SellOrder,
-  type SignSellOrderParams,
   type SignedSellOrder,
+  type SignSellOrderParams,
   type SlotInit,
   type SlotState,
   SlotsClient,
   type SlotsClientConfig,
 } from "./client";
-export { SlotsError } from "../errors";
-export { isNativeCurrency, NATIVE_CURRENCY_ADDRESS } from "../native";
+
+// The MinimumTenureHook factory: a duration in, a hook address out, so a
+// creator can pick a tenure without deploying a hook by hand. Its own module
+// rather than methods on `SlotsClient` — see the file header.
+export {
+  type GetOrDeployTenureHookParams,
+  getOrDeployTenureHook,
+  getTenureHookFactoryAddress,
+  isTenureHookDeployed,
+  predictTenureHook,
+  type TenureHookParams,
+  verifyTenureHook,
+} from "./hook-factory";
