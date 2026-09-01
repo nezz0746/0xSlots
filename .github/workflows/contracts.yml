@@ -41,7 +41,15 @@ jobs:
         with: { node-version: 20 }
 
       - run: forge build --sizes
-      - run: forge test -vv
+      - name: forge test
+        # The fork tests fall back to public endpoints with no key, so this is
+        # resilience rather than a requirement — and it has to be, because
+        # secrets are NOT exposed to workflows triggered by forked PRs. Without
+        # it a rate-limited public endpoint makes `_fork()` skip, which keeps
+        # CI green while those tests quietly stop covering anything.
+        env:
+          ALCHEMY_KEY: ${{ secrets.ALCHEMY_KEY }}
+        run: forge test -vv
 
   upgrade-safety:
     # Storage layout is the check that stands between a bad merge and every
