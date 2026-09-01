@@ -1,74 +1,64 @@
 "use client";
 
 import { PlusIcon } from "lucide-react";
-import type { ReactNode } from "react";
 import { useAccount } from "wagmi";
-
-import { AdBar } from "@/components/ad-bar";
-import { ModulesTable } from "@/components/explorer/modules-table";
-import { SlotsEvents } from "@/components/explorer/slots-events";
-import { StatsBar } from "@/components/explorer/stats-bar";
-import { TabStrip } from "@/components/explorer-tabs";
 import { PageHeader } from "@/components/page-header";
+import { SlotsTable } from "@/components/slots/slots-table";
 import { Button } from "@/components/ui/button";
-import {
-  EXPLORER_SECTIONS,
-  useExplorerSection,
-} from "@/context/explorer-section";
+import { useChain } from "@/context/chain";
 import { NavLink } from "@/context/navigation";
+import { useSlotCount, useSlotsFactory } from "@/hooks/slots/use-slots";
+import { truncateAddress } from "@/utils";
 
-/** Section id → content. Section metadata lives in the context so the sidebar
- *  and the mobile strip share one definition. Slots carries its own Events tab;
- *  recipients are reachable from a slot, not as a top-level section. */
-const SECTION_CONTENT: Record<string, () => ReactNode> = {
-  slots: () => <SlotsEvents />,
-  modules: () => <ModulesTable />,
-};
-
-export default function Home() {
+/**
+ * Every slot the factory has made.
+ *
+ * Read from `SlotCreated` logs, not an indexer: the indexer serves the previous
+ * protocol, and rows from it would look identical and be entirely wrong.
+ */
+export default function Explorer() {
   const { chain } = useAccount();
-  const { section, setSection } = useExplorerSection();
+  const { chainId } = useChain();
+  const factory = useSlotsFactory();
+  const { data: count } = useSlotCount();
 
   return (
     <div className="min-h-screen">
       <PageHeader>
         <div className="flex items-center gap-6">
           <div className="flex flex-col">
-            <h1 className="text-xl font-bold tracking-tight leading-tight">
-              Explorer
+            <h1 className="text-xl font-bold leading-tight tracking-tight">
+              Slots
             </h1>
-            <p className="text-muted-foreground text-xs">
-              {chain && `${chain?.name}`}
+            <p className="text-xs text-muted-foreground">
+              {chain?.name ?? `Chain ${chainId}`}
+              {factory ? ` · factory ${truncateAddress(factory)}` : ""}
             </p>
           </div>
-          <div className="hidden md:flex w-px h-6 bg-border" />
-          <StatsBar />
+          {count !== undefined ? (
+            <>
+              <div className="hidden h-6 w-px bg-border md:flex" />
+              <div className="flex flex-col">
+                <span className="text-lg font-semibold tabular-nums leading-tight">
+                  {count.toString()}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  created
+                </span>
+              </div>
+            </>
+          ) : null}
         </div>
-        <div className="flex items-center gap-3">
-          <Button size="sm" asChild>
-            <div>
-              <PlusIcon className="w-5 h-5" />
-              <NavLink href="/app/create">Create Slot</NavLink>
-            </div>
+        <NavLink href="/app/create">
+          <Button size="sm">
+            <PlusIcon className="size-4" />
+            Create slot
           </Button>
-        </div>
+        </NavLink>
       </PageHeader>
 
-      <div className="w-full px-3 md:px-5 py-3">
-        <AdBar />
-        {/* Desktop navigates sections from the sidebar; below md the strip
-            stays, driving the same selection. */}
-        <TabStrip
-          className="md:hidden"
-          tabs={EXPLORER_SECTIONS}
-          active={section}
-          onSelect={setSection}
-        />
-        {SECTION_CONTENT[section]?.()}
-
-        <div className="mt-8 text-center text-xs text-muted-foreground">
-          Powered by 0xSlots · Ponder
-        </div>
+      <div className="px-3 py-3 md:px-5">
+        <SlotsTable emptyMessage="No slots on this chain yet. Create the first one." />
       </div>
     </div>
   );

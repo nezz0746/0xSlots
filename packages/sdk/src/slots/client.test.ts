@@ -69,9 +69,9 @@ const sent = (writeContract: ReturnType<typeof vi.fn>, name: string) =>
   writeContract.mock.calls.find((c: any[]) => c[0].functionName === name)?.[0];
 
 describe("native ETH slots", () => {
-  it("buy attaches value equal to price + deposit and never approves", async () => {
+  it("buy attaches value equal to the slot's own quote, and never approves", async () => {
     const { client, writeContract } = harness({
-      price: 10n ** 18n,
+      quoteBuy: 15n * 10n ** 17n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
 
@@ -83,18 +83,16 @@ describe("native ETH slots", () => {
     });
 
     const buy = sent(writeContract, "buy");
-    expect(buy.value).toBe(10n ** 18n + 5n * 10n ** 17n);
+    expect(buy.value).toBe(15n * 10n ** 17n);
     expect(approvals(writeContract)).toHaveLength(0);
   });
 
-  it("buy on a VACANT slot pays only the deposit", async () => {
-    // `price()` is zero when nobody holds the slot, and the contract charges
-    // `owedToPrev + deposit` where `owedToPrev` is zero with no previous
-    // occupant. One expression covers both cases — but only because the read is
-    // done live rather than assumed non-zero. Overpaying by a stale price would
-    // revert: `buy` demands msg.value EXACTLY.
+  it("buy sends the quote VERBATIM, whatever it says", async () => {
+    // The regression guard for the whole change. `quoteBuy` here is not
+    // `price + deposit` for any price — a client still doing its own arithmetic
+    // cannot produce this number, however careful the arithmetic is.
     const { client, writeContract } = harness({
-      price: 0n,
+      quoteBuy: 999n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
 
@@ -105,12 +103,52 @@ describe("native ETH slots", () => {
       selfAssessedPrice: 10n ** 18n,
     });
 
-    expect(sent(writeContract, "buy").value).toBe(3n * 10n ** 17n);
+    expect(sent(writeContract, "buy").value).toBe(999n);
+  });
+
+  it("buy never reads `price` — the contract states the rule now", async () => {
+    // `price` is absent from the double, so deriving the amount from it throws.
+    // Both payment paths ask the slot what they owe instead of reimplementing
+    // `_buy`'s arithmetic from outside and staying in step with it forever.
+    const { client, readContract } = harness({
+      quoteBuy: 10n ** 18n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 5n * 10n ** 17n,
+      selfAssessedPrice: 2n * 10n ** 18n,
+    });
+
+    expect(readContract.mock.calls.map((c: any[]) => c[0].functionName)).toEqual(
+      ["quoteBuy", "currency"],
+    );
+  });
+
+  it("buy passes the deposit to the quote, not the self-assessed price", async () => {
+    const { client, readContract } = harness({
+      quoteBuy: 1n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    });
+
+    await client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: 5n * 10n ** 17n,
+      selfAssessedPrice: 2n * 10n ** 18n,
+    });
+
+    const quote = readContract.mock.calls.find(
+      (c: any[]) => c[0].functionName === "quoteBuy",
+    )![0];
+    expect(quote.args).toEqual([5n * 10n ** 17n]);
   });
 
   it("buy seats `account` while the connected wallet pays", async () => {
     const { client, writeContract } = harness({
-      price: 0n,
+      quoteBuy: 1n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
     const seated = "0x7777777777777777777777777777777777777777" as const;
@@ -144,7 +182,7 @@ describe("native ETH slots", () => {
 describe("ERC-20 slots", () => {
   it("buy approves the SLOT when the allowance is short, and sends no value", async () => {
     const { client, writeContract } = harness({
-      price: 10n ** 6n,
+      quoteBuy: 2n * 10n ** 6n,
       currency: ERC20,
       allowance: 0n,
     });
@@ -167,7 +205,7 @@ describe("ERC-20 slots", () => {
 
   it("buy does not approve when the allowance already covers it", async () => {
     const { client, writeContract } = harness({
-      price: 10n ** 6n,
+      quoteBuy: 2n * 10n ** 6n,
       currency: ERC20,
       allowance: 10n ** 30n,
     });
@@ -533,12 +571,13 @@ describe("guards", () => {
 });
 
 describe("liquidateAndTake", () => {
-  it("pays the DEPOSIT ALONE on a native slot, and never reads the price", async () => {
-    // `price` is deliberately absent from the double. The eviction vacates the
-    // slot before the buy half runs, so `owedToPrev` is zero and the live price
-    // is not part of what is owed — reading it would be the bug, and here it is
-    // an unexpected read that throws.
+  it("pays its OWN quote on a native slot, and never reads the price", async () => {
+    // `price` and `quoteBuy` are both absent from the double. The eviction
+    // vacates the slot before the buy half runs, so what is owed is neither the
+    // live price nor what `buy` would charge — reaching for either is the bug,
+    // and here each is an unexpected read that throws.
     const { client, writeContract, readContract } = harness({
+      quoteLiquidateAndTake: 4n * 10n ** 17n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
 
@@ -556,13 +595,14 @@ describe("liquidateAndTake", () => {
     // `buy` demands an EXACT msg.value, so overpaying by the stale price would
     // revert rather than refund.
     expect(readContract.mock.calls.map((c: any[]) => c[0].functionName)).toEqual(
-      ["currency"],
+      ["quoteLiquidateAndTake", "currency"],
     );
     expect(approvals(writeContract)).toHaveLength(0);
   });
 
   it("approves the SLOT for the deposit on an ERC-20 slot, and sends no value", async () => {
     const { client, writeContract } = harness({
+      quoteLiquidateAndTake: 5n * 10n ** 6n,
       currency: ERC20,
       allowance: 0n,
     });
@@ -580,6 +620,7 @@ describe("liquidateAndTake", () => {
 
   it("skips the approval when the allowance already covers the deposit", async () => {
     const { client, writeContract } = harness({
+      quoteLiquidateAndTake: 5n * 10n ** 6n,
       currency: ERC20,
       allowance: 10n ** 30n,
     });
@@ -597,6 +638,7 @@ describe("liquidateAndTake", () => {
 
   it("seats `account` while the connected wallet pays, exactly as buy does", async () => {
     const { client, writeContract } = harness({
+      quoteLiquidateAndTake: 1n,
       currency: NATIVE_CURRENCY_ADDRESS,
     });
     const seated = "0x7777777777777777777777777777777777777777" as const;
@@ -634,5 +676,34 @@ describe("liquidateAndTake", () => {
     const call = sent(writeContract, "liquidate");
     expect(call.args).toEqual([]);
     expect(call.value).toBeUndefined();
+  });
+});
+
+describe("the two quotes are not interchangeable", () => {
+  it("buy and liquidateAndTake each ask their OWN quote for the same deposit", async () => {
+    // Both stubs present and deliberately different. This is the distinction the
+    // contract split into two functions because it is invisible from outside —
+    // a client that called one quote for both paths would pass every other test
+    // in this file.
+    const deposit = 10n ** 6n;
+    const reads = {
+      quoteBuy: 900n,
+      quoteLiquidateAndTake: 7n,
+      currency: NATIVE_CURRENCY_ADDRESS,
+    };
+    const params = {
+      slot: SLOT,
+      account: ACCOUNT,
+      depositAmount: deposit,
+      selfAssessedPrice: 10n ** 7n,
+    };
+
+    const buyRun = harness(reads);
+    await buyRun.client.buy(params);
+    expect(sent(buyRun.writeContract, "buy").value).toBe(900n);
+
+    const takeRun = harness(reads);
+    await takeRun.client.liquidateAndTake(params);
+    expect(sent(takeRun.writeContract, "liquidateAndTake").value).toBe(7n);
   });
 });

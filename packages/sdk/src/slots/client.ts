@@ -400,6 +400,35 @@ export class SlotsClient {
     return this.read<bigint>(slot, "secondsUntilLiquidation");
   }
 
+  /**
+   * What {@link buy} will charge for `depositAmount`, straight from the slot.
+   *
+   * The payment rule is the CONTRACT'S promise now, not this client's
+   * inference. Deriving it here meant reimplementing `_buy`'s arithmetic from
+   * the outside and staying in step with it forever — and the derivation is
+   * only correct because `_vacate()` zeroes `_price`, which nothing external
+   * stated. Reading it turns a silent overpay into a mismatch the chain
+   * reports.
+   */
+  quoteBuy(slot: Address, depositAmount: bigint): Promise<bigint> {
+    return this.read<bigint>(slot, "quoteBuy", [depositAmount]);
+  }
+
+  /**
+   * What {@link liquidateAndTake} will charge for `depositAmount`.
+   *
+   * A different number from {@link quoteBuy}, and the difference is invisible
+   * from outside: the eviction vacates the slot before the purchase reads the
+   * price, so there is no occupant left to buy out — while `price()` still
+   * reads non-zero right up until the call lands.
+   *
+   * A quote, not a permission. It does not check solvency, and
+   * `liquidateAndTake` still reverts unless the occupant is insolvent.
+   */
+  quoteLiquidateAndTake(slot: Address, depositAmount: bigint): Promise<bigint> {
+    return this.read<bigint>(slot, "quoteLiquidateAndTake", [depositAmount]);
+  }
+
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
   hook(slot: Address): Promise<Address> {
     return this.read<Address>(slot, "hook");
@@ -585,9 +614,8 @@ export class SlotsClient {
    * `msg.sender` PAYS and `account` is SEATED, and they are deliberately
    * separable — nothing in the protocol requires them to match.
    *
-   * The amount moved is `currentPrice + depositAmount`: the outgoing occupant is
-   * bought out at the price THEY declared, and `price()` is zero on a vacant
-   * slot, so the same expression covers both cases.
+   * The amount moved comes from {@link quoteBuy} rather than from arithmetic
+   * here — see that method for why the client no longer derives it.
    */
   async buy(params: BuyParams): Promise<Hash> {
     this.assertPositive(params.depositAmount, "depositAmount");
@@ -595,9 +623,9 @@ export class SlotsClient {
     if (params.account === zeroAddress)
       throw new SlotsError("buy", "account must not be the zero address");
 
-    const currentPrice = await this.price(params.slot);
+    const amount = await this.quoteBuy(params.slot, params.depositAmount);
 
-    return this.withPayment(params.slot, currentPrice + params.depositAmount, {
+    return this.withPayment(params.slot, amount, {
       functionName: "buy",
       args: [params.account, params.depositAmount, params.selfAssessedPrice],
     });
@@ -642,17 +670,11 @@ export class SlotsClient {
    * the keeper vacates the slot and loses the race for it to whoever is watching
    * the mempool.
    *
-   * ── The payment is the DEPOSIT ALONE ──────────────────────────────────────
-   *
-   * Not `price() + deposit`, which is what {@link buy} sends. The eviction runs
-   * first and vacates the slot, so by the time the buy half executes there is no
-   * previous occupant to buy out and `owedToPrev` is zero — even though
-   * `price()` still reads non-zero from outside, right up until this call lands.
-   *
-   * Sending the live price on top would overpay: `buy` demands an EXACT
-   * `msg.value` on a native slot and would revert, and an ERC-20 slot would pull
-   * the surplus. So this reads no price at all — and there is a test asserting
-   * exactly that, by omitting `price` from the double.
+   * Charges {@link quoteLiquidateAndTake}, which is a DIFFERENT number from
+   * {@link quoteBuy} — the eviction vacates the slot before the purchase reads
+   * the price, so there is no occupant left to buy out. Neither path derives its
+   * amount from `price()` any more, and there are tests asserting exactly that
+   * by omitting `price` from the double entirely.
    *
    * Both currencies work. `multicall` deliberately does not cover this: OZ's is
    * non-payable, so it was silently unreachable for native slots.
@@ -666,7 +688,12 @@ export class SlotsClient {
         "account must not be the zero address",
       );
 
-    return this.withPayment(params.slot, params.depositAmount, {
+    const amount = await this.quoteLiquidateAndTake(
+      params.slot,
+      params.depositAmount,
+    );
+
+    return this.withPayment(params.slot, amount, {
       functionName: "liquidateAndTake",
       args: [params.account, params.depositAmount, params.selfAssessedPrice],
     });

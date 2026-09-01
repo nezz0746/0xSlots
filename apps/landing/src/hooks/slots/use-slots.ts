@@ -125,14 +125,17 @@ export const slotStateKey = (chainId: number, slot: string) =>
  * page that only invalidated on events would show a solvent occupant
  * indefinitely.
  */
-export function useSlotState(slot: Address | undefined) {
+export function useSlotState(
+  slot: Address | undefined,
+  { refetchInterval = 5_000 }: { refetchInterval?: number } = {},
+) {
   const { chainId } = useChain();
   const client = useSlots();
 
   return useQuery({
     queryKey: slotStateKey(chainId, slot ?? ""),
     enabled: !!slot,
-    refetchInterval: 5_000,
+    refetchInterval,
     queryFn: (): Promise<SlotState> => client.slotState(slot!),
   });
 }

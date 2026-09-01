@@ -3,8 +3,7 @@ import {
   HandCoins,
   KeyRound,
   type LucideIcon,
-  Puzzle,
-  ShieldCheck,
+  Plug,
   Users,
 } from "lucide-react";
 
@@ -12,8 +11,7 @@ export type SectionId =
   | "recipient"
   | "currency"
   | "economics"
-  | "module"
-  | "occupancy"
+  | "hook"
   | "permissions";
 
 export interface SectionMeta {
@@ -28,9 +26,9 @@ export interface SectionMeta {
 /**
  * The form's sections, in page order.
  *
- * Single source of truth: the section headers, the summary card's jump links
- * and the validation error summary all read from here, so an id can never
- * drift between the anchor and the thing linking to it.
+ * One per field of `SlotInit`, and nothing else: the protocol takes eight
+ * values at birth and the form's job is to collect exactly those. Policies,
+ * modules and utility are gone with the protocol that had them.
  */
 export const SECTIONS: SectionMeta[] = [
   {
@@ -43,7 +41,7 @@ export const SECTIONS: SectionMeta[] = [
   {
     id: "currency",
     title: "Currency",
-    description: "The ERC-20 this slot is priced and taxed in.",
+    description: "What price, deposit and tax are denominated in.",
     icon: Coins,
     tint: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   },
@@ -55,18 +53,12 @@ export const SECTIONS: SectionMeta[] = [
     tint: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   },
   {
-    id: "module",
-    title: "Module",
-    description: "Optional contract giving the slot its behaviour.",
-    icon: Puzzle,
+    id: "hook",
+    title: "Hook",
+    description:
+      "The single extension point. It may refuse a buy, a sell or a reprice.",
+    icon: Plug,
     tint: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  },
-  {
-    id: "occupancy",
-    title: "Occupancy",
-    description: "When the slot can be taken from whoever holds it.",
-    icon: ShieldCheck,
-    tint: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   },
   {
     id: "permissions",
@@ -81,49 +73,39 @@ export const SECTION = Object.fromEntries(
   SECTIONS.map((s) => [s.id, s]),
 ) as Record<SectionId, SectionMeta>;
 
-/**
- * Every schema field, mapped to the section that renders it.
- *
- * Exhaustive over `createSlotSchema`. A field missing from here would make its
- * validation error invisible in the error summary — the one thing the removed
- * wizard used to guarantee by forcing you through every step.
- */
-const FIELD_SECTION: Record<string, SectionId> = {
-  recipientMode: "recipient",
-  recipient: "recipient",
-  splitRecipients: "recipient",
-  distributorFeePercent: "recipient",
-  currencyMode: "currency",
-  presetCurrency: "currency",
-  customCurrency: "currency",
-  taxPercentage: "economics",
-  minDepositValue: "economics",
-  minDepositUnit: "economics",
-  moduleMode: "module",
-  module: "module",
-  occupancyPolicyMode: "occupancy",
-  occupancyPolicy: "occupancy",
-  tenureValue: "occupancy",
-  tenureUnit: "occupancy",
-  minPriceValue: "occupancy",
-  mutableTax: "permissions",
-  mutableModule: "permissions",
-  mutablePolicy: "permissions",
-  manager: "permissions",
+export const timeUnits = [
+  "seconds",
+  "minutes",
+  "hours",
+  "days",
+  "months",
+] as const;
+export type TimeUnit = (typeof timeUnits)[number];
+
+export const TIME_MULTIPLIERS: Record<TimeUnit, number> = {
+  seconds: 1,
+  minutes: 60,
+  hours: 3600,
+  days: 86400,
+  months: 2592000,
 };
 
-export function scrollToSection(id: SectionId) {
-  document
-    .getElementById(`section-${id}`)
-    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+/** ("1", "days") → 86400n */
+export function toSeconds(value: string, unit: TimeUnit): bigint {
+  const n = Number(value.replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return 0n;
+  return BigInt(Math.round(n * TIME_MULTIPLIERS[unit]));
 }
 
-/** The distinct sections owning these schema field names, in page order. */
-export function sectionsForFields(fields: readonly string[]): SectionMeta[] {
-  const hit = new Set<SectionId>();
-  for (const field of fields) {
-    const id = FIELD_SECTION[field];
-    if (id) hit.add(id);
-  }
-  return SECTIONS.filter((s) => hit.has(s.id));
+/**
+ * "2.5" → 250n basis points.
+ *
+ * Basis points per 30 days, so 100% is 10000 and the smallest expressible rate
+ * is 0.01%. Zero is not a rate the protocol accepts: a slot accruing nothing
+ * could never liquidate anybody.
+ */
+export function percentToBps(percent: string): bigint {
+  const n = Number(percent.replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return 0n;
+  return BigInt(Math.round(n * 100));
 }

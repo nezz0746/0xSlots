@@ -6,17 +6,16 @@ pinning, no bootstrap indirection — deploy, seed, paste the addresses.
 ## Start
 
 ```bash
-pkill -x anvil; anvil --chain-id 31337 --block-time 1 &
-cd apps/contracts
-PK0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-
-forge script script/slots/DeploySlots.s.sol:DeploySlots \
-  --rpc-url http://127.0.0.1:8545 --broadcast --private-key $PK0
-
-forge script script/slots/SeedSlots.s.sol:SeedSlots \
-  --rpc-url http://127.0.0.1:8545 --broadcast --private-key $PK0 \
-  --sig "run(address,address,address)" $FACTORY $HOOK $TOKEN
+apps/contracts/scripts/slots-local.sh
 ```
+
+Starts anvil if it is down, deploys and seeds if the chain is empty, and does
+nothing if everything is already up — so it is safe to run whenever you are not
+sure. `--reset` wipes and rebuilds.
+
+**Do not restart anvil by hand.** It wipes the deployment and leaves the app
+talking to a chain with no contracts on it, which reads as a client bug from
+every side — an SDK agent lost ten minutes to exactly that. Use `--reset`.
 
 From a **fresh** anvil run by account 0 the addresses are deterministic — they
 come out of the nonce sequence, so they only move if the scripts change what

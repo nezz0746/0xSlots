@@ -1,13 +1,6 @@
 import { createConfig, factory } from "ponder";
 import { parseAbiItem } from "viem";
-import {
-  FeedAbi,
-  FeedHubAbi,
-  SlotAbi,
-  SlotCollectiveAbi,
-  SlotCollectiveFactoryAbi,
-  SlotFactoryAbi,
-} from "./abis";
+import { SlotAbi, SlotFactoryAbi } from "./abis";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE HOOK-BASED SLOTS PROTOCOL
@@ -71,9 +64,6 @@ const ANVIL_SLOT_FACTORY = (process.env.SLOTS_FACTORY_ANVIL ??
   "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0") as `0x${string}`;
 const ANVIL_START_BLOCK = Number(process.env.SLOTS_START_BLOCK_ANVIL ?? 0);
 
-const ANVIL_COLLECTIVE_FACTORY =
-  "0x60E7C43423f7aCD6a70d5a1eFd688558a391Bb6d" as const;
-
 // ──────────────────────────────────────────
 // Per-chain factory addresses
 //
@@ -112,42 +102,11 @@ const BASE_SLOT_FACTORY = remoteFactory(
 );
 
 // ──────────────────────────────────────────
-// Collectives and feeds — unchanged by the hook rewrite
-//
-// SlotCollective and FeedHub are their own contracts with their own events;
-// neither is part of the Slot/SlotFactory surface being replaced. They keep
-// their own start blocks: neither existed for the millions of blocks before
-// its deploy, and starting earlier is that many pointless eth_getLogs.
-// ──────────────────────────────────────────
-
-const BASE_SEPOLIA_COLLECTIVE_FACTORY =
-  "0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d" as const;
-const BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK = 45393270;
-const BASE_COLLECTIVE_FACTORY =
-  "0x9DE033C5E2FAC9e096c91a83635d7a7Cf21b4486" as const;
-const BASE_COLLECTIVE_FACTORY_START_BLOCK = 49962974;
-
-// FeedHub — base-sepolia only. The mainnet entry in the subgraph config is an
-// explicit placeholder reusing this address with no code behind it, so it is
-// absent here rather than indexed as a filter that can never match.
-const BASE_SEPOLIA_FEED_HUB =
-  "0xE4c0c374E3233b5174a1600AF1321cDa9b6B5cF8" as const;
-const BASE_SEPOLIA_FEED_HUB_START_BLOCK = 44088994;
-
-// ──────────────────────────────────────────
 // Event signatures used to derive child addresses via factory()
 // ──────────────────────────────────────────
 
 const SLOT_CREATED_EVENT = parseAbiItem(
   "event SlotCreated(address indexed slot, address indexed recipient, address indexed creator, address currency, address hook)",
-);
-
-const COLLECTIVE_DEPLOYED_EVENT = parseAbiItem(
-  "event SlotCollectiveDeployed(address indexed manager, address indexed admin, address indexed deployer)",
-);
-
-const FEED_CREATED_EVENT = parseAbiItem(
-  "event FeedCreated(uint256 indexed index, address indexed feed, address indexed owner)",
 );
 
 // ──────────────────────────────────────────
@@ -264,9 +223,8 @@ const PAID_ENDPOINTS: Record<
  * So the span rules out an archive-depth limit and ponder's "use
  * ethGetLogsBlockRange" tip with it — no block range is small enough, because
  * the range was never the problem. Ponder batches factory children ~50 at a
- * time, so every log query the Slot, SlotLegacy and FeedPostModule sources
- * emit is over the line, on BOTH chains: base-rpc.publicnode.com blocks the
- * same shape.
+ * time, so every log query the `Slot` source emits is over the line, on BOTH
+ * chains: base-rpc.publicnode.com blocks the same shape.
  *
  * publicnode stays in the base pool, where two other members answer the heavy
  * method and it still serves the block polling that is most of the volume. It
@@ -442,75 +400,10 @@ const remoteConfig = createConfig({
         },
       },
     },
-    SlotCollectiveFactory: {
-      abi: SlotCollectiveFactoryAbi,
-      chain: {
-        baseSepolia: {
-          address: BASE_SEPOLIA_COLLECTIVE_FACTORY,
-          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
-        },
-        base: {
-          address: BASE_COLLECTIVE_FACTORY,
-          startBlock: BASE_COLLECTIVE_FACTORY_START_BLOCK,
-        },
-      },
-    },
-    SlotCollective: {
-      abi: SlotCollectiveAbi,
-      chain: {
-        baseSepolia: {
-          address: factory({
-            address: BASE_SEPOLIA_COLLECTIVE_FACTORY,
-            event: COLLECTIVE_DEPLOYED_EVENT,
-            parameter: "manager",
-          }),
-          startBlock: BASE_SEPOLIA_COLLECTIVE_FACTORY_START_BLOCK,
-        },
-        base: {
-          address: factory({
-            address: BASE_COLLECTIVE_FACTORY,
-            event: COLLECTIVE_DEPLOYED_EVENT,
-            parameter: "manager",
-          }),
-          startBlock: BASE_COLLECTIVE_FACTORY_START_BLOCK,
-        },
-      },
-    },
-    FeedHub: {
-      abi: FeedHubAbi,
-      chain: {
-        baseSepolia: {
-          address: BASE_SEPOLIA_FEED_HUB,
-          startBlock: BASE_SEPOLIA_FEED_HUB_START_BLOCK,
-        },
-      },
-    },
-    // Beacon-proxy feeds, derived from the hub's FeedCreated.
-    Feed: {
-      abi: FeedAbi,
-      chain: {
-        baseSepolia: {
-          address: factory({
-            address: BASE_SEPOLIA_FEED_HUB,
-            event: FEED_CREATED_EVENT,
-            parameter: "feed",
-          }),
-          startBlock: BASE_SEPOLIA_FEED_HUB_START_BLOCK,
-        },
-      },
-    },
   },
 });
 
-/**
- * The anvil equivalent: the same sources, one chain, the hooks deploy.
- *
- * `FeedHub` and `Feed` are declared here pointed at the slot factory even
- * though no hub exists locally. src/feed.ts registers its handlers
- * unconditionally and ponder rejects a handler whose source is absent, so the
- * alternative is conditional registration for no gain. They cost one log
- * filter that never matches.
- */
+/** The anvil equivalent: the same two sources, one chain, the hooks deploy. */
 function buildLocalConfig() {
   const at = {
     address: ANVIL_SLOT_FACTORY,
@@ -543,30 +436,6 @@ function buildLocalConfig() {
           },
         },
       },
-      SlotCollectiveFactory: {
-        abi: SlotCollectiveFactoryAbi,
-        chain: {
-          anvil: {
-            address: ANVIL_COLLECTIVE_FACTORY,
-            startBlock: ANVIL_START_BLOCK,
-          },
-        },
-      },
-      SlotCollective: {
-        abi: SlotCollectiveAbi,
-        chain: {
-          anvil: {
-            address: factory({
-              address: ANVIL_COLLECTIVE_FACTORY,
-              event: COLLECTIVE_DEPLOYED_EVENT,
-              parameter: "manager",
-            }),
-            startBlock: ANVIL_START_BLOCK,
-          },
-        },
-      },
-      FeedHub: { abi: FeedHubAbi, chain: { anvil: at } },
-      Feed: { abi: FeedAbi, chain: { anvil: at } },
     },
   });
 }

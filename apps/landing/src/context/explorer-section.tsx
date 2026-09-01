@@ -1,6 +1,6 @@
 "use client";
 
-import { LandPlot, type LucideIcon, Puzzle } from "lucide-react";
+import { LandPlot, type LucideIcon } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -20,13 +20,10 @@ export interface ExplorerSection {
 }
 
 export const EXPLORER_SECTIONS: ExplorerSection[] = [
-  // Slots carries Events as an in-page tab, and recipients are reached from a
-  // slot rather than listed here — so the top-level explorer is just these two.
+  // One section, and no tab strip to go with it. The module gallery was the
+  // other, and modules do not exist in this protocol: a slot has ONE extension
+  // point, chosen at creation, so there is no gallery to browse.
   { id: "slots", label: "Slots", icon: LandPlot },
-  // Label says Utilities, id stays `modules`. The id is URL-facing
-  // (`?section=modules`) and keys `SECTION_CONTENT` on the explorer, so
-  // renaming it would break every shared link for a word change.
-  { id: "modules", label: "Utilities", icon: Puzzle },
 ];
 
 const DEFAULT_SECTION = EXPLORER_SECTIONS[0].id;

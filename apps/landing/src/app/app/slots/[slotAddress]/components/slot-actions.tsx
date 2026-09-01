@@ -13,19 +13,18 @@ import {
   UserCog,
 } from "lucide-react";
 import { useState } from "react";
-import { type Address, isAddress, zeroAddress } from "viem";
+import { type Address, isAddress } from "viem";
 import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { CurrencyMeta } from "@/hooks/slots/use-slots";
 import { useWithdrawable } from "@/hooks/slots/use-slots";
+import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { useCurrencyBalance } from "@/hooks/use-currency-balance";
 import { formatBalance, toRawUnits } from "@/utils";
-import { ActionRow, Field, Panel } from "./panel";
+import { ActionRow, Field, NumberField, Panel } from "./panel";
 
-type Actions = ReturnType<
-  typeof import("@/hooks/slots/use-slots-action").useSlotsAction
->;
+type Actions = ReturnType<typeof useSlotsAction>;
 
 interface ActionProps {
   slot: Address;
@@ -94,26 +93,20 @@ export function TakePanel({
       title={state.isInsolvent ? "Evict and take" : "Take this slot"}
       tint="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
     >
-      <ActionRow
+      <NumberField
         label="Your price"
         suffix={currency.symbol}
         placeholder="what you say it is worth"
         value={price}
         onChange={setPrice}
-        submitLabel="—"
-        onSubmit={() => {}}
         hint="Anyone may take the slot from you at this price, and your tax is charged on it."
-      >
-        <span className="hidden" />
-      </ActionRow>
-      <ActionRow
+      />
+      <NumberField
         label="Deposit"
         suffix={currency.symbol}
         placeholder="escrow the tax comes out of"
         value={deposit}
         onChange={setDeposit}
-        submitLabel="—"
-        onSubmit={() => {}}
         hint={
           required > 0n
             ? `At least ${fmt(required, currency)} is required at that price.`
@@ -182,7 +175,8 @@ export function OccupantPanel({
   currency,
   actions,
   canReprice,
-}: ActionProps & { canReprice: boolean }) {
+  isOccupant,
+}: ActionProps & { canReprice: boolean; isOccupant: boolean }) {
   const [price, setPrice] = useState("");
   const [amount, setAmount] = useState("");
   const [operator, setOperator] = useState("");
@@ -190,7 +184,7 @@ export function OccupantPanel({
   return (
     <Panel
       icon={UserCog}
-      title="Your position"
+      title={isOccupant ? "Your position" : "You are an operator"}
       tint="bg-violet-500/10 text-violet-600 dark:text-violet-400"
     >
       {canReprice ? (
@@ -210,6 +204,15 @@ export function OccupantPanel({
         />
       ) : null}
 
+      {!isOccupant ? (
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Repricing is delegated to you. Withdrawing, releasing and delegating
+          further stay with the occupant.
+        </p>
+      ) : null}
+
+      {isOccupant ? (
+        <>
       <ActionRow
         label="Withdraw from deposit"
         suffix={currency.symbol}
@@ -273,6 +276,8 @@ export function OccupantPanel({
         <LogOut className="size-3.5" />
         Release and take back the deposit
       </Button>
+        </>
+      ) : null}
     </Panel>
   );
 }
@@ -383,4 +388,3 @@ export function DepositSummary({
   );
 }
 
-export { zeroAddress };

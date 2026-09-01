@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   PlusIcon,
-  Scale,
   Trophy,
   User,
   Users,
@@ -14,7 +13,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
 import { DevTimeWarp } from "@/components/dev-time-warp";
-import { IndexerStatus } from "@/components/indexer-status";
 import { TestnetFaucet } from "@/components/testnet-faucet";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,20 +115,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               ))}
 
-              {/* Sits with the sections because it answers the same kind of
-                  question — what a slot's terms can be, alongside what a slot
-                  can do. It is a ROUTE, not a section: it pushes rather than
-                  setting explorer state, so `isActive` reads the path. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/app/policies")}
-                  onClick={() => push("/app/policies")}
-                >
-                  <Scale className="size-4" />
-                  <span>Policies</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {/* A ROUTE like Policies, not a section: the reward leaderboard
+              {/* A ROUTE rather than a section: the reward leaderboard
                   is program-wide, so it sits with the other "how the protocol
                   works" destinations rather than the explorer tabs. Behind a
                   flag while the program is still local-only. */}
@@ -237,7 +222,6 @@ export function AppSidebar() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <IndexerStatus />
         </div>
       </SidebarFooter>
     </Sidebar>

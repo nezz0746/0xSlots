@@ -183,3 +183,45 @@ export function ActionRow({
     </div>
   );
 }
+
+/** A labelled input with no button of its own — part of a larger submission. */
+export function NumberField({
+  label,
+  hint,
+  placeholder,
+  suffix,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: ReactNode;
+  placeholder?: string;
+  suffix?: ReactNode;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] font-medium text-muted-foreground">
+        {label}
+      </label>
+      <div className="flex gap-0">
+        <Input
+          value={value}
+          inputMode="decimal"
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className="rounded-none"
+        />
+        {suffix ? (
+          <span className="flex items-center border border-l-0 px-2 text-xs text-muted-foreground">
+            {suffix}
+          </span>
+        ) : null}
+      </div>
+      {hint ? (
+        <p className="text-[10px] leading-snug text-muted-foreground">{hint}</p>
+      ) : null}
+    </div>
+  );
+}

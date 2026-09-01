@@ -1,349 +1,547 @@
 "use client";
 
+import { knownHooks } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
-import { SplitV2Type } from "@0xsplits/splits-sdk/types";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { type Address, getAddress, isAddress, zeroAddress } from "viem";
+import { assertSlotInit, type SlotInit } from "@0xslots/sdk/slots";
+import { AlertCircle, Check, Loader2, Plug, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { type Address, isAddress, zeroAddress } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { PageHeader } from "@/components/page-header";
-import { Form } from "@/components/ui/form";
+import { TokenLogo } from "@/components/token-logo";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useChain } from "@/context/chain";
-import { useNavigation } from "@/context/navigation";
-import { useSlotAction } from "@/hooks/use-slot-action";
-import { useSplitClient } from "@/hooks/use-split-client";
-import { resolveEnsAddress } from "@/lib/ens";
-import { toRawUnits } from "@/utils";
-import { useResolveAddress } from "./address-input";
+import { NavLink, useNavigation } from "@/context/navigation";
+import { useSlotsFactory } from "@/hooks/slots/use-slots";
+import { useSlotsAction } from "@/hooks/slots/use-slots-action";
+import { truncateAddress } from "@/utils";
+import { AddressInput, useResolveAddress } from "./address-input";
 import { FormSection } from "./components/form-section";
-import { MobileBottomBar } from "./components/mobile-bottom-bar";
-import { OccupancySection } from "./components/occupancy-section";
-import { SectionCurrency } from "./components/section-currency";
-import { SectionEconomics } from "./components/section-economics";
-import { SectionModule } from "./components/section-module";
-import { SectionPermissions } from "./components/section-permissions";
-import { SectionRecipient } from "./components/section-recipient";
-import { SummaryCard } from "./components/summary-card";
 import { useErc20Check } from "./hooks/use-erc20-check";
 import {
-  type CreateSlotFormValues,
-  createSlotSchema,
-  defaultValues,
   percentToBps,
+  SECTION,
+  type TimeUnit,
+  timeUnits,
   toSeconds,
-} from "./schema";
-import { SECTION } from "./sections";
+} from "./sections";
+
+const CUSTOM = "custom";
+const NO_HOOK = "none";
 
 export default function CreatePage() {
   const { push } = useNavigation();
-  const { address, isConnected, chainId: walletChainId, chain } = useAccount();
+  const { address, isConnected, chainId: walletChainId } = useAccount();
   const { switchChain } = useSwitchChain();
-  const { chainId: selectedChainId } = useChain();
-  const {
-    createSlot: sdkCreateSlot,
-    createSlotWithTenure: sdkCreateSlotWithTenure,
-    createSlotWithPriceFloor: sdkCreateSlotWithPriceFloor,
-    createSlots: sdkCreateSlots,
-    isPending,
-    isConfirming,
-    isSuccess,
-  } = useSlotAction();
-  const splitClient = useSplitClient();
-  const [slotCount, setSlotCount] = useState(1);
-  const [creatingSplit, setCreatingSplit] = useState(false);
+  const { chainId } = useChain();
+  const factory = useSlotsFactory();
+  const actions = useSlotsAction();
 
-  const form = useForm<CreateSlotFormValues>({
-    resolver: zodResolver(createSlotSchema),
-    defaultValues,
-    mode: "onChange",
-  });
+  const tokens = getChainTokens(chainId);
+  const hooks = knownHooks[chainId] ?? [];
 
-  // Only watch what the page itself needs for submission logic
-  const watchedRecipientMode = form.watch("recipientMode");
-  const watchedRecipient = form.watch("recipient");
-  const watchedCustomCurrency = form.watch("customCurrency");
-  const watchedModule = form.watch("module");
-  const watchedManager = form.watch("manager");
-  const watchedMutableTax = form.watch("mutableTax");
-  const watchedMutableModule = form.watch("mutableModule");
+  // ─── form state ───────────────────────────────────────────────────────────
+  const [recipient, setRecipient] = useState("");
+  const [useMyAccount, setUseMyAccount] = useState(true);
+  const [currencyChoice, setCurrencyChoice] = useState<string>("");
+  const [customCurrency, setCustomCurrency] = useState("");
+  const [tax, setTax] = useState("1");
+  const [minDepositValue, setMinDepositValue] = useState("1");
+  const [minDepositUnit, setMinDepositUnit] = useState<TimeUnit>("days");
+  const [hookChoice, setHookChoice] = useState<string>(NO_HOOK);
+  const [customHook, setCustomHook] = useState("");
+  const [mutableTax, setMutableTax] = useState(false);
+  const [mutableHook, setMutableHook] = useState(false);
+  const [manager, setManager] = useState("");
+  const [useMeAsManager, setUseMeAsManager] = useState(true);
 
-  const watchedMutablePolicy = form.watch("mutablePolicy");
+  // Seed the chain's default currency, and re-seed on a chain change so a token
+  // from the previous network never survives the switch.
+  useEffect(() => {
+    const fallback = tokens[0]?.address;
+    if (!fallback) return;
+    setCurrencyChoice((current) =>
+      current === CUSTOM || tokens.some((t) => t.address === current)
+        ? current
+        : fallback,
+    );
+  }, [tokens]);
 
-  const needsManager =
-    watchedMutableTax || watchedMutableModule || watchedMutablePolicy;
-
-  // A price floor is denominated in the slot's own currency, so converting it
-  // to raw units needs THAT token's decimals — 1 USDC is 1e6, 1 WETH is 1e18.
-  const watchedCurrencyMode = form.watch("currencyMode");
-  const watchedPresetCurrency = form.watch("presetCurrency");
-  const presetTokenInfo = getChainTokens(selectedChainId).find(
-    (t) => t.address === watchedPresetCurrency,
+  const recipientResolved = useResolveAddress(recipient);
+  const customCurrencyResolved = useResolveAddress(customCurrency);
+  const managerResolved = useResolveAddress(manager);
+  const erc20 = useErc20Check(
+    currencyChoice === CUSTOM ? customCurrencyResolved.resolved : "",
   );
-  const customTokenInfo = useErc20Check(
-    watchedCurrencyMode === "custom" ? watchedCustomCurrency : "",
-  );
-  const currencyDecimals =
-    (watchedCurrencyMode === "preset"
-      ? presetTokenInfo?.decimals
-      : customTokenInfo.data?.decimals) ?? 18;
 
-  // ENS resolution for submission
-  const recipientResolved = useResolveAddress(watchedRecipient);
-  const currencyResolved = useResolveAddress(watchedCustomCurrency);
-  const moduleResolved = useResolveAddress(watchedModule);
-  const managerResolved = useResolveAddress(watchedManager);
+  const resolvedRecipient = (
+    useMyAccount ? address : recipientResolved.resolved
+  ) as Address | undefined;
 
-  const wrongChain = walletChainId !== selectedChainId;
-  const busy = isPending || isConfirming || creatingSplit;
-  const anyResolving =
+  const resolvedCurrency = (
+    currencyChoice === CUSTOM ? customCurrencyResolved.resolved : currencyChoice
+  ) as Address;
+
+  const resolvedHook = (
+    hookChoice === NO_HOOK
+      ? zeroAddress
+      : hookChoice === CUSTOM
+        ? customHook.trim()
+        : hookChoice
+  ) as Address;
+
+  // ── The one invariant a form gets wrong by default ──────────────────────
+  //
+  // A manager is REQUIRED when something is mutable and FORBIDDEN when nothing
+  // is: `initialize` reverts `NotManager()` both ways. So the manager field is
+  // not "optional" — it is a function of the two checkboxes above it, and a
+  // form that always sent the connected wallet would revert the moment someone
+  // unticked both.
+  const needsManager = mutableTax || mutableHook;
+  const resolvedManager = (
+    !needsManager
+      ? zeroAddress
+      : useMeAsManager
+        ? (address ?? zeroAddress)
+        : managerResolved.resolved
+  ) as Address;
+
+  const init = useMemo<SlotInit | null>(() => {
+    if (!resolvedRecipient || !isAddress(resolvedRecipient)) return null;
+    if (!isAddress(resolvedCurrency)) return null;
+    if (resolvedHook !== zeroAddress && !isAddress(resolvedHook)) return null;
+    return {
+      recipient: resolvedRecipient,
+      currency: resolvedCurrency,
+      manager: resolvedManager,
+      hook: resolvedHook,
+      taxPercentage: percentToBps(tax),
+      minDepositSeconds: toSeconds(minDepositValue, minDepositUnit),
+      mutableTax,
+      mutableHook,
+    };
+  }, [
+    resolvedRecipient,
+    resolvedCurrency,
+    resolvedManager,
+    resolvedHook,
+    tax,
+    minDepositValue,
+    minDepositUnit,
+    mutableTax,
+    mutableHook,
+  ]);
+
+  /**
+   * The SDK's own validation, run before the button is pressed.
+   *
+   * Same function the client calls on submit, so the inline message and the
+   * revert it prevents can never disagree. Showing it here rather than only in
+   * a failure toast is the difference between a form error and a mystery.
+   */
+  const initError = useMemo(() => {
+    if (!init) return null;
+    try {
+      assertSlotInit(init);
+      return null;
+    } catch (e) {
+      return e instanceof Error
+        ? e.message.replace(/^createSlot: /, "")
+        : String(e);
+    }
+  }, [init]);
+
+  const resolving =
     recipientResolved.isResolving ||
-    currencyResolved.isResolving ||
-    moduleResolved.isResolving ||
+    customCurrencyResolved.isResolving ||
     managerResolved.isResolving;
 
-  // The chain's default currency is seeded by SectionCurrency, next to the
-  // FormField that registers `presetCurrency`. Seeding it from here silently
-  // did nothing: react-hook-form re-syncs unregistered fields back to their
-  // schema default during mount, so the write was undone before first paint.
+  const wrongChain = isConnected && walletChainId !== chainId;
+  const ready =
+    isConnected && !!factory && !!init && !initError && !resolving && !wrongChain;
+
+  const selectedToken = tokens.find((t) => t.address === currencyChoice);
 
   useEffect(() => {
-    if (isSuccess) {
-      const timeout = setTimeout(() => push("/app"), 1500);
-      return () => clearTimeout(timeout);
+    if (actions.isSuccess) {
+      const t = setTimeout(() => push("/app"), 1200);
+      return () => clearTimeout(t);
     }
-  }, [isSuccess, push]);
+  }, [actions.isSuccess, push]);
 
-  const submitState = {
-    isConnected,
-    wrongChain,
-    isSuccess,
-    isPending,
-    isConfirming,
-    creatingSplit,
-    busy,
-    anyResolving,
-    isFormValid: form.formState.isValid,
-    slotCount,
-    recipientMode: watchedRecipientMode,
-  };
-
-  async function onSubmit(data: CreateSlotFormValues) {
-    if (!isConnected || wrongChain) return;
-
-    const currency =
-      data.currencyMode === "preset"
-        ? data.presetCurrency
-        : currencyResolved.resolved || data.customCurrency;
-    const module = moduleResolved.resolved || "";
-    const manager = needsManager ? managerResolved.resolved : zeroAddress;
-
-    if (!isAddress(currency as string)) return;
-
-    let recipient: string;
-
-    if (data.recipientMode === "group") {
-      setCreatingSplit(true);
-      try {
-        const resolvedRecipients = await Promise.all(
-          data.splitRecipients.map(async (r) => {
-            let addr = r.address.trim();
-            if (isAddress(addr, { strict: false })) {
-              addr = getAddress(addr);
-            } else {
-              addr = await resolveEnsAddress(addr);
-            }
-            return {
-              address: addr as Address,
-              percentAllocation: r.percentAllocation,
-            };
-          }),
-        );
-        const ZERO_SALT =
-          "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
-
-        const splitParams = {
-          recipients: resolvedRecipients,
-          splitType: SplitV2Type.Pull,
-          distributorFeePercent: data.distributorFeePercent,
-          salt: ZERO_SALT,
-        };
-        // 0xSplits does not deploy to every chain — notably not a local anvil,
-        // where the client is null rather than throwing on construction.
-        if (!splitClient) {
-          throw new Error(
-            "Splits are not available on this chain — pick a single recipient address instead.",
-          );
-        }
-        // Check if this exact split already exists
-        const { splitAddress: predictedAddress, deployed } =
-          await splitClient.isDeployed(splitParams);
-
-        if (deployed) {
-          recipient = predictedAddress;
-        } else {
-          const { splitAddress } = await splitClient.createSplit(splitParams);
-          recipient = splitAddress;
-        }
-      } catch (err) {
-        console.error("Failed to create split:", err);
-        setCreatingSplit(false);
-        return;
-      }
-      setCreatingSplit(false);
-    } else {
-      recipient =
-        recipientResolved.resolved || data.recipient || (address ?? "");
-    }
-
-    if (!isAddress(recipient as string)) return;
-
-    // A policy chosen by address is known now. One chosen by duration or price
-    // floor is resolved by the helpers below, which overwrite this.
-    const occupancyPolicy = (
-      data.occupancyPolicyMode !== "none" &&
-      isAddress(data.occupancyPolicy as string)
-        ? data.occupancyPolicy
-        : zeroAddress
-    ) as Address;
-
-    const config = {
-      mutableTax: data.mutableTax,
-      mutableModule: data.mutableModule,
-      mutablePolicy: data.mutablePolicy,
-      manager: (isAddress(manager as string)
-        ? manager
-        : zeroAddress) as Address,
-    };
-    const initParams = {
-      taxPercentage: BigInt(Math.round(Number(data.taxPercentage) * 100)),
-      module: (isAddress(module as string) ? module : zeroAddress) as Address,
-      // Liquidation bounties are retired. The slot normalises this to zero,
-      // so sending a number would only make the form appear to promise one.
-      liquidationBountyBps: 0n,
-      minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
-      occupancyPolicy,
-    };
-
-    // A policy chosen by duration or by price floor lives at a CREATE2 address
-    // derived from those terms, so it may not exist yet — these helpers deploy
-    // it first when needed, then create. Every other mode already has a
-    // concrete address sitting in `initParams.occupancyPolicy`.
-    //
-    // `count` is passed straight through: the policy is one stateless contract
-    // per set of terms, so a batch of slots all point at the same one and the
-    // deploy still happens at most once.
-    const count = BigInt(slotCount);
-
-    if (data.occupancyPolicyMode === "tenure") {
-      sdkCreateSlotWithTenure(
-        {
-          recipient: recipient as Address,
-          currency: currency as Address,
-          config,
-          initParams,
-        },
-        toSeconds(data.tenureValue, data.tenureUnit),
-        count,
-      );
-    } else if (data.occupancyPolicyMode === "price") {
-      // The floor is denominated in the slot's own currency, so it converts
-      // with THAT token's decimals — 1 USDC is 1e6, 1 WETH is 1e18 — and the
-      // policy rejects a mismatched pairing on-chain.
-      sdkCreateSlotWithPriceFloor(
-        {
-          recipient: recipient as Address,
-          currency: currency as Address,
-          config,
-          initParams,
-        },
-        toRawUnits(data.minPriceValue, currencyDecimals),
-        count,
-      );
-    } else if (slotCount === 1) {
-      sdkCreateSlot({
-        recipient: recipient as Address,
-        currency: currency as Address,
-        config,
-        initParams,
-      });
-    } else {
-      sdkCreateSlots({
-        recipient: recipient as Address,
-        currency: currency as Address,
-        config,
-        initParams,
-        count,
-      });
-    }
-  }
+  if (!factory)
+    return (
+      <div className="min-h-screen px-3 py-8 md:px-5">
+        <div className="border p-8 text-center text-sm text-muted-foreground">
+          The Slots protocol is not deployed on this chain, so there is nothing
+          here to create a slot with.
+        </div>
+      </div>
+    );
 
   return (
     <div className="min-h-screen">
-      <PageHeader maxWidth="max-w-6xl">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight leading-tight">
-            Create Slot
+      <PageHeader maxWidth="max-w-3xl">
+        <div className="flex flex-col">
+          <h1 className="text-xl font-bold leading-tight tracking-tight">
+            Create a slot
           </h1>
-          <p className="text-muted-foreground text-xs">
-            Deploy a new slot on {chain?.name}
+          <p className="text-xs text-muted-foreground">
+            Eight values, fixed at birth except the ones you say may move.
           </p>
         </div>
       </PageHeader>
 
-      <div className="max-w-6xl mx-auto px-3 md:px-5 py-4 md:py-8 pb-24 lg:pb-8">
-        <Form {...form}>
-          <form
-            id="create-slot-form"
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="flex gap-6 items-start"
-          >
-            {/* Left: Form */}
-            {/* No divide-y: FormSection carries border-t first:border-t-0, so
-                the first section sits flush against the card's own border. */}
-            <div className="flex-1 min-w-0 rounded-lg border">
-              <FormSection meta={SECTION.recipient}>
-                <SectionRecipient />
-              </FormSection>
+      <div className="mx-auto max-w-3xl px-3 py-4 md:px-5">
+        <div className="border bg-card">
+          {/* ── Recipient ─────────────────────────────────────────────── */}
+          <FormSection meta={SECTION.recipient}>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setUseMyAccount(true)}
+                className={`border-2 p-3 text-sm ${useMyAccount ? "border-primary bg-primary/5" : "border-border"}`}
+              >
+                My account
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseMyAccount(false)}
+                className={`border-2 p-3 text-sm ${!useMyAccount ? "border-primary bg-primary/5" : "border-border"}`}
+              >
+                Another address
+              </button>
+            </div>
+            {useMyAccount ? (
+              <p className="text-xs text-muted-foreground">
+                {address ? truncateAddress(address) : "Connect a wallet first."}
+              </p>
+            ) : (
+              <AddressInput
+                value={recipient}
+                onChange={setRecipient}
+                placeholder="0x… or vitalik.eth"
+                hint="A wallet, a split, or a collective — the protocol only cares that it is not the zero address."
+              />
+            )}
+            <p className="text-[10px] text-muted-foreground">
+              Want the tax governed by a group?{" "}
+              <NavLink
+                href="/app/collectives"
+                className="underline underline-offset-2"
+              >
+                <Users className="inline size-3" /> Create a collective
+              </NavLink>{" "}
+              first, then paste its address here.
+            </p>
+          </FormSection>
 
-              <FormSection meta={SECTION.currency}>
-                <SectionCurrency />
-              </FormSection>
+          {/* ── Currency ──────────────────────────────────────────────── */}
+          <FormSection meta={SECTION.currency}>
+            <Select
+              value={currencyChoice}
+              onValueChange={(v) => setCurrencyChoice(v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a currency">
+                  {currencyChoice === CUSTOM ? (
+                    <>
+                      <TokenLogo />
+                      <span>Custom ERC-20</span>
+                    </>
+                  ) : selectedToken ? (
+                    <>
+                      <TokenLogo
+                        slug={selectedToken.logo}
+                        symbol={selectedToken.symbol}
+                      />
+                      <span>
+                        {selectedToken.name} ({selectedToken.symbol})
+                      </span>
+                    </>
+                  ) : null}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {tokens.map((token) => (
+                  <SelectItem key={token.address} value={token.address}>
+                    <TokenLogo slug={token.logo} symbol={token.symbol} />
+                    <span>
+                      {token.name} ({token.symbol})
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {token.address === zeroAddress
+                        ? "native"
+                        : truncateAddress(token.address)}
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM}>
+                  <TokenLogo />
+                  <span>Custom ERC-20</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
 
-              <FormSection meta={SECTION.economics}>
-                <SectionEconomics />
-              </FormSection>
+            {currencyChoice === CUSTOM ? (
+              <>
+                <AddressInput
+                  value={customCurrency}
+                  onChange={setCustomCurrency}
+                  placeholder="0x… ERC-20 address"
+                />
+                {erc20.isLoading ? (
+                  <p className="flex items-center gap-1.5 text-[10px] text-blue-500">
+                    <Loader2 className="size-3 animate-spin" /> Checking token…
+                  </p>
+                ) : null}
+                {erc20.data ? (
+                  <p className="flex items-center gap-1.5 text-[10px] text-green-600">
+                    <Check className="size-3" />
+                    {erc20.data.name} ({erc20.data.symbol}) ·{" "}
+                    {erc20.data.decimals} decimals
+                  </p>
+                ) : null}
+                {erc20.isError && erc20.isValidAddress ? (
+                  <p className="flex items-center gap-1.5 text-[10px] text-destructive">
+                    <AlertCircle className="size-3" /> Not an ERC-20 on this
+                    chain.
+                  </p>
+                ) : null}
+              </>
+            ) : null}
 
-              <FormSection meta={SECTION.module}>
-                <SectionModule />
-              </FormSection>
+            {resolvedCurrency === zeroAddress ? (
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Native ETH. Buying pays by transaction value, and signed sell
+                orders are unavailable — filling one pulls an ERC-20 allowance,
+                which native ETH does not have.
+              </p>
+            ) : null}
+          </FormSection>
 
-              <FormSection meta={SECTION.occupancy}>
-                <OccupancySection />
-              </FormSection>
-
-              <FormSection meta={SECTION.permissions}>
-                <SectionPermissions />
-              </FormSection>
+          {/* ── Economics ─────────────────────────────────────────────── */}
+          <FormSection meta={SECTION.economics}>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Tax rate</label>
+                <span className="text-sm font-semibold tabular-nums">
+                  {tax || 0}% / 30 days
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value={Number(tax) || 0.01}
+                onChange={(e) => setTax(e.target.value)}
+                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-secondary accent-primary"
+              />
+              <Input
+                value={tax}
+                inputMode="decimal"
+                onChange={(e) => setTax(e.target.value)}
+                className="mt-1"
+              />
+              {percentToBps(tax) <= 0n || percentToBps(tax) > 10_000n ? (
+                <p className="text-[10px] text-destructive">
+                  Must be above 0 and at most 100% per 30 days. A slot taxing
+                  nothing could never liquidate anybody.
+                </p>
+              ) : null}
             </div>
 
-            <SummaryCard
-              slotCount={slotCount}
-              setSlotCount={setSlotCount}
-              submitState={submitState}
-              switchChain={switchChain}
-              chainId={selectedChainId}
-            />
+            <div className="space-y-1">
+              <label className="text-sm font-medium">
+                Minimum funded runway
+              </label>
+              <div className="flex gap-0">
+                <Input
+                  value={minDepositValue}
+                  inputMode="decimal"
+                  onChange={(e) => setMinDepositValue(e.target.value)}
+                  className="rounded-r-none"
+                />
+                <Select
+                  value={minDepositUnit}
+                  onValueChange={(v) => setMinDepositUnit(v as TimeUnit)}
+                >
+                  <SelectTrigger className="w-28 rounded-l-none border-l-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {timeUnits.map((unit) => (
+                      <SelectItem key={unit} value={unit}>
+                        {unit}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                How far ahead a buyer must fund, and the floor a withdrawal may
+                not go below. Zero means no minimum.
+              </p>
+            </div>
+          </FormSection>
 
-            <MobileBottomBar
-              slotCount={slotCount}
-              setSlotCount={setSlotCount}
-              submitState={submitState}
-              switchChain={switchChain}
-              chainId={selectedChainId}
-            />
-          </form>
-        </Form>
+          {/* ── Hook ──────────────────────────────────────────────────── */}
+          <FormSection meta={SECTION.hook}>
+            <Select value={hookChoice} onValueChange={setHookChoice}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_HOOK}>No hook</SelectItem>
+                {hooks.map((h) => (
+                  <SelectItem key={h.address} value={h.address}>
+                    {h.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM}>Custom address</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {hookChoice === CUSTOM ? (
+              <Input
+                value={customHook}
+                placeholder="0x… hook address"
+                onChange={(e) => setCustomHook(e.target.value)}
+                className="font-mono text-xs"
+              />
+            ) : null}
+
+            {hooks.find((h) => h.address === hookChoice) ? (
+              <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+                <Plug className="mt-0.5 size-3 shrink-0" />
+                {hooks.find((h) => h.address === hookChoice)?.description}
+              </p>
+            ) : null}
+
+            <p className="text-[10px] leading-snug text-muted-foreground">
+              A hook declares which callbacks it wants, and the slot snapshots
+              that list once at attach time. A hook that subscribes to nothing is
+              rejected outright, so an attached hook always does something.
+            </p>
+          </FormSection>
+
+          {/* ── Permissions ───────────────────────────────────────────── */}
+          <FormSection meta={SECTION.permissions}>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={mutableTax}
+                className="mt-1"
+                onChange={(e) => setMutableTax(e.target.checked)}
+              />
+              <span>
+                The tax rate may change
+                <span className="block text-[10px] text-muted-foreground">
+                  A manager may propose a new rate. It lands at the next
+                  occupancy transition, never on a sitting occupant.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={mutableHook}
+                className="mt-1"
+                onChange={(e) => setMutableHook(e.target.checked)}
+              />
+              <span>
+                The hook may change
+                <span className="block text-[10px] text-muted-foreground">
+                  A manager may attach, replace or detach the hook — again, at
+                  the next transition.
+                </span>
+              </span>
+            </label>
+
+            {needsManager ? (
+              <div className="space-y-2 border-t pt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUseMeAsManager(true)}
+                    className={`border-2 p-2 text-xs ${useMeAsManager ? "border-primary bg-primary/5" : "border-border"}`}
+                  >
+                    Me
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseMeAsManager(false)}
+                    className={`border-2 p-2 text-xs ${!useMeAsManager ? "border-primary bg-primary/5" : "border-border"}`}
+                  >
+                    Another address
+                  </button>
+                </div>
+                {!useMeAsManager ? (
+                  <AddressInput
+                    value={manager}
+                    onChange={setManager}
+                    placeholder="0x… or a collective"
+                  />
+                ) : null}
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  Required, because something above is mutable. Somebody has to
+                  be able to exercise it.
+                </p>
+              </div>
+            ) : (
+              <p className="border-t pt-3 text-[11px] leading-snug text-muted-foreground">
+                <strong className="font-medium text-foreground">
+                  No manager.
+                </strong>{" "}
+                With nothing mutable this slot is immutable forever, and the
+                protocol refuses a manager on it — the absence of one is what
+                makes the promise real rather than a matter of somebody&apos;s
+                restraint.
+              </p>
+            )}
+          </FormSection>
+
+          {/* ── Submit ────────────────────────────────────────────────── */}
+          <div className="space-y-2 border-t px-3 py-4 md:px-6">
+            {initError ? (
+              <p className="flex items-start gap-1.5 text-xs text-destructive">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                {initError}
+              </p>
+            ) : null}
+            {wrongChain ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => switchChain({ chainId })}
+              >
+                Switch network
+              </Button>
+            ) : (
+              <Button
+                className="w-full"
+                disabled={!ready || actions.busy}
+                onClick={() => init && actions.createSlot(init)}
+              >
+                {actions.busy ? "Creating…" : "Create slot"}
+              </Button>
+            )}
+            {!isConnected ? (
+              <p className="text-[10px] text-muted-foreground">
+                Connect a wallet to create a slot.
+              </p>
+            ) : null}
+          </div>
+        </div>
       </div>
     </div>
   );
