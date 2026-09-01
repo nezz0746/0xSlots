@@ -142,6 +142,44 @@ contract Slot is SlotOrders {
         return (_deposit - owed) / perSecond;
     }
 
+    /**
+     * @notice What `buy` will charge for `depositAmount`.
+     *
+     * @dev The payment rule is not obvious and it is not stable across entry
+     *      points, so the contract states it rather than leaving every client
+     *      to re-derive it. A taker pays the sitting occupant's asking price
+     *      plus their own deposit; a taker of a vacant slot pays only the
+     *      deposit, because `_vacate` zeroes the price.
+     *
+     *      For a native slot this is exactly the `msg.value` to send — `buy`
+     *      checks it for equality, not for sufficiency.
+     */
+    function quoteBuy(uint256 depositAmount) public view returns (uint256) {
+        return (_occupant == address(0) ? 0 : _price) + depositAmount;
+    }
+
+    /**
+     * @notice What `liquidateAndTake` will charge for `depositAmount`.
+     *
+     * @dev Deliberately its own function rather than a comment on `quoteBuy`,
+     *      because the answer differs and the difference is invisible from
+     *      outside: the eviction vacates the slot before the purchase reads
+     *      the price, so there is no occupant left to pay. `price()` still
+     *      reads non-zero right up until the call lands, so a client that
+     *      reasons by analogy with `buy` overpays — reverting on a native slot
+     *      and quietly pulling the surplus on an ERC-20 one.
+     *
+     *      This is a quote, not a permission: it does not check solvency, and
+     *      `liquidateAndTake` still reverts unless the occupant is insolvent.
+     */
+    function quoteLiquidateAndTake(uint256 depositAmount)
+        public
+        view
+        returns (uint256)
+    {
+        return depositAmount;
+    }
+
     // ─── occupancy ──────────────────────────────────────────────────────────
 
     /**

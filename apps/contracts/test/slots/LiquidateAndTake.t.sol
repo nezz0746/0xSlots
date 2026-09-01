@@ -185,4 +185,58 @@ contract MulticallLiquidateTest is Test {
         vm.expectRevert();
         s.liquidateAndTake{value: dep + 1}(keeper, dep, 0.01 ether);
     }
+
+    /// @notice The quotes are the payment rule, so they must BE the payment.
+    function test_QuoteBuyIsExactlyWhatBuyCharges() public {
+        Slot s = _slot(address(0));
+        uint256 dep = _minDeposit(0.01 ether);
+
+        // vacant: the price is not owed to anyone
+        assertEq(s.quoteBuy(dep), dep);
+        vm.prank(defaulter);
+        s.buy{value: s.quoteBuy(dep)}(defaulter, dep, 0.01 ether);
+        assertEq(s.occupant(), defaulter);
+
+        // occupied: the sitting occupant's asking price, plus your deposit
+        assertEq(s.quoteBuy(dep), 0.01 ether + dep);
+        vm.deal(keeper, 10 ether);
+        vm.prank(keeper);
+        s.buy{value: s.quoteBuy(dep)}(keeper, dep, 0.01 ether);
+        assertEq(s.occupant(), keeper);
+    }
+
+    /// @notice And the liquidation quote is NOT the buy quote — the whole
+    ///         reason it exists as its own function.
+    function test_QuoteLiquidateAndTakeIsTheDepositAloneAndDiffersFromBuy()
+        public
+    {
+        Slot s = _slot(address(0));
+        uint256 dep = _minDeposit(0.01 ether);
+
+        vm.prank(defaulter);
+        s.buy{value: dep}(defaulter, dep, 0.01 ether);
+        vm.warp(block.timestamp + 2 hours);
+
+        assertEq(s.quoteLiquidateAndTake(dep), dep);
+        assertTrue(
+            s.quoteBuy(dep) != s.quoteLiquidateAndTake(dep),
+            "the two quotes must differ while an occupant is still seated"
+        );
+
+        // Hoisted, and not inlined into the call below. `vm.expectRevert`
+        // arms the NEXT call, and an external read in the argument list is
+        // that call — it would be consumed by the staticcall and the test
+        // would pass while asserting nothing.
+        uint256 buyQuote = s.quoteBuy(dep);
+        uint256 takeQuote = s.quoteLiquidateAndTake(dep);
+
+        // the quote pays; reasoning by analogy with buy does not
+        vm.prank(keeper);
+        vm.expectRevert();
+        s.liquidateAndTake{value: buyQuote}(keeper, dep, 0.01 ether);
+
+        vm.prank(keeper);
+        s.liquidateAndTake{value: takeQuote}(keeper, dep, 0.01 ether);
+        assertEq(s.occupant(), keeper);
+    }
 }

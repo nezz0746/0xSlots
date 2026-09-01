@@ -233,6 +233,17 @@ export interface SlotState {
   hook: Address;
   hookFlags: HookFlags;
   pending: PendingTerms;
+  /**
+   * Which terms the manager may propose a change to.
+   *
+   * Part of the state rather than something a caller reads separately, because
+   * these two decide whether `manager` is meaningful at all: a slot with both
+   * false HAS no manager, and one with either true is required to have one.
+   */
+  mutableTax: boolean;
+  mutableHook: boolean;
+  /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
+  occupiedSince: bigint;
 }
 
 export interface SlotsClientConfig {
@@ -458,6 +469,9 @@ export class SlotsClient {
       hook,
       hookFlags,
       pending,
+      mutableTax,
+      mutableHook,
+      occupiedSince,
     ] = await Promise.all([
       this.occupant(slot),
       this.price(slot),
@@ -474,6 +488,9 @@ export class SlotsClient {
       this.hook(slot),
       this.hookFlags(slot),
       this.pending(slot),
+      this.read<boolean>(slot, "mutableTax"),
+      this.read<boolean>(slot, "mutableHook"),
+      this.read<bigint>(slot, "occupiedSince"),
     ]);
 
     return {
@@ -492,6 +509,9 @@ export class SlotsClient {
       hook,
       hookFlags,
       pending,
+      mutableTax,
+      mutableHook,
+      occupiedSince,
     };
   }
 

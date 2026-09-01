@@ -1174,6 +1174,22 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     references: [feed.id],
   }),
 
+  // A slot names two addresses, and a SlotCollective can be BOTH of them. Each
+  // link resolves to null when the address is an ordinary EOA, which is the
+  // common case — these say "governed by / paid to a collective", not "has
+  // one". Distinct relationNames because a slot may point at the same
+  // collective twice, for different reasons.
+  managerCollectiveRef: one(slotCollective, {
+    fields: [slot.manager],
+    references: [slotCollective.id],
+    relationName: "collectiveManagedSlots",
+  }),
+  recipientCollectiveRef: one(slotCollective, {
+    fields: [slot.recipient],
+    references: [slotCollective.id],
+    relationName: "collectiveReceivingSlots",
+  }),
+
   accountSlots: many(accountSlot),
   operators: many(slotOperator),
   credits: many(slotCredit),

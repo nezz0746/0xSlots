@@ -213,3 +213,40 @@ export function useCurrencyMeta(currency: Address | undefined) {
     );
   }, [native, query.data, currency]);
 }
+
+/**
+ * What `account` may {@link SlotsClient.claim} from this slot.
+ *
+ * Non-zero means a push payment could not reach them — a reverting `receive`,
+ * a blocklisting token — and the protocol credited it instead. Nothing else in
+ * the UI reveals that money is sitting there.
+ */
+export function useWithdrawable(
+  slot: Address | undefined,
+  account: Address | undefined,
+) {
+  const { chainId } = useChain();
+  const client = useSlots();
+
+  return useQuery({
+    queryKey: ["slots", "withdrawable", chainId, slot, account],
+    enabled: !!slot && !!account,
+    refetchInterval: 10_000,
+    queryFn: () => client.withdrawableOf(slot!, account!),
+  });
+}
+
+/** Whether `account` may reprice on the occupant's behalf. */
+export function useIsOperator(
+  slot: Address | undefined,
+  account: Address | undefined,
+) {
+  const { chainId } = useChain();
+  const client = useSlots();
+
+  return useQuery({
+    queryKey: ["slots", "operator", chainId, slot, account],
+    enabled: !!slot && !!account,
+    queryFn: () => client.isOperator(slot!, account!),
+  });
+}

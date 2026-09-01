@@ -303,6 +303,29 @@ export const SlotAbi = [
     },
     {
       "type": "function",
+      "name": "liquidateAndTake",
+      "inputs": [
+        {
+          "name": "account",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "depositAmount",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "selfAssessedPrice",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "payable"
+    },
+    {
+      "type": "function",
       "name": "manager",
       "inputs": [],
       "outputs": [
