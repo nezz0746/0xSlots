@@ -67,8 +67,7 @@ contract SlotCollectiveLayoutTest is Test {
         SlotCollective.InitialRoles memory roles = SlotCollective.InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            policyManagers: new address[](0),
-            utilityManagers: new address[](0),
+            hookManagers: new address[](0),
             splitManagers: new address[](0)
         });
 

@@ -4,91 +4,83 @@ pragma solidity ^0.8.23;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-import {UpdateKind} from "./interfaces/ISlot.sol";
 
 /// @notice The subset of `Slot` a collective drives. Declared locally rather
 ///         than imported from `Slot.sol` so the collective compiles against a
 ///         signature list, not against the slot's implementation — the two are
 ///         deployed independently and only ever meet across an ABI boundary.
 ///
-/// @dev `UpdateKind` is the exception: it is imported from `ISlot.sol` rather
-///      than redeclared here. An enum is positional, so a local copy that
-///      drifted by one member would silently cancel the wrong dimension — a
-///      tax manager's call landing on the policy manager's proposal. That is
-///      the precise failure the roles below exist to prevent, and it is not
-///      worth risking to keep the interface self-contained.
+/// @dev ── What the hook redesign did to this ─────────────────────────────
+///
+///      Seven of the previous nine functions are gone. `addModule` and
+///      `removeModule` went with modules themselves; `setLiquidationBounty`
+///      went with the bounty; and `proposeTaxUpdate` and `proposePolicyUpdate`
+///      collapsed into one `proposeTerms`, because tax and hook now share one
+///      deferral and one apply.
+///
+///      The old local copy of `UpdateKind` is gone too, and with it the hazard
+///      that justified importing it: an enum passed ACROSS the boundary is
+///      positional, so a local copy drifting by one member would cancel the
+///      wrong dimension. `proposeTerms` and `cancelProposal` take plain bools,
+///      so nothing positional crosses any more. The `Dimension` enum below
+///      never leaves this contract — it labels events and nothing else — which
+///      is why redeclaring it here is safe where the old one was not.
 interface IManagedSlot {
-    function proposeTaxUpdate(uint256 newPct) external;
+    function proposeTerms(
+        uint256 newTax,
+        address newHook,
+        bool changeTax,
+        bool changeHook
+    ) external;
 
-    function addModule(address module) external;
-
-    function removeModule(address module) external;
-
-    function proposePolicyUpdate(address newPolicy) external;
-
-    function cancelPendingUpdate(UpdateKind kind) external;
-
-    function cancelPendingUpdates() external;
-
-    function setLiquidationBounty(uint256 newBps) external;
+    function cancelProposal(bool cancelTax, bool cancelHook) external;
 
     function collect() external;
 
     function claim(address account) external;
 }
 
-/// @title SlotGovernance — the half of a collective that governs slots
-///
-/// @notice Everything a collective does to a SLOT, with none of what it does
-///         with MONEY. Three roles, one per governable dimension, and a relay
-///         behind each.
-///
-/// @dev ── WHY THIS IS SPLIT OUT ─────────────────────────────────────────────
-///      A collective is two independent things welded together:
-///
-///        1. a payout engine — where tax goes once it arrives, and
-///        2. a control panel — who may pull which of the slot's levers.
-///
-///      Only (1) has any opinion about 0xSplits, or Superfluid, or anything
-///      else. Half (2) is identical whatever pays out, so it lives here and
-///      each engine inherits it:
-///
-///        SlotCollective       = SlotGovernance + 0xSplits PushSplit
-///        SlotStreamCollective = SlotGovernance + Superfluid GDA pool
-///
-///      A third engine — a vault, a bonding curve, a plain treasury — is a new
-///      contract that inherits this and writes only its own payout half.
-///
-///      ── WHY THE PAYOUT ROLE IS *NOT* HERE ────────────────────────────────
-///      Each engine declares its own. It is tempting to define one
-///      `PAYOUT_MANAGER_ROLE` up here and be done, but a role identifier is
-///      `keccak256` of its NAME, and `SlotCollective` is already deployed with
-///      live holders of `keccak256("SPLIT_MANAGER_ROLE")`. Renaming it would
-///      silently strip every existing holder of their role while leaving the
-///      contract looking perfectly healthy. The three roles below are safe to
-///      share precisely because their names do not change.
-///
-///      ── NO STORAGE ───────────────────────────────────────────────────────
-///      This contract declares no state variables, only `constant`s. That is
-///      load-bearing: `SlotCollective` sits behind a live beacon, and adding a
-///      storage-carrying base would shift every slot beneath it. Verified in
-///      `test/SlotCollectiveLayout.t.sol` rather than asserted here.
+/// @notice Which lever a relayed event describes. Local to this contract and
+///         never passed to a slot — see the note on `IManagedSlot`.
+enum Dimension {
+    Tax,
+    Hook
+}
+
 abstract contract SlotGovernance is AccessControl, Initializable {
     // ═══════════════════════════════════════════════════════════
     // ROLES
     // ═══════════════════════════════════════════════════════════
 
-    /// @notice May change the tax rate, and the liquidation bounty with it.
-    /// @dev The bounty lives here rather than under its own role because it is
-    ///      the same kind of lever: what the slot costs to hold and what it
-    ///      pays to evict are one economic policy, set by one hand.
+    /// @notice May change the tax rate — what the slot costs to hold.
+    /// @dev The liquidation bounty used to ride along with this role. The
+    ///      protocol no longer has one: liquidation pays nothing, and the
+    ///      reward is the vacancy itself.
     bytes32 public constant TAX_MANAGER_ROLE = keccak256("TAX_MANAGER_ROLE");
 
-    /// @notice May change the occupancy policy — who is allowed to hold the slot.
+    /// @notice May change the hook — both what holding the slot grants and who
+    ///         is allowed to hold it.
+    ///
+    /// @dev ── Why this is the POLICY role and not the UTILITY one ──────────
+    ///
+    ///      A hook is the old policy and the old utility unified, so the two
+    ///      roles that governed them separately have to collapse into one. The
+    ///      identifier kept is `POLICY_MANAGER_ROLE`, and the choice is not
+    ///      cosmetic: whichever one survives, its existing holders inherit the
+    ///      other's powers on every live collective.
+    ///
+    ///      A policy manager could already decide who may hold a slot, which
+    ///      is the stronger of the two — they gain the ability to change what
+    ///      it does. Keeping `UTILITY_MANAGER_ROLE` instead would run the
+    ///      escalation the other way: someone trusted only to change what a
+    ///      slot does would silently acquire the power to decide who may hold
+    ///      it, and to refuse buys outright. Privileges must not widen because
+    ///      an implementation was refactored underneath them.
+    ///
+    ///      Holders of `UTILITY_MANAGER_ROLE` therefore lose their lever
+    ///      rather than gaining one. That is the safe direction, and it is
+    ///      recoverable by an admin granting them this role deliberately.
     bytes32 public constant POLICY_MANAGER_ROLE = keccak256("POLICY_MANAGER_ROLE");
-
-    /// @notice May change the utility — what holding the slot grants.
-    bytes32 public constant UTILITY_MANAGER_ROLE = keccak256("UTILITY_MANAGER_ROLE");
 
     // ═══════════════════════════════════════════════════════════
     // ERRORS
@@ -108,7 +100,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // NO proposer:
     //
     //     event TaxUpdateProposed(uint256 newPercentage);
-    //     event UpdateProposed(UpdateKind indexed kind, bytes32 value, uint64 proposedAt);
+    //     event UpdateProposed(Dimension indexed kind, bytes32 value, uint64 proposedAt);
     //
     // so from the slot side, who pulled the lever is simply absent.
     //
@@ -119,18 +111,16 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // governance contract is built so a multisig CAN hold a role, so the one
     // fallback is wrong precisely where it matters.
     //
-    // ── One shape for all three dimensions ───────────────────────
+    // ── One shape for both dimensions ────────────────────────────
     //
     // `value` is the proposed value widened to 32 bytes: raw basis points for
-    // `Tax`, the left-padded address for `Utility` and `Policy` — matching how
-    // the slot's own `UpdateProposed` carries it, so both sides of the relay
-    // speak one vocabulary.
+    // `Tax`, the left-padded address for `Hook`.
 
     /// @notice A role holder relayed a pending-update proposal to `slot`.
     event UpdateRelayed(
         address indexed slot,
         address indexed by,
-        UpdateKind indexed kind,
+        Dimension indexed kind,
         bytes32 value
     );
 
@@ -138,25 +128,13 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     event UpdateCancelRelayed(
         address indexed slot,
         address indexed by,
-        UpdateKind indexed kind
+        Dimension indexed kind
     );
 
-    /// @notice An admin dropped every pending update on `slot` at once.
+    /// @notice An admin dropped every pending proposal on `slot` at once.
     /// @dev Distinct from `UpdateCancelRelayed`: this is the admin-only reach
-    ///      across all three dimensions, not a per-kind retraction.
+    ///      across both dimensions, not a per-dimension retraction.
     event PendingUpdatesCancelled(address indexed slot, address indexed by);
-
-    /// @notice A role holder changed `slot`'s liquidation bounty.
-    /// @dev Kept off `UpdateRelayed` deliberately. The bounty is not an
-    ///      `UpdateKind`, and adding a fourth member to that enum to fold this in
-    ///      would be a genuinely dangerous edit: `UpdateKind` is positional and
-    ///      is IMPORTED from `ISlot.sol` rather than redeclared here, precisely so
-    ///      the two sides cannot drift. Saving one event is not worth touching it.
-    event LiquidationBountyRelayed(
-        address indexed slot,
-        address indexed by,
-        uint256 newBps
-    );
 
     /// @dev Widens an address to the `bytes32` `UpdateRelayed` carries, so one
     ///      event shape describes a rate and two contract addresses. Mirrors
@@ -190,18 +168,22 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///
     ///      Deliberately NOT an `initializer` itself — the engine's entry point
     ///      carries that modifier, and nesting them would revert.
+    /// @dev `hookManagers` receive `POLICY_MANAGER_ROLE` — see that constant
+    ///      for why the identifier still says policy. There is no separate
+    ///      utility role to grant any more; the parameter is gone rather than
+    ///      quietly redirected, because silently granting the hook role to
+    ///      whoever was listed as a utility manager is the escalation the role
+    ///      choice above exists to avoid.
     function _initGovernance(
         address admin,
         address[] memory taxManagers,
-        address[] memory policyManagers,
-        address[] memory utilityManagers
+        address[] memory hookManagers
     ) internal {
         if (admin == address(0)) revert AdminRequired();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRoleBatch(TAX_MANAGER_ROLE, taxManagers);
-        _grantRoleBatch(POLICY_MANAGER_ROLE, policyManagers);
-        _grantRoleBatch(UTILITY_MANAGER_ROLE, utilityManagers);
+        _grantRoleBatch(POLICY_MANAGER_ROLE, hookManagers);
     }
 
     function _grantRoleBatch(bytes32 role, address[] memory accounts) internal {
@@ -224,135 +206,82 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // slot that has not named this contract as its manager simply reverts with
     // `NotManager()` on the far side.
 
-    /// @notice Propose a new tax rate on `slot`. Applies on its next ownership
+    /// @notice Propose a new tax rate on `slot`. Applies on its next occupancy
     ///         transition, not immediately.
-    function proposeTaxUpdate(IManagedSlot slot, uint256 newPct)
+    function proposeTax(IManagedSlot slot, uint256 newPct)
         external
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
     {
-        slot.proposeTaxUpdate(newPct);
-        emit UpdateRelayed(address(slot), msg.sender, UpdateKind.Tax, bytes32(newPct));
+        slot.proposeTerms(newPct, address(0), true, false);
+        emit UpdateRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(newPct));
     }
 
-    /// @notice Install a module on `slot` — something holding it grants.
+    /// @notice Propose a new hook on `slot` — what holding it grants, and who
+    ///         may take it.
     ///
-    /// @dev Replaces the relay for `proposeUtilityUpdate`, which the slot has
-    ///      retired. Same role, same deferral: the install lands on the slot's
-    ///      next occupancy transition, so an occupant never has modules added
-    ///      under them mid-tenure.
+    /// @dev Passing `address(0)` detaches. That is a real choice rather than a
+    ///      missing argument, which is why the slot takes an explicit
+    ///      `changeHook` flag and this relay always sets it: there is no way to
+    ///      express "detach" if a zero address means "leave alone".
     ///
-    ///      The slot refuses anything its factory has not verified, so this
-    ///      relay does not re-check. One verification, one authority.
-    function addModule(IManagedSlot slot, address module)
-        external
-        onlyRoleOrAdmin(UTILITY_MANAGER_ROLE)
-    {
-        slot.addModule(module);
-        emit UpdateRelayed(
-            address(slot),
-            msg.sender,
-            UpdateKind.Utility,
-            _asValue(module)
-        );
-    }
-
-    /// @notice Detach a module from `slot`, effective immediately.
-    ///
-    /// @dev Immediate where installing defers, mirroring the slot: adding
-    ///      imposes cost on the occupant, removing only withdraws it. It is
-    ///      also the lever for detaching a module found to be broken, which
-    ///      must not wait on a tenure that may run for years.
-    ///
-    ///      Passing the slot's legacy `utility` vacates it. That is the only
-    ///      remaining way to change the head, and it is one-way.
-    function removeModule(IManagedSlot slot, address module)
-        external
-        onlyRoleOrAdmin(UTILITY_MANAGER_ROLE)
-    {
-        slot.removeModule(module);
-        emit UpdateRelayed(
-            address(slot),
-            msg.sender,
-            UpdateKind.Utility,
-            _asValue(module)
-        );
-    }
-
-    /// @notice Propose a new occupancy policy on `slot` — who may hold it.
-    /// @dev Deliberately its own role rather than sharing the utility's. Swapping
-    ///      what a slot does and swapping whether it can be taken from you are
-    ///      different promises to an occupant, and the slot gates them on
-    ///      different flags (`mutableUtility` vs `mutablePolicy`). Collapsing the
-    ///      two roles here would undo that distinction one layer up.
-    function proposePolicyUpdate(IManagedSlot slot, address newPolicy)
+    ///      The slot validates the hook now — one whose `hooks()` does not
+    ///      answer is refused here rather than attached with no subscriptions —
+    ///      so this relay does not re-check. One validation, one authority.
+    function proposeHook(IManagedSlot slot, address newHook)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
-        slot.proposePolicyUpdate(newPolicy);
+        slot.proposeTerms(0, newHook, false, true);
         emit UpdateRelayed(
             address(slot),
             msg.sender,
-            UpdateKind.Policy,
-            _asValue(newPolicy)
+            Dimension.Hook,
+            _asValue(newHook)
         );
-    }
-
-    /// @notice Update the liquidation bounty on `slot`. Takes effect immediately.
-    function setLiquidationBounty(IManagedSlot slot, uint256 newBps)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
-        slot.setLiquidationBounty(newBps);
-        emit LiquidationBountyRelayed(address(slot), msg.sender, newBps);
     }
 
     /// @notice Retract this role's own queued tax proposal on `slot`.
-    /// @dev The mirror of `proposeTaxUpdate`, gated on the same role. Before the
-    ///      slot grew a per-kind cancel, proposing and retracting sat at
-    ///      different authority levels: a tax manager could queue a change but
-    ///      only `DEFAULT_ADMIN_ROLE` could take it back, because taking it back
-    ///      meant destroying every other role's queued work along with it.
-    function cancelTaxUpdate(IManagedSlot slot)
+    /// @dev Single-dimension, and that is load-bearing rather than tidy. The
+    ///      slot's cancel takes the same two flags its propose does, so a tax
+    ///      manager retracting their own work cannot destroy the hook
+    ///      manager's queued change as a side effect.
+    function cancelTaxProposal(IManagedSlot slot)
         external
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
     {
-        slot.cancelPendingUpdate(UpdateKind.Tax);
-        emit UpdateCancelRelayed(address(slot), msg.sender, UpdateKind.Tax);
+        slot.cancelProposal(true, false);
+        emit UpdateCancelRelayed(address(slot), msg.sender, Dimension.Tax);
     }
 
-    /// @notice Retract this role's own queued utility proposal on `slot`.
-    function cancelUtilityUpdate(IManagedSlot slot)
-        external
-        onlyRoleOrAdmin(UTILITY_MANAGER_ROLE)
-    {
-        slot.cancelPendingUpdate(UpdateKind.Utility);
-        emit UpdateCancelRelayed(address(slot), msg.sender, UpdateKind.Utility);
-    }
-
-    /// @notice Retract this role's own queued occupancy-policy proposal on `slot`.
-    function cancelPolicyUpdate(IManagedSlot slot)
+    /// @notice Retract this role's own queued hook proposal on `slot`.
+    function cancelHookProposal(IManagedSlot slot)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
-        slot.cancelPendingUpdate(UpdateKind.Policy);
-        emit UpdateCancelRelayed(address(slot), msg.sender, UpdateKind.Policy);
+        slot.cancelProposal(false, true);
+        emit UpdateCancelRelayed(address(slot), msg.sender, Dimension.Hook);
     }
 
-    /// @notice Drop every pending update on `slot`, across all three dimensions.
+    /// @notice Drop every pending proposal on `slot`, across both dimensions.
     ///
-    /// @dev STILL ADMIN ONLY, and now for a better reason than before. This used
-    ///      to be the only way to cancel anything, so restricting it meant a
-    ///      role holder could not retract their own proposal at all — the
-    ///      restriction was damage control, not policy. With the three
-    ///      single-dimension cancels above, each role can undo its own work,
-    ///      and this is what it has always claimed to be: a deliberate reach
-    ///      across all three, available only to the role that already outranks
-    ///      them.
-    function cancelPendingUpdates(IManagedSlot slot)
+    /// @dev Admin only, and for the reason it always claimed: this is a
+    ///      deliberate reach across work that belongs to other roles, so it
+    ///      belongs to the role that already outranks them. With the two
+    ///      single-dimension cancels above, no role needs it to undo its own
+    ///      proposal.
+    ///
+    ///      Tolerates a slot with only one dimension queued. The slot rejects a
+    ///      cancel for a dimension that holds nothing, so asking for both would
+    ///      revert on exactly the common case; each leg is attempted
+    ///      separately and a nothing-to-cancel is not a failure.
+    function cancelAllProposals(IManagedSlot slot)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        slot.cancelPendingUpdates();
+        // solhint-disable-next-line no-empty-blocks
+        try slot.cancelProposal(true, false) {} catch {}
+        // solhint-disable-next-line no-empty-blocks
+        try slot.cancelProposal(false, true) {} catch {}
         emit PendingUpdatesCancelled(address(slot), msg.sender);
     }
 

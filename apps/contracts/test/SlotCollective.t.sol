@@ -6,10 +6,9 @@ import {Test} from "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotGovernance, IManagedSlot} from "../src/SlotGovernance.sol";
+import {SlotGovernance, IManagedSlot, Dimension} from "../src/SlotGovernance.sol";
 import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {UpdateKind} from "../src/interfaces/ISlot.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 import {Wallet} from "splits-v2/utils/Wallet.sol";
@@ -21,12 +20,16 @@ contract MockSlot {
     address public manager;
 
     uint256 public taxPct;
-    address public utility;
-    address public policy;
-    uint256 public bountyBps;
-    uint256 public cancelCount;
+    address public hookAddr;
+
+    bool public hasTax;
+    bool public hasHook;
+
+    uint256 public taxCancels;
+    uint256 public hookCancels;
 
     error NotManager();
+    error NoPendingUpdate();
 
     constructor(address _manager) {
         manager = _manager;
@@ -37,39 +40,46 @@ contract MockSlot {
         _;
     }
 
-    function proposeTaxUpdate(uint256 v) external onlyManager {
-        taxPct = v;
+    /// @dev Mirrors the real slot: each dimension is set only when its own
+    ///      flag is passed, so two roles can queue independently.
+    function proposeTerms(
+        uint256 newTax,
+        address newHook,
+        bool changeTax,
+        bool changeHook
+    ) external onlyManager {
+        if (changeTax) {
+            taxPct = newTax;
+            hasTax = true;
+        }
+        if (changeHook) {
+            hookAddr = newHook;
+            hasHook = true;
+        }
+        if (!changeTax && !changeHook) revert NoPendingUpdate();
     }
 
-    /// @dev The slot's module API replaced `proposeUtilityUpdate`. The stub
-    ///      mirrors the real shape: installing queues, removing is immediate.
-    function addModule(address v) external onlyManager {
-        utility = v;
+    /// @dev Reverts on a dimension holding nothing, as the real slot does —
+    ///      which is what makes the admin's cancel-everything relay need to
+    ///      attempt each leg separately.
+    function cancelProposal(bool cancelTax, bool cancelHook)
+        external
+        onlyManager
+    {
+        if (!cancelTax && !cancelHook) revert NoPendingUpdate();
+        if (cancelTax && !hasTax) revert NoPendingUpdate();
+        if (cancelHook && !hasHook) revert NoPendingUpdate();
+        if (cancelTax) {
+            hasTax = false;
+            taxPct = 0;
+            taxCancels++;
+        }
+        if (cancelHook) {
+            hasHook = false;
+            hookAddr = address(0);
+            hookCancels++;
+        }
     }
-
-    function removeModule(address v) external onlyManager {
-        if (utility == v) utility = address(0);
-    }
-
-    function proposePolicyUpdate(address v) external onlyManager {
-        policy = v;
-    }
-
-    function setLiquidationBounty(uint256 v) external onlyManager {
-        bountyBps = v;
-    }
-
-    function cancelPendingUpdates() external onlyManager {
-        cancelCount++;
-    }
-
-    /// @dev Records which dimension each cancel targeted, which is the whole
-    ///      point of the per-role relays above it.
-    function cancelPendingUpdate(UpdateKind kind) external onlyManager {
-        cancelledKind[kind]++;
-    }
-
-    mapping(UpdateKind => uint256) public cancelledKind;
 
     function collect() external {}
 
@@ -85,8 +95,7 @@ contract SlotCollectiveTest is Test {
     address internal admin = makeAddr("admin");
     address internal factoryAdmin = makeAddr("factoryAdmin");
     address internal taxMgr = makeAddr("taxMgr");
-    address internal policyMgr = makeAddr("policyMgr");
-    address internal utilityMgr = makeAddr("utilityMgr");
+    address internal hookMgr = makeAddr("hookMgr");
     address internal splitMgr = makeAddr("splitMgr");
     address internal stranger = makeAddr("stranger");
 
@@ -137,8 +146,7 @@ contract SlotCollectiveTest is Test {
     function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         r.admin = admin;
         r.taxManagers = _one(taxMgr);
-        r.policyManagers = _one(policyMgr);
-        r.utilityManagers = _one(utilityMgr);
+        r.hookManagers = _one(hookMgr);
         r.splitManagers = _one(splitMgr);
     }
 
@@ -166,7 +174,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = Wallet.Call({
             to: address(slot),
             value: 0,
-            data: abi.encodeCall(MockSlot.proposeTaxUpdate, (9999))
+            data: abi.encodeCall(MockSlot.proposeTerms, (9999, address(0), true, false))
         });
 
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -184,20 +192,31 @@ contract SlotCollectiveTest is Test {
 
     function test_taxManagerCanRelayTax() public {
         vm.prank(taxMgr);
-        mgr.proposeTaxUpdate(IManagedSlot(address(slot)), 500);
+        mgr.proposeTax(IManagedSlot(address(slot)), 500);
         assertEq(slot.taxPct(), 500);
     }
 
-    function test_adminCanRelayAllThree() public {
+    function test_adminCanRelayBoth() public {
         vm.startPrank(admin);
-        mgr.proposeTaxUpdate(IManagedSlot(address(slot)), 250);
-        mgr.addModule(IManagedSlot(address(slot)), address(0xBEEF));
-        mgr.proposePolicyUpdate(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.proposeTax(IManagedSlot(address(slot)), 250);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
         vm.stopPrank();
 
         assertEq(slot.taxPct(), 250);
-        assertEq(slot.utility(), address(0xBEEF));
-        assertEq(slot.policy(), address(0xCAFE));
+        assertEq(slot.hookAddr(), address(0xCAFE));
+    }
+
+    /// @dev Detaching is a real choice, not a missing argument — so the relay
+    ///      has to be able to express it.
+    function test_theHookManagerCanDetachTheHook() public {
+        vm.prank(hookMgr);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        assertTrue(slot.hasHook());
+
+        vm.prank(hookMgr);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0));
+        assertTrue(slot.hasHook(), "still queued, now queued as a detach");
+        assertEq(slot.hookAddr(), address(0));
     }
 
     /// @dev Role reads are hoisted out of `expectRevert`'s arguments on purpose:
@@ -207,37 +226,38 @@ contract SlotCollectiveTest is Test {
         bytes32 taxRole = mgr.TAX_MANAGER_ROLE();
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
 
-        vm.prank(policyMgr);
-        vm.expectRevert(_unauthorized(policyMgr, taxRole));
-        mgr.proposeTaxUpdate(IManagedSlot(address(slot)), 500);
+        vm.prank(hookMgr);
+        vm.expectRevert(_unauthorized(hookMgr, taxRole));
+        mgr.proposeTax(IManagedSlot(address(slot)), 500);
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.proposePolicyUpdate(IManagedSlot(address(slot)), address(1));
-
-        vm.prank(utilityMgr);
-        vm.expectRevert(_unauthorized(utilityMgr, taxRole));
-        mgr.setLiquidationBounty(IManagedSlot(address(slot)), 100);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(1));
     }
 
-    /// @dev The gap the per-kind cancel closed. A role holder could always
-    ///      propose; until the slot could cancel one dimension at a time, only
-    ///      the admin could retract, because retracting meant destroying every
-    ///      other role's queued work too.
-    function test_eachRoleCancelsItsOwnKind() public {
+    /// @dev The gap the per-dimension cancel closed, and the reason the new
+    ///      slot had to grow the same two flags on cancel that it has on
+    ///      propose: retracting your own work must not destroy anybody else's.
+    function test_eachRoleCancelsItsOwnDimensionAndLeavesTheOtherStanding()
+        public
+    {
         vm.prank(taxMgr);
-        mgr.cancelTaxUpdate(IManagedSlot(address(slot)));
+        mgr.proposeTax(IManagedSlot(address(slot)), 500);
+        vm.prank(hookMgr);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
 
-        vm.prank(utilityMgr);
-        mgr.cancelUtilityUpdate(IManagedSlot(address(slot)));
+        vm.prank(hookMgr);
+        mgr.cancelHookProposal(IManagedSlot(address(slot)));
 
-        vm.prank(policyMgr);
-        mgr.cancelPolicyUpdate(IManagedSlot(address(slot)));
+        assertEq(slot.hookCancels(), 1);
+        assertEq(slot.taxCancels(), 0);
+        assertTrue(slot.hasTax(), "the tax manager's proposal survived");
+        assertEq(slot.taxPct(), 500);
 
-        assertEq(slot.cancelledKind(UpdateKind.Tax), 1);
-        assertEq(slot.cancelledKind(UpdateKind.Utility), 1);
-        assertEq(slot.cancelledKind(UpdateKind.Policy), 1);
-        assertEq(slot.cancelCount(), 0, "no blanket cancel was used");
+        vm.prank(taxMgr);
+        mgr.cancelTaxProposal(IManagedSlot(address(slot)));
+        assertEq(slot.taxCancels(), 1);
+        assertFalse(slot.hasTax());
     }
 
     /// @dev And the boundary holds in the cancel direction too — a tax manager
@@ -245,35 +265,29 @@ contract SlotCollectiveTest is Test {
     function test_cancelRolesDoNotLeakAcrossDomains() public {
         bytes32 taxRole = mgr.TAX_MANAGER_ROLE();
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
-        bytes32 utilityRole = mgr.UTILITY_MANAGER_ROLE();
 
-        vm.prank(policyMgr);
-        vm.expectRevert(_unauthorized(policyMgr, taxRole));
-        mgr.cancelTaxUpdate(IManagedSlot(address(slot)));
+        vm.prank(hookMgr);
+        vm.expectRevert(_unauthorized(hookMgr, taxRole));
+        mgr.cancelTaxProposal(IManagedSlot(address(slot)));
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.cancelPolicyUpdate(IManagedSlot(address(slot)));
+        mgr.cancelHookProposal(IManagedSlot(address(slot)));
 
-        vm.prank(taxMgr);
-        vm.expectRevert(_unauthorized(taxMgr, utilityRole));
-        mgr.cancelUtilityUpdate(IManagedSlot(address(slot)));
-
-        assertEq(slot.cancelledKind(UpdateKind.Tax), 0);
-        assertEq(slot.cancelledKind(UpdateKind.Policy), 0);
-        assertEq(slot.cancelledKind(UpdateKind.Utility), 0);
+        assertEq(slot.taxCancels(), 0);
+        assertEq(slot.hookCancels(), 0);
     }
 
-    function test_adminCanCancelAnySingleKind() public {
+    function test_adminCanCancelEitherDimension() public {
         vm.startPrank(admin);
-        mgr.cancelTaxUpdate(IManagedSlot(address(slot)));
-        mgr.cancelUtilityUpdate(IManagedSlot(address(slot)));
-        mgr.cancelPolicyUpdate(IManagedSlot(address(slot)));
+        mgr.proposeTax(IManagedSlot(address(slot)), 500);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.cancelTaxProposal(IManagedSlot(address(slot)));
+        mgr.cancelHookProposal(IManagedSlot(address(slot)));
         vm.stopPrank();
 
-        assertEq(slot.cancelledKind(UpdateKind.Tax), 1);
-        assertEq(slot.cancelledKind(UpdateKind.Utility), 1);
-        assertEq(slot.cancelledKind(UpdateKind.Policy), 1);
+        assertEq(slot.taxCancels(), 1);
+        assertEq(slot.hookCancels(), 1);
     }
 
     /// @dev The blanket cancel stays admin-only. It is no longer the ONLY way
@@ -282,20 +296,39 @@ contract SlotCollectiveTest is Test {
     function test_cancelIsAdminOnly() public {
         bytes32 adminRole = mgr.DEFAULT_ADMIN_ROLE();
 
-        address[] memory managers = new address[](3);
+        address[] memory managers = new address[](2);
         managers[0] = taxMgr;
-        managers[1] = policyMgr;
-        managers[2] = utilityMgr;
+        managers[1] = hookMgr;
 
         for (uint256 i; i < managers.length; ++i) {
             vm.prank(managers[i]);
             vm.expectRevert(_unauthorized(managers[i], adminRole));
-            mgr.cancelPendingUpdates(IManagedSlot(address(slot)));
+            mgr.cancelAllProposals(IManagedSlot(address(slot)));
         }
 
         vm.prank(admin);
-        mgr.cancelPendingUpdates(IManagedSlot(address(slot)));
-        assertEq(slot.cancelCount(), 1);
+        mgr.proposeTax(IManagedSlot(address(slot)), 500);
+        vm.prank(admin);
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        vm.prank(admin);
+        mgr.cancelAllProposals(IManagedSlot(address(slot)));
+        assertEq(slot.taxCancels(), 1);
+        assertEq(slot.hookCancels(), 1);
+    }
+
+    /// @dev The blanket cancel must survive a slot with only one dimension
+    ///      queued. The slot rejects a cancel for a dimension holding nothing,
+    ///      so a naive both-at-once call would revert on the common case.
+    function test_theBlanketCancelToleratesAHalfEmptyProposal() public {
+        vm.prank(taxMgr);
+        mgr.proposeTax(IManagedSlot(address(slot)), 500);
+
+        vm.prank(admin);
+        mgr.cancelAllProposals(IManagedSlot(address(slot)));
+
+        assertEq(slot.taxCancels(), 1);
+        assertEq(slot.hookCancels(), 0, "nothing was queued to cancel");
+        assertFalse(slot.hasTax());
     }
 
     function _unauthorized(address account, bytes32 role) internal pure returns (bytes memory) {

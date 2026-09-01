@@ -247,9 +247,11 @@ export function SellOrderPanel({
               parsed.order.slot.toLowerCase() !== slot.toLowerCase() ||
               state.isVacant
             }
-            onClick={() =>
-              parsed && actions.sell(slot, parsed.order, parsed.signature)
-            }
+            onClick={() => {
+              console.log("[sell] click", parsed);
+              const r = parsed && actions.sell(slot, parsed.order, parsed.signature);
+              console.log("[sell] returned", r);
+            }}
           >
             Sell on these terms
           </Button>

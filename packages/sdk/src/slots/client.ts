@@ -723,6 +723,22 @@ export class SlotsClient {
         : this.quoteLiquidateAndTake(params.slot, params.depositAmount),
     ]);
 
+    // An ERC-20 buy grants its allowance as part of SENDING, so simulating
+    // before that has happened reverts on `ERC20InsufficientAllowance` every
+    // time — a confident answer to a question nobody asked, and one that would
+    // block a perfectly legal buy. There is nothing to learn from a simulation
+    // run against a state the real call will not be made from, so it is skipped
+    // rather than reported.
+    if (!isNativeCurrency(currency)) {
+      const allowance = await this.publicClient.readContract({
+        address: currency,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [this.account, params.slot],
+      });
+      if (allowance < amount) return;
+    }
+
     await this.publicClient.simulateContract({
       address: params.slot,
       abi: SIMULATION_ABI,

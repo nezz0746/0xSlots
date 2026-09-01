@@ -6,9 +6,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {SlotStreamCollective} from "../../src/draft/SlotStreamCollective.sol";
-import {SlotGovernance, IManagedSlot} from "../../src/SlotGovernance.sol";
+import {SlotGovernance, IManagedSlot, Dimension} from "../../src/SlotGovernance.sol";
 import {ISuperfluidPool, ISuperToken} from "../../src/draft/interfaces/ISuperfluid.sol";
-import {UpdateKind} from "../../src/interfaces/ISlot.sol";
 
 /// @dev Same shape as the mock in `SlotCollective.t.sol`. Duplicated rather
 ///      than shared because its job here is to prove the governance half works
@@ -16,11 +15,18 @@ import {UpdateKind} from "../../src/interfaces/ISlot.sol";
 ///      quietly assume the thing under test.
 contract MockSlot {
     address public manager;
+
     uint256 public taxPct;
-    address public policy;
-    uint256 public bountyBps;
+    address public hookAddr;
+
+    bool public hasTax;
+    bool public hasHook;
+
+    uint256 public taxCancels;
+    uint256 public hookCancels;
 
     error NotManager();
+    error NoPendingUpdate();
 
     constructor(address _manager) {
         manager = _manager;
@@ -31,25 +37,46 @@ contract MockSlot {
         _;
     }
 
-    function proposeTaxUpdate(uint256 v) external onlyManager {
-        taxPct = v;
+    /// @dev Mirrors the real slot: each dimension is set only when its own
+    ///      flag is passed, so two roles can queue independently.
+    function proposeTerms(
+        uint256 newTax,
+        address newHook,
+        bool changeTax,
+        bool changeHook
+    ) external onlyManager {
+        if (changeTax) {
+            taxPct = newTax;
+            hasTax = true;
+        }
+        if (changeHook) {
+            hookAddr = newHook;
+            hasHook = true;
+        }
+        if (!changeTax && !changeHook) revert NoPendingUpdate();
     }
 
-    function addModule(address) external onlyManager {}
-
-    function removeModule(address) external onlyManager {}
-
-    function proposePolicyUpdate(address v) external onlyManager {
-        policy = v;
+    /// @dev Reverts on a dimension holding nothing, as the real slot does —
+    ///      which is what makes the admin's cancel-everything relay need to
+    ///      attempt each leg separately.
+    function cancelProposal(bool cancelTax, bool cancelHook)
+        external
+        onlyManager
+    {
+        if (!cancelTax && !cancelHook) revert NoPendingUpdate();
+        if (cancelTax && !hasTax) revert NoPendingUpdate();
+        if (cancelHook && !hasHook) revert NoPendingUpdate();
+        if (cancelTax) {
+            hasTax = false;
+            taxPct = 0;
+            taxCancels++;
+        }
+        if (cancelHook) {
+            hasHook = false;
+            hookAddr = address(0);
+            hookCancels++;
+        }
     }
-
-    function setLiquidationBounty(uint256 v) external onlyManager {
-        bountyBps = v;
-    }
-
-    function cancelPendingUpdates() external onlyManager {}
-
-    function cancelPendingUpdate(UpdateKind) external onlyManager {}
 
     function collect() external {}
 
@@ -134,8 +161,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: admin,
             taxManagers: taxManagers,
-            policyManagers: new address[](0),
-            utilityManagers: new address[](0),
+            hookManagers: new address[](0),
             poolManagers: poolManagers
         });
 
@@ -368,23 +394,26 @@ contract SlotStreamCollectiveTest is Test {
         _deploy(50, 50);
 
         vm.prank(taxMgr);
-        collective.proposeTaxUpdate(IManagedSlot(address(slot)), 750);
+        collective.proposeTax(IManagedSlot(address(slot)), 750);
         assertEq(slot.taxPct(), 750, "tax relay did not reach the slot");
 
-        vm.prank(taxMgr);
-        collective.setLiquidationBounty(IManagedSlot(address(slot)), 200);
-        assertEq(slot.bountyBps(), 200);
-
         // And the separation of powers still holds: a pool manager runs money,
-        // not the slot's policy.
+        // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposePolicyUpdate(IManagedSlot(address(slot)), address(0xBEEF));
+        collective.proposeHook(IManagedSlot(address(slot)), address(0xBEEF));
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposePolicyUpdate(IManagedSlot(address(slot)), address(0xBEEF));
-        assertEq(slot.policy(), address(0xBEEF));
+        collective.proposeHook(IManagedSlot(address(slot)), address(0xBEEF));
+        assertEq(slot.hookAddr(), address(0xBEEF));
+
+        // Retracting one dimension leaves the other standing, on this engine
+        // too — the governance half is shared, so this is the same code path.
+        vm.prank(admin);
+        collective.cancelHookProposal(IManagedSlot(address(slot)));
+        assertTrue(slot.hasTax(), "the tax proposal survived");
+        assertFalse(slot.hasHook());
     }
 
     function test_Fork_RejectsEmptyPool() public {
@@ -402,8 +431,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            policyManagers: new address[](0),
-            utilityManagers: new address[](0),
+            hookManagers: new address[](0),
             poolManagers: new address[](0)
         });
 
@@ -432,8 +460,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: address(0),
             taxManagers: new address[](0),
-            policyManagers: new address[](0),
-            utilityManagers: new address[](0),
+            hookManagers: new address[](0),
             poolManagers: new address[](0)
         });
 

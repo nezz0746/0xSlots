@@ -67,6 +67,7 @@ contract Slot is SlotOrders {
     event Withdrawn(address indexed occupant, uint256 amount, uint256 left);
     event OperatorSet(address indexed operator, bool allowed);
     event TermsProposed(uint256 taxPercentage, address hook, bool tax, bool hook_);
+    event ProposalCancelled(bool tax, bool hook);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -140,6 +141,25 @@ contract Slot is SlotOrders {
         );
         if (perSecond == 0) return type(uint256).max;
         return (_deposit - owed) / perSecond;
+    }
+
+    /**
+     * @notice The smallest deposit `buy` or `sell` will accept at `price_`.
+     *
+     * @dev Reads the PENDING tax when one is queued, because entry is an
+     *      occupancy transition and `_applyPending` runs before the funding
+     *      check — so a buyer funds the terms they are buying into, not the
+     *      ones they can see today. A client sizing the deposit from
+     *      `taxPercentage()` underquotes through exactly that window and the
+     *      buy reverts `InvalidDeposit`.
+     *
+     *      `selfAssess` is deliberately not covered here: it is not a
+     *      transition, applies nothing, and is checked against current terms.
+     */
+    function minDepositForBuy(uint256 price_) public view returns (uint256) {
+        if (minDepositSeconds == 0) return 0;
+        uint256 tax = pending.hasTax ? pending.taxPercentage : taxPercentage;
+        return Math.ceilDiv(price_ * tax * minDepositSeconds, MONTH * BASIS_POINTS);
     }
 
     /**
@@ -533,9 +553,36 @@ contract Slot is SlotOrders {
         emit TermsProposed(newTax, newHook, changeTax, changeHook);
     }
 
-    function cancelProposal() external onlyManager {
-        if (!pending.hasTax && !pending.hasHook) revert NoPendingUpdate();
-        delete pending;
+    /**
+     * @notice Retract queued terms, one dimension at a time.
+     *
+     * @dev Two flags, mirroring `proposeTerms`, because the two dimensions are
+     *      proposed independently and may belong to different people. A
+     *      collective splits tax and hook across separate roles; an
+     *      all-or-nothing cancel would let the hook manager destroy the tax
+     *      manager's queued change as a side effect of retracting their own,
+     *      with nothing to signal it happened. Cancelling must not reach
+     *      further than proposing does.
+     */
+    function cancelProposal(bool cancelTax, bool cancelHook)
+        external
+        onlyManager
+    {
+        if (!cancelTax && !cancelHook) revert NoPendingUpdate();
+        if (cancelTax && !pending.hasTax) revert NoPendingUpdate();
+        if (cancelHook && !pending.hasHook) revert NoPendingUpdate();
+
+        if (cancelTax) {
+            pending.hasTax = false;
+            pending.taxPercentage = 0;
+        }
+        if (cancelHook) {
+            pending.hasHook = false;
+            pending.hook = address(0);
+        }
+        if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0;
+
+        emit ProposalCancelled(cancelTax, cancelHook);
     }
 
     // ─── internals ──────────────────────────────────────────────────────────
