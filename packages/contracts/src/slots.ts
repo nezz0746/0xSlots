@@ -20,7 +20,7 @@ export {
 } from "./abis/slots";
 
 import type { Address } from "viem";
-import { anvil } from "viem/chains";
+import { anvil, baseSepolia } from "viem/chains";
 
 /**
  * The hook-protocol `SlotFactory`, by chain.
@@ -37,6 +37,7 @@ import { anvil } from "viem/chains";
  */
 export const slotsFactoryAddress: Partial<Record<number, Address>> = {
   [anvil.id]: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+  [baseSepolia.id]: "0xAd348684dc13127C18e2b96d7FFdC0cC6B3E2dAA",
 };
 
 /**
@@ -80,6 +81,7 @@ export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
  */
 export const slotTakerAddress: Partial<Record<number, Address>> = {
   [anvil.id]: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  [baseSepolia.id]: "0x5c66E3Abdb742647E971598be63f91120E07876f",
 };
 
 /**
@@ -96,6 +98,7 @@ export const slotTakerAddress: Partial<Record<number, Address>> = {
  */
 export const offerBookAddress: Partial<Record<number, Address>> = {
   [anvil.id]: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+  [baseSepolia.id]: "0xC8b5Fb19F5bF22105FB037aCD874CA7Fd2D562Ba",
 };
 
 /**
