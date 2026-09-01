@@ -1,4 +1,5 @@
-// Copied from packages/contracts/src/abis/slots/slot.ts. Do not edit.
+// Mirrored from packages/contracts/src/abis/slots/slot.ts
+// by packages/contracts/scripts/sync-abis.mjs. Do not edit.
 export const SlotAbi = [
     {
       "type": "constructor",
@@ -1148,6 +1149,19 @@ export const SlotAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "function",

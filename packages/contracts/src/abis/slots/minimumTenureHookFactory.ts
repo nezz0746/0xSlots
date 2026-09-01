@@ -1,4 +1,4 @@
-// Generated from src/hooks/MinimumTenureHookFactory.sol. Do not edit.
+// Generated from src/hooks/MinimumTenureHookFactory.sol by scripts/sync-abis.mjs. Do not edit.
 export const minimumTenureHookFactoryAbi = [
     {
       "type": "function",

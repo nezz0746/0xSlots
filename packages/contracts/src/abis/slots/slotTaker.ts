@@ -1,4 +1,4 @@
-// Generated from src/periphery/SlotTaker.sol. Do not edit.
+// Generated from src/periphery/SlotTaker.sol by scripts/sync-abis.mjs. Do not edit.
 export const slotTakerAbi = [
     {
       "type": "function",

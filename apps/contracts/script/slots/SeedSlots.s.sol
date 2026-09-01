@@ -6,7 +6,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotsTestToken} from "./DeploySlots.s.sol";
+import {SlotsTestToken} from "./SlotsTestToken.sol";
+import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 
 /**
  * @title SeedSlots
@@ -30,12 +31,27 @@ contract SeedSlots is Script {
 
     SlotFactory internal factory;
 
-    function run(address factory_, address hook, address token) external {
+    /// @dev Takes only the factory now. The hook and the test token are
+    ///      deployed here rather than passed in, because the caller used to
+    ///      have to know three addresses that only this script cares about —
+    ///      and getting one of them from a stale constant is how the local
+    ///      chain and the app's pinned addresses drifted apart.
+    function run(address factory_) external {
         factory = SlotFactory(factory_);
         vm.startBroadcast();
         address me = msg.sender;
 
-        SlotsTestToken(token).mint(me, 1_000_000e18);
+        address hook = address(new MinimumTenureHook(7 days, ""));
+        SlotsTestToken token = new SlotsTestToken();
+        token.mint(me, 1_000_000e18);
+
+        // Both are plain CREATE, so their addresses are a function of the seed's
+        // nonce — they move whenever this script changes what it deploys or in
+        // what order. The SDK pins the token address for the local chain, so
+        // write it down rather than leaving the only copy in a broadcast log:
+        // dev-chain.sh reads this back and fails if the constant has drifted.
+        _record("SlotsTestToken", address(token));
+        _record("MinimumTenureHook", hook);
 
         // 1. Native, no hook, occupied. The plainest slot there is.
         Slot a = _create(me, address(0), address(0), 500, 7 days, true, true);
@@ -43,9 +59,9 @@ contract SeedSlots is Script {
         a.buy{value: depA}(me, depA, 0.05 ether, 0);
 
         // 2. ERC-20, no hook, occupied.
-        Slot b = _create(me, token, address(0), 250, 3 days, true, true);
+        Slot b = _create(me, address(token), address(0), 250, 3 days, true, true);
         uint256 depB = _minDeposit(1_000e18, 250, 3 days);
-        IERC20(token).approve(address(b), depB);
+        IERC20(address(token)).approve(address(b), depB);
         b.buy(me, depB, 1_000e18, 0);
 
         // 3. Native, tenure hook, occupied — inside its protection window, so
@@ -125,5 +141,22 @@ contract SeedSlots is Script {
         returns (uint256)
     {
         return Math.ceilDiv(price * tax * window, MONTH * BASIS_POINTS);
+    }
+
+    /// @dev The shape `DeployProtocol` writes, so every consumer reads one
+    ///      format. No `startBlock` — nothing indexes these two.
+    function _record(string memory name, address addr) internal {
+        string memory obj = name;
+        string memory json = vm.serializeAddress(obj, "address", addr);
+        vm.writeFile(
+            string.concat(
+                "./deployments/",
+                vm.toString(block.chainid),
+                "/",
+                name,
+                ".json"
+            ),
+            json
+        );
     }
 }

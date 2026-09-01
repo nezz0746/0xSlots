@@ -55,16 +55,17 @@ export const NATIVE_CURRENCY: TokenInfo = {
 export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
   [SlotsChain.ANVIL]: [
     {
-      // The test token deployed by `script/slots/DeploySlots.s.sol`, the
+      // The test token deployed by `script/slots/SeedSlots.s.sol`, the
       // hook-protocol local stack.
       //
       // Plain CREATE, so the address derives from (deployer, nonce) and is
       // independent of the contract's bytecode — it survives edits to the
-      // Solidity and moves only when the deploy script changes what it
-      // deploys, or in what order. See
-      // docs/plans/2026-09-01-slots-local-runbook.md, which is the source of
-      // truth for every local address.
-      address: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+      // Solidity and moves only when the SEED changes what it deploys, or in
+      // what order. `dev-chain.sh` compares this constant against
+      // `deployments/31337/SlotsTestToken.json` on every local boot and
+      // refuses to start if they have drifted, because a stale value here is
+      // invisible: the app offers the token and every approval reverts.
+      address: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
       name: "0xSlots Test USD",
       symbol: "USDX",
       decimals: 18,

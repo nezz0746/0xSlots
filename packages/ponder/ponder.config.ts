@@ -54,21 +54,24 @@ const ANVIL_RPC = process.env.ANVIL_RPC_URL ?? "http://127.0.0.1:8545";
  * The local factory, pinned rather than read from disk.
  *
  * `apps/contracts/deployments/31337/SlotFactory.json` is written by
- * `DeployLocal.s.sol`, which still deploys the RETIRED `src/SlotFactory.sol` —
- * so that file currently names an address with no code at it on the running
- * chain. Reading it would produce a log filter that silently matches nothing,
- * which is the worst failure available here. Pinned to the address the hooks
- * deploy actually produces, overridable while the two are out of step.
+ * `DeployProtocol.s.sol` — the same script the testnets use, via CREATE2.
+ *
+ * This was a pinned constant for as long as the local chain had two deploy
+ * paths writing that filename, one of them the retired protocol's. Pinning
+ * outlived the reason for it: the constant kept naming the OLD plain-CREATE
+ * address after local moved to CREATE2, so the filter matched nothing and the
+ * explorer showed an empty chain that `cast logs` proved was full. Read the
+ * record, like every other chain.
  */
-const ANVIL_SLOT_FACTORY = (process.env.SLOTS_FACTORY_ANVIL ??
-  "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0") as `0x${string}`;
-const ANVIL_START_BLOCK = Number(process.env.SLOTS_START_BLOCK_ANVIL ?? 0);
+// Resolved below, once `remoteFactory` and the constants it closes over exist.
+// Calling it up here reads `UNDEPLOYED` inside its temporal dead zone.
 
 /**
  * The local collective factory, which cannot be pinned the way the slot
  * factory is.
  *
- * `DeploySlots.s.sol` does not deploy it — collectives need a
+ * `DeployProtocol.s.sol` does deploy one, but the local drive script wants its
+ * own — collectives need a
  * `SplitsWarehouse`, which the protocol deploy has no business creating — so it
  * comes up separately, from `script/slots/DeployAndDriveCollective.s.sol`,
  * against a chain whose nonce is already wherever the seed left it. Its address
@@ -188,6 +191,21 @@ function remoteFactory(
 
   return { address: UNDEPLOYED, startBlock: "latest" };
 }
+
+const ANVIL_SLOT_FACTORY_RECORD = remoteFactory(
+  "SLOTS_FACTORY_ANVIL",
+  "SLOTS_START_BLOCK_ANVIL",
+  31337,
+);
+const ANVIL_SLOT_FACTORY = ANVIL_SLOT_FACTORY_RECORD.address;
+// Anvil always has a real record when it has a chain at all, so an env
+// override without a block still means "from genesis" rather than "from tip".
+const ANVIL_START_BLOCK = Number(
+  process.env.SLOTS_START_BLOCK_ANVIL ??
+    (ANVIL_SLOT_FACTORY_RECORD.startBlock === "latest"
+      ? 0
+      : ANVIL_SLOT_FACTORY_RECORD.startBlock),
+);
 
 const BASE_SEPOLIA_SLOT_FACTORY = remoteFactory(
   "SLOTS_FACTORY_BASE_SEPOLIA",

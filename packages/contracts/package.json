@@ -33,6 +33,8 @@
   },
   "scripts": {
     "build": "tsup",
+    "sync-abis": "node scripts/sync-abis.mjs",
+    "sync-abis:check": "node scripts/sync-abis.mjs --check",
     "clean": "rm -rf dist",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",

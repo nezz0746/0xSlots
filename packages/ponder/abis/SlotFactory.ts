@@ -1,4 +1,5 @@
-// Copied from packages/contracts/src/abis/slots/slotFactory.ts. Do not edit.
+// Mirrored from packages/contracts/src/abis/slots/slotFactory.ts
+// by packages/contracts/scripts/sync-abis.mjs. Do not edit.
 export const SlotFactoryAbi = [
     {
       "type": "constructor",
@@ -175,6 +176,19 @@ export const SlotFactoryAbi = [
     },
     {
       "type": "function",
+      "name": "initializedVersion",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "isSlot",
       "inputs": [
         {
@@ -261,6 +275,19 @@ export const SlotFactoryAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "event",

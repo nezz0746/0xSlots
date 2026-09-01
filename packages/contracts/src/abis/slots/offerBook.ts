@@ -1,4 +1,4 @@
-// Generated from src/periphery/book/OfferBook.sol. Do not edit.
+// Generated from src/periphery/book/OfferBook.sol by scripts/sync-abis.mjs. Do not edit.
 export const offerBookAbi = [
     {
       "type": "constructor",
@@ -278,6 +278,19 @@ export const offerBookAbi = [
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "initializedVersion",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",
@@ -677,6 +690,19 @@ export const offerBookAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "event",

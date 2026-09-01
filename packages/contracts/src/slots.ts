@@ -17,6 +17,7 @@ export {
   // Evict-and-take, composed from OUTSIDE the slot. `liquidateAndTake` was a
   // core entry point and is not one any more; this is where it lives.
   slotTakerAbi,
+  slotCollectiveFactoryAbi,
 } from "./abis/slots";
 
 import type { Address } from "viem";
@@ -31,12 +32,12 @@ import { anvil, baseSepolia } from "viem/chains";
  * cannot read. Local only for now — this protocol has not been deployed to a
  * public chain.
  *
- * The anvil address is deterministic from a fresh chain driven by account 0,
- * as `script/slots/DeploySlots.s.sol` deploys it. See
- * `docs/plans/2026-09-01-slots-local-runbook.md`.
+ * The anvil address is CREATE2, from `script/protocol/DeployProtocol.s.sol` —
+ * the same script every testnet uses, so a local address is a real address and
+ * does not move when the deploy order changes.
  */
 export const slotsFactoryAddress: Partial<Record<number, Address>> = {
-  [anvil.id]: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+  [anvil.id]: "0x4eA78564682e798c667EdB24723D0A6ec4F5caAD",
   [baseSepolia.id]: "0xAd348684dc13127C18e2b96d7FFdC0cC6B3E2dAA",
 };
 
@@ -52,9 +53,9 @@ export const slotsFactoryAddress: Partial<Record<number, Address>> = {
  * no transaction and only sends `getOrDeploy` when `isDeployed` says nothing is
  * there yet.
  *
- * The anvil address is deterministic from a fresh chain driven by account 0, as
- * `script/slots/DeploySlots.s.sol` deploys it — LAST, so the addresses above it
- * do not move.
+ * The anvil address is CREATE2, from `script/protocol/DeployProtocol.s.sol`.
+ * Deploy order no longer moves it — that used to be the reason this one had to
+ * be deployed last.
  */
 export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
   {
@@ -75,12 +76,12 @@ export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
  * Optional per chain, exactly like the book. A chain without one can still
  * evict and take on ERC-20; it is native slots that lose the atomic path.
  *
- * The anvil address is deterministic from a fresh chain driven by account 0,
- * as `script/slots/DeploySlots.s.sol` deploys it — recorded in
- * `apps/contracts/deployments/31337/SlotTaker.json`.
+ * The anvil address is CREATE2, from `script/protocol/DeployProtocol.s.sol` —
+ * recorded in `apps/contracts/deployments/31337/SlotTaker.json`. It matches the
+ * base-sepolia address because CREATE2 makes it chain-independent.
  */
 export const slotTakerAddress: Partial<Record<number, Address>> = {
-  [anvil.id]: "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+  [anvil.id]: "0x5c66E3Abdb742647E971598be63f91120E07876f",
   [baseSepolia.id]: "0x5c66E3Abdb742647E971598be63f91120E07876f",
 };
 
@@ -96,8 +97,21 @@ export const slotTakerAddress: Partial<Record<number, Address>> = {
  * Optional per chain. A chain without one simply has no public book, and the
  * private hand-over path (paste an order the bidder sent you) still works.
  */
+/**
+ * The PORTED collective factory — the one that speaks `proposeTerms`.
+ *
+ * Its own table rather than an entry in `slotCollectiveFactoryAddress`, which
+ * still points at the pre-port deployment on base mainnet. Two contracts with
+ * the same name and incompatible surfaces should not share a lookup; the
+ * indexer had to grow a `version` discriminator for exactly this reason.
+ */
+export const slotsCollectiveFactoryAddress: Partial<Record<number, Address>> = {
+  [anvil.id]: "0x6401a34bE3f440a7293a03e1E0F9E173a303be41",
+  [baseSepolia.id]: "0xFc3B6B846feEccbB7Fe53C8151d67BAd77A20c93",
+};
+
 export const offerBookAddress: Partial<Record<number, Address>> = {
-  [anvil.id]: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+  [anvil.id]: "0xd4a800Ff4E72F5486bCb26E97C63358241CeF84d",
   [baseSepolia.id]: "0xC8b5Fb19F5bF22105FB037aCD874CA7Fd2D562Ba",
 };
 

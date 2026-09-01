@@ -1,4 +1,4 @@
-// Generated from src/SlotFactory.sol. Do not edit.
+// Generated from src/SlotFactory.sol by scripts/sync-abis.mjs. Do not edit.
 export const slotFactoryAbi = [
     {
       "type": "constructor",
@@ -175,6 +175,19 @@ export const slotFactoryAbi = [
     },
     {
       "type": "function",
+      "name": "initializedVersion",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "isSlot",
       "inputs": [
         {
@@ -261,6 +274,19 @@ export const slotFactoryAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "event",

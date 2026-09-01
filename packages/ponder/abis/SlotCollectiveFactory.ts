@@ -1,5 +1,5 @@
-// Generated from apps/contracts/src/SlotCollectiveFactory.sol. Copied from
-// packages/contracts/src/abis/slots/slotCollectiveFactory.ts.
+// Mirrored from packages/contracts/src/abis/slots/slotCollectiveFactory.ts
+// by packages/contracts/scripts/sync-abis.mjs. Do not edit.
 export const SlotCollectiveFactoryAbi = [
     {
       "type": "constructor",
@@ -238,6 +238,19 @@ export const SlotCollectiveFactoryAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "event",

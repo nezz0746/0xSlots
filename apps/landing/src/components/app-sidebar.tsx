@@ -8,6 +8,7 @@ import {
   Trophy,
   User,
   Users,
+  FileCode2,
 } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -46,7 +47,7 @@ import {
 } from "@/context/explorer-section";
 import { NavLink, useNavigation } from "@/context/navigation";
 import { EXTERNAL_LINKS } from "@/lib/external-links";
-import { REWARDS_ENABLED } from "@/lib/features";
+import { CONTRACTS_PAGE_ENABLED, REWARDS_ENABLED } from "@/lib/features";
 
 export function AppSidebar() {
   const pathname = usePathname();

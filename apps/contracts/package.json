@@ -6,8 +6,8 @@
   "scripts": {
     "dev:local": "./scripts/dev-chain.sh",
     "anvil": "anvil --block-time 2 --gas-limit 2000000000",
-    "deploy:local": "forge script script/slots/DeploySlots.s.sol:DeploySlots --broadcast --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    "seed:local": "forge script script/slots/SeedSlots.s.sol:SeedSlots --broadcast --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sig \"run(address,address,address)\" 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9 0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "deploy:local": "forge script script/protocol/DeployProtocol.s.sol:DeployProtocol --broadcast --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    "seed:local": "forge script script/slots/SeedSlots.s.sol:SeedSlots --broadcast --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sig \"run(address)\" $(python3 -c \"import json;print(json.load(open('deployments/31337/SlotFactory.json'))['address'])\")",
     "reset:local": "pnpm deploy:local && pnpm seed:local"
   }
 }

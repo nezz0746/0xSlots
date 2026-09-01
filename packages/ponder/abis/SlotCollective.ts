@@ -1,10 +1,5 @@
-// Generated from apps/contracts/src/SlotCollective.sol. Copied from
-// packages/contracts/src/abis/slots/slotCollective.ts — kept here so the
-// indexer's types do not depend on that package having been built.
-//
-// Ported to the hook-based Slot: TWO manager roles rather than three, a
-// two-member `Dimension` enum on the relay events, and no
-// `LiquidationBountyRelayed`.
+// Mirrored from packages/contracts/src/abis/slots/slotCollective.ts
+// by packages/contracts/scripts/sync-abis.mjs. Do not edit.
 export const SlotCollectiveAbi = [
     {
       "type": "constructor",
@@ -928,6 +923,19 @@ export const SlotCollectiveAbi = [
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "function",

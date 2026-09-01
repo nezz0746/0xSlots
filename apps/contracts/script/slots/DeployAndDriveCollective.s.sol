@@ -99,7 +99,7 @@ contract DeployAndDriveCollective is Script {
 
     /**
      * @param slotFactoryAddr The already-deployed `SlotFactory` — printed by
-     *        `DeploySlots`, and in `deployments/31337/SlotFactory.json`.
+     *        `DeployProtocol`, and in `deployments/31337/SlotFactory.json`.
      * @param hookAddr A hook that answers `hooks()`. The slot validates it at
      *        propose time, so a contract that cannot answer is refused there
      *        rather than here.
@@ -109,7 +109,7 @@ contract DeployAndDriveCollective is Script {
 
         // ── 1. the collective's own plumbing ───────────────────────────────
         //
-        // Deployed here rather than in `DeploySlots` because a collective needs
+        // Deployed here rather than in `DeployProtocol` because a collective needs
         // a `SplitsWarehouse`, which is 0xSplits infrastructure and has no
         // business being minted by the protocol's own deploy on a real chain.
         vm.startBroadcast(PK_ADMIN);
@@ -282,7 +282,7 @@ contract DeployAndDriveCollective is Script {
         });
     }
 
-    /// @dev Same shape `DeploySlots` writes, and what the indexer's local
+    /// @dev Same shape `DeployProtocol` writes, and what the indexer's local
     ///      config reads to find the collective factory — its address is a
     ///      function of when this ran, so it cannot be a constant anywhere.
     function _record(

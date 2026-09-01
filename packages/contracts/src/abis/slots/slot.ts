@@ -1,4 +1,4 @@
-// Generated from src/Slot.sol. Do not edit.
+// Generated from src/Slot.sol by scripts/sync-abis.mjs. Do not edit.
 export const slotAbi = [
     {
       "type": "constructor",
@@ -1148,6 +1148,19 @@ export const slotAbi = [
       ],
       "outputs": [],
       "stateMutability": "payable"
+    },
+    {
+      "type": "function",
+      "name": "version",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint64",
+          "internalType": "uint64"
+        }
+      ],
+      "stateMutability": "pure"
     },
     {
       "type": "function",

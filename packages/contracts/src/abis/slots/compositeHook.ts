@@ -1,4 +1,4 @@
-// Generated from src/hooks/CompositeHook.sol. Do not edit.
+// Generated from src/hooks/CompositeHook.sol by scripts/sync-abis.mjs. Do not edit.
 export const compositeHookAbi = [
     {
       "type": "constructor",
