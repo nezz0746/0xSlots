@@ -226,6 +226,26 @@ abstract contract SlotAccounting is SlotHooks {
         }
     }
 
+    function _vacate() internal {
+        _occupant = address(0);
+        _price = 0;
+        _deposit = 0;
+        occupiedSince = 0;
+        lastSettled = uint64(block.timestamp);
+    }
+
+    function _flush() internal {
+        uint256 amount = collectedTax;
+        if (amount == 0) return;
+        collectedTax = 0;
+        // Straight to the recipient. No fee is carved out for the hook: every
+        // module ever deployed under the previous design charged zero, and the
+        // path that read a fee from an untrusted contract sat inside
+        // `liquidate()` where nothing untrusted belongs.
+        _payOrCredit(recipient, amount);
+        emit TaxCollected(recipient, amount);
+    }
+
     /// @dev Pull `amount` of the slot's currency from `from`.
     function _pull(address from, uint256 amount) internal {
         if (amount == 0) return;

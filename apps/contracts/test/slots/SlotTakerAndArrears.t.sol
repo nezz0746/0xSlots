@@ -6,6 +6,9 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot, SlotInit} from "../../src/slots/Slot.sol";
+// `abi.encodeCall` needs the contract that DECLARES the function, not the one
+// that inherits it — these live on the occupancy layer now.
+import {SlotOccupancy} from "../../src/slots/SlotOccupancy.sol";
 import {SlotFactory} from "../../src/slots/SlotFactory.sol";
 import {SlotTaker} from "../../src/slots/periphery/SlotTaker.sol";
 
@@ -88,8 +91,8 @@ contract SlotTakerAndArrearsTest is Test {
         vm.startPrank(keeper);
         token.approve(address(s), type(uint256).max);
         bytes[] memory calls = new bytes[](2);
-        calls[0] = abi.encodeCall(Slot.liquidate, ());
-        calls[1] = abi.encodeCall(Slot.buy, (keeper, dep, 0.01e18, 0));
+        calls[0] = abi.encodeCall(SlotOccupancy.liquidate, ());
+        calls[1] = abi.encodeCall(SlotOccupancy.buy, (keeper, dep, 0.01e18, 0));
         (bool ok, ) = address(s).call(
             abi.encodeWithSignature("multicall(bytes[])", calls)
         );
