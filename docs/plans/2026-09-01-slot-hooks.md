@@ -124,31 +124,85 @@ the protocol's first invariant.
 
 ---
 
-## Migration is additive — nothing deployed has to move
+## Getters: one canonical name, one legacy alias, one removal
 
-Two adapters, roughly forty lines each:
+The three names for one concept are the most visible part of the confusion, and
+they are not all in the same situation. Which of them are frozen is a question
+of fact, not taste:
 
-- **`LegacyPolicyAdapter`** — implements `ISlotHook`, declares only the
-  `before*` flags, forwards to an existing `IOccupancyPolicy`.
-- **`LegacyUtilityAdapter`** — declares only the `after*` flags, forwards to an
-  existing `IUtility`.
+| getter | who reads it | verdict |
+|---|---|---|
+| `hook()` | — | **new.** The canonical name. |
+| `module()` | `@adland/embed` → `packages/react/src/fetch.ts` — published to npm **and** served from a CDN | **keep** as a documented alias for `hook()` |
+| `utility()` | only adland's own `use-collective-earnings.ts`, which they redeploy at will | **remove** |
+| `mutableModule()` / `mutableUtility()` | same split | collapse to one |
 
-`MetadataModule`, `AdModule`, `FeedPostModule` and all six policies keep
-working, unchanged, behind an adapter or inside a `CompositeHook`. They are UUPS
-proxies with live state; a lockstep redeploy was the expensive part of this and
-adapters remove it entirely. **Migration becomes opt-in, per slot.**
+`module()` is the one that cannot go. That file picks a single-value call
+deliberately, and says why in a comment:
 
-### Storage
+> a slot deployed after the `module` → `utility` rename fails to decode against
+> an older SDK's ABI
 
-`hook` is appended at the tail. `occupancyPolicy` (slot 15) and `utility`
-(slot 6) stay exactly where they are and stay readable — `utility()` and
-`module()` in particular are load-bearing for adland, which resolves a slot's
-creative through them and is embedded on sites that will never redeploy.
+They have already been burned by exactly this rename once. The embed is bundled
+by third parties from npm, so its consumers cannot be enumerated, let alone
+asked to upgrade.
 
-A slot with a `hook` set uses it. A slot without one falls back to the legacy
-pair, so nothing needs migrating on any schedule but its own.
+`utility()` is the opposite: it is the *newer* name, it has no external reader,
+and it is the one that caused the ambiguity in the first place.
+
+### Removing a getter is not removing storage
+
+`utility` at slot 6 and `occupancyPolicy` at slot 15 stay **forever**, whatever
+happens to their getters. 237+ live proxies hold state at those offsets; a
+getter is bytecode, a slot is a promise. The fields simply stop being read.
 
 ---
+
+## Migration: upgrade in place where possible, adapt where not
+
+The split is decided by whether a contract is a proxy, and it falls almost
+entirely on the useful side:
+
+| | upgradeable in place | needs an adapter |
+|---|---|---|
+| **modules** | `MetadataModule`, `AdModule` (UUPS via inheritance), `FeedPostModule`, `SlotData` | — |
+| **policies** | — | all six: `MinimumPrice`, `MinimumTenure`, `TokenHolder`, `AllOf`, `OneOf`, `Composite` |
+
+**Every module is a UUPS proxy.** Each becomes a hook by upgrading its
+implementation: it gains `hooks()` and the `after*` functions, keeps everything
+it already does, keeps its per-slot storage, and **keeps its address**.
+
+**Every policy is immutable** — deployed through CREATE2 factories with no
+upgrade path. They are small and pure, so wrapping is cheap: a
+`LegacyPolicyAdapter` of roughly forty lines implements `ISlotHook`, declares
+only the `before*` flags, and forwards to an existing `IOccupancyPolicy`.
+
+Nothing deployed has to be abandoned, and no upgrade has to be coordinated with
+any other.
+
+### Worked example: AdLand
+
+This is the case that decides whether the design is practical, and it comes out
+better than a compatibility story — it comes out as *no story at all*.
+
+1. `MetadataModule`'s implementation is upgraded to `AdLandHook`. It declares
+   `afterBuy` and `afterRelease` (what it already reacts to), keeps
+   `tokenURI(slot)`, keeps every slot's stored URI, and keeps its address —
+   `0x0896A9…` on Base.
+2. A slot sets `hook` to that same address.
+
+adland's render path is unchanged:
+
+```
+slot.module()  →  0x0896A9…  →  tokenURI(slot)  →  the creative
+```
+
+And `module()` returning the hook is not a shim papering over a rename — **for
+adland the hook literally is the module**, the same contract at the same
+address, upgraded. The embed needs no republish, the CDN needs no new build, and
+the npm consumers nobody can enumerate never notice.
+
+One UUPS upgrade. No address change. No client change.
 
 ## Open decisions
 
@@ -163,9 +217,10 @@ makes them safe to call uncapped. If a hook needs to record something about a
 decision, that is what the matching `after` is for. Worth confirming no intended
 use case needs otherwise, because this is the load-bearing constraint.
 
-**Does the fallback stay forever?** Reading `hook`, then `occupancyPolicy`, then
-`utility` is three reads and two eras. Simpler to keep it permanently than to
-schedule a migration nobody is paid to do.
+**Which module upgrades first?** `MetadataModule` is the obvious pilot: it is
+the one with a frozen external consumer, so if the in-place upgrade holds for
+adland it holds for everything. `FeedPostModule` and `SlotData` follow with no
+external pressure at all.
 
 ---
 
@@ -174,14 +229,20 @@ schedule a migration nobody is paid to do.
 1. **Collapse the gallery** — pure deletion. Shrinks the pending beacon upgrade
    and means the merge later joins two single addresses rather than a tier and a
    list.
-2. **`ISlotHook`, `SlotContext`, flags, the two adapters.** New surface; nothing
-   existing breaks.
-3. **`CompositeHook`** — the userland fan-out.
-4. **SDK, indexer, explorer** — one address to show instead of three concepts.
-5. **Docs** — the `before` decides / `after` records rule, stated once, near the
+2. **`ISlotHook`, `SlotContext`, flags.** New surface; nothing existing breaks.
+   `hook` is added, `utility()` removed, `module()` kept as an alias.
+3. **`LegacyPolicyAdapter`** — the six immutable policies keep working.
+4. **`CompositeHook`** — the userland fan-out.
+5. **Upgrade `MetadataModule` in place to `AdLandHook`** — the pilot, and the
+   proof the migration story holds where it is hardest.
+6. **SDK, indexer, explorer** — one address to show instead of three concepts.
+7. **Docs** — the `before` decides / `after` records rule, stated once, near the
    interface.
 
-Steps 1 and 2 are independent of each other and both are safe to land alone.
+Steps 1 and 2 are independent and either can land alone. Step 5 is the one worth
+doing early despite its position: it is the only step with a consumer that
+cannot be asked to upgrade, so it is where the design either survives contact
+or does not.
 
 ---
 
@@ -195,4 +256,9 @@ Steps 1 and 2 are independent of each other and both are safe to land alone.
 - **Does not give hooks money.** Module fees were removed after every deployed
   module was found to charge zero; reintroducing a fee path would restore the
   retroactive-redirect and uncapped-call problems along with it.
-- **Does not touch `utility()` or `module()`.** Those selectors are permanent.
+- **Does not remove `module()`.** That selector is permanent: it is what
+  `@adland/embed` resolves a creative through, and the embed is bundled from npm
+  by consumers who cannot be enumerated. `utility()` goes, because its only
+  reader is adland's own app.
+- **Does not move any storage.** Slots 6 and 15 keep their state whatever
+  happens to the getters that read them.
