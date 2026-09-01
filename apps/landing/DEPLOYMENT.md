@@ -26,6 +26,25 @@ reads as a broken app rather than an undeployed one. Keep the protocol's chain
 configuration (`apps/contracts/deployments/config/`) ahead of the branch, not
 behind it.
 
+## Which indexer each build reads
+
+One environment variable, set on the Dokploy application:
+
+| App | Variable | Reads |
+|---|---|---|
+| `Landing` (main) | *(unset)* | `0xslots-production.up.railway.app` |
+| `Landing:DEV` (develop) | `NEXT_PUBLIC_SLOTS_ENV=development` | `0xslots-dev.up.railway.app` |
+
+A word rather than a URL, on purpose. The endpoints live in the SDK next to the
+code that knows what they serve, so the two deployments cannot drift apart by
+someone updating one and forgetting the other. Unset means production, because
+a build that says nothing should read the stable instance — pointing at the
+development one by accident means reading a database that is rebuilt whenever a
+testnet is redeployed.
+
+`NEXT_PUBLIC_PONDER_URL` still overrides both, for pointing a branch at a
+one-off instance.
+
 ## Adding a chain
 
 Three things have to name it before the explorer can show it:

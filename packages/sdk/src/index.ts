@@ -8,6 +8,8 @@ export {
   type CreateSlotsParams,
   createSlotsClient,
   DEFAULT_API_URL,
+  API_URLS,
+  apiUrlFor,
   type IndexerMeta,
   LOCAL_API_URL,
   SELL_ORDER_TYPES,
@@ -54,3 +56,5 @@ export {
   NATIVE_CURRENCY_ADDRESS,
   type TokenInfo,
 } from "./tokens";
+
+export type { SlotsEnvironment } from "./client";

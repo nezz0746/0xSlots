@@ -96,16 +96,40 @@ export enum SlotsChain {
 }
 
 /**
+ * Which deployment of the indexer to read.
+ *
+ * Not a chain. ONE url serves every chain — that is the shape change that
+ * matters most in the move off the subgraph: a subgraph is one deployment per
+ * network, so the SDK used to carry a `Record<SlotsChain, string>` and pick by
+ * chain. Ponder indexes every chain into one database, so the chain is a
+ * `where: { chainId }` filter on the query — see `withChain`.
+ *
+ * What DOES vary is which instance you are pointed at, and that tracks the
+ * branch rather than the chain: `development` follows `develop` and indexes
+ * whatever has just been deployed to a testnet, `production` follows `main`.
+ * Naming it an environment says that out loud; a bare URL override said
+ * nothing and had to be remembered per deployment.
+ */
+export type SlotsEnvironment = "production" | "development";
+
+export const API_URLS: Record<SlotsEnvironment, string> = {
+  production: "https://0xslots-production.up.railway.app/graphql",
+  development: "https://0xslots-dev.up.railway.app/graphql",
+};
+
+/**
  * The default read endpoint.
  *
- * ONE url for every chain, which is the shape change that matters most in the
- * move off the subgraph: a subgraph is one deployment per network, so the SDK
- * used to carry a `Record<SlotsChain, string>` and pick by chain. Ponder indexes
- * every chain into one database, so the chain is a `where: { chainId }` filter
- * on the query instead of a property of the endpoint — see `withChain`.
+ * Production, deliberately: a consumer who says nothing should get the stable
+ * instance. Development is opt-in, because pointing at it by accident means
+ * reading a database that is rebuilt whenever a testnet is redeployed.
  */
-export const DEFAULT_API_URL =
-  "https://0xslots-production.up.railway.app/graphql";
+export const DEFAULT_API_URL = API_URLS.production;
+
+/** Resolve an environment to its endpoint. */
+export function apiUrlFor(env: SlotsEnvironment = "production"): string {
+  return API_URLS[env];
+}
 
 /** The local indexer `pnpm dev:local` starts, for chain 31337. */
 export const LOCAL_API_URL = "http://localhost:42069/graphql";

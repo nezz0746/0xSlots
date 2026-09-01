@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createConfig, factory } from "ponder";
 import { parseAbiItem } from "viem";
 import {
@@ -117,14 +118,18 @@ function anvilCollectiveFactory(): Deployment {
 // ──────────────────────────────────────────
 // Per-chain factory addresses
 //
-// The hook-based factory is NOT DEPLOYED on base or base-sepolia yet. The
-// addresses that used to live here belong to the retired protocol and are
-// deliberately gone — pointing this config at them would index the old event
-// set against the new schema and write nothing but errors.
+// Remote chains read their factory from the deployment records the deploy
+// script writes, with an env var as an override.
 //
-// Until the deploy happens, each remote chain reads its address from an env
-// var and falls back to `startBlock: "latest"`, so an unconfigured chain costs
-// a log filter at the tip rather than a full historical scan for an address
+// The records were NOT trusted before, and the reason was real: the old
+// `DeployLocal` wrote the RETIRED factory's address into the same filenames,
+// so reading them would have indexed the old event set against the new schema
+// and written nothing but errors. `DeployProtocol` writes the hook-based
+// addresses now, so the file is the truth and the env var is the escape hatch
+// rather than the other way round.
+//
+// A chain with no record still falls back to `startBlock: "latest"`, so it
+// costs a log filter at the tip rather than a historical scan for an address
 // that has no code.
 // ──────────────────────────────────────────
 
@@ -135,20 +140,64 @@ type Deployment = {
   startBlock: number | "latest";
 };
 
-function remoteFactory(env: string, blockEnv: string): Deployment {
-  const address = process.env[env] as `0x${string}` | undefined;
-  if (!address) return { address: UNDEPLOYED, startBlock: "latest" };
-  const block = process.env[blockEnv];
-  return { address, startBlock: block ? Number(block) : "latest" };
+function remoteFactory(
+  env: string,
+  blockEnv: string,
+  chainId: number,
+  name = "SlotFactory",
+): Deployment {
+  // An explicit env var wins: it is how you point a branch at a different
+  // deployment without editing a committed file.
+  const fromEnv = process.env[env] as `0x${string}` | undefined;
+  if (fromEnv) {
+    const block = process.env[blockEnv];
+    return { address: fromEnv, startBlock: block ? Number(block) : "latest" };
+  }
+
+  // Otherwise the record the deploy script wrote.
+  try {
+    const raw = readFileSync(
+      join(__dirname, `../../apps/contracts/deployments/${chainId}/${name}.json`),
+      "utf8",
+    );
+    const rec = JSON.parse(raw) as Deployment & { version?: number };
+
+    // `version` is the discriminator, and it is load-bearing. These filenames
+    // were reused by the retired protocol's deploy scripts, so the records for
+    // chains the old protocol reached still hold PRE-PORT addresses —
+    // base mainnet's collective factory is one. Indexing those against this
+    // schema is the exact failure this config used to avoid by trusting
+    // nothing. Only `DeployProtocol` writes `version`, so only what it wrote
+    // is read.
+    if (rec.version === undefined) {
+      console.log(
+        `[chain ${chainId}] ${name}: record predates the port, ignoring`,
+      );
+      return { address: UNDEPLOYED, startBlock: "latest" };
+    }
+
+    if (rec.address && rec.address !== UNDEPLOYED) {
+      console.log(
+        `[chain ${chainId}] ${name} ${rec.address} from block ${rec.startBlock}`,
+      );
+      return { address: rec.address, startBlock: rec.startBlock };
+    }
+  } catch {
+    // No record for this chain: nothing is deployed there yet.
+  }
+
+  return { address: UNDEPLOYED, startBlock: "latest" };
 }
 
 const BASE_SEPOLIA_SLOT_FACTORY = remoteFactory(
   "SLOTS_FACTORY_BASE_SEPOLIA",
   "SLOTS_START_BLOCK_BASE_SEPOLIA",
+  84532,
 );
 const BASE_SLOT_FACTORY = remoteFactory(
   "SLOTS_FACTORY_BASE",
   "SLOTS_START_BLOCK_BASE",
+  8453,
 );
 
 // ──────────────────────────────────────────
@@ -167,13 +216,19 @@ const BASE_SLOT_FACTORY = remoteFactory(
 // gone until a ported factory is deployed, and each chain reads its own.
 // ──────────────────────────────────────────
 
+// The ported collective factory IS deployed on base-sepolia now, so these read
+// their own record rather than staying dark.
 const BASE_SEPOLIA_COLLECTIVE_FACTORY = remoteFactory(
   "COLLECTIVE_FACTORY_BASE_SEPOLIA",
   "COLLECTIVE_START_BLOCK_BASE_SEPOLIA",
+  84532,
+  "SlotCollectiveFactory",
 );
 const BASE_COLLECTIVE_FACTORY = remoteFactory(
   "COLLECTIVE_FACTORY_BASE",
   "COLLECTIVE_START_BLOCK_BASE",
+  8453,
+  "SlotCollectiveFactory",
 );
 
 // ──────────────────────────────────────────
