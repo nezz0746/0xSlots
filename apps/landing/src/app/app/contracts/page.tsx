@@ -9,7 +9,7 @@ import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import { useChain } from "@/context/chain";
 import { CONTRACTS_PAGE_ENABLED } from "@/lib/features";
-import { beaconAbi, CONTRACTS } from "./registry";
+import { BEACON_IMPLEMENTATIONS, beaconAbi, CONTRACTS } from "./registry";
 
 /**
  * Every deployed contract on the selected chain: address, version, and who can
@@ -51,10 +51,7 @@ export default function ContractsPage() {
     ...(entry.adminFn
       ? [{ address, abi: entry.abi, functionName: entry.adminFn, chainId } as const]
       : []),
-    ...(entry.implFn
-      ? [{ address, abi: entry.abi, functionName: entry.implFn, chainId } as const]
-      : []),
-    ...(entry.beacon
+    ...(entry.ownsBeacon
       ? [{ address, abi: entry.abi, functionName: "beacon", chainId } as const]
       : []),
   ]);
@@ -70,44 +67,70 @@ export default function ContractsPage() {
     const take = () => (data ? data[cursor++] : undefined);
     const version = entry.hasVersion ? take() : undefined;
     const admin = entry.adminFn ? take() : undefined;
-    const impl = entry.implFn ? take() : undefined;
-    const beacon = entry.beacon ? take() : undefined;
-    return { entry, address, version, admin, impl, beacon };
+    const beacon = entry.ownsBeacon ? take() : undefined;
+    return { entry, address, version, admin, beacon };
   });
 
   /**
-   * What each beacon is actually serving.
+   * The beacon rows, resolved in two more passes.
    *
-   * A second round, because the address to ask is the answer to the first one.
-   * Reading it through the factory would have kept it to a single pass, but only
-   * `SlotFactory` forwards `implementation()` — and the point of the check is to
-   * ask the contract the proxies resolve through, not a convenience getter that
-   * might be forwarding something else.
+   * Dependent reads: the beacon's address is the answer to the first call, and
+   * the implementation's is the answer to the second. Three rounds for two rows
+   * is more round-trips than a page usually deserves, but each address here is
+   * asked of the chain rather than read from the package — which is the point.
+   * The factory cannot disagree with its own beacon (`implementation()` there
+   * is a forward, and the factory holds no copy), so there is nothing to
+   * reconcile; there is only the question of what is actually deployed.
    */
-  const beacons = rows.flatMap((r) =>
-    r.beacon?.status === "success"
-      ? [{ name: r.entry.name, address: r.beacon.result as `0x${string}` }]
-      : [],
+  const beaconsOf = new Map(
+    rows.flatMap((r) =>
+      r.beacon?.status === "success"
+        ? [[r.entry.name, r.beacon.result as `0x${string}`] as const]
+        : [],
+    ),
+  );
+
+  const withBeacon = BEACON_IMPLEMENTATIONS.map((b) => ({
+    spec: b,
+    beacon: beaconsOf.get(b.owner),
+    owner: present.find((p) => p.entry.name === b.owner)?.address,
+  })).filter(
+    (b): b is { spec: (typeof BEACON_IMPLEMENTATIONS)[number]; beacon: `0x${string}`; owner: `0x${string}` } =>
+      Boolean(b.beacon && b.owner),
   );
 
   const { data: served } = useReadContracts({
-    contracts: beacons.map(({ address }) => ({
-      address,
+    contracts: withBeacon.map(({ beacon }) => ({
+      address: beacon,
       abi: beaconAbi,
       functionName: "implementation",
       chainId,
     })),
-    query: { enabled: beacons.length > 0 },
+    query: { enabled: withBeacon.length > 0 },
   });
 
-  const servedBy = new Map(
-    beacons.map(({ name }, i) => [
-      name,
+  const implementations = withBeacon.map((b, i) => ({
+    ...b,
+    address:
       served?.[i]?.status === "success"
         ? (served[i].result as `0x${string}`)
         : undefined,
-    ]),
-  );
+  }));
+
+  const { data: implVersions } = useReadContracts({
+    contracts: implementations.flatMap(({ spec, address }) =>
+      address
+        ? [{ address, abi: spec.abi, functionName: "version", chainId } as const]
+        : [],
+    ),
+    query: { enabled: implementations.some((i) => i.address) },
+  });
+
+  let vCursor = 0;
+  const beaconRows = implementations.map((i) => ({
+    ...i,
+    version: i.address ? implVersions?.[vCursor++] : undefined,
+  }));
 
   const explorer = chain?.blockExplorers?.default.url;
 
@@ -134,27 +157,13 @@ export default function ContractsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ entry, address, version, admin, impl, beacon }) => (
+            {rows.map(({ entry, address, version, admin }) => (
               <tr key={entry.name} className="border-b last:border-0 align-top">
                 <td className="px-4 py-3">
                   <div className="font-medium">{entry.name}</div>
                   <div className="text-muted-foreground text-xs mt-0.5">
                     {entry.role}
                   </div>
-                  {impl?.status === "success" ? (
-                    <div className="text-muted-foreground/70 text-xs mt-1">
-                      implementation{" "}
-                      <CopyAddress address={impl.result as `0x${string}`} />
-                    </div>
-                  ) : null}
-                  {entry.beacon && beacon?.status === "success" ? (
-                    <BeaconLine
-                      serves={entry.beacon.serves}
-                      beacon={beacon.result as `0x${string}`}
-                      running={servedBy.get(entry.name)}
-                      expected={entry.beacon.expected(chainId)}
-                    />
-                  ) : null}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
@@ -199,6 +208,61 @@ export default function ContractsPage() {
                 </td>
               </tr>
             ))}
+
+            {/* Behind a beacon, so they are the code every proxy of their kind
+                runs — the largest blast radius here. Their address is asked of
+                the chain through the factory's beacon, never read from the
+                package, because that is the address the proxies resolve. */}
+            {beaconRows.map(({ spec, address, version, beacon, owner }) => (
+              <tr key={spec.name} className="border-b last:border-0 align-top">
+                <td className="px-4 py-3">
+                  <div className="font-medium">{spec.name}</div>
+                  <div className="text-muted-foreground text-xs mt-0.5">
+                    {spec.role}
+                  </div>
+                  <div className="text-muted-foreground/70 text-xs mt-1">
+                    behind beacon <CopyAddress address={beacon} />
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  {address ? (
+                    <div className="flex items-center gap-1.5">
+                      <CopyAddress address={address} />
+                      {explorer ? (
+                        <a
+                          href={`${explorer}/address/${address}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <ExternalLink className="size-3" />
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">…</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {version?.status === "success" ? (
+                    String(version.result)
+                  ) : address ? (
+                    <span className="text-muted-foreground">…</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  {/* The factory, and only the factory: it owns the beacon, so
+                      `upgradeBeacon` is the one way this address changes. */}
+                  <CopyAddress address={owner} />
+                  <div className="text-muted-foreground/70 text-xs mt-0.5">
+                    via {spec.owner}.upgradeBeacon
+                  </div>
+                </td>
+              </tr>
+            ))}
+
             {rows.length === 0 ? (
               <tr>
                 <td
@@ -223,62 +287,3 @@ export default function ContractsPage() {
 }
 
 
-/**
- * A factory's beacon, and whether it is serving the implementation the package
- * says it should be.
- *
- * The two really do drift. Deploying an implementation and pointing a beacon at
- * it are separate transactions, and for a while the deploy script did only the
- * first — so a record could name a version that no slot was running. That is
- * invisible from every other view in this app, because a slot behaves normally
- * while running whatever code the beacon last pointed at.
- *
- * "expected" is the address the SDK carries for this chain, which is what the
- * app and the indexer are written against. A mismatch is not necessarily an
- * emergency — someone may be mid-upgrade — but nobody should have to diff two
- * addresses by eye to find out.
- */
-function BeaconLine({
-  serves,
-  beacon,
-  running,
-  expected,
-}: {
-  serves: string;
-  beacon: `0x${string}`;
-  running: `0x${string}` | undefined;
-  expected: `0x${string}` | undefined;
-}) {
-  const synced =
-    running && expected
-      ? running.toLowerCase() === expected.toLowerCase()
-      : undefined;
-
-  return (
-    <div className="text-muted-foreground/70 text-xs mt-1 space-y-0.5">
-      <div>
-        beacon <CopyAddress address={beacon} />{" "}
-        <span className="text-muted-foreground/50">· {serves}</span>
-      </div>
-      {running ? (
-        <div className="flex items-center gap-1.5">
-          <span>serving</span>
-          <CopyAddress address={running} />
-          {synced === true ? (
-            <span className="text-emerald-600 dark:text-emerald-500">
-              in sync
-            </span>
-          ) : synced === false ? (
-            <span className="font-medium text-amber-600 dark:text-amber-500">
-              stale — expected <CopyAddress address={expected as `0x${string}`} />
-            </span>
-          ) : (
-            <span className="text-muted-foreground/50">
-              nothing recorded to compare
-            </span>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}

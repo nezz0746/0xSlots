@@ -3,8 +3,8 @@ import {
   minimumTenureHookFactoryAddress,
   offerBookAbi,
   offerBookAddress,
-  slotCollectiveImplementationAddress,
-  slotImplementationAddress,
+  slotAbi,
+  slotCollectiveAbi,
   slotCollectiveFactoryAbi,
   slotFactoryAbi as slotsFactoryAbi,
   slotCollectiveFactoryAddress,
@@ -30,28 +30,47 @@ export type ContractEntry = {
   hasVersion: boolean;
   /** Who may upgrade it, where that is a question at all. */
   adminFn?: "admin";
-  /** Beacon/implementation pointer, where there is one. */
-  implFn?: "implementation";
   upgradeable: boolean;
-  /**
-   * The beacon this contract owns, if it owns one.
-   *
-   * A beacon is the other half of the upgrade story and the half with the
-   * larger blast radius: hundreds of proxies delegate to whatever it points at,
-   * and pointing it is a SEPARATE transaction from deploying the code. So the
-   * deployment record naming an implementation is not evidence the beacon is
-   * serving it — the two really do drift, and did.
-   *
-   * `expected` is the implementation the package says should be behind it.
-   * Comparing that against what the beacon actually serves is the whole reason
-   * this appears on the page.
-   */
-  beacon?: {
-    /** What the proxies behind it are, in one word. */
-    serves: string;
-    expected: (chainId: number) => Address | undefined;
-  };
+  /** True when this contract owns an `UpgradeableBeacon`. */
+  ownsBeacon?: boolean;
 };
+
+/**
+ * An implementation that lives behind a beacon.
+ *
+ * These are rows in their own right, not a footnote on the factory that owns
+ * them. A beacon implementation is the code every proxy of its kind actually
+ * runs — hundreds of them, upgraded together in one transaction — so it is the
+ * largest blast radius on this page and deserves the same three answers as
+ * anything else: where it is, which version, and who can replace it.
+ *
+ * Its address is not read from the package. It is asked of the chain, through
+ * the beacon the factory owns, because that is the address the proxies resolve
+ * and the only one that is true by construction.
+ */
+export type BeaconImplementation = {
+  name: string;
+  role: string;
+  /** The `ContractEntry.name` of the factory whose beacon serves this. */
+  owner: string;
+  /** Read `version()` through this. */
+  abi: Abi;
+};
+
+export const BEACON_IMPLEMENTATIONS: BeaconImplementation[] = [
+  {
+    name: "Slot",
+    role: "The code every slot runs",
+    owner: "SlotFactory",
+    abi: slotAbi as Abi,
+  },
+  {
+    name: "SlotCollective",
+    role: "The code every collective runs",
+    owner: "SlotCollectiveFactory",
+    abi: slotCollectiveAbi as Abi,
+  },
+];
 
 /**
  * `UpgradeableBeacon.implementation()`.
@@ -79,9 +98,8 @@ export const CONTRACTS: ContractEntry[] = [
     abi: slotsFactoryAbi as Abi,
     hasVersion: true,
     adminFn: "admin",
-    implFn: "implementation",
     upgradeable: true,
-    beacon: { serves: "every slot", expected: (c) => slotImplementationAddress[c] },
+    ownsBeacon: true,
   },
   {
     name: "OfferBook",
@@ -100,10 +118,7 @@ export const CONTRACTS: ContractEntry[] = [
     hasVersion: true,
     adminFn: "admin",
     upgradeable: true,
-    beacon: {
-      serves: "every collective",
-      expected: (c) => slotCollectiveImplementationAddress[c],
-    },
+    ownsBeacon: true,
   },
   {
     name: "MinimumTenureHookFactory",
