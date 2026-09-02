@@ -41,8 +41,23 @@ contract SeedSlots is Script {
         vm.startBroadcast();
         address me = msg.sender;
 
-        address hook = address(new MinimumTenureHook(7 days, ""));
-        SlotsTestToken token = new SlotsTestToken();
+        // CREATE2, so the addresses do not depend on this script's nonce.
+        //
+        // Plain `new` derives from (deployer, nonce), and the nonce here is
+        // whatever `DeployProtocol` left it at — which differs between a fresh
+        // chain, where it deploys everything, and a warm one, where CREATE2
+        // lets it skip. So the token landed at one address under
+        // `pnpm dev:local` and a different one on a chain that was already up,
+        // the generated table matched only one of them, and the app offered a
+        // token with no code behind it.
+        //
+        // Salted `new` makes the address a function of the bytecode alone.
+        address hook = address(
+            new MinimumTenureHook{salt: "slots.seed.tenure-hook"}(7 days, "")
+        );
+        SlotsTestToken token = new SlotsTestToken{
+            salt: "slots.seed.test-token"
+        }();
         token.mint(me, 1_000_000e18);
 
         // Both are plain CREATE, so their addresses are a function of the seed's
@@ -144,9 +159,14 @@ contract SeedSlots is Script {
     }
 
     /// @dev The shape `DeployProtocol` writes, so every consumer reads one
-    ///      format. No `startBlock` — nothing indexes these two.
+    ///      format. `version` is not decoration: it is the discriminator that
+    ///      tells a record written by this protocol from one the retired
+    ///      protocol left under the same filename, and `sync-deployments`
+    ///      ignores any record without it. No `startBlock` — nothing indexes
+    ///      these two.
     function _record(string memory name, address addr) internal {
         string memory obj = name;
+        vm.serializeUint(obj, "version", 1);
         string memory json = vm.serializeAddress(obj, "address", addr);
         vm.writeFile(
             string.concat(

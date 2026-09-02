@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {console2} from "forge-std/console2.sol";
 import {Script} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
@@ -120,12 +121,55 @@ abstract contract ProtocolConfig is Script {
             );
     }
 
+    /**
+     * @dev `startBlock` is where the INDEXER begins, so it belongs to the
+     *      deployment and never to the run that happens to be writing.
+     *
+     *      This wrote `block.number` unconditionally, which was harmless while
+     *      the script only ever deployed. Now that it upgrades in place, that
+     *      would stamp the UPGRADE's block onto a contract deployed long before
+     *      it — and the indexer, reading this file, would silently skip every
+     *      event in between. The first symptom is an explorer that has lost
+     *      slots nobody deleted.
+     *
+     *      Keep whatever the record already holds. Only a genuinely new address
+     *      gets today's block.
+     */
     function record(string memory name, address addr, uint64 v) internal {
+        uint256 start = block.number;
+
+        string memory path = recordPath(name);
+        address prevAddr;
+        if (vm.exists(path)) {
+            string memory prev = vm.readFile(path);
+            prevAddr = prev.readAddress(".address");
+            if (prevAddr == addr) {
+                start = prev.readUint(".startBlock");
+            }
+        }
+
         string memory obj = name;
         vm.serializeAddress(obj, "address", addr);
         vm.serializeUint(obj, "version", v);
-        string memory json = vm.serializeUint(obj, "startBlock", block.number);
-        vm.writeFile(recordPath(name), json);
+        string memory json = vm.serializeUint(obj, "startBlock", start);
+
+        // `forge script` runs the script either way — `--broadcast` decides
+        // only whether the transactions are SENT, not whether the body runs. So
+        // a dry run reached this line and rewrote the records with addresses it
+        // had merely predicted; on a live chain that pointed the indexer at
+        // contracts that did not exist. Nothing in forge tells a script which
+        // mode it is in, so the caller says.
+        if (vm.envOr("DRY_RUN", false)) {
+            // Only when the record would actually change. `record` is called for
+            // every contract on every run, so logging each one buried the two
+            // lines that mattered under a dozen that said nothing.
+            if (!vm.exists(path) || prevAddr != addr) {
+                console2.log("would record", name, addr);
+            }
+            return;
+        }
+
+        vm.writeFile(path, json);
     }
 
     function deployed(string memory name) internal view returns (address) {

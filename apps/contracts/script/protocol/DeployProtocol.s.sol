@@ -2,12 +2,13 @@
 pragma solidity ^0.8.24;
 
 import {console2} from "forge-std/Script.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolConfig} from "./ProtocolConfig.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
-import {SlotTaker} from "../../src/periphery/SlotTaker.sol";
+import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
@@ -129,8 +130,29 @@ contract DeployProtocol is ProtocolConfig {
             )
         );
 
-        // ── stateless periphery ───────────────────────────────────────────
-        address taker = _deploy2("SlotTaker", 1, type(SlotTaker).creationCode);
+        // ── beacons ───────────────────────────────────────────────────────
+        //
+        // The implementation address reaches a beacon through `initialize`, and
+        // `initialize` runs ONCE. So without this, bumping `Slot` deployed a new
+        // implementation, updated the record to name it, and left the beacon
+        // pointing at the old one — every existing slot AND every new slot still
+        // running the previous code, while the deployment ledger claimed
+        // otherwise. It is the largest blast radius in the protocol and it was
+        // the one thing the upgrade path could not do.
+        _beacon("Slot", factory, slotImpl);
+        _beacon("SlotCollective", collectiveFactory, collectiveImpl);
+
+        // ── hooks ─────────────────────────────────────────────────────────
+        address adLandImpl = _deploy2(
+            "AdLandImpl",
+            new AdLand().version(),
+            type(AdLand).creationCode
+        );
+        address adLand = _proxy(
+            "AdLand",
+            adLandImpl,
+            abi.encodeCall(AdLand.initialize, (cfg.admin))
+        );
 
         vm.stopBroadcast();
 
@@ -143,13 +165,13 @@ contract DeployProtocol is ProtocolConfig {
             collectiveFactory,
             SlotCollectiveFactory(collectiveFactory).version()
         );
-        record("SlotTaker", taker, 1);
+        record("AdLand", adLand, AdLand(adLand).version());
 
         console2.log("");
         console2.log("SlotFactory          ", factory);
         console2.log("OfferBook            ", book);
         console2.log("SlotCollectiveFactory", collectiveFactory);
-        console2.log("SlotTaker            ", taker);
+        console2.log("AdLand               ", adLand);
     }
 
     /// @dev Deploy at a deterministic address, or return what is already there.
@@ -171,18 +193,105 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("deployed ", name, at);
     }
 
+    /// @dev EIP-1967 implementation slot.
+    bytes32 internal constant _IMPL_SLOT =
+        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    /**
+     * @dev Bring a proxy to `impl`, deploying it the first time and UPGRADING it
+     *      every time after.
+     *
+     *      This used to CREATE2 the proxy unconditionally, and it had a bug that
+     *      the surrounding comment denied: a proxy's initcode embeds its
+     *      implementation address, so the predicted address MOVED whenever the
+     *      implementation's bytecode changed. `_deploy2Raw` skips only when code
+     *      already exists at the predicted address — and a moved address has
+     *      none. So a routine implementation change did not upgrade anything; it
+     *      deployed a second protocol beside the first and left every slot the
+     *      live factory had created pointing at the abandoned one.
+     *
+     *      The fix is to stop deriving the address at all after the first
+     *      deployment. The record in `deployments/<chainid>/` is where the proxy
+     *      lives; CREATE2 only decides where a proxy that does not exist yet
+     *      goes. That also makes this the same operation CI runs: `upgrade`
+     *      really upgrades.
+     */
+    /**
+     * Point a factory's beacon at `impl`, if it is not there already.
+     *
+     * Both factories own their beacon and gate `upgradeBeacon` behind their
+     * admin, so this is the admin's call to make — the same key that authorises
+     * a UUPS upgrade.
+     *
+     * Read through the FACTORY rather than the beacon: `SlotFactory` exposes
+     * `implementation()` and `SlotCollectiveFactory` exposes `beacon()`, and
+     * going through the public surface means this cannot drift from what the
+     * contracts actually do.
+     */
+    function _beacon(
+        string memory name,
+        address factory_,
+        address impl
+    ) internal {
+        (bool ok, bytes memory data) = factory_.staticcall(
+            abi.encodeWithSignature("implementation()")
+        );
+        if (!ok || data.length < 32) {
+            (ok, data) = factory_.staticcall(abi.encodeWithSignature("beacon()"));
+            require(ok && data.length >= 32, "no beacon on factory");
+            address b = abi.decode(data, (address));
+            (ok, data) = b.staticcall(abi.encodeWithSignature("implementation()"));
+            require(ok && data.length >= 32, "beacon has no implementation()");
+        }
+        address current = abi.decode(data, (address));
+
+        if (current == impl) {
+            console2.log("current  ", name, impl);
+            return;
+        }
+        (ok, ) = factory_.call(
+            abi.encodeWithSignature("upgradeBeacon(address)", impl)
+        );
+        require(ok, "upgradeBeacon failed");
+        console2.log("beacon   ", name, impl);
+    }
+
     function _proxy(
         string memory name,
         address impl,
         bytes memory initData
     ) internal returns (address at) {
+        address rec = deployed(name);
+
+        if (rec != address(0) && rec.code.length != 0) {
+            address current = address(
+                uint160(uint256(vm.load(rec, _IMPL_SLOT)))
+            );
+            if (current == impl) {
+                console2.log("current  ", name, rec);
+                return rec;
+            }
+            // No init data: the proxy's storage is already initialized. A
+            // migration that genuinely needs one belongs in a `reinitializer`
+            // called explicitly, not smuggled into every deploy run.
+            UUPSUpgradeable(rec).upgradeToAndCall(impl, "");
+            console2.log("upgraded ", name, rec);
+            return rec;
+        }
+
+        if (rec != address(0)) {
+            // A record naming an address with no code is a record from another
+            // chain, or from a run that never landed. Continuing would deploy a
+            // second proxy and overwrite the record with it, which is exactly
+            // the failure this function now exists to prevent.
+            console2.log("STALE RECORD", name, rec);
+            revert("record names an address with no code");
+        }
+
         bytes memory code = abi.encodePacked(
             type(ERC1967Proxy).creationCode,
             abi.encode(impl, initData)
         );
-        // The proxy's salt carries no version: the PROXY is the stable address
-        // users hold, and it must not move when the implementation behind it
-        // does. Versioning lives on the implementation's salt.
         return _deploy2Raw(name, saltFor(name, 0), code);
     }
 

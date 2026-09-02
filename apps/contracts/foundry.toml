@@ -1,4 +1,23 @@
 [profile.default]
+# CREATE2 addresses must depend on CODE, and nothing else.
+#
+# solc appends a metadata hash to every contract's bytecode, and that hash covers
+# the whole compilation unit — every imported source, the remappings, the
+# settings. So a rebuild that changed nothing behavioural still moved the
+# initcode, which moved the predicted CREATE2 address, which made the deploy
+# script want to redeploy every implementation and re-point every proxy at
+# byte-identical code.
+#
+# It was not hypothetical: `Slot` compiled to runtime bytes identical to the
+# deployed ones apart from the trailing hash, and the upgrade gate reported a
+# pending BEACON upgrade for it.
+#
+# The cost is explorer verification, which needs "metadata: none" selected to
+# match. Worth it: a deterministic address is the entire premise of this deploy
+# scheme.
+bytecode_hash = "none"
+cbor_metadata = false
+
 # Required by openzeppelin-foundry-upgrades: it shells out to the OZ Upgrades
 # CLI, which reads the AST and build-info to validate storage layout.
 ffi = true
