@@ -1,6 +1,6 @@
 "use client";
 
-import { slotFactoryAbi, slotsFactoryAddress } from "@0xslots/contracts/slots";
+import { slotFactoryAbi, slotFactoryAddress } from "@0xslots/contracts/slots";
 import { useAccount, useReadContract } from "wagmi";
 import { useChain } from "@/context/chain";
 
@@ -22,7 +22,7 @@ import { useChain } from "@/context/chain";
 export function useFactoryAdmin() {
   const { chainId } = useChain();
   const { address } = useAccount();
-  const factory = slotsFactoryAddress[chainId];
+  const factory = slotFactoryAddress[chainId];
 
   const { data: admin, isLoading } = useReadContract({
     address: factory,

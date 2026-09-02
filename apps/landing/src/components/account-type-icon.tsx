@@ -1,4 +1,4 @@
-import type { AccountType } from "@0xslots/sdk";
+import type { AccountType } from "@/lib/indexer";
 import { File, FileUser, Split, User } from "lucide-react";
 import {
   Tooltip,

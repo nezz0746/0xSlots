@@ -53,14 +53,13 @@ const ROLE_FIELDS = [
     hint: "May change the tax rate.",
   },
   {
-    key: "policyManagers",
-    label: "Policy",
-    hint: "May change who is allowed to hold the slot.",
-  },
-  {
-    key: "utilityManagers",
-    label: "Utility",
-    hint: "May change what holding the slot grants.",
+    // One role, because the protocol merged the two things it used to split. A
+    // "policy" decided who could hold the slot and a "utility" decided what
+    // holding it granted; both are a hook now, and a collective that granted
+    // them separately would describe a distinction the chain no longer makes.
+    key: "hookManagers",
+    label: "Hook",
+    hint: "May attach, replace or detach the slot's hook.",
   },
   {
     key: "splitManagers",
@@ -84,8 +83,7 @@ export default function CreateCollectivePage() {
   const [admin, setAdmin] = useState("");
   const [roles, setRoles] = useState<Record<RoleKey, string>>({
     taxManagers: "",
-    policyManagers: "",
-    utilityManagers: "",
+    hookManagers: "",
     splitManagers: "",
   });
 
@@ -193,8 +191,7 @@ export default function CreateCollectivePage() {
           {
             admin: adminAddress as Address,
             taxManagers: parseRole(roles.taxManagers),
-            policyManagers: parseRole(roles.policyManagers),
-            utilityManagers: parseRole(roles.utilityManagers),
+            hookManagers: parseRole(roles.hookManagers),
             splitManagers: parseRole(roles.splitManagers),
           },
         ],

@@ -5,10 +5,8 @@ import {
   offerBookAddress,
   slotCollectiveFactoryAbi,
   slotFactoryAbi as slotsFactoryAbi,
-  slotTakerAbi,
-  slotTakerAddress,
-  slotsCollectiveFactoryAddress,
-  slotsFactoryAddress,
+  slotCollectiveFactoryAddress,
+  slotFactoryAddress,
 } from "@0xslots/contracts/slots";
 import type { Abi, Address } from "viem";
 
@@ -39,7 +37,7 @@ export const CONTRACTS: ContractEntry[] = [
   {
     name: "SlotFactory",
     role: "Creates slots; owns the beacon every slot delegates to",
-    address: (c) => slotsFactoryAddress[c],
+    address: (c) => slotFactoryAddress[c],
     abi: slotsFactoryAbi as Abi,
     hasVersion: true,
     adminFn: "admin",
@@ -58,7 +56,7 @@ export const CONTRACTS: ContractEntry[] = [
   {
     name: "SlotCollectiveFactory",
     role: "Creates collectives that govern and are paid by slots",
-    address: (c) => slotsCollectiveFactoryAddress[c],
+    address: (c) => slotCollectiveFactoryAddress[c],
     abi: slotCollectiveFactoryAbi as Abi,
     hasVersion: true,
     adminFn: "admin",
@@ -69,14 +67,6 @@ export const CONTRACTS: ContractEntry[] = [
     role: "Deterministic hooks — one address per tenure",
     address: (c) => minimumTenureHookFactoryAddress[c],
     abi: minimumTenureHookFactoryAbi as Abi,
-    hasVersion: false,
-    upgradeable: false,
-  },
-  {
-    name: "SlotTaker",
-    role: "Evict and take in one transaction, on native slots",
-    address: (c) => slotTakerAddress[c],
-    abi: slotTakerAbi as Abi,
     hasVersion: false,
     upgradeable: false,
   },

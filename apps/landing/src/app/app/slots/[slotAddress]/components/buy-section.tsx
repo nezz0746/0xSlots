@@ -42,13 +42,12 @@ const ZERO = 0n;
  * point of the port. The two figures that decide whether a transaction
  * succeeds are both asked of the slot:
  *
- * - The COST comes from `quoteBuy` / `quoteLiquidateAndTake`. They are not
- *   interchangeable: `buy` charges the sitting occupant's asking price plus
- *   your deposit, while `liquidateAndTake` evicts FIRST — so by the time the
- *   purchase reads the price there is nobody left to buy out and only the
- *   deposit is charged. `price()` still reads non-zero right up until the call
- *   lands, so deriving the figure overpays on exactly that path, and a native
- *   slot checks `msg.value` for EQUALITY, not sufficiency. Overpaying reverts.
+ * - The COST comes from `quoteBuy`, never from `price()`. An occupied slot
+ *   charges the sitting occupant's asking price plus your deposit; a vacant one
+ *   charges the deposit alone; and either way the seated account's arrears are
+ *   folded in. A native slot checks `msg.value` for EQUALITY, not sufficiency,
+ *   so a figure derived here rather than quoted reverts the moment the two
+ *   disagree.
  *
  * - The MINIMUM DEPOSIT comes from `minDepositForBuy`, which reads the PENDING
  *   tax when one is queued. Entry is an occupancy transition, so `_applyPending`
@@ -228,15 +227,15 @@ export function BuySection({
   const quoteFor = seatValid ? seatAddress : undefined;
 
   /**
-   * Which entry point this is, which decides both the quote and the call.
+   * One entry point: `buy`.
    *
-   * An insolvent occupant is evicted rather than bought out, and the two charge
-   * different amounts for the same deposit — and they are two different
-   * contracts now: the slot for a buy, the periphery `SlotTaker` for the
-   * eviction.
+   * Evict-and-take used to be a second one, charging the deposit alone because
+   * the eviction vacated the slot before the purchase read the price. It needed
+   * a periphery contract on native slots, and that contract is gone — so taking
+   * an insolvent occupant's slot cheaply is now Liquidate, then Buy, as two
+   * transactions from the actions panel.
    */
-  const mode = state.isInsolvent ? "liquidateAndTake" : "buy";
-  const { data: quote } = useTakeQuote(slot, quoteFor, deposit, mode);
+  const { data: quote } = useTakeQuote(slot, quoteFor, deposit);
 
   /**
    * Tax the seated account still owes this slot from a previous occupancy.
@@ -359,14 +358,11 @@ export function BuySection({
     };
     const label = state.isInsolvent ? "Liquidate and take" : "Buy slot";
     const ok = await actions.preflight(label, async () => {
-      if (state.isInsolvent)
-        await actions.client.simulateLiquidateAndTake(params);
-      else await actions.client.simulateBuy(params);
+      await actions.client.simulateBuy(params);
       return true;
     });
     if (!ok) return;
-    if (state.isInsolvent) actions.liquidateAndTake(params);
-    else actions.buy(params);
+    actions.buy(params);
   };
 
   // ── Self-assess view (connected wallet is the current occupant) ──────────

@@ -45,3 +45,13 @@ export function indexerUrlFor(chainId: number): string {
 // There is deliberately no INDEXER_API_KEY here. Ponder serves the GraphQL API
 // unauthenticated, and a `NEXT_PUBLIC_` key is inlined into the client bundle —
 // so it was a credential handed to every visitor in exchange for nothing.
+
+/**
+ * How the indexer classifies an address.
+ *
+ * Mirrors `accountType` in `packages/ponder/ponder.schema.ts`. It used to come
+ * from the SDK's graphql-codegen output, which was generated against the
+ * RETIRED protocol's schema — the same file this app already avoids for slot
+ * types, for the same reason.
+ */
+export type AccountType = "EOA" | "CONTRACT" | "DELEGATED" | "SPLIT";

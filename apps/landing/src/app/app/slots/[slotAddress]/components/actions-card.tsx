@@ -378,16 +378,14 @@ export function ActionsCard({
                 Two verbs, because the outcomes differ and the difference is the
                 whole reason "no bounty" is honest: `liquidate` evicts and
                 leaves the slot VACANT — you then race everyone watching the
-                mempool for it — while evict-and-take seats you in the same
-                transaction.
+                mempool for it.
 
-                The second is no longer a function on the slot. `Slot.
-                liquidateAndTake` was removed under audit, and the composition
-                lives outside the core: the periphery `SlotTaker` on a native
-                slot, the slot's own `multicall` on an ERC-20 one. Its cost
-                still comes from a quote rather than from `price()` — from
-                `SlotTaker.quote(slot, account, deposit)` now — because the
-                eviction runs first and there is nobody left to buy out. */}
+                Evict-and-take in one transaction is gone. `Slot.
+                liquidateAndTake` was removed under audit, and the periphery
+                that replaced it has been removed too. Both halves are still
+                public, so the composition is available to anyone who wants it —
+                including through the slot's own `multicall` on an ERC-20 slot —
+                it is just not something this app offers as one button. */}
             {!state.isVacant && !isOccupant && (
               <div className="space-y-2 border-t pt-2">
                 <Button
@@ -414,7 +412,7 @@ export function ActionsCard({
                 </Button>
                 <p className="text-[10px] leading-snug text-muted-foreground">
                   {accrual.insolvent
-                    ? "Liquidating leaves the slot vacant for anyone. To evict and take it in one transaction, set your price above and use Buy — it routes through the SlotTaker and charges the deposit alone, quoted from there, since there is nobody left to buy out."
+                    ? "Liquidating leaves the slot vacant for anyone — including whoever is watching the mempool. To hold it yourself, liquidate and then Buy the vacant slot, which costs the deposit alone once there is no occupant left to buy out."
                     : "Available once the occupant's deposit is spent. There is no bounty; the reward is that the slot becomes takeable."}
                 </p>
               </div>

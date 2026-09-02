@@ -4,7 +4,7 @@ import { useSlotAction } from "@0xslots/sdk/slots/react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { useChain } from "@/context/chain";
-import { useRefreshSlots, useSlotsFactory, useSlotsTaker } from "./use-slots";
+import { useRefreshSlots, useSlotsFactory } from "./use-slots";
 
 /**
  * Every slot write, wired to this app's chain, factory and toasts.
@@ -21,7 +21,6 @@ export function useSlotsAction() {
   // here for the same reason as the factory: it is silently wrong when it is
   // forgotten, and the failure surfaces as a missing contract rather than as a
   // missing address.
-  const takerAddress = useSlotsTaker();
   const refresh = useRefreshSlots();
 
   const onSuccess = useCallback(
@@ -42,7 +41,6 @@ export function useSlotsAction() {
   return useSlotAction({
     chainId,
     factoryAddress,
-    takerAddress,
     onSuccess,
     onError,
   });

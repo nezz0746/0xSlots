@@ -2,8 +2,7 @@
 
 import {
   slotFactoryAbi,
-  slotsFactoryAddress,
-  slotTakerAddress,
+  slotFactoryAddress,
 } from "@0xslots/contracts/slots";
 import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
 import type { SlotState } from "@0xslots/sdk/slots";
@@ -33,30 +32,15 @@ import { useChain } from "@/context/chain";
 /** The factory for the connected explorer chain, if this protocol lives there. */
 export function useSlotsFactory(): Address | undefined {
   const { chainId } = useChain();
-  return slotsFactoryAddress[chainId];
+  return slotFactoryAddress[chainId];
 }
 
-/**
- * The `SlotTaker` for the connected chain, if one is deployed there.
- *
- * Evict-and-take is PERIPHERY now — `Slot.liquidateAndTake` was removed under
- * audit, because "evict, then buy" composes from two public entry points and
- * the core carrying a second seating path meant a second quote to keep in step
- * with `buy`. Only a NATIVE slot actually needs this contract: an ERC-20 slot
- * composes the same sequence through its own `multicall`, which cannot be
- * payable.
- */
-export function useSlotsTaker(): Address | undefined {
-  const { chainId } = useChain();
-  return slotTakerAddress[chainId];
-}
 
-/** A {@link SlotsClient} pinned to the explorer's chain, factory and taker. */
+/** A {@link SlotsClient} pinned to the explorer's chain and factory. */
 export function useSlots() {
   const { chainId } = useChain();
   const factoryAddress = useSlotsFactory();
-  const takerAddress = useSlotsTaker();
-  return useSlotsClient({ factoryAddress, takerAddress, chainId });
+  return useSlotsClient({ factoryAddress, chainId });
 }
 
 export interface CreatedSlot {
@@ -361,12 +345,10 @@ export function useMinDepositForBuy(slot: Address | undefined, price: bigint) {
 /**
  * What taking the slot will actually charge, asked of the slot itself.
  *
- * NOT `price() + deposit`. The payment rule is the contract's promise, and the
- * two paths disagree in a way that is invisible from outside: `liquidateAndTake`
- * evicts first, so by the time the purchase reads the price there is nobody
- * left to buy out — while `price()` still reads non-zero right until the call
- * lands. Deriving the figure here would overpay on exactly that path, and a
- * native slot demands an EXACT `msg.value`, so overpaying reverts.
+ * NOT `price() + deposit`. The payment rule is the contract's promise and it
+ * folds in the seated account's arrears; a native slot checks `msg.value` for
+ * EQUALITY, so a figure derived here rather than quoted would revert whenever
+ * the two disagreed.
  */
 export function useTakeQuote(
   slot: Address | undefined,
@@ -380,7 +362,6 @@ export function useTakeQuote(
    */
   account: Address | undefined,
   depositAmount: bigint,
-  mode: "buy" | "liquidateAndTake",
 ) {
   const { chainId } = useChain();
   const client = useSlots();
@@ -392,15 +373,11 @@ export function useTakeQuote(
       chainId,
       slot,
       account,
-      mode,
       depositAmount.toString(),
     ],
     enabled: !!slot && !!account && depositAmount > 0n,
     refetchInterval: 5_000,
-    queryFn: () =>
-      mode === "buy"
-        ? client.quoteBuy(slot!, account!, depositAmount)
-        : client.quoteLiquidateAndTake(slot!, account!, depositAmount),
+    queryFn: () => client.quoteBuy(slot!, account!, depositAmount),
   });
 }
 

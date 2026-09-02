@@ -1,6 +1,6 @@
 "use client";
 
-import type { AccountType } from "@0xslots/sdk";
+import type { AccountType } from "@/lib/indexer";
 import { Banknote, Check, Copy, HandCoins, LandPlot } from "lucide-react";
 import { useState } from "react";
 import { getAddress, isAddress } from "viem";

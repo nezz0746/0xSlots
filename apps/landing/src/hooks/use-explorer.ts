@@ -1,6 +1,6 @@
 "use client";
 
-import type { AccountType } from "@0xslots/sdk";
+import type { AccountType } from "@/lib/indexer";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Address } from "viem";
