@@ -3,6 +3,8 @@ import {
   minimumTenureHookFactoryAddress,
   offerBookAbi,
   offerBookAddress,
+  slotCollectiveImplementationAddress,
+  slotImplementationAddress,
   slotCollectiveFactoryAbi,
   slotFactoryAbi as slotsFactoryAbi,
   slotCollectiveFactoryAddress,
@@ -31,7 +33,43 @@ export type ContractEntry = {
   /** Beacon/implementation pointer, where there is one. */
   implFn?: "implementation";
   upgradeable: boolean;
+  /**
+   * The beacon this contract owns, if it owns one.
+   *
+   * A beacon is the other half of the upgrade story and the half with the
+   * larger blast radius: hundreds of proxies delegate to whatever it points at,
+   * and pointing it is a SEPARATE transaction from deploying the code. So the
+   * deployment record naming an implementation is not evidence the beacon is
+   * serving it — the two really do drift, and did.
+   *
+   * `expected` is the implementation the package says should be behind it.
+   * Comparing that against what the beacon actually serves is the whole reason
+   * this appears on the page.
+   */
+  beacon?: {
+    /** What the proxies behind it are, in one word. */
+    serves: string;
+    expected: (chainId: number) => Address | undefined;
+  };
 };
+
+/**
+ * `UpgradeableBeacon.implementation()`.
+ *
+ * Read from the beacon itself rather than through the factory, because only one
+ * of the two factories forwards it — `SlotFactory` has `implementation()`,
+ * `SlotCollectiveFactory` only hands back its beacon. Asking the beacon works
+ * for both and is the address the proxies actually resolve.
+ */
+export const beaconAbi = [
+  {
+    type: "function",
+    name: "implementation",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+] as const satisfies Abi;
 
 export const CONTRACTS: ContractEntry[] = [
   {
@@ -43,6 +81,7 @@ export const CONTRACTS: ContractEntry[] = [
     adminFn: "admin",
     implFn: "implementation",
     upgradeable: true,
+    beacon: { serves: "every slot", expected: (c) => slotImplementationAddress[c] },
   },
   {
     name: "OfferBook",
@@ -61,6 +100,10 @@ export const CONTRACTS: ContractEntry[] = [
     hasVersion: true,
     adminFn: "admin",
     upgradeable: true,
+    beacon: {
+      serves: "every collective",
+      expected: (c) => slotCollectiveImplementationAddress[c],
+    },
   },
   {
     name: "MinimumTenureHookFactory",

@@ -9,7 +9,7 @@ import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import { useChain } from "@/context/chain";
 import { CONTRACTS_PAGE_ENABLED } from "@/lib/features";
-import { CONTRACTS } from "./registry";
+import { beaconAbi, CONTRACTS } from "./registry";
 
 /**
  * Every deployed contract on the selected chain: address, version, and who can
@@ -54,6 +54,9 @@ export default function ContractsPage() {
     ...(entry.implFn
       ? [{ address, abi: entry.abi, functionName: entry.implFn, chainId } as const]
       : []),
+    ...(entry.beacon
+      ? [{ address, abi: entry.abi, functionName: "beacon", chainId } as const]
+      : []),
   ]);
 
   const { data, isLoading } = useReadContracts({
@@ -68,8 +71,43 @@ export default function ContractsPage() {
     const version = entry.hasVersion ? take() : undefined;
     const admin = entry.adminFn ? take() : undefined;
     const impl = entry.implFn ? take() : undefined;
-    return { entry, address, version, admin, impl };
+    const beacon = entry.beacon ? take() : undefined;
+    return { entry, address, version, admin, impl, beacon };
   });
+
+  /**
+   * What each beacon is actually serving.
+   *
+   * A second round, because the address to ask is the answer to the first one.
+   * Reading it through the factory would have kept it to a single pass, but only
+   * `SlotFactory` forwards `implementation()` — and the point of the check is to
+   * ask the contract the proxies resolve through, not a convenience getter that
+   * might be forwarding something else.
+   */
+  const beacons = rows.flatMap((r) =>
+    r.beacon?.status === "success"
+      ? [{ name: r.entry.name, address: r.beacon.result as `0x${string}` }]
+      : [],
+  );
+
+  const { data: served } = useReadContracts({
+    contracts: beacons.map(({ address }) => ({
+      address,
+      abi: beaconAbi,
+      functionName: "implementation",
+      chainId,
+    })),
+    query: { enabled: beacons.length > 0 },
+  });
+
+  const servedBy = new Map(
+    beacons.map(({ name }, i) => [
+      name,
+      served?.[i]?.status === "success"
+        ? (served[i].result as `0x${string}`)
+        : undefined,
+    ]),
+  );
 
   const explorer = chain?.blockExplorers?.default.url;
 
@@ -96,7 +134,7 @@ export default function ContractsPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ entry, address, version, admin, impl }) => (
+            {rows.map(({ entry, address, version, admin, impl, beacon }) => (
               <tr key={entry.name} className="border-b last:border-0 align-top">
                 <td className="px-4 py-3">
                   <div className="font-medium">{entry.name}</div>
@@ -108,6 +146,14 @@ export default function ContractsPage() {
                       implementation{" "}
                       <CopyAddress address={impl.result as `0x${string}`} />
                     </div>
+                  ) : null}
+                  {entry.beacon && beacon?.status === "success" ? (
+                    <BeaconLine
+                      serves={entry.beacon.serves}
+                      beacon={beacon.result as `0x${string}`}
+                      running={servedBy.get(entry.name)}
+                      expected={entry.beacon.expected(chainId)}
+                    />
                   ) : null}
                 </td>
                 <td className="px-4 py-3">
@@ -172,6 +218,67 @@ export default function ContractsPage() {
         authority are read from the contracts themselves. They disagree when a
         deployment did not land — which is the point of showing both.
       </p>
+    </div>
+  );
+}
+
+
+/**
+ * A factory's beacon, and whether it is serving the implementation the package
+ * says it should be.
+ *
+ * The two really do drift. Deploying an implementation and pointing a beacon at
+ * it are separate transactions, and for a while the deploy script did only the
+ * first — so a record could name a version that no slot was running. That is
+ * invisible from every other view in this app, because a slot behaves normally
+ * while running whatever code the beacon last pointed at.
+ *
+ * "expected" is the address the SDK carries for this chain, which is what the
+ * app and the indexer are written against. A mismatch is not necessarily an
+ * emergency — someone may be mid-upgrade — but nobody should have to diff two
+ * addresses by eye to find out.
+ */
+function BeaconLine({
+  serves,
+  beacon,
+  running,
+  expected,
+}: {
+  serves: string;
+  beacon: `0x${string}`;
+  running: `0x${string}` | undefined;
+  expected: `0x${string}` | undefined;
+}) {
+  const synced =
+    running && expected
+      ? running.toLowerCase() === expected.toLowerCase()
+      : undefined;
+
+  return (
+    <div className="text-muted-foreground/70 text-xs mt-1 space-y-0.5">
+      <div>
+        beacon <CopyAddress address={beacon} />{" "}
+        <span className="text-muted-foreground/50">· {serves}</span>
+      </div>
+      {running ? (
+        <div className="flex items-center gap-1.5">
+          <span>serving</span>
+          <CopyAddress address={running} />
+          {synced === true ? (
+            <span className="text-emerald-600 dark:text-emerald-500">
+              in sync
+            </span>
+          ) : synced === false ? (
+            <span className="font-medium text-amber-600 dark:text-amber-500">
+              stale — expected <CopyAddress address={expected as `0x${string}`} />
+            </span>
+          ) : (
+            <span className="text-muted-foreground/50">
+              nothing recorded to compare
+            </span>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

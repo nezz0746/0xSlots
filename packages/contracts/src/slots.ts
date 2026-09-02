@@ -37,6 +37,18 @@ export const offerBookAddress = map("offerBookAddress");
 export const slotCollectiveFactoryAddress = map("slotCollectiveFactoryAddress");
 export const adLandAddress = map("adLandAddress");
 
+/**
+ * The beacon implementations, widened.
+ *
+ * Named for what they are. wagmi derives `slotAddress` from the contract name,
+ * which reads like "the address of a slot" — but a slot is a proxy the factory
+ * deploys per position, and there are hundreds. This is the single
+ * implementation they all delegate to through the beacon, and nobody should be
+ * pointing a UI at it thinking otherwise.
+ */
+export const slotImplementationAddress = map("slotAddress");
+export const slotCollectiveImplementationAddress = map("slotCollectiveAddress");
+
 /** Local-only, written by `SeedSlots` — absent on a machine that never seeded. */
 export const slotsTestTokenAddress = map("slotsTestTokenAddress");
 export const minimumTenureHookAddress = map("minimumTenureHookAddress");

@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   PlusIcon,
-  Trophy,
   User,
   Users,
   FileCode2,
@@ -142,6 +141,24 @@ export function AppSidebar() {
                   <span>My Collectives</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+
+              {/* Last, and only where the page exists.
+                  It answers an operator's question — which code is behind this
+                  proxy on this chain, and who holds the key — so it belongs
+                  below the two destinations someone actually came here for,
+                  not among them. The route itself `notFound()`s when the flag
+                  is off; this keeps the nav from offering a dead link. */}
+              {CONTRACTS_PAGE_ENABLED && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/app/contracts")}
+                    onClick={() => push("/app/contracts")}
+                  >
+                    <FileCode2 className="size-4" />
+                    <span>Contracts</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
