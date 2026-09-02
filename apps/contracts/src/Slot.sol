@@ -47,7 +47,6 @@ struct SlotInit {
  *      which keeps the loop in userland and out of the eviction path.
  */
 contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
@@ -63,8 +62,10 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         if (p.recipient == address(0)) revert InvalidRecipient();
         if (p.taxPercentage == 0 || p.taxPercentage > MAX_TAX_BPS)
             revert InvalidTax();
-        if (address(p.currency) != address(0) && address(p.currency).code.length == 0)
-            revert InvalidCurrency();
+        if (
+            address(p.currency) != address(0) &&
+            address(p.currency).code.length == 0
+        ) revert InvalidCurrency();
         // A manager is required exactly when something is mutable, and
         // forbidden otherwise — so "immutable" is a fact about the slot rather
         // than a promise about somebody's restraint.
@@ -92,8 +93,6 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
     }
 
     // ─── internals ──────────────────────────────────────────────────────────
-
-
 
     receive() external payable {
         revert InvalidValue();

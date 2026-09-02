@@ -1,0 +1,26 @@
+[
+  {
+    "label": "admin",
+    "slot": "0",
+    "offset": 0,
+    "bytes": 20
+  },
+  {
+    "label": "_offers",
+    "slot": "1",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "_offerIdOf",
+    "slot": "2",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "__gap",
+    "slot": "3",
+    "offset": 0,
+    "bytes": 1440
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "label": "beacon",
+    "slot": "0",
+    "offset": 0,
+    "bytes": 20
+  },
+  {
+    "label": "admin",
+    "slot": "1",
+    "offset": 0,
+    "bytes": 20
+  },
+  {
+    "label": "isSlot",
+    "slot": "2",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "attestedHooks",
+    "slot": "3",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "slotCount",
+    "slot": "4",
+    "offset": 0,
+    "bytes": 32
+  }
+]
