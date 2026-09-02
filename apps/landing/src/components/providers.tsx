@@ -1,7 +1,8 @@
 "use client";
 
 import { SplitsProvider } from "@0xsplits/splits-sdk-react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "@/lib/query-client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { type ReactNode, useEffect, useState } from "react";
 import { useConnect, WagmiProvider } from "wagmi";
@@ -36,7 +37,7 @@ function FarcasterAutoConnect() {
  * Miniapp provider tree — plain wagmi, no RainbowKit.
  */
 function MiniAppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => createQueryClient());
 
   return (
     <WagmiProvider config={miniAppConfig}>

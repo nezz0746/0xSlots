@@ -4,7 +4,8 @@ import "@rainbow-me/rainbowkit/styles.css";
 
 import { SplitsProvider } from "@0xsplits/splits-sdk-react";
 import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "@/lib/query-client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { WagmiProvider } from "wagmi";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,7 +15,7 @@ import { NavigationProvider } from "@/context/navigation";
 import { SplitsClientSync } from "./splits-client-sync";
 
 export function WebProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => createQueryClient());
 
   return (
     <WagmiProvider config={config}>

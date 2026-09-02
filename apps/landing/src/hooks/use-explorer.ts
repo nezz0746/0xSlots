@@ -28,6 +28,26 @@ import { indexerUrlFor } from "@/lib/indexer";
  * hook-based indexer.
  */
 
+/**
+ * A query this indexer will never answer, however many times it is asked.
+ *
+ * GraphQL separates VALIDATION failures from execution ones, and the difference
+ * matters here: a field the schema does not have is not a blip, it is the wrong
+ * database. Retrying it three times behind a spinner turned "this instance runs
+ * the old schema" into "the network is slow" — and it was not hypothetical.
+ * With `NEXT_PUBLIC_SLOTS_ENV` unset, the app read the production instance,
+ * which still serves the retired protocol: no `hook`, no `hookRef`, no
+ * `tenureId`. Every explorer query failed validation and took about seven
+ * seconds of exponential backoff to say so.
+ */
+export class IndexerSchemaError extends Error {
+  readonly fatal = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "IndexerSchemaError";
+  }
+}
+
 async function indexerFetch<T>(
   chainId: number,
   query: string,
@@ -44,7 +64,23 @@ async function indexerFetch<T>(
 
   const json = await res.json();
   if (json.errors?.length) {
-    throw new Error(json.errors[0]?.message ?? "Query failed");
+    const first = json.errors[0];
+    const message: string = first?.message ?? "Query failed";
+
+    if (first?.extensions?.code === "GRAPHQL_VALIDATION_FAILED") {
+      const fields = json.errors
+        .map((e: { message?: string }) =>
+          /Cannot query field "([^"]+)"/.exec(e.message ?? "")?.[1],
+        )
+        .filter(Boolean)
+        .slice(0, 4);
+      throw new IndexerSchemaError(
+        `This indexer is running a different schema${
+          fields.length ? ` — it has no ${fields.join(", ")}` : ""
+        }. Check NEXT_PUBLIC_SLOTS_ENV.`,
+      );
+    }
+    throw new Error(message);
   }
   return json.data as T;
 }

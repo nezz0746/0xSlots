@@ -20,19 +20,31 @@ import {
 /**
  * Which indexer instance this build reads.
  *
- * `NEXT_PUBLIC_SLOTS_ENV=development` on the deployment that tracks `develop`,
- * unset everywhere else. One word rather than a URL, so the two deployments
- * cannot drift apart by someone updating one and forgetting the other — the
- * endpoints live in the SDK, next to the code that knows what they serve.
+ * One word rather than a URL, so the two deployments cannot drift apart by
+ * someone updating one and forgetting the other — the endpoints live in the
+ * SDK, next to the code that knows what they serve.
  *
- * Defaults to production: a build that says nothing gets the stable instance,
- * because pointing at development by accident means reading a database that is
- * rebuilt whenever a testnet is redeployed.
+ * ── Why a non-production build defaults to development ──
+ *
+ * It used to default to production unconditionally, on the reasoning that a
+ * build which says nothing should get the stable instance. That reasoning was
+ * about DATA — development is rebuilt whenever a testnet is redeployed — and it
+ * ignored the schema.
+ *
+ * The production instance still serves the RETIRED protocol: no `hook`, no
+ * `hookRef`, no `tenureId`. So a developer running the app with nothing set got
+ * an explorer whose every query failed GraphQL validation, retried three times
+ * behind a spinner, and looked like a slow network rather than the wrong
+ * database. An explicit `NEXT_PUBLIC_SLOTS_ENV` still wins in both directions.
  */
 const ENVIRONMENT: SlotsEnvironment =
   process.env.NEXT_PUBLIC_SLOTS_ENV === "development"
     ? "development"
-    : "production";
+    : process.env.NEXT_PUBLIC_SLOTS_ENV === "production"
+      ? "production"
+      : process.env.NODE_ENV === "production"
+        ? "production"
+        : "development";
 
 export function indexerUrlFor(chainId: number): string {
   // 31337 only ever exists on the machine running `pnpm dev:local`.
