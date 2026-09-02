@@ -89,7 +89,7 @@ forge script script/protocol/DeployProtocol.s.sol:DeployProtocol \
 addr() { python3 -c "import json;print(json.load(open('$DEPLOYMENTS/$1.json'))['address'])"; }
 FACTORY=$(addr SlotFactory)
 
-grep -E "^  (SlotFactory|OfferBook|SlotCollectiveFactory|SlotTaker)" /tmp/deploy-local.log \
+grep -E "^  (SlotFactory|OfferBook|SlotCollectiveFactory)" /tmp/deploy-local.log \
   | sed 's/^/  /' || true
 
 # The app pins these addresses (packages/contracts/src/slots.ts). If CREATE2
@@ -109,20 +109,24 @@ forge script script/slots/SeedSlots.s.sol:SeedSlots \
   || { echo "  seed failed:"; tail -25 /tmp/seed-local.log; exit 1; }
 grep -E "^  [0-9] " /tmp/seed-local.log | sed 's/^/  /' || true
 
-# The SDK pins the local test token (packages/sdk/src/tokens.ts) so the create
-# form can offer an ERC-20 without a chain read. That address is nonce-derived
-# from THIS script, so it moves whenever the seed changes what it deploys.
-# When it drifted the app kept offering a token with no code behind it and
-# every ERC-20 approval reverted with nothing naming the cause — so compare,
-# and print the value to paste.
+# The generated address table must match what the seed just deployed.
+#
+# `packages/sdk` and the create form read the local test token from
+# `packages/contracts/src/generated.ts`, which `wagmi generate` writes FROM the
+# records this run has just written. If the seed changed what it deploys, the
+# committed table is a step behind and the app offers a token with no code —
+# every ERC-20 approval then reverts with nothing naming the cause.
+GEN="$HERE/../../packages/contracts/src/generated.ts"
 TOKEN=$(addr SlotsTestToken)
-PINNED=$(grep -oE '0x[0-9a-fA-F]{40}' "$HERE/../../packages/sdk/src/tokens.ts" | head -1)
-if [ "$(echo "$TOKEN" | tr 'A-Z' 'a-z')" != "$(echo "$PINNED" | tr 'A-Z' 'a-z')" ]; then
+if ! grep -qi "$TOKEN" "$GEN" 2>/dev/null; then
   echo >&2
   echo "  the seed's test token moved." >&2
-  echo "    packages/sdk/src/tokens.ts pins  $PINNED" >&2
-  echo "    the seed just deployed          $TOKEN" >&2
-  echo "  Update the constant, or ERC-20 slots break in the local app." >&2
+  echo "    the seed just deployed  $TOKEN" >&2
+  echo "    generated table has     $(grep -oE 'SlotsTestToken: \{ address: "0x[0-9a-fA-F]{40}"' "$GEN" 2>/dev/null | grep -oE '0x[0-9a-fA-F]{40}' || echo 'nothing')" >&2
+  echo >&2
+  echo "  Regenerate it:" >&2
+  echo "    pnpm --filter @0xslots/contracts codegen" >&2
+  echo "    pnpm --filter @0xslots/contracts build" >&2
   exit 1
 fi
 
@@ -131,7 +135,6 @@ cat <<EOF
   chain ready — anvil on $RPC (chainId 31337)
   factory:  $FACTORY
   book:     $(addr OfferBook)
-  taker:    $(addr SlotTaker)
   accounts: anvil default mnemonic, indices 0-4
   time warp:
     cast rpc evm_increaseTime 604800 --rpc-url $RPC
