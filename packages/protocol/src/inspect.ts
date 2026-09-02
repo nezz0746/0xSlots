@@ -187,11 +187,29 @@ export function beaconImplementation(
   return cast(["call", beacon, "implementation()(address)", "--rpc-url", rpc]);
 }
 
+/**
+ * The address this protocol recorded for `name`, if it recorded one.
+ *
+ * `version` is the discriminator and it is load-bearing. The retired protocol's
+ * deploy scripts wrote these SAME filenames, so chains it reached still hold
+ * pre-port records — base mainnet's `SlotCollectiveFactory.json` names
+ * 0x9DE033C5, a contract this protocol never deployed. Reading it made the CLI
+ * refuse to deploy to base on the grounds that base already had a collective
+ * factory, which it does not.
+ *
+ * Only `DeployProtocol` and `SeedSlots` write `version`, so only what they wrote
+ * is read. Ponder and the codegen already applied this rule; this did not.
+ */
 export const recordedAddress = (recordDir: string, name: string) => {
   const p = join(recordDir, `${name}.json`);
   if (!existsSync(p)) return undefined;
-  return (JSON.parse(readFileSync(p, "utf8")) as { address: `0x${string}` })
-    .address;
+  const rec = JSON.parse(readFileSync(p, "utf8")) as {
+    address?: `0x${string}`;
+    version?: number;
+  };
+  if (rec.version === undefined || !rec.address) return undefined;
+  if (/^0x0+$/i.test(rec.address)) return undefined;
+  return rec.address;
 };
 
 /** What the deploy script says it would do to one contract. */

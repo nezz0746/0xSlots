@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import * as p from "@clack/prompts";
@@ -158,13 +158,24 @@ async function run(mode: Mode | undefined, opts: Options) {
       local ? "Start it with:  pnpm dev:local" : `Check ${cfg.rpcEnv}.`,
     );
 
+  // The admin is the only key that can upgrade anything here. A zero one is not
+  // a permissive default, it is a protocol nobody can ever fix — and the
+  // mainnet configs ship zeroed deliberately, so this is the likely state, not
+  // an unlikely one. `initialize` would revert eventually; saying so here costs
+  // no gas and names the file to edit.
+  if (/^0x0+$/i.test(cfg.admin))
+    bail(
+      `${cfg.name} has no admin configured.`,
+      `deployments/config/${chainId}.json has admin ${cfg.admin} — set it to the\n` +
+        `address that should hold upgrade rights before deploying anything.`,
+    );
+
   // ── deploy vs upgrade ─────────────────────────────────────────────────────
+  // Asked through `recordedAddress`, not by listing filenames: a file existing
+  // is not evidence THIS protocol wrote it.
   const recordDir = recordDirFor(chainId);
-  const records = existsSync(recordDir)
-    ? readdirSync(recordDir).filter((f) => f.endsWith(".json"))
-    : [];
   const liveProxies = Object.keys(PROXIES).filter((n) =>
-    records.includes(`${n}.json`),
+    Boolean(recordedAddress(recordDir, n)),
   );
 
   if (mode === "upgrade" && liveProxies.length === 0)
