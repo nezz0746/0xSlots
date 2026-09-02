@@ -28,7 +28,11 @@ import {
   reachable,
   recordedAddress,
 } from "./inspect.js";
+import { loadContractsEnv } from "./env.js";
 import { CONTRACTS, FORGE_ENV, REPO } from "./paths.js";
+
+// Before anything reads `process.env`.
+loadContractsEnv();
 
 type Mode = "deploy" | "upgrade";
 interface Options {
@@ -303,6 +307,23 @@ async function run(mode: Mode | undefined, opts: Options) {
     return;
   }
 
+  // Everything checkable, before the point of no return. This used to sit AFTER
+  // the confirmation, so a mainnet run could be simulated, confirmed out loud,
+  // and only then told the key was missing — which teaches people that the
+  // scary prompt is not the last word, and that is the opposite of what it is
+  // for.
+  const key =
+    process.env.PK ??
+    (local
+      ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      : undefined);
+  if (!key)
+    bail(
+      "PK is not set, so nothing can be broadcast.",
+      `Put it in apps/contracts/.env, or pass it for one run:\n` +
+        `  PK=0x… pnpm protocol ${mode} --chain ${cfg.name}`,
+    );
+
   // ── confirm, proportional to what a mistake costs ─────────────────────────
   //
   // Anvil is wiped several times an hour and has nothing to corrupt, so a
@@ -323,13 +344,6 @@ async function run(mode: Mode | undefined, opts: Options) {
       process.exit(0);
     }
   }
-
-  const key =
-    process.env.PK ??
-    (local
-      ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-      : undefined);
-  if (!key) bail("PK is not set, so nothing can be broadcast.");
 
   // ── go ────────────────────────────────────────────────────────────────────
   const spin = p.spinner();
