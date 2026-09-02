@@ -6,6 +6,7 @@
     "dev": "turbo dev",
     "dev:landing": "turbo dev --filter=landing",
     "dev:local": "turbo run dev:local",
+    "protocol": "pnpm --filter @0xslots/protocol start",
     "dev:local:chain": "turbo run dev:local --filter=@0xslots/chain",
     "dev:mcp": "turbo dev --filter=@0xslots/mcp",
     "dev:nft": "turbo dev --filter=nft",
@@ -31,7 +32,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
     "@changesets/cli": "^2.31.0",
-    "turbo": "^2.9.14"
+    "turbo": "^2.10.12"
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
@@ -53,14 +54,14 @@
     ]
   },
   "dependencies": {
-    "wagmi": "3.5.0",
+    "@0xslots/sdk": "workspace:*",
+    "@tanstack/react-query": "5.90.21",
     "@wagmi/core": "3.4.0",
-    "viem": "2.50.4",
+    "graphql": "16.11.0",
+    "graphql-request": "7.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "@tanstack/react-query": "5.90.21",
-    "graphql-request": "7.4.0",
-    "graphql": "16.11.0",
-    "@0xslots/sdk": "workspace:*"
+    "viem": "2.50.4",
+    "wagmi": "3.5.0"
   }
 }

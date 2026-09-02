@@ -13,6 +13,7 @@
     "@0xslots/subgraph",
     "@0xslots/ponder",
     "landing",
-    "api"
+    "api",
+    "@0xslots/protocol"
   ]
 }
