@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {VersionedUUPS} from "../../VersionedUUPS.sol";
 
 /**
  * @title OfferBookStorage
@@ -16,7 +15,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
  *
  *      APPEND ONLY, below the marked line.
  */
-abstract contract OfferBookStorage is Initializable, UUPSUpgradeable {
+abstract contract OfferBookStorage is VersionedUUPS {
     /// @notice Who may upgrade this book. Not a privilege over anyone's funds:
     ///         the book never holds any, and an offer settles against the slot
     ///         with the bidder's own signature.

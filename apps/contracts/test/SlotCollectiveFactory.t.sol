@@ -211,7 +211,9 @@ contract SlotCollectiveFactoryTest is Test {
     // ═══════════════════════════════════════════════════════════
 
     function test_factoryCannotBeReinitialized() public {
-        vm.expectRevert(SlotCollectiveFactory.AlreadyInitialized.selector);
+        // OpenZeppelin's `Initializable`, not a hand-rolled flag. The guard
+        // moved so that future upgrades have a reinitializer available.
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         factory.initialize(stranger, address(implementation));
     }
 

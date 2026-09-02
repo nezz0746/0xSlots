@@ -3,12 +3,12 @@ pragma solidity ^0.8.23;
 
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotCollective} from "./SlotCollective.sol";
 import {Versioned} from "../Versioned.sol";
+import {VersionedUUPS} from "../VersionedUUPS.sol";
 
 /// @title SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon
 ///
@@ -49,19 +49,18 @@ import {Versioned} from "../Versioned.sol";
 ///      problem — it gates the inherited `initialize` on `msg.sender == FACTORY`
 ///      — except `SlotCollective.initializeManager` does that work itself and never
 ///      touches it. See the constructor note over there.
-contract SlotCollectiveFactory is UUPSUpgradeable, Versioned {
+contract SlotCollectiveFactory is VersionedUUPS {
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     // ═══════════════════════════════════════════════════════════
     // ERRORS
     // ═══════════════════════════════════════════════════════════
 
-    error AlreadyInitialized();
     error NotAdmin();
     error AdminRequired();
     error ImplementationRequired();
@@ -92,7 +91,6 @@ contract SlotCollectiveFactory is UUPSUpgradeable, Versioned {
     /// @notice Can upgrade this factory and the beacon.
     address public admin;
 
-    bool private _initialized;
 
     /// @notice Managers deployed here. The provenance check a slot creator needs
     ///         before naming an address as both `recipient` and `manager`.
@@ -105,19 +103,16 @@ contract SlotCollectiveFactory is UUPSUpgradeable, Versioned {
     // INITIALIZATION
     // ═══════════════════════════════════════════════════════════
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _initialized = true; // Disable init on the implementation
-    }
+
 
     /// @notice Initialize the factory (called once, through its proxy).
     /// @param _admin Upgrades this factory and the beacon.
     /// @param _managerImplementation A deployed `SlotCollective`, constructed with
     ///        this chain's canonical `SplitsWarehouse`.
-    function initialize(address _admin, address _managerImplementation) external {
-        if (_initialized) revert AlreadyInitialized();
-        _initialized = true;
-
+    function initialize(
+        address _admin,
+        address _managerImplementation
+    ) external initializer {
         if (_admin == address(0)) revert AdminRequired();
         if (_managerImplementation.code.length == 0)
             revert ImplementationRequired();
@@ -129,6 +124,7 @@ contract SlotCollectiveFactory is UUPSUpgradeable, Versioned {
         // script. Starting here costs nothing and skips that.
         beacon = new UpgradeableBeacon(_managerImplementation, address(this));
     }
+
 
     // ═══════════════════════════════════════════════════════════
     // MODIFIERS

@@ -5,8 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SellOrder} from "../../SlotOrders.sol";
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
-import "./OfferBookErrors.sol";
 import {Versioned} from "../../Versioned.sol";
+import "./OfferBookErrors.sol";
 
 /// @title OfferBook — standing bids an occupant can sell into
 ///
@@ -81,12 +81,12 @@ import {Versioned} from "../../Versioned.sol";
 ///      could lie about what is on the board; they could not spend a bidder's
 ///      allowance or seat anybody. Discovery is upgradeable, settlement is
 ///      not.
-contract OfferBook is OfferBookInternals, Versioned {
+contract OfferBook is OfferBookInternals {
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     /// @notice Which migration has run against THIS proxy's storage.
@@ -95,14 +95,6 @@ contract OfferBook is OfferBookInternals, Versioned {
     ///      needs new state gets its monotonicity enforced by the library
     ///      rather than by a script. Exposed because it is otherwise
     ///      internal, and during an incident you want both numbers.
-    function initializedVersion() external view returns (uint64) {
-        return _getInitializedVersion();
-    }
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
 
     function initialize(address admin_) external initializer {
         if (admin_ == address(0)) revert ZeroAdmin();

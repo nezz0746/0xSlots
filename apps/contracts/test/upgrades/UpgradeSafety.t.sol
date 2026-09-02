@@ -6,6 +6,7 @@ import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
+import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 
 /**
@@ -63,6 +64,7 @@ contract UpgradeSafetyTest is Test {
         assertGt(new SlotFactory().version(), 0, "SlotFactory");
         assertGt(new OfferBook().version(), 0, "OfferBook");
         assertGt(new SlotCollectiveFactory().version(), 0, "SlotCollectiveFactory");
+        assertGt(new AdLand().version(), 0, "AdLand");
     }
 
     /// @notice And the two numbers do not pretend to be each other.

@@ -3,10 +3,9 @@ pragma solidity ^0.8.24;
 
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {Slot, SlotInit} from "./Slot.sol";
 import "./SlotErrors.sol";
+import {VersionedUUPS} from "./VersionedUUPS.sol";
 import {Versioned} from "./Versioned.sol";
 
 /**
@@ -21,12 +20,12 @@ import {Versioned} from "./Versioned.sol";
  *      struct once — and it also splits the indexer, which then has to register
  *      every handler twice to cover both eras.
  */
-contract SlotFactory is Initializable, UUPSUpgradeable, Versioned {
+contract SlotFactory is VersionedUUPS {
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     /// @notice Which migration has run against THIS proxy's storage.
@@ -35,9 +34,6 @@ contract SlotFactory is Initializable, UUPSUpgradeable, Versioned {
     ///      needs new state gets its monotonicity enforced by the library
     ///      rather than by a script. Exposed because it is otherwise
     ///      internal, and during an incident you want both numbers.
-    function initializedVersion() external view returns (uint64) {
-        return _getInitializedVersion();
-    }
 
     /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
     UpgradeableBeacon public beacon;
@@ -71,11 +67,6 @@ contract SlotFactory is Initializable, UUPSUpgradeable, Versioned {
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotManager();
         _;
-    }
-
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
     }
 
     function initialize(address admin_, address implementation)
