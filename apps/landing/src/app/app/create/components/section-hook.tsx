@@ -1,7 +1,15 @@
 "use client";
 
 import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
-import { AlertCircle, Check, Loader2, Plug, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Eye,
+  Loader2,
+  Plug,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import type { Address } from "viem";
@@ -50,7 +58,10 @@ export function SectionHook() {
 
   const available = knownHooks[chainId] ?? [];
   const chosenKnown = findKnownHook(chainId, hook as Address);
-  const check = useHookCheck(hookMode === "custom" ? hook : "", chainId);
+  // Every mode, not just `custom`. The permissions below are read from the
+  // hook itself, so a hook picked by name deserves the same scrutiny as one
+  // pasted in — arguably more, since nobody typed its address.
+  const check = useHookCheck(hook, chainId);
 
   // ── Minimum tenure, by duration ─────────────────────────────────────────
   const hasTenureFactory = useHasTenureFactory();
@@ -142,14 +153,6 @@ export function SectionHook() {
                 <Plug className="mt-0.5 size-3 shrink-0" />
                 {chosenKnown.description}
               </p>
-            )}
-
-            {hookMode === "none" && (
-              <FormDescription>
-                Anyone may take this slot at any moment by outbidding its
-                declared price. That is the plain Harberger behaviour, and the
-                one whose rules a reader can hold in their head.
-              </FormDescription>
             )}
 
             {hookMode === "tenure" && (
@@ -300,28 +303,95 @@ export function SectionHook() {
               </div>
             )}
 
-            {/* The guarantee, stated wherever a hook is being chosen. Ported
-                verbatim in spirit from the occupancy section: a hook can delay
-                who may take the slot, but never blocks liquidation and never
-                stops the occupant leaving — the core forbids both. */}
-            <FormDescription>
-              A hook declares which callbacks it wants, and the slot snapshots
-              that list once at attach time — it cannot widen its own reach
-              later. It may refuse a buy, a sell or a reprice; it may never
-              block liquidation or stop the occupant leaving.
-            </FormDescription>
-
-            {hookMode !== "none" && (
-              <FormDescription className="text-amber-600 dark:text-amber-500">
-                A tenure hook softens Harberger — forced sale is delayed, not
-                removed. Insolvency still ends an occupancy at any moment.
-              </FormDescription>
-            )}
+            {/* What this hook can actually do, read from the hook. Replaces
+                three paragraphs that said the same thing about every hook —
+                including a tenure warning shown for hooks that were not tenure
+                hooks at all. */}
+            {hookMode !== "none" && check.data?.status === "ok" ? (
+              <HookPermissions
+                mayRefuse={check.data.mayRefuse}
+                notifiedOn={check.data.notifiedOn}
+              />
+            ) : null}
 
             <FormMessage />
           </FormItem>
         );
       }}
     />
+  );
+}
+
+/**
+ * What a hook may do to you, and what it merely watches.
+ *
+ * The split is the whole point. A `before` callback is a VETO — it can refuse
+ * your buy, your sale or your reprice, and it runs uncapped because it is
+ * `view` and cannot reenter. An `after` callback is a notification: gas-capped,
+ * its revert swallowed, structurally unable to change the outcome.
+ *
+ * Two guarantees hold whatever a hook declares, and they are worth stating
+ * once, here, rather than in a paragraph above every option: it can never block
+ * a liquidation, and it can never stop an occupant leaving. The core forbids
+ * both.
+ */
+function HookPermissions({
+  mayRefuse,
+  notifiedOn,
+}: {
+  mayRefuse: string[];
+  notifiedOn: string[];
+}) {
+  return (
+    <div className="mt-2 space-y-1.5 rounded-md border bg-muted/30 px-3 py-2">
+      <Row
+        icon={<ShieldAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-500" />}
+        label="May refuse"
+        items={mayRefuse}
+        empty="nothing — it cannot veto any action"
+      />
+      <Row
+        icon={<Eye className="size-3 shrink-0 text-muted-foreground" />}
+        label="Notified on"
+        items={notifiedOn}
+        empty="nothing"
+      />
+      <p className="text-[10px] leading-snug text-muted-foreground/70 pt-0.5">
+        It can never block a liquidation, and never stop you leaving.
+      </p>
+    </div>
+  );
+}
+
+function Row({
+  icon,
+  label,
+  items,
+  empty,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  items: string[];
+  empty: string;
+}) {
+  return (
+    <div className="flex items-start gap-1.5 text-[11px] leading-snug">
+      {icon}
+      <span className="text-muted-foreground w-20 shrink-0">{label}</span>
+      {items.length ? (
+        <span className="flex flex-wrap gap-1">
+          {items.map((v) => (
+            <code
+              key={v}
+              className="rounded bg-background border px-1 py-px text-[10px]"
+            >
+              {v}
+            </code>
+          ))}
+        </span>
+      ) : (
+        <span className="text-muted-foreground/60">{empty}</span>
+      )}
+    </div>
   );
 }

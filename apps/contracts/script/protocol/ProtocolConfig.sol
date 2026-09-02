@@ -172,10 +172,34 @@ abstract contract ProtocolConfig is Script {
         vm.writeFile(path, json);
     }
 
+    /**
+     * The address THIS protocol recorded for `name`, or zero.
+     *
+     * `version` is the discriminator and it is load-bearing. The retired
+     * protocol's deploy scripts wrote these SAME filenames, so chains it reached
+     * still hold pre-port records: `deployments/8453/SlotCollectiveFactory.json`
+     * named 0x9DE033C5, a live contract this protocol never deployed.
+     *
+     * Reading it unconditionally is not a cosmetic bug. `_proxy` saw a record,
+     * found code at that address, took the UPGRADE branch, and pointed the
+     * RETIRED protocol's factory at this one's implementation — then `_beacon`
+     * re-pointed the beacon behind three live collectives on Base mainnet. Both
+     * were reverted by hand.
+     *
+     * Ponder and the codegen had this rule already. The Solidity did not, and it
+     * is the only one of the three that can send a transaction.
+     */
     function deployed(string memory name) internal view returns (address) {
         string memory path = recordPath(name);
         if (!vm.exists(path)) return address(0);
-        return vm.readFile(path).readAddress(".address");
+
+        string memory raw = vm.readFile(path);
+        // Asked, not caught. `readUint` reverts on a missing key, and catching
+        // that would need an external call — which forge refuses in a script,
+        // because `address(this)` is ephemeral.
+        if (!vm.keyExistsJson(raw, ".version")) return address(0);
+        if (raw.readUint(".version") == 0) return address(0);
+        return raw.readAddress(".address");
     }
 
     function deployedVersion(string memory name)

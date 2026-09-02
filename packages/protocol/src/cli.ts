@@ -238,6 +238,14 @@ async function run(mode: Mode | undefined, opts: Options) {
         : beaconImplementation(recordDir, spec.owner!, rpc);
 
     if (!at) {
+      // A contract that is not there yet is the LARGEST change available, and
+      // this used to `continue` before counting it — so an upgrade run whose
+      // only work was a missing contract reported "everything is already
+      // running its current code" and did nothing. The simulation still has the
+      // last word: `current` here would mean the script disagrees that it is
+      // missing.
+      const act = plan.actions.get(name)?.action;
+      if (act === "deployed" || act === "upgraded") changing++;
       rows.push(
         `${c.bold(name.padEnd(22))} ${c.cyan("new".padEnd(12))} code v${code ?? "?"}`,
       );

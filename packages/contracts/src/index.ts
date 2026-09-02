@@ -42,12 +42,29 @@ const CHAIN_MAP: Record<number, Chain> = {
  * so a production build drops it at compile time rather than shipping a chain
  * option that resolves to nobody's localhost.
  */
+/**
+ * Local first, then testnets, then mainnets.
+ *
+ * Ordered deliberately, because the order decides `DEFAULT_CHAIN` and the
+ * default is what a developer gets before touching anything. This used to fall
+ * out of `Object.keys`, which sorts integer-like keys ASCENDING — so the moment
+ * the protocol was deployed to Base, 8453 sorted ahead of 31337 and every local
+ * run silently defaulted to mainnet. Nothing in the diff said so; the deployment
+ * did it.
+ */
+const rank = (c: Chain) => (c.id === anvil.id ? 0 : c.id === baseSepolia.id ? 1 : 2);
+
 export const CHAINS = Object.keys(slotFactoryAddress)
   .map((id) => CHAIN_MAP[Number(id)])
   .filter((c): c is Chain => c !== undefined)
-  .filter((c) => c.id !== anvil.id || process.env.NODE_ENV === "development");
+  .filter((c) => c.id !== anvil.id || process.env.NODE_ENV === "development")
+  .sort((a, b) => rank(a) - rank(b));
 
-/** Default chain — first chain with a deployed contract */
+/**
+ * Default chain — the least consequential one that is deployed.
+ *
+ * Anvil in development, a testnet otherwise. Never a mainnet by accident.
+ */
 export const DEFAULT_CHAIN = CHAINS[0] ?? baseSepolia;
 
 /**

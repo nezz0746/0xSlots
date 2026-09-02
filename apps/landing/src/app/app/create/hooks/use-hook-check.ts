@@ -65,7 +65,30 @@ export interface HookCheckData {
   attested: boolean;
   /** The callbacks it declared, in the order `HookFlags` declares them. */
   subscriptions: string[];
+  /**
+   * What it may REFUSE, and what it is merely told about.
+   *
+   * The split matters more than the list. A `before` hook is a veto — it can
+   * stop your buy, your sale or your reprice. An `after` hook is a
+   * notification: gas-capped, its revert swallowed, unable to change the
+   * outcome. Presenting all eight as one row of "callbacks" hid the only
+   * distinction an occupant actually cares about.
+   */
+  mayRefuse: string[];
+  notifiedOn: string[];
 }
+
+/** Just the verb — the `before`/`after` half is carried by which list it is in. */
+const VERB_LABELS: Record<string, string> = {
+  beforeBuy: "buy",
+  beforeSell: "sell",
+  beforeSelfAssess: "reprice",
+  afterBuy: "buy",
+  afterSell: "sell",
+  afterRelease: "release",
+  afterLiquidate: "liquidate",
+  afterSettle: "settle",
+};
 
 const FLAG_LABELS: Record<string, string> = {
   beforeBuy: "before buy",
@@ -139,6 +162,8 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
         status: "no-code",
         attested,
         subscriptions: [],
+        mayRefuse: [],
+        notifiedOn: [],
       };
 
     const flagsRes = data[0];
@@ -148,18 +173,24 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
         status: "not-a-hook",
         attested,
         subscriptions: [],
+        mayRefuse: [],
+        notifiedOn: [],
       };
 
     const flags = flagsRes.result as unknown as Record<string, boolean>;
-    const subscriptions = Object.keys(FLAG_LABELS)
-      .filter((key) => flags?.[key])
-      .map((key) => FLAG_LABELS[key]);
+    const on = Object.keys(FLAG_LABELS).filter((key) => flags?.[key]);
 
     return {
       address: checksummed,
-      status: subscriptions.length === 0 ? "inert" : "ok",
+      status: on.length === 0 ? "inert" : "ok",
       attested,
-      subscriptions,
+      subscriptions: on.map((k) => FLAG_LABELS[k] as string),
+      mayRefuse: on
+        .filter((k) => k.startsWith("before"))
+        .map((k) => VERB_LABELS[k] as string),
+      notifiedOn: on
+        .filter((k) => k.startsWith("after"))
+        .map((k) => VERB_LABELS[k] as string),
     };
   })();
 

@@ -1,4 +1,6 @@
 import {
+  adLandAbi,
+  adLandAddress,
   minimumTenureHookFactoryAbi,
   minimumTenureHookFactoryAddress,
   offerBookAbi,
@@ -29,7 +31,7 @@ export type ContractEntry = {
   /** Upgradeable contracts carry a version; stateless ones do not. */
   hasVersion: boolean;
   /** Who may upgrade it, where that is a question at all. */
-  adminFn?: "admin";
+  adminFn?: "admin" | "owner";
   upgradeable: boolean;
   /** True when this contract owns an `UpgradeableBeacon`. */
   ownsBeacon?: boolean;
@@ -119,6 +121,15 @@ export const CONTRACTS: ContractEntry[] = [
     adminFn: "admin",
     upgradeable: true,
     ownsBeacon: true,
+  },
+  {
+    name: "AdLand",
+    role: "Ad creatives, and the keys that name a slot",
+    address: (c) => adLandAddress[c],
+    abi: adLandAbi as Abi,
+    hasVersion: true,
+    adminFn: "owner",
+    upgradeable: true,
   },
   {
     name: "MinimumTenureHookFactory",
