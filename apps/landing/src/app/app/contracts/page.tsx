@@ -3,8 +3,9 @@
 import { CHAINS } from "@0xslots/contracts";
 import { ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { useReadContracts } from "wagmi";
+import { usePublicClient, useReadContracts } from "wagmi";
 import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
 import { useChain } from "@/context/chain";
@@ -25,6 +26,10 @@ import { BEACON_IMPLEMENTATIONS, beaconAbi, CONTRACTS } from "./registry";
  * committed address book records what was DEPLOYED and this page has to show
  * what is TRUE — those diverge exactly when it matters.
  */
+/** EIP-1967: `keccak256("eip1967.proxy.implementation") - 1`. */
+const ERC1967_IMPL =
+  "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
+
 export default function ContractsPage() {
   // Local-only. A disabled feature has no route, not a hidden one.
   if (!CONTRACTS_PAGE_ENABLED) notFound();
@@ -132,6 +137,43 @@ export default function ContractsPage() {
     version: i.address ? implVersions?.[vCursor++] : undefined,
   }));
 
+  /**
+   * What each UUPS proxy is currently delegating to.
+   *
+   * A storage read, not a call: the implementation lives in the ERC-1967 slot
+   * and the proxies expose no getter for it. `SlotFactory.implementation()`
+   * looks like one and is not — it forwards the BEACON's implementation, which
+   * is a different contract entirely, and reading it here would put the wrong
+   * address beside the wrong proxy.
+   *
+   * Three `eth_getStorageAt` rather than one multicall, because storage reads do
+   * not batch. Acceptable on a page that exists for incidents.
+   */
+  const publicClient = usePublicClient({ chainId });
+  const upgradeable = present.filter(({ entry }) => entry.upgradeable);
+
+  const { data: proxyImpls } = useQuery({
+    queryKey: [
+      "contracts",
+      "impl",
+      chainId,
+      upgradeable.map((u) => u.address).join(","),
+    ],
+    enabled: Boolean(publicClient) && upgradeable.length > 0,
+    queryFn: async () => {
+      const out = new Map<string, `0x${string}`>();
+      await Promise.all(
+        upgradeable.map(async ({ entry, address }) => {
+          const raw = await publicClient!.getStorageAt({ address, slot: ERC1967_IMPL });
+          if (!raw) return;
+          const impl = `0x${raw.slice(-40)}` as `0x${string}`;
+          if (!/^0x0+$/.test(impl)) out.set(entry.name, impl);
+        }),
+      );
+      return out;
+    },
+  });
+
   const explorer = chain?.blockExplorers?.default.url;
 
   return (
@@ -166,19 +208,22 @@ export default function ContractsPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <CopyAddress address={address} />
-                    {explorer ? (
-                      <a
-                        href={`${explorer}/address/${address}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3" />
-                      </a>
-                    ) : null}
-                  </div>
+                  <AddressPair
+                    explorer={explorer}
+                    rows={
+                      entry.upgradeable
+                        ? [
+                            { label: "proxy", address },
+                            {
+                              label: "impl",
+                              address: proxyImpls?.get(entry.name),
+                            },
+                          ]
+                        : // Not a proxy: one address, and labelling it would
+                          // imply a second that does not exist.
+                          [{ label: null, address }]
+                    }
+                  />
                 </td>
                 <td className="px-4 py-3 tabular-nums">
                   {!entry.hasVersion ? (
@@ -220,28 +265,18 @@ export default function ContractsPage() {
                   <div className="text-muted-foreground text-xs mt-0.5">
                     {spec.role}
                   </div>
-                  <div className="text-muted-foreground/70 text-xs mt-1">
-                    behind beacon <CopyAddress address={beacon} />
-                  </div>
                 </td>
                 <td className="px-4 py-3">
-                  {address ? (
-                    <div className="flex items-center gap-1.5">
-                      <CopyAddress address={address} />
-                      {explorer ? (
-                        <a
-                          href={`${explorer}/address/${address}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          <ExternalLink className="size-3" />
-                        </a>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">…</span>
-                  )}
+                  {/* "beacon" where the others say "proxy": there is no single
+                      proxy here. Hundreds delegate through this one beacon, and
+                      it is the address they all resolve. */}
+                  <AddressPair
+                    explorer={explorer}
+                    rows={[
+                      { label: "beacon", address: beacon },
+                      { label: "impl", address },
+                    ]}
+                  />
                 </td>
                 <td className="px-4 py-3 tabular-nums">
                   {version?.status === "success" ? (
@@ -286,4 +321,53 @@ export default function ContractsPage() {
   );
 }
 
-
+/**
+ * One or two addresses for a row, labelled.
+ *
+ * Two, because "the address" of an upgradeable contract is ambiguous in exactly
+ * the way that matters during an incident: the proxy is what everything holds
+ * and what does not change, the implementation is what the code actually is and
+ * what an upgrade moves. Showing one without the other makes you go and look up
+ * the missing half at the worst possible moment.
+ */
+function AddressPair({
+  rows,
+  explorer,
+}: {
+  rows: { label: string | null; address: `0x${string}` | undefined }[];
+  explorer: string | undefined;
+}) {
+  return (
+    <div className="space-y-0.5">
+      {rows.map(({ label, address }, i) => (
+        <div
+          key={label ?? i}
+          className="flex items-center gap-1.5 whitespace-nowrap"
+        >
+          {label ? (
+            <span className="text-muted-foreground/60 text-xs w-11 shrink-0">
+              {label}
+            </span>
+          ) : null}
+          {address ? (
+            <>
+              <CopyAddress address={address} />
+              {explorer ? (
+                <a
+                  href={`${explorer}/address/${address}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ExternalLink className="size-3" />
+                </a>
+              ) : null}
+            </>
+          ) : (
+            <span className="text-muted-foreground">…</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
