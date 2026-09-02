@@ -47,7 +47,6 @@ export default defineConfig({
       text: "Introduction",
       items: [
         { text: "Overview", link: "/overview" },
-        { text: "Vision", link: "/vision" },
         { text: "Getting Started", link: "/getting-started" },
       ],
     },
@@ -55,9 +54,7 @@ export default defineConfig({
       text: "Concepts",
       items: [
         { text: "How a slot works", link: "/concepts/slots" },
-        { text: "Occupancy", link: "/concepts/occupancy" },
-        { text: "Utility modules", link: "/concepts/modules" },
-        { text: "Collectives", link: "/concepts/collectives" },
+        { text: "Hooks", link: "/concepts/hooks" },
       ],
     },
     {
@@ -65,8 +62,7 @@ export default defineConfig({
       items: [
         { text: "SlotFactory", link: "/reference/factory" },
         { text: "Slot", link: "/reference/slot" },
-        { text: "Occupancy policies", link: "/reference/policies" },
-        { text: "Utility modules", link: "/reference/modules" },
+        { text: "Hooks", link: "/reference/hooks" },
       ],
     },
     {

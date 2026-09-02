@@ -1,121 +1,116 @@
+import { Callout } from 'vocs'
+
 # Slot
 
-One slot, one contract. Deployed as a BeaconProxy by the
-[SlotFactory](/reference/factory).
+The contract behind one position. Every mutating call settles accrued tax before
+anything else happens, so the numbers are correct whenever anyone looks —
+nothing runs on a timer.
 
 ## Occupant operations
 
 ```solidity
 function buy(
-    address account,
+    address account,          // who gets SEATED — not necessarily msg.sender
     uint256 depositAmount,
-    uint256 selfAssessedPrice
-) external;
+    uint256 selfAssessedPrice,
+    uint256 maxPayment        // ceiling on the total charged; 0 disables it
+) external payable;
+
+function selfAssess(uint256 newPrice) external;   // occupant or operator
+function topUp(uint256 amount) external payable;   // anyone may fund a slot
+function withdraw(uint256 amount) external;        // occupant only
+function release() external;                       // occupant only, always allowed
 ```
 
-Takes the slot. Pays the current occupant their declared price, plus
-`depositAmount` into escrow. `account` is who becomes occupant — it need not be
-`msg.sender`, so you can buy on someone's behalf.
+`buy` separates who **pays** (`msg.sender`) from who **holds** (`account`), so a
+contract can acquire a slot on someone's behalf.
 
-Vacant slots cost only the deposit; there is no incumbent to pay.
+<Callout type="warning">
+`maxPayment` bounds the total an ERC-20 buy can cost. The sitting price is read
+at execution, not when you quoted it, so without a ceiling the occupant could
+raise it between your simulation and your inclusion and take the whole allowance.
+Native buys are incidentally safe (`buy` checks `msg.value` for equality). Pass
+`0` only to opt out on purpose.
+</Callout>
+
+## Selling into an offer
+
+Buying is not the only way a slot changes hands. A buyer can sign a standing
+**offer**, and the occupant sells into it.
 
 ```solidity
-function selfAssess(uint256 newPrice) external;   // occupant or operator
-function topUp(uint256 amount) external;          // anyone may fund a slot
-function withdraw(uint256 amount) external;       // occupant only
-function release() external;                      // occupant only, always allowed
+function sell(SellOrder calldata order, bytes calldata signature) external; // occupant only
+function cancelSellOrder(uint256 nonce) external;                           // the buyer, off-book
+
+struct SellOrder {
+    address slot;
+    address buyer;
+    uint256 price;
+    uint256 deposit;
+    uint256 nonce;
+    uint64  deadline;
+}
 ```
 
-`topUp` is deliberately open: anyone can keep a slot solvent, including the
-recipient who benefits from it staying occupied.
-
-`withdraw` takes back surplus deposit, subject to `minDepositSeconds`. `release`
-returns the remaining deposit and vacates.
+The buyer signs the order (EIP-712), fixing **both** `price` and `deposit`, so
+the split is set by the party whose money it is — the occupant chooses nothing.
+ERC-20 slots only: `sell` reverts on a native slot, which has no allowance to
+pull the buyer's funds from.
 
 ## Permissionless operations
 
 ```solidity
-function collect() external;     // push accrued tax to the recipient
-function liquidate() external;   // remove an insolvent occupant, earn the bounty
+function collect() external;            // push accrued tax to the recipient
+function liquidate() external;          // evict an insolvent occupant
 function claim(address account) external;
 ```
 
-Anyone may call these. `liquidate` requires the deposit to be fully exhausted;
-the bounty is `liquidationBountyBps` of **collected tax**, not of anyone's
-deposit.
+<Callout type="info">
+`liquidate()` has **no bounty**. The reward is the slot itself: a vacant slot
+costs only the taker's own deposit, so whoever wants it can evict and buy it in
+one transaction. Paying keepers out of the recipient's accrued tax would have
+funded the incentive from the wrong pocket — across tenures that weren't even
+the defaulter's.
+</Callout>
 
-`claim` is the escape hatch for a refund that could not be pushed — a
-blocklisting token, a contract that reverts on receipt. Rather than let that
-brick the slot, the amount is credited to `withdrawableOf` and claimed later.
+`claim` withdraws funds credited to an account when a direct payout failed (a
+refund to a contract that rejected it, say) — pull, not push.
 
 ## Delegation
 
 ```solidity
-function setOperator(address operator, bool approved) external;
-mapping(address => mapping(address => bool)) public isOperator;
+function setOperator(address operator, bool allowed) external;  // occupant only
 ```
 
-Lets another address manage your price without holding the slot. Keyed by
-occupant, so approvals survive leaving and re-entering.
+An operator may `selfAssess` on the occupant's behalf — delegate price changes
+without handing over the slot.
 
 ## Manager operations
 
-Only available for whatever was declared mutable at creation.
+Only if the slot was created with `mutableTax` or `mutableHook`, and only by the
+manager. Proposed terms apply after a delay (`TERMS_DELAY`, 1 day).
 
 ```solidity
-function proposeTaxUpdate(uint256 newPct) external;
-function proposeUtilityUpdate(address newUtility) external;
-function proposePolicyUpdate(address newPolicy) external;
-function setLiquidationBounty(uint256 newBps) external;
+function proposeTerms(
+    uint256 newTax,
+    address newHook,   // address(0) detaches the hook
+    bool    changeTax,
+    bool    changeHook
+) external;
+
+function cancelProposal(bool cancelTax, bool cancelHook) external;
 ```
 
-Changes are **proposed, not applied**. They take effect at the next occupancy
-change, so the terms cannot shift under someone mid-tenancy.
-
-`proposeModuleUpdate` remains as a deprecated alias for `proposeUtilityUpdate`.
-
-### Pending updates, one dimension at a time
-
-A slot has always held up to three queued changes — tax, utility, occupancy
-policy — but they could once only be cancelled as a set, and the log could not
-say which one had moved. Each is now addressed independently:
+Tax and hook are proposed and cancelled **independently**, with a flag each.
+They may be governed by different parties behind one manager address; an
+all-or-nothing cancel would let whoever moves the hook wipe a queued tax change
+as a side effect. A change touching a mutable dimension you did not open reverts.
 
 ```solidity
-enum UpdateKind { Tax, Utility, Policy }   // 0, 1, 2
-
-function cancelPendingUpdate(UpdateKind kind) external;  // one dimension
-function cancelPendingUpdates() external;                // all three
-function pendingUpdateOf(UpdateKind kind)
-    external view returns (bool isSet, bytes32 value, uint64 proposedAt);
-
-function taxProposedAt() external view returns (uint64);
-function utilityProposedAt() external view returns (uint64);
-function policyProposedAt() external view returns (uint64);
+event TermsProposed(uint256 taxPercentage, address hook, bool tax, bool hook_);
+event TermsApplied(uint256 taxPercentage, address hook);
+event ProposalCancelled(bool tax, bool hook);
 ```
-
-`pendingUpdateOf` reads one kind uniformly across both storage structs — tax and
-utility live in `PendingUpdate`, policy in `PendingPolicyUpdate`.
-
-Three events carry the same shape, where `value` is the proposed value widened to
-32 bytes — the raw integer for `Tax`, the left-padded address for `Utility` and
-`Policy`:
-
-```solidity
-event UpdateProposed(UpdateKind indexed kind, bytes32 value, uint64 proposedAt);
-event UpdateCancelled(UpdateKind indexed kind);
-event UpdateApplied(UpdateKind indexed kind, bytes32 value);
-```
-
-These are **additions, not replacements**. `TaxUpdateProposed`,
-`ModuleUpdateProposed`, `PolicyUpdateProposed`, `PendingUpdateCancelled`,
-`PendingUpdateApplied` and `PolicyUpdateApplied` all still fire — changing an
-existing event's signature changes its topic0 and splits historical indexing
-across two shapes.
-
-What the new ones add is what the old ones structurally cannot express.
-`PendingUpdateApplied` carries **both** tax and utility on every apply, filling
-the unchanged one in from current state, so a reader sees a utility "change" to
-the value it already had. `UpdateApplied` fires only for what actually moved.
 
 ## Reading state
 
@@ -123,11 +118,32 @@ the value it already had. `UpdateApplied` fires only for what actually moved.
 function getSlotInfo() external view returns (SlotInfo memory);
 ```
 
-Everything in one call — identity, live financials, module metadata, pending
-updates, occupancy policy. Prefer it over assembling individual getters, which
-costs more round trips and can tear across a state change.
+Everything in one call — terms, the attached hook and its snapshotted
+`HookFlags`, live occupancy and financials, and any queued terms. Prefer it over
+assembling individual getters, which each re-read and re-settle.
 
-Individual getters exist too:
+```solidity
+struct SlotInfo {
+    // terms
+    address recipient; IERC20 currency; address manager;
+    uint256 taxPercentage; uint256 minDepositSeconds;
+    bool mutableTax; bool mutableHook;
+    // extension
+    address hook; HookFlags hookFlags;
+    // occupancy
+    address occupant; uint256 price; uint256 deposit;
+    uint64 occupiedSince; uint64 tenureId; uint64 lastSettled;
+    // money, as of this block
+    uint256 taxOwed; uint256 collectedTax;
+    bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
+    // queued terms
+    uint256 pendingTaxPercentage; address pendingHook;
+    bool pendingHasTax; bool pendingHasHook;
+    uint64 pendingProposedAt; bool pendingApplies;
+}
+```
+
+Individual getters exist for the common fields:
 
 ```solidity
 function occupant() external view returns (address);
@@ -138,34 +154,27 @@ function isInsolvent() external view returns (bool);
 function isVacant() external view returns (bool);
 ```
 
-## Tax
-
-Tax accrues per second at `taxPercentage` basis points per 30 days:
-
-```
-owed = price × taxPercentage × elapsed / (30 days × 10_000)
-```
-
-It is charged against the deposit at the start of every mutating call, so state
-is always settled before anything else happens. Nothing runs on a timer.
-
-A charge is **capped by the remaining deposit**. An occupant who has run dry
-pays less than they owe and becomes liquidatable — which is why accounting must
-use amounts actually paid rather than amounts theoretically owed.
-
 ## Events
 
-| Event | Fires on |
-|---|---|
-| `Bought` | occupancy transfer |
-| `Released` | occupant leaves |
-| `Liquidated` | insolvent occupant removed |
-| `PriceUpdated` | self-assessment |
-| `Deposited` / `Withdrawn` | deposit changes |
-| `Settled` | tax charged — amounts only |
-| `TaxPaid` | tax charged — **with the payer** |
-| `TaxCollected` | tax pushed to the recipient |
+The occupancy and money log:
 
-`TaxPaid` is the one to reduce over for per-address accounting. `Settled`
-carries the same amounts but not who paid them, so it cannot be attributed.
-`TaxPaid` always fires, including when a module hook fails.
+```solidity
+event Bought(/* buyer, account, price, deposit, … */);
+event Sold(/* buyer, price, deposit, … */);
+event Released(address indexed occupant, uint256 refund);
+event Liquidated(address indexed by, address indexed occupant);
+event PriceSet(address indexed by, uint256 oldPrice, uint256 newPrice);
+event Deposited(address indexed by, uint256 amount, uint256 total);
+event Withdrawn(address indexed occupant, uint256 amount, uint256 left);
+event Settled(uint256 owed, uint256 paid, uint256 depositLeft);
+event TaxPaid(address indexed payer, uint256 owed, uint256 paid);
+event TaxCollected(address indexed recipient, uint256 amount);
+event OperatorSet(address indexed operator, bool allowed);
+event OrderCancelled(address indexed buyer, uint256 nonce);
+```
+
+`TaxPaid` is the one to reduce over for per-address accounting, and it **always**
+fires — including when an `after` hook call fails. A failed hook emits
+`HookCallFailed(hook, selector)` and is otherwise swallowed; a hook that reverts
+its own attachment check is dropped with `HookDetached(hook)`. Neither can block
+the operation, which is the whole point of the `after` side.

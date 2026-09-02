@@ -69,7 +69,7 @@ await client.topUp("0xSlot", parseEther("0.5"));
 await client.withdraw("0xSlot", parseEther("0.1"));
 await client.release("0xSlot");
 await client.collect("0xSlot");       // permissionless
-await client.liquidate("0xSlot");     // permissionless, earns bounty
+await client.liquidate("0xSlot");     // permissionless — no bounty, the slot itself is the reward
 ```
 
 ## React Integration

@@ -37,7 +37,7 @@ Four differences from the subgraph this replaces:
 - Pagination is `limit` with `offset`, or the `after` / `before` cursors from
   `pageInfo`. `first` / `skip` are gone.
 - Foreign keys are scalar columns; the joined row is the `*Ref` sibling —
-  `module` is an address, `moduleRef` is the row.
+  `hook` is an address, `hookRef` is the row.
 - There is no `block:` argument. Ponder has no time-travel query.
 
 Every chain-scoped row carries `chainId`.
@@ -46,22 +46,27 @@ Every chain-scoped row carries `chainId`.
 
 | Entity | Key fields |
 |---|---|
-| `slot` | `id`, `chainId`, `recipient`, `currency`, `occupant`, `isOccupied`, `price`, `deposit`, `taxPercentage`, `collectedTax`, `taxPaidTotal`, `totalCollected`, `occupancyPolicy`, `createdAt` |
+| `slot` | `id`, `chainId`, `recipient`, `currency`, `occupant`, `isOccupied`, `price`, `deposit`, `taxPercentage`, `collectedTax`, `taxPaidTotal`, `totalCollected`, `hook`, `tenureId`, `createdAt` |
+| `hook` | `id`, `chainId`, `attested`, `attestedAt`, the `declared*` flag snapshot, `slotCount`, `failedCallCount` |
 | `account` | `id`, `type` (EOA/CONTRACT/DELEGATED/SPLIT), `slotCount`, `occupiedCount`, `totalHoldTime` |
 | `accountChain` | `account`, `chainId`, `slotCount`, `occupiedCount`, `occupiedAsRecipient` |
 | `currency` | `id`, `name`, `symbol`, `decimals` |
-| `module` | `id`, `name`, `version`, `verified`, `feeBps`, `metadataURI`, `image`, `description` |
-| `metadataSlot` | `id`, `uri`, `cid`, `rawJson`, `adType`, `updatedBy`, `updateCount` |
 
-`slot` also carries its pending updates, so "what is queued right now" no longer
-needs an RPC call per slot: `pendingTaxPercentage`, `pendingUtility`,
-`pendingPolicy` and a `*ProposedAt` for each.
+A slot points at **one** `hook` (or none). The joined `hookRef` row carries the
+factory admin's `attested` opinion — advisory, never a permission — the snapshot
+of the hook's declared callback flags taken at attachment, and `failedCallCount`,
+the count of `after` calls that reverted and were swallowed. A hook accumulating
+those is quietly broken.
+
+`slot` also carries its pending terms, so "what is queued right now" no longer
+needs an RPC call per slot: `pendingHasTax` / `pendingTaxPercentage`,
+`pendingHasHook` / `pendingHook`, and `pendingProposedAt`.
 
 <Callout type="warning">
-`NULL` on a pending column means **nothing is queued**. It is not interchangeable
-with the zero address, which is a real proposed value for both address
-dimensions — "remove the utility" and "drop the occupancy policy" are changes
-someone deliberately queued.
+Read the `pendingHas*` boolean, not the value column. A `NULL` on a value column
+means nothing is queued, but the zero address is itself a real proposed value —
+`pendingHook` = zero with `pendingHasHook` = true is a deliberately queued
+"detach the hook", not an empty slot.
 </Callout>
 
 ### `account` vs `accountChain`
@@ -77,13 +82,12 @@ where it is the **recipient**. They describe different roles. The one that pairs
 with `slotCount` is `occupiedAsRecipient` — the only honest numerator for an
 occupancy percentage.
 
-### `module.metadataURI`
+### A note on schema drift
 
-Formerly `moduleURI`, following the
-[`IModuleMetadata`](/reference/modules) rename on the contracts. The indexer
-serves exactly one schema and GraphQL rejects a document containing an unknown
-field, so an SDK on the other spelling gets an **empty list** rather than a
-missing field. Deploy the indexer and publish the SDK together.
+The indexer serves exactly one schema, and GraphQL rejects a document containing
+an unknown field — so an SDK querying a field the deployed indexer does not have
+gets an **empty list**, not a clear error. Deploy the indexer and publish the SDK
+together.
 
 ## Example queries
 
@@ -106,7 +110,7 @@ missing field. Deploy the indexer and publish the SDK together.
       deposit
       taxPercentage
       currencyRef { symbol decimals }
-      moduleRef { name verified metadataURI }
+      hookRef { attested slotCount failedCallCount }
       createdAt
     }
     totalCount
@@ -120,13 +124,13 @@ missing field. Deploy the indexer and publish the SDK together.
 ```graphql
 query GetSlotActivity($slot: String!) {
   boughtEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
-    items { buyer price selfAssessedPrice timestamp }
+    items { buyer from price deposit paid viaSell timestamp }
   }
   releasedEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
     items { occupant refund timestamp }
   }
   liquidatedEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
-    items { liquidator bounty timestamp }
+    items { by occupant heldFor timestamp }
   }
 }
 ```

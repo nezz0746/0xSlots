@@ -32,12 +32,14 @@ Unified write executor with transaction lifecycle tracking.
 import { useSlotAction } from "@0xslots/sdk/react";
 
 const {
-  buy, selfAssess, topUp, withdraw, release, collect, liquidate,
-  createSlot, createSlots, createSlotWithTenure, createSlotWithPriceFloor,
-  proposeTaxUpdate, proposeUtilityUpdate, proposePolicyUpdate,
-  cancelPendingUpdate, cancelPendingUpdates, setLiquidationBounty,
-  updateMetadata,
+  createSlot,                                  // factory
+  buy, sell, release, liquidate,               // occupancy
+  selfAssess, topUp, withdraw, setOperator,    // holding
+  collect, claim,                              // money out
+  proposeTerms, cancelProposal, manageTerms,   // manager
+  makeSellOrder, signSellOrder, cancelSellOrder, // signed offers
   exec,          // generic executor
+  preflight,     // dry-run a call
   busy,          // isPending || isConfirming
   isPending,     // wallet interaction in progress
   isConfirming,  // waiting for on-chain confirmation
@@ -49,17 +51,10 @@ const {
 });
 ```
 
-`proposeModuleUpdate` is still returned, as a deprecated alias for
-`proposeUtilityUpdate`.
-
-`cancelPendingUpdate(slot, kind)` retracts one of a slot's three governable
-dimensions; `cancelPendingUpdates(slot)` retracts all of them.
-
-```tsx
-import { UpdateKind } from "@0xslots/sdk";  // Tax = 0, Utility = 1, Policy = 2
-
-await cancelPendingUpdate(slot, UpdateKind.Tax);
-```
+`proposeTerms(slot, { taxPercentage?, hook? })` queues the tax rate, the hook, or
+both; `cancelProposal(slot, cancelTax?, cancelHook?)` retracts them, one
+dimension or both. There is no separate call per dimension — a slot has two
+mutable terms, tax and hook, and they move through the same pair of functions.
 
 ---
 

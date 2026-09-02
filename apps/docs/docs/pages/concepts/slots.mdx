@@ -20,29 +20,26 @@ flowchart LR
     Occupant["Occupant<br/><i>sets price, pays tax</i>"]
     Slot["<b>Slot</b><br/>price · deposit · occupant"]
     Recipient["Recipient<br/><i>receives tax</i>"]
-    Policy["Occupancy policy<br/><i>may veto a transfer</i>"]
-    Module["Utility module<br/><i>gives the slot a purpose</i>"]
+    Hook["Hook<br/><i>may veto a transfer,<br/>and reacts to what happens</i>"]
     Buyer["Anyone<br/><i>can buy at the declared price</i>"]
 
     Occupant -->|"deposit + self-assessed price"| Slot
     Buyer -->|"buy at declared price"| Slot
     Slot -->|"tax, continuously"| Recipient
-    Slot -.->|"may this proceed?"| Policy
-    Slot -.->|"this just happened"| Module
-    Module -.->|"optional fee, from the tax"| Recipient
+    Slot -.->|"may this proceed? — then, this happened"| Hook
+    Hook -.->|"optional fee, from the tax"| Recipient
 
     classDef core fill:#000,stroke:#000,color:#fff
     classDef opt fill:#fff,stroke:#999,stroke-dasharray:4 3,color:#333
     class Slot core
-    class Policy,Module opt
+    class Hook opt
 ```
 
 | Part | Required | What it does |
 |---|---|---|
 | **Occupant** | — | Holds the slot, sets the price, pays the tax |
 | **Recipient** | yes | Receives the tax. Fixed at creation, never changes |
-| **Occupancy policy** | no | Can veto a buy or price change. Never moves money |
-| **Utility module** | no | Gives the slot a purpose — ads, naming, content, access |
+| **Hook** | no | One address that both vetoes transfers (who may hold) and reacts to them (what holding grants). Never moves the price |
 | **Manager** | no | May change what was declared changeable at creation |
 
 Solid lines move value. Dashed lines are optional.
@@ -68,6 +65,7 @@ stateDiagram-v2
     Vacant --> Occupied: buy()
     Occupied --> Occupied: selfAssess() / topUp() / withdraw()
     Occupied --> Occupied: buy() — taken by someone else
+    Occupied --> Occupied: sell() — sold into a standing offer
     Occupied --> Vacant: release()
     Occupied --> Vacant: liquidate() — deposit exhausted
 ```
@@ -80,13 +78,14 @@ anyone looks.
 
 ## Liquidation
 
-When the deposit hits zero, anyone may call `liquidate()`. The slot goes vacant
-and the caller earns `liquidationBountyBps` — taken from the **collected tax**,
-not from anyone's deposit.
+When the deposit hits zero, anyone may call `liquidate()`. The slot goes vacant.
+There is **no bounty** — the reward is the slot: a vacant slot costs only the
+taker's own deposit, so whoever actually wants it can evict and buy it in one
+transaction. Nobody's deposit is touched, and no accrued tax is spent on keepers.
 
 <Callout type="warning">
-No occupancy policy can prevent liquidation, and none can stop an occupant
-leaving. `liquidate()` and `release()` never consult one.
+No hook can prevent liquidation, and none can stop an occupant leaving.
+`liquidate()` and `release()` never consult one.
 </Callout>
 
 ## Roles
@@ -98,14 +97,13 @@ leaving. `liquidate()` and `release()` never consult one.
 | **Recipient** | at creation, forever | Receive tax. Nothing else |
 | **Manager** | at creation | Propose changes, only to what was declared mutable |
 
-A slot is immutable by default. `mutableTax`, `mutableUtility` and
-`mutablePolicy` are three separate promises, and a manager only exists if at
-least one is true.
+A slot is immutable by default. Its tax and its hook are separate mutability
+promises — you can freeze one and leave the other open — and a manager only
+exists if at least one is true.
 
 Recipient and manager are different jobs on purpose — "receives money" and "has
-admin powers" should not be the same authority. When you *do* want one address
-doing both, without collapsing it into one person, that is what a
-[collective](/concepts/collectives) is for.
+admin powers" should not be the same authority. Either can be a plain address or
+a contract that shares the role among several parties.
 
 ---
 
@@ -117,15 +115,14 @@ Remove any one and the other two stop working. A price with no tax is a bluff. A
 tax with no forced sale is just rent. Forced sale with no self-assessment needs
 someone else to set the price — which is the problem the whole design avoids.
 
-### Why mutability is three flags
+### Why tax and hook are separate promises
 
-You might want a swappable ad module on occupancy terms that never change.
+You might want a swappable ad hook on tenure terms that never change.
 Conflating them would make that inexpressible — and would let a slot advertising
-"the module may change" quietly also reserve the right to change who is allowed
-to take it.
+"the hook may change" quietly also reserve the right to change who is allowed to
+take it.
 
 ## Next
 
-- [Occupancy](/concepts/occupancy) — why a slot might refuse a sale
-- [Utility modules](/concepts/modules) — how a slot gets a purpose
+- [Hooks](/concepts/hooks) — how a slot gets a purpose, and why it might refuse a sale
 - [Slot reference](/reference/slot) — the full contract API

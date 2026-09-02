@@ -1,0 +1,130 @@
+import { Callout } from 'vocs'
+
+# Hook reference
+
+The interfaces a hook implements. See [the concept](/concepts/hooks) for the
+model; this is the surface.
+
+A slot calls exactly one hook. `ISlotHook` is required; `IDescribedHook` is an
+optional, client-only extension for rendering.
+
+## `ISlotHook`
+
+```solidity
+interface ISlotHook {
+    function hooks() external view returns (HookFlags memory);
+
+    // decisions — view, revert to veto
+    function beforeBuy(SlotContext calldata ctx) external view;
+    function beforeSell(SlotContext calldata ctx) external view;
+    function beforeSelfAssess(SlotContext calldata ctx) external view;
+
+    // effects — gas-capped, revert swallowed, cannot change the outcome
+    function afterBuy(SlotContext calldata ctx) external;
+    function afterSell(SlotContext calldata ctx) external;
+    function afterRelease(SlotContext calldata ctx) external;
+    function afterLiquidate(SlotContext calldata ctx) external;
+    function afterSettle(SlotContext calldata ctx) external;
+}
+```
+
+`hooks()` is `view`, not `pure`: a composite answers it from storage. It is read
+**once** at attach and snapshotted, so a hook cannot widen its reach mid-tenure.
+
+## `SlotContext`
+
+One shape for every callback. Fields not meaningful for a given call are zero.
+
+```solidity
+struct SlotContext {
+    address slot;          // always msg.sender, passed explicitly
+    address caller;        // who called the slot — not necessarily the occupant
+    address account;       // incoming occupant on a transition; current otherwise
+    address occupant;      // who holds it now; zero when vacant
+    uint256 occupiedSince; // when the current occupancy began; zero when vacant
+    uint256 taxPercentage; // basis points per 30 days
+    uint256 currentPrice;
+    uint256 newPrice;      // proposed in `before`, just-set in `after`
+    uint256 depositAmount;
+    uint256 owed;          // afterSettle only — tax that accrued
+    uint256 paid;          // afterSettle only — what could be taken from deposit
+}
+```
+
+`owed > paid` on `afterSettle` means the occupant has run dry — a useful distress
+signal. `newPrice` is a *proposal* in `beforeBuy` / `beforeSelfAssess` and a fact
+in the `after` callbacks.
+
+## `HookFlags`
+
+Which callbacks a hook wants. Declared by the hook, snapshotted by the slot.
+
+```solidity
+struct HookFlags {
+    bool beforeBuy;
+    bool beforeSell;
+    bool beforeSelfAssess;
+    bool afterBuy;
+    bool afterSell;
+    bool afterRelease;
+    bool afterLiquidate;
+    bool afterSettle;
+}
+```
+
+<Callout type="warning">
+The `before` flags are not optional to get right. A `before` hook is
+fail-closed: calling one on a contract that does not implement it reverts on the
+missing function, and a fail-closed revert vetoes **every** buy on that slot,
+forever. The flags are how the slot knows to skip a callback the hook never
+meant to answer.
+</Callout>
+
+## `IDescribedHook`
+
+Optional. Self-reported metadata for clients — **never** read by the slot.
+
+```solidity
+struct HookDescriptor {
+    bytes32 family;      // identifies the behaviour; the lookup key
+    uint32  version;     // the encoding of `data`, and nothing else
+    bytes   data;        // family-specific, e.g. abi-encoded tenure seconds
+    string  metadataURI; // the human half — label, units, icon. May be empty.
+}
+
+interface IDescribedHook {
+    function descriptors() external view returns (HookDescriptor[] memory);
+}
+```
+
+<Callout type="info">
+`descriptors()` is an `eth_call` for clients only and may lie. Treat a revert,
+an unknown `family`, an unknown `version`, or `data` that fails to decode as
+"unknown" and fall back to the flags — which still say whether the hook can
+refuse a buy. A hook that answers family X version 1 and meets version 2 should
+ignore v2 rather than decode its bytes with v1's layout.
+</Callout>
+
+## Verification
+
+Each hook kind ships a factory that deploys at a CREATE2 address derived from the
+hook's terms:
+
+```solidity
+factory.verify(hook) // → bool
+```
+
+Because CREATE2 binds the address to the deployer, init code and salt, only the
+genuine hook for those exact terms can occupy it. A client loops known
+factories rather than trusting a self-reported descriptor.
+
+## Fees
+
+```solidity
+function feeBps() external view returns (uint256);        // e.g. 500 = 5%
+function feeRecipient() external view returns (address);
+```
+
+A hook may skim a fraction of collected tax to its own recipient; the remainder
+goes to the slot's recipient. Declared on the hook and visible before anyone
+attaches it.

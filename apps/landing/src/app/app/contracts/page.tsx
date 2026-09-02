@@ -40,7 +40,9 @@ export default function ContractsPage() {
   const present = useMemo(
     () =>
       CONTRACTS.map((c) => ({ entry: c, address: c.address(chainId) })).filter(
-        (c): c is { entry: (typeof CONTRACTS)[number]; address: `0x${string}` } =>
+        (
+          c,
+        ): c is { entry: (typeof CONTRACTS)[number]; address: `0x${string}` } =>
           Boolean(c.address),
       ),
     [chainId],
@@ -54,7 +56,14 @@ export default function ContractsPage() {
       ? [{ address, abi: entry.abi, functionName: "version", chainId } as const]
       : []),
     ...(entry.adminFn
-      ? [{ address, abi: entry.abi, functionName: entry.adminFn, chainId } as const]
+      ? [
+          {
+            address,
+            abi: entry.abi,
+            functionName: entry.adminFn,
+            chainId,
+          } as const,
+        ]
       : []),
     ...(entry.ownsBeacon
       ? [{ address, abi: entry.abi, functionName: "beacon", chainId } as const]
@@ -100,8 +109,13 @@ export default function ContractsPage() {
     beacon: beaconsOf.get(b.owner),
     owner: present.find((p) => p.entry.name === b.owner)?.address,
   })).filter(
-    (b): b is { spec: (typeof BEACON_IMPLEMENTATIONS)[number]; beacon: `0x${string}`; owner: `0x${string}` } =>
-      Boolean(b.beacon && b.owner),
+    (
+      b,
+    ): b is {
+      spec: (typeof BEACON_IMPLEMENTATIONS)[number];
+      beacon: `0x${string}`;
+      owner: `0x${string}`;
+    } => Boolean(b.beacon && b.owner),
   );
 
   const { data: served } = useReadContracts({
@@ -125,7 +139,14 @@ export default function ContractsPage() {
   const { data: implVersions } = useReadContracts({
     contracts: implementations.flatMap(({ spec, address }) =>
       address
-        ? [{ address, abi: spec.abi, functionName: "version", chainId } as const]
+        ? [
+            {
+              address,
+              abi: spec.abi,
+              functionName: "version",
+              chainId,
+            } as const,
+          ]
         : [],
     ),
     query: { enabled: implementations.some((i) => i.address) },
@@ -164,7 +185,10 @@ export default function ContractsPage() {
       const out = new Map<string, `0x${string}`>();
       await Promise.all(
         upgradeable.map(async ({ entry, address }) => {
-          const raw = await publicClient!.getStorageAt({ address, slot: ERC1967_IMPL });
+          const raw = await publicClient!.getStorageAt({
+            address,
+            slot: ERC1967_IMPL,
+          });
           if (!raw) return;
           const impl = `0x${raw.slice(-40)}` as `0x${string}`;
           if (!/^0x0+$/.test(impl)) out.set(entry.name, impl);
@@ -177,7 +201,7 @@ export default function ContractsPage() {
   const explorer = chain?.blockExplorers?.default.url;
 
   return (
-    <div className="space-y-6">
+    <div className="">
       <PageHeader>
         <div>
           <h1 className="text-xl font-semibold">Contracts</h1>
@@ -187,136 +211,144 @@ export default function ContractsPage() {
           </p>
         </div>
       </PageHeader>
-
-      <div className="rounded-lg border overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 border-b text-left">
-            <tr>
-              <th className="px-4 py-2.5 font-medium">Contract</th>
-              <th className="px-4 py-2.5 font-medium">Address</th>
-              <th className="px-4 py-2.5 font-medium">Version</th>
-              <th className="px-4 py-2.5 font-medium">Upgrade authority</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ entry, address, version, admin }) => (
-              <tr key={entry.name} className="border-b last:border-0 align-top">
-                <td className="px-4 py-3">
-                  <div className="font-medium">{entry.name}</div>
-                  <div className="text-muted-foreground text-xs mt-0.5">
-                    {entry.role}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <AddressPair
-                    explorer={explorer}
-                    rows={
-                      entry.upgradeable
-                        ? [
-                            { label: "proxy", address },
-                            {
-                              label: "impl",
-                              address: proxyImpls?.get(entry.name),
-                            },
-                          ]
-                        : // Not a proxy: one address, and labelling it would
-                          // imply a second that does not exist.
-                          [{ label: null, address }]
-                    }
-                  />
-                </td>
-                <td className="px-4 py-3 tabular-nums">
-                  {!entry.hasVersion ? (
-                    // Not "0". A stateless contract is replaced rather than
-                    // upgraded, so it has no version to be behind on.
-                    <span className="text-muted-foreground">—</span>
-                  ) : isLoading ? (
-                    <span className="text-muted-foreground">…</span>
-                  ) : version?.status === "success" ? (
-                    String(version.result)
-                  ) : (
-                    <span className="text-destructive">unreadable</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {!entry.upgradeable ? (
-                    <span className="text-muted-foreground">
-                      not upgradeable
-                    </span>
-                  ) : isLoading ? (
-                    <span className="text-muted-foreground">…</span>
-                  ) : admin?.status === "success" ? (
-                    <CopyAddress address={admin.result as `0x${string}`} />
-                  ) : (
-                    <span className="text-destructive">unreadable</span>
-                  )}
-                </td>
+      <div className="w-full px-3 md:px-5 py-3 space-y-3">
+        <div className="rounded-lg border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 border-b text-left">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">Contract</th>
+                <th className="px-4 py-2.5 font-medium">Address</th>
+                <th className="px-4 py-2.5 font-medium">Version</th>
+                <th className="px-4 py-2.5 font-medium">Upgrade authority</th>
               </tr>
-            ))}
+            </thead>
+            <tbody>
+              {rows.map(({ entry, address, version, admin }) => (
+                <tr
+                  key={entry.name}
+                  className="border-b last:border-0 align-top"
+                >
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{entry.name}</div>
+                    <div className="text-muted-foreground text-xs mt-0.5">
+                      {entry.role}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <AddressPair
+                      explorer={explorer}
+                      rows={
+                        entry.upgradeable
+                          ? [
+                              { label: "proxy", address },
+                              {
+                                label: "impl",
+                                address: proxyImpls?.get(entry.name),
+                              },
+                            ]
+                          : // Not a proxy: one address, and labelling it would
+                            // imply a second that does not exist.
+                            [{ label: null, address }]
+                      }
+                    />
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {!entry.hasVersion ? (
+                      // Not "0". A stateless contract is replaced rather than
+                      // upgraded, so it has no version to be behind on.
+                      <span className="text-muted-foreground">—</span>
+                    ) : isLoading ? (
+                      <span className="text-muted-foreground">…</span>
+                    ) : version?.status === "success" ? (
+                      String(version.result)
+                    ) : (
+                      <span className="text-destructive">unreadable</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {!entry.upgradeable ? (
+                      <span className="text-muted-foreground">
+                        not upgradeable
+                      </span>
+                    ) : isLoading ? (
+                      <span className="text-muted-foreground">…</span>
+                    ) : admin?.status === "success" ? (
+                      <CopyAddress address={admin.result as `0x${string}`} />
+                    ) : (
+                      <span className="text-destructive">unreadable</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
 
-            {/* Behind a beacon, so they are the code every proxy of their kind
+              {/* Behind a beacon, so they are the code every proxy of their kind
                 runs — the largest blast radius here. Their address is asked of
                 the chain through the factory's beacon, never read from the
                 package, because that is the address the proxies resolve. */}
-            {beaconRows.map(({ spec, address, version, beacon, owner }) => (
-              <tr key={spec.name} className="border-b last:border-0 align-top">
-                <td className="px-4 py-3">
-                  <div className="font-medium">{spec.name}</div>
-                  <div className="text-muted-foreground text-xs mt-0.5">
-                    {spec.role}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  {/* "beacon" where the others say "proxy": there is no single
+              {beaconRows.map(({ spec, address, version, beacon, owner }) => (
+                <tr
+                  key={spec.name}
+                  className="border-b last:border-0 align-top"
+                >
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{spec.name}</div>
+                    <div className="text-muted-foreground text-xs mt-0.5">
+                      {spec.role}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {/* "beacon" where the others say "proxy": there is no single
                       proxy here. Hundreds delegate through this one beacon, and
                       it is the address they all resolve. */}
-                  <AddressPair
-                    explorer={explorer}
-                    rows={[
-                      { label: "beacon", address: beacon },
-                      { label: "impl", address },
-                    ]}
-                  />
-                </td>
-                <td className="px-4 py-3 tabular-nums">
-                  {version?.status === "success" ? (
-                    String(version.result)
-                  ) : address ? (
-                    <span className="text-muted-foreground">…</span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {/* The factory, and only the factory: it owns the beacon, so
+                    <AddressPair
+                      explorer={explorer}
+                      rows={[
+                        { label: "beacon", address: beacon },
+                        { label: "impl", address },
+                      ]}
+                    />
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {version?.status === "success" ? (
+                      String(version.result)
+                    ) : address ? (
+                      <span className="text-muted-foreground">…</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {/* The factory, and only the factory: it owns the beacon, so
                       `upgradeBeacon` is the one way this address changes. */}
-                  <CopyAddress address={owner} />
-                  <div className="text-muted-foreground/70 text-xs mt-0.5">
-                    via {spec.owner}.upgradeBeacon
-                  </div>
-                </td>
-              </tr>
-            ))}
+                    <CopyAddress address={owner} />
+                    <div className="text-muted-foreground/70 text-xs mt-0.5">
+                      via {spec.owner}.upgradeBeacon
+                    </div>
+                  </td>
+                </tr>
+              ))}
 
-            {rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={4}
-                  className="px-4 py-8 text-center text-muted-foreground"
-                >
-                  Nothing deployed on {chain?.name ?? `chain ${chainId}`}.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-8 text-center text-muted-foreground"
+                  >
+                    Nothing deployed on {chain?.name ?? `chain ${chainId}`}.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-muted-foreground text-xs">
+          Addresses come from <code>@0xslots/contracts</code>; version and
+          upgrade authority are read from the contracts themselves. They
+          disagree when a deployment did not land — which is the point of
+          showing both.
+        </p>
       </div>
-
-      <p className="text-muted-foreground text-xs">
-        Addresses come from <code>@0xslots/contracts</code>; version and upgrade
-        authority are read from the contracts themselves. They disagree when a
-        deployment did not land — which is the point of showing both.
-      </p>
     </div>
   );
 }
