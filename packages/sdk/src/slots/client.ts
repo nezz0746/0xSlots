@@ -3,7 +3,6 @@ import {
   minimumTenureHookAbi,
   slotAbi,
   slotFactoryAbi,
-  slotTakerAbi,
 } from "@0xslots/contracts/slots";
 import {
   type Address,
@@ -330,17 +329,7 @@ export interface SlotState {
 
 export interface SlotsClientConfig {
   /** The hook-protocol `SlotFactory`. Only `createSlot` needs it. */
-  factoryAddress?: Address;
-  /**
-   * The periphery `SlotTaker`. Only the evict-and-take path needs it.
-   *
-   * Optional, and its absence is not fatal: an ERC-20 slot composes the same
-   * sequence through the slot's own `multicall`, so only a NATIVE slot actually
-   * requires a deployed taker. {@link SlotsClient.liquidateAndTake} says so
-   * when it is missing rather than failing somewhere less legible.
-   */
-  takerAddress?: Address;
-  publicClient?: PublicClient;
+  factoryAddress?: Address;  publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
 
@@ -366,21 +355,6 @@ const SIMULATION_ABI = [
 ] as const;
 
 /**
- * The same treatment for the taker, whose reverts come from the SLOT.
- *
- * `SlotTaker` has one error of its own and forwards everything else: a
- * `PaymentAboveMax` from the ceiling, a `NotInsolvent` from the eviction, a
- * hook's veto from the buy. Simulating against `slotTakerAbi` alone would
- * resolve the function and then fail to name any of them.
- */
-const TAKER_SIMULATION_ABI = [
-  ...slotTakerAbi,
-  ...slotAbi.filter((entry) => entry.type === "error"),
-  ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
-  ...compositeHookAbi.filter((entry) => entry.type === "error"),
-] as const;
-
-/**
  * Client for the hook-based Slots protocol.
  *
  * Reads go straight to the chain. There is no indexer namespace here on purpose:
@@ -397,13 +371,11 @@ export class SlotsClient {
   private readonly _publicClient?: PublicClient;
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
-  private readonly _taker?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
-    this._taker = config.takerAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -424,22 +396,6 @@ export class SlotsClient {
     if (!this._factory)
       throw new SlotsError("SlotsClient", "No factoryAddress provided");
     return this._factory;
-  }
-
-  private get taker(): Address {
-    if (!this._taker)
-      throw new SlotsError(
-        "SlotsClient",
-        "No takerAddress provided. Evicting and taking in one transaction goes " +
-          "through the periphery `SlotTaker` now — `Slot.liquidateAndTake` was " +
-          "removed under audit. Deploy one, or evict and buy as two transactions.",
-      );
-    return this._taker;
-  }
-
-  /** Whether an atomic evict-and-take is reachable on a NATIVE slot. */
-  get hasTaker(): boolean {
-    return !!this._taker;
   }
 
   private get account(): Address {
@@ -593,32 +549,6 @@ export class SlotsClient {
    */
   pendingApplies(slot: Address): Promise<boolean> {
     return this.read<boolean>(slot, "pendingApplies");
-  }
-
-  /**
-   * What {@link liquidateAndTake} will charge for `depositAmount`.
-   *
-   * Asked of the PERIPHERY now — `Slot.quoteLiquidateAndTake` went with the
-   * entry point it quoted. A different number from {@link quoteBuy}, and the
-   * difference is invisible from outside: the eviction vacates the slot before
-   * the purchase reads the price, so there is no occupant left to buy out —
-   * while `price()` still reads non-zero right up until the call lands. What
-   * remains is the deposit, plus whatever arrears `account` carries.
-   *
-   * A quote, not a permission. It does not check solvency, and the write still
-   * reverts unless the occupant is insolvent.
-   */
-  quoteLiquidateAndTake(
-    slot: Address,
-    account: Address,
-    depositAmount: bigint,
-  ): Promise<bigint> {
-    return this.publicClient.readContract({
-      address: this.taker,
-      abi: slotTakerAbi,
-      functionName: "quote",
-      args: [slot, account, depositAmount],
-    }) as Promise<bigint>;
   }
 
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
@@ -923,40 +853,10 @@ export class SlotsClient {
    *
    * Throws on refusal, resolves on success. Costs one `eth_call`.
    */
-  simulateBuy(params: BuyParams): Promise<void> {
-    return this.simulateTake("buy", params);
-  }
-
-  /**
-   * {@link simulateBuy}, for the eviction path.
-   *
-   * Simulated against whatever {@link liquidateAndTake} will actually send —
-   * the periphery taker on a native slot, the slot's own `multicall` on an
-   * ERC-20 one. Simulating the other shape would answer a question nobody is
-   * about to ask.
-   */
-  simulateLiquidateAndTake(params: BuyParams): Promise<void> {
-    return this.simulateTake("liquidateAndTake", params);
-  }
-
-  /**
-   * @dev The quote comes from the chain, exactly as the write path takes it —
-   *      a simulation that guessed the payment differently would answer a
-   *      question nobody is about to ask.
-   */
-  private async simulateTake(
-    functionName: "buy" | "liquidateAndTake",
-    params: BuyParams,
-  ): Promise<void> {
+  async simulateBuy(params: BuyParams): Promise<void> {
     const [currency, amount] = await Promise.all([
       this.currency(params.slot),
-      functionName === "buy"
-        ? this.quoteBuy(params.slot, params.account, params.depositAmount)
-        : this.quoteLiquidateAndTake(
-            params.slot,
-            params.account,
-            params.depositAmount,
-          ),
+      this.quoteBuy(params.slot, params.account, params.depositAmount),
     ]);
 
     // An ERC-20 buy grants its allowance as part of SENDING, so simulating
@@ -990,7 +890,7 @@ export class SlotsClient {
       // is part of the send; the balance never was.
       if (balance < amount) {
         throw new SlotsError(
-          functionName,
+          "buy",
           new Error(
             `insufficient balance: need ${amount} of ${currency}, hold ${balance}`,
           ),
@@ -1002,75 +902,19 @@ export class SlotsClient {
 
     const maxPayment = params.maxPayment ?? amount;
 
-    // A native evict-and-take goes through the periphery; everything else is
-    // sent to the slot. Same split as the write path, deliberately, so the
-    // simulation cannot pass on a shape the send will not use.
-    if (functionName === "liquidateAndTake" && isNativeCurrency(currency)) {
-      await this.publicClient.simulateContract({
-        address: this.taker,
-        abi: TAKER_SIMULATION_ABI,
-        functionName: "liquidateAndTake",
-        args: [
-          params.slot,
-          params.account,
-          params.depositAmount,
-          params.selfAssessedPrice,
-          maxPayment,
-        ],
-        account: this.account,
-        value: amount,
-      } as never);
-      return;
-    }
-
     await this.publicClient.simulateContract({
       address: params.slot,
       abi: SIMULATION_ABI,
-      ...(functionName === "buy"
-        ? {
-            functionName: "buy",
-            args: [
-              params.account,
-              params.depositAmount,
-              params.selfAssessedPrice,
-              maxPayment,
-            ],
-          }
-        : {
-            functionName: "multicall",
-            args: [this.takeCalls(params, maxPayment)],
-          }),
+      functionName: "buy",
+      args: [
+        params.account,
+        params.depositAmount,
+        params.selfAssessedPrice,
+        maxPayment,
+      ],
       account: this.account,
       ...(isNativeCurrency(currency) ? { value: amount } : {}),
     } as never);
-  }
-
-  /**
-   * `liquidate()` then `buy(…)`, encoded for the slot's inherited `multicall`.
-   *
-   * The ERC-20 half of evict-and-take. `multicall` delegatecalls, so both halves
-   * run as the caller and the buy pulls on the caller's own allowance to the
-   * SLOT — which is why this needs no taker and no second approval. It is also
-   * why it cannot serve a native slot: OZ's `Multicall` is non-payable, so
-   * `msg.value` is zero inside it and the buy reverts `InvalidValue`.
-   */
-  private takeCalls(
-    params: BuyParams,
-    maxPayment: bigint,
-  ): readonly `0x${string}`[] {
-    return [
-      encodeFunctionData({ abi: slotAbi, functionName: "liquidate" }),
-      encodeFunctionData({
-        abi: slotAbi,
-        functionName: "buy",
-        args: [
-          params.account,
-          params.depositAmount,
-          params.selfAssessedPrice,
-          maxPayment,
-        ],
-      }),
-    ];
   }
 
   /**
@@ -1126,88 +970,20 @@ export class SlotsClient {
   /**
    * Evict an occupant whose deposit is empty. Anyone may call.
    *
-   * There is no bounty — the reward is the slot. This leaves it VACANT, which is
-   * only worth doing if you do not want the slot yourself: use
-   * {@link liquidateAndTake} to evict and claim atomically, or you hand the
-   * vacancy to whoever is watching the mempool.
+   * There is no bounty — the reward is the slot, and claiming it is a second
+   * transaction. Evicting without wanting the slot hands the vacancy to whoever
+   * is watching the mempool.
+   *
+   * An atomic evict-and-take used to live here, through a periphery `SlotTaker`
+   * on native slots and the slot's own `multicall` on ERC-20 ones. Both are
+   * gone: `liquidate()` and `buy(…)` are public, so anyone who wants them in one
+   * transaction can compose them — and on an ERC-20 slot the slot's inherited
+   * `multicall` still does exactly that, without this client's help.
    */
   liquidate(slot: Address): Promise<Hash> {
     return this.write(slot, "liquidate", []);
   }
 
-  /**
-   * Evict an insolvent occupant and take the slot, in one transaction.
-   *
-   * This is what makes "no bounty" honest: the reward for liquidating is the
-   * slot, which only holds if the eviction and the claim are atomic — otherwise
-   * the keeper vacates the slot and loses the race for it to whoever is watching
-   * the mempool.
-   *
-   * ── This is no longer one call on the slot ───────────────────────────────
-   *
-   * `Slot.liquidateAndTake` was removed under audit: it was a second seating
-   * path in the core, with its own quote and its own invariants to keep in step
-   * with `buy`, for what is a composition of two public entry points. So this
-   * composes, and how it composes depends on the currency:
-   *
-   * - ERC-20 — the slot's own inherited `multicall`, which delegatecalls, so
-   *   the buy pulls on the caller's existing allowance to the SLOT.
-   * - Native — the periphery `SlotTaker`, because OZ's `Multicall` is
-   *   non-payable and a native buy inside it reverts `InvalidValue`. Needs
-   *   `takerAddress`; the client says so if it is missing.
-   *
-   * Charges {@link quoteLiquidateAndTake}, which is a DIFFERENT number from
-   * {@link quoteBuy} — the eviction vacates the slot before the purchase reads
-   * the price, so there is no occupant left to buy out, and what remains is the
-   * deposit plus any arrears the seated account carries. Neither path derives
-   * its amount from `price()`, and there are tests asserting exactly that by
-   * omitting `price` from the double entirely.
-   *
-   * The ceiling defaults to that quote, exactly as in {@link buy}.
-   */
-  async liquidateAndTake(params: BuyParams): Promise<Hash> {
-    this.assertPositive(params.depositAmount, "depositAmount");
-    this.assertPrice(params.selfAssessedPrice, "selfAssessedPrice");
-    if (params.account === zeroAddress)
-      throw new SlotsError(
-        "liquidateAndTake",
-        "account must not be the zero address",
-      );
-
-    const [currency, amount] = await Promise.all([
-      this.currency(params.slot),
-      this.quoteLiquidateAndTake(
-        params.slot,
-        params.account,
-        params.depositAmount,
-      ),
-    ]);
-    const maxPayment = params.maxPayment ?? amount;
-
-    if (isNativeCurrency(currency))
-      return this.wallet.writeContract({
-        address: this.taker,
-        abi: slotTakerAbi,
-        functionName: "liquidateAndTake",
-        args: [
-          params.slot,
-          params.account,
-          params.depositAmount,
-          params.selfAssessedPrice,
-          maxPayment,
-        ],
-        value: amount,
-        account: this.account,
-        chain: this.chain,
-      } as never);
-
-    // The allowance goes to the SLOT, not to the taker: the buy half runs
-    // inside the slot's own delegatecall and pulls from the caller directly.
-    await this.ensureAllowance(currency, params.slot, amount);
-    return this.write(params.slot, "multicall", [
-      this.takeCalls(params, maxPayment),
-    ]);
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // WRITE — holding
@@ -1486,11 +1262,11 @@ export class SlotsClient {
    * ── Why a native top-up is its own transaction ───────────────────────────
    *
    * `multicall` is non-payable, so `msg.value` is zero inside it and a native
-   * `topUp` would revert `InvalidValue`. It is NOT made payable for the reason
-   * `SlotTaker` exists: every delegatecall sees the same `msg.value`, so one
-   * ETH payment would satisfy two calls and the second would be funded out of
-   * the contract's own balance. So on a native slot a top-up goes first and
-   * alone, and the caller is told to expect two confirmations.
+   * `topUp` would revert `InvalidValue`. Making it payable would be worse: every
+   * delegatecall sees the SAME `msg.value`, so one ETH payment would satisfy two
+   * calls and the second would be funded out of the contract's own balance. So
+   * on a native slot a top-up goes first and alone, and the caller is told to
+   * expect two confirmations.
    *
    * @returns The hash of the final transaction — the one carrying the reprice.
    */

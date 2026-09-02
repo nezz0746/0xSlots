@@ -1,60 +1,34 @@
-// Unified client (read + write)
-
-export type { SellOrder } from "./client";
-export {
-  type BuyParams,
-  type ChainStatus,
-  type CreateSlotParams,
-  type CreateSlotsParams,
-  createSlotsClient,
-  DEFAULT_API_URL,
-  API_URLS,
-  apiUrlFor,
-  type IndexerMeta,
-  LOCAL_API_URL,
-  SELL_ORDER_TYPES,
-  type SlotConfig,
-  type SlotInitParams,
-  SlotsChain,
-  SlotsClient,
-  type SlotsClientConfig,
-  UpdateKind,
-} from "./client";
-// Errors
-export { SlotsError } from "./errors";
-// Re-export generated types and SDK
-export * from "./generated/graphql";
-export { FeedModuleClient } from "./modules/feed";
-// Modules
-export { MetadataModuleClient } from "./modules/metadata";
-// Occupancy policies — resolve an address into human-readable terms, plus
-// accessors over the hand-vouched list. See ./policies.
+// The Slots SDK.
 //
-// The raw VOUCHED_POLICIES record is deliberately NOT exported: it is keyed by
-// lowercase address and carries a chainId that every caller must respect, and
-// both are easy to get wrong by hand. Go through the accessors.
+// ── V1 is gone from here ────────────────────────────────────────────────────
+//
+// This root used to export a GraphQL client for the RETIRED protocol's schema,
+// plus its feed and metadata modules and its policy resolvers. It also exported
+// a `createSlotsClient` and a `SlotsClient` — the SAME names the live protocol
+// uses under `/slots`, for a completely different object: 68 query methods
+// against an old indexer, where the live one has 48 that talk to contracts.
+//
+// Importing the wrong one type-checked. The root now IS the live protocol.
+export * from "./slots";
+
+// Chain and endpoint identity. Not protocol-specific.
 export {
-  formatDuration,
-  getVouchedPolicy,
-  type PolicyImpact,
-  type PolicyKindId,
-  type ResolvedPolicy,
-  resolvePolicy,
-  searchVouchedPolicies,
-  type VouchedPolicy,
-  type VouchedPolicyEntry,
-  vouchedPoliciesForChain,
-} from "./policies";
-// Tokens
+  API_URLS,
+  DEFAULT_API_URL,
+  LOCAL_API_URL,
+  SlotsChain,
+  apiUrlFor,
+  type SlotsEnvironment,
+} from "./chains";
+
+export { SlotsError } from "./errors";
+
 export {
   CHAIN_TOKENS,
   getChainTokens,
-  getDefaultToken,
   getFaucetToken,
-  isNativeCurrency,
-  NATIVE_CURRENCY,
-  NATIVE_CURRENCY_ADDRESS,
   type TokenInfo,
 } from "./tokens";
 
-export type { SlotsEnvironment } from "./client";
+export { NATIVE_CURRENCY_ADDRESS, isNativeCurrency } from "./native";
+export { NATIVE_CURRENCY } from "./tokens";

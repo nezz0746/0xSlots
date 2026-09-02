@@ -1,5 +1,6 @@
+import { slotsTestTokenAddress } from "@0xslots/contracts/slots";
 import type { Address } from "viem";
-import { SlotsChain } from "./client";
+import { SlotsChain } from "./chains";
 import { NATIVE_CURRENCY_ADDRESS } from "./native";
 
 export interface TokenInfo {
@@ -58,14 +59,16 @@ export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
       // The test token deployed by `script/slots/SeedSlots.s.sol`, the
       // hook-protocol local stack.
       //
-      // Plain CREATE, so the address derives from (deployer, nonce) and is
-      // independent of the contract's bytecode — it survives edits to the
-      // Solidity and moves only when the SEED changes what it deploys, or in
-      // what order. `dev-chain.sh` compares this constant against
-      // `deployments/31337/SlotsTestToken.json` on every local boot and
-      // refuses to start if they have drifted, because a stale value here is
-      // invisible: the app offers the token and every approval reverts.
-      address: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
+      // `dev-chain.sh` re-checks it against the records on every local boot
+      // and refuses to start when the generated table is a step behind.
+      // Read from the generated deployment table, never typed here: plain
+      // CREATE means the address moves whenever the SEED changes what it
+      // deploys or in what order. Zero rather than a stale guess when nothing
+      // is deployed — a token that is plainly absent gets reported, one that is
+      // plausibly wrong gets debugged for an hour.
+      address:
+        slotsTestTokenAddress[31337] ??
+        "0x0000000000000000000000000000000000000000",
       name: "0xSlots Test USD",
       symbol: "USDX",
       decimals: 18,
