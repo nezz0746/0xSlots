@@ -1,63 +1,37 @@
-// Main entry point for @0xslots/contracts
-
+// The Slots protocol, for TypeScript.
+//
+// ── V1 is gone from here ────────────────────────────────────────────────────
+//
+// This root used to be the RETIRED protocol's surface — its ABIs, its
+// addresses, its feed and policy modules — while the live one hid behind a
+// `/slots` subpath. Both exported a `slotAbi`, a `slotFactoryAbi` and a
+// `slotCollectiveAbi`, and they were not compatible.
+//
+// That collision was not theoretical. Three pages in the app imported
+// `slotCollectiveAbi` from here and called it against a V2 collective: 14
+// functions where the contract has 41, one of which (`UTILITY_MANAGER_ROLE`)
+// does not exist on the deployed contract at all. It reverted, and nothing in
+// the import named the reason.
+//
+// The V1 Solidity is still in `apps/contracts/src/v1` — it is deployed and it
+// is somebody's money. What is gone is the TypeScript that spoke to it.
 import type { Chain } from "viem";
 import { anvil, base, baseSepolia } from "viem/chains";
-import { slotFactoryAddress } from "./addresses";
-import { slotsFactoryAddress } from "./slots";
+import { slotFactoryAddress } from "./slots";
 
-// Re-export ABIs
-export {
-  batchCollectorAbi,
-  erc721SlotsAbi,
-  slotAbi,
-  slotFactoryAbi,
-} from "./abis";
-export { feedModuleAbi } from "./abis/feed-module";
-export { offerBookAbi } from "./abis/offerBook";
-export { feedRouterAbi } from "./abis/feed-router";
-export { feedSocialGroupAbi } from "./abis/feed-social-group";
-export { metadataModuleAbi } from "./abis/metadata-module";
-export { minimumPricePolicyAbi } from "./abis/minimumPricePolicy";
-export { minimumPricePolicyFactoryAbi } from "./abis/minimumPricePolicyFactory";
-export { minimumTenurePolicyFactoryAbi } from "./abis/minimumTenurePolicyFactory";
-export { policyFactoryAbi } from "./abis/policyFactory";
-export { slotCollectiveAbi } from "./abis/slotCollective";
-export { slotCollectiveFactoryAbi } from "./abis/slotCollectiveFactory";
-// Re-export addresses and utilities
-export {
-  batchCollectorAddress,
-  erc721SlotsAddress,
-  feedHubAddress,
-  feedModuleAddress,
-  feedRouterAddress,
-  feedSocialGroupAddress,
-  getSlotsHubAddress,
-  getSupportedChainIds,
-  isSlotsHubDeployed,
-  MINIMUM_PRICE_POLICY_FACTORY,
-  offerBookAddress,
-  MINIMUM_TENURE_POLICY_FACTORY,
-  POLICY_FACTORIES,
-  publisherUrdAddress,
-  type SupportedChainId,
-  slotCollectiveFactoryAddress,
-  slotFactoryAddress,
-  urdFactoryAddress,
-} from "./addresses";
-// Re-export feed events
-export { FEED_EVENT_TYPES, FeedEventType, feedEvent } from "./events";
+/** Every ABI, address and helper for the live protocol. */
+export * from "./slots";
 
-/** Viem chain objects for known 0xSlots networks — add here when deploying to new chains */
 const CHAIN_MAP: Record<number, Chain> = {
-  [baseSepolia.id]: baseSepolia,
-  [base.id]: base,
   [anvil.id]: anvil,
+  [base.id]: base,
+  [baseSepolia.id]: baseSepolia,
 };
 
 /**
  * Chains where the protocol is actually deployed.
  *
- * Derived from `slotsFactoryAddress` — the hook-based factory — and not from
+ * Derived from `slotFactoryAddress` — the hook-based factory — and not from
  * the retired `slotFactoryAddress`, which is what it read before. That is the
  * whole bug: the selector offered every chain the OLD protocol reached, so
  * picking one loaded an explorer against a factory that does not exist there
@@ -68,7 +42,7 @@ const CHAIN_MAP: Record<number, Chain> = {
  * so a production build drops it at compile time rather than shipping a chain
  * option that resolves to nobody's localhost.
  */
-export const CHAINS = Object.keys(slotsFactoryAddress)
+export const CHAINS = Object.keys(slotFactoryAddress)
   .map((id) => CHAIN_MAP[Number(id)])
   .filter((c): c is Chain => c !== undefined)
   .filter((c) => c.id !== anvil.id || process.env.NODE_ENV === "development");
@@ -85,5 +59,5 @@ export const DEFAULT_CHAIN = CHAINS[0] ?? baseSepolia;
  * rather than render an explorer with nothing in it.
  */
 export function isDeployedOn(chainId: number): boolean {
-  return Boolean(slotsFactoryAddress[chainId]);
+  return Boolean(slotFactoryAddress[chainId]);
 }
