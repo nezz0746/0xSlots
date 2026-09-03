@@ -50,22 +50,26 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("chain    ", cfg.name);
         console2.log("admin    ", cfg.admin);
 
+        // One memory pointer instead of six stack slots — `run()` is already
+        // at the edge of the stack limit.
+        Versions memory v = _versions();
+
         vm.startBroadcast();
 
         // ── implementations ───────────────────────────────────────────────
         address slotImpl = _deploy2(
             "Slot",
-            new Slot().version(),
+            v.slot,
             type(Slot).creationCode
         );
         address factoryImpl = _deploy2(
             "SlotFactoryImpl",
-            new SlotFactory().version(),
+            v.factory,
             type(SlotFactory).creationCode
         );
         address bookImpl = _deploy2(
             "OfferBookImpl",
-            new OfferBook().version(),
+            v.book,
             type(OfferBook).creationCode
         );
         // The collectives sit on 0xSplits, which is an external dependency
@@ -99,7 +103,7 @@ contract DeployProtocol is ProtocolConfig {
         // there; on a local chain it will not, which is fine.
         address collectiveImpl = _deploy2Raw(
             "SlotCollective",
-            saltFor("SlotCollective", new SlotCollective(warehouse).version()),
+            saltFor("SlotCollective", v.collective),
             abi.encodePacked(
                 type(SlotCollective).creationCode,
                 abi.encode(warehouse)
@@ -107,7 +111,7 @@ contract DeployProtocol is ProtocolConfig {
         );
         address collectiveFactoryImpl = _deploy2(
             "SlotCollectiveFactoryImpl",
-            new SlotCollectiveFactory().version(),
+            v.collectiveFactory,
             type(SlotCollectiveFactory).creationCode
         );
 
@@ -146,7 +150,7 @@ contract DeployProtocol is ProtocolConfig {
         // ── hooks ─────────────────────────────────────────────────────────
         address adLandImpl = _deploy2(
             "AdLandImpl",
-            new AdLand().version(),
+            v.adLand,
             type(AdLand).creationCode
         );
         address adLand = _proxy(
@@ -174,7 +178,7 @@ contract DeployProtocol is ProtocolConfig {
         record("Slot", slotImpl, Slot(payable(slotImpl)).version());
         record("SlotFactory", factory, SlotFactory(factory).version());
         record("OfferBook", book, OfferBook(book).version());
-        record("SlotCollective", collectiveImpl, 1);
+        record("SlotCollective", collectiveImpl, v.collective);
         record(
             "SlotCollectiveFactory",
             collectiveFactory,
@@ -189,6 +193,48 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("SlotCollectiveFactory", collectiveFactory);
         console2.log("AdLand               ", adLand);
         console2.log("MinimumTenureHook    ", tenureHook);
+    }
+
+    struct Versions {
+        uint64 slot;
+        uint64 factory;
+        uint64 book;
+        uint64 collective;
+        uint64 collectiveFactory;
+        uint64 adLand;
+    }
+
+    /**
+     * @dev Every implementation's `version()`, read BEFORE the broadcast.
+     *
+     *      `version()` is `pure` and its answer is a compile-time constant, but
+     *      reading it needs an instance — and a `new X()` INSIDE
+     *      `vm.startBroadcast()` is a real deployment: broadcast, paid for, and
+     *      abandoned the moment it has answered. Six of them were 12.6M of this
+     *      script's 28.7M gas — 44% — plus six orphan contracts on every chain,
+     *      every run. Called from outside the broadcast the identical `new` runs
+     *      in the simulation only and costs nothing.
+     *
+     *      `UpgradeProtocol` always read them this way. This script did not, and
+     *      nothing in either said which was which.
+     *
+     *      `SlotCollective` needs a warehouse with CODE — `PushSplit`'s
+     *      constructor calls `NATIVE_TOKEN()` on it — so the probe borrows the
+     *      configured one, or stands up a throwaway when there is none. Both
+     *      happen outside the broadcast, so both are free; on a real chain the
+     *      configured warehouse already exists and nothing extra is built.
+     */
+    function _versions() internal returns (Versions memory v) {
+        v.slot = new Slot().version();
+        v.factory = new SlotFactory().version();
+        v.book = new OfferBook().version();
+        address probeWarehouse = chainConfig().splitsWarehouse;
+        if (probeWarehouse.code.length == 0) {
+            probeWarehouse = address(new SplitsWarehouse("Ether", "ETH"));
+        }
+        v.collective = new SlotCollective(probeWarehouse).version();
+        v.collectiveFactory = new SlotCollectiveFactory().version();
+        v.adLand = new AdLand().version();
     }
 
     /// @dev `MinimumTenureHook` has no `version()` of its own — it is not

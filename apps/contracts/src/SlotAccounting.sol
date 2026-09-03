@@ -69,6 +69,22 @@ abstract contract SlotAccounting is SlotHooks {
         uint256 owed = taxOwed();
         uint256 paid;
         if (owed >= _deposit) {
+            // Nothing accrued, so there is nothing to realise — and moving the
+            // clock anyway would destroy the window.
+            //
+            // This is the same grind the solvent branch below converts `paid`
+            // back into seconds to prevent, and it was reachable here because
+            // `owed >= _deposit` is TRUE at `0 >= 0`. Once a deposit hits zero,
+            // every sub-threshold window took this branch and set `lastSettled`
+            // to now, so at a price low enough that one second floors to zero
+            // tax, `topUp(0)` — free and permissionless — ground the clock
+            // forward for ever and the arrears never accrued at all.
+            //
+            // `owed == 0` here implies `_deposit == 0`, so everything skipped
+            // is a no-op: no tax to take, no arrears to carry, and a `Settled`
+            // that would report zeros against an escrow that did not move.
+            if (owed == 0) return;
+
             paid = _deposit;
             _deposit = 0;
             // What the deposit could not cover is carried, not forgiven.
