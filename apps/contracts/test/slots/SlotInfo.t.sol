@@ -33,7 +33,8 @@ contract SlotInfoTest is Test {
             recipient: address(0xF00D),
             currency: IERC20(address(token)),
             manager: address(this),
-            hook: address(new MinimumTenureHook(7 days, "")),
+            hook: address(new MinimumTenureHook()),
+            hookData: bytes32(uint256(7 days)),
             taxPercentage: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
@@ -65,7 +66,8 @@ contract SlotInfoTest is Test {
         assertEq(i.isInsolvent, slot.isInsolvent());
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
         assertEq(i.pendingApplies, slot.pendingApplies());
-        (uint256 pt, address ph, bool hasT, bool hasH, uint64 at) = slot.pending();
+        (uint256 pt, address ph, bool hasT, bool hasH, uint64 at, ) = slot
+            .pending();
         assertEq(i.pendingTaxPercentage, pt);
         assertEq(i.pendingHook, ph);
         assertEq(i.pendingHasTax, hasT);
@@ -93,7 +95,7 @@ contract SlotInfoTest is Test {
         slot.buy(occ, dep, 100e18, 0);
         vm.stopPrank();
 
-        slot.proposeTerms(750, address(0), true, false);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
         _assertAgrees();                     // queued, not ripe
         assertFalse(slot.getSlotInfo().pendingApplies);
 
@@ -137,6 +139,6 @@ contract SlotInfoTest is Test {
         vm.stopPrank();
 
         vm.expectRevert();                       // tax above MAX_TAX_BPS
-        slot.proposeTerms(c.maxTaxBps + 1, address(0), true, false);
+        slot.proposeTerms(c.maxTaxBps + 1, address(0), bytes32(0), true, false);
     }
 }

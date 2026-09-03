@@ -17,9 +17,9 @@ import { formatDuration } from "@/hooks/use-duration";
  * draw.
  *
  * Under the hook-based protocol the window comes from a MinimumTenureHook
- * rather than from an occupancy policy: `tenureSeconds()` on the hook, measured
- * from the slot's own `occupiedSince`. The drawing is unchanged, because the
- * fact being drawn is.
+ * rather than from an occupancy policy — and from the SLOT rather than from the
+ * hook: `hookData` holds the duration, measured from the slot's own
+ * `occupiedSince`. The drawing is unchanged, because the fact being drawn is.
  */
 
 /**

@@ -29,6 +29,7 @@ interface IManagedSlot {
     function proposeTerms(
         uint256 newTax,
         address newHook,
+        bytes32 newHookData,
         bool changeTax,
         bool changeHook
     ) external;
@@ -212,7 +213,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         external
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
     {
-        slot.proposeTerms(newPct, address(0), true, false);
+        slot.proposeTerms(newPct, address(0), bytes32(0), true, false);
         emit UpdateRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(newPct));
     }
 
@@ -225,13 +226,19 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      express "detach" if a zero address means "leave alone".
     ///
     ///      The slot validates the hook now — one whose `hooks()` does not
-    ///      answer is refused here rather than attached with no subscriptions —
-    ///      so this relay does not re-check. One validation, one authority.
-    function proposeHook(IManagedSlot slot, address newHook)
-        external
-        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
-    {
-        slot.proposeTerms(0, newHook, false, true);
+    ///      answer, or which rejects `newHookData`, is refused here rather than
+    ///      attached broken — so this relay does not re-check. One validation,
+    ///      one authority.
+    ///
+    ///      `newHookData` rides with the address because it configures THAT
+    ///      hook. A relay that let the two be set apart would be a way for this
+    ///      role to hand a hook a word meant for its predecessor.
+    function proposeHook(
+        IManagedSlot slot,
+        address newHook,
+        bytes32 newHookData
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        slot.proposeTerms(0, newHook, newHookData, false, true);
         emit UpdateRelayed(
             address(slot),
             msg.sender,

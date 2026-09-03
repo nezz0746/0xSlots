@@ -101,8 +101,8 @@ if [ "$(cast codesize "$FACTORY" --rpc-url "$RPC" 2>/dev/null || echo 0)" = "0" 
 fi
 
 echo "▸ seeding"
-# SeedSlots deploys its own MinimumTenureHook and SlotsTestToken, so the factory
-# is the only address it needs.
+# SeedSlots deploys its own SlotsTestToken and reads the tenure hook out of the
+# records the deploy just wrote, so the factory is the only address it needs.
 forge script script/slots/SeedSlots.s.sol:SeedSlots \
   --rpc-url "$RPC" --broadcast --private-key "$PK" \
   --sig "run(address)" "$FACTORY" >/tmp/seed-local.log 2>&1 \

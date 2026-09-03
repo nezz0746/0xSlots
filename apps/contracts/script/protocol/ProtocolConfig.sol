@@ -26,9 +26,26 @@ abstract contract ProtocolConfig is Script {
     address internal constant CREATE2_DEPLOYER =
         0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @dev Namespaced so a salt of ours can never collide with another
-    ///      protocol's on a shared CREATE2 factory.
-    string internal constant NAMESPACE = "0xslots.v1";
+    /**
+     * @dev Namespaced so a salt of ours can never collide with another
+     *      protocol's on a shared CREATE2 factory.
+     *
+     *      Also the DEPLOYMENT GENERATION, and the only honest way to stand up
+     *      a new protocol beside an old one. Deleting the records is not
+     *      enough: every address here is `keccak(namespace, name, version)`
+     *      against the initcode, so a contract whose code and constructor
+     *      arguments have not changed lands on TOP of the live one. With the
+     *      records gone `_proxy` then finds code at the predicted address,
+     *      logs `exists`, and writes a record claiming a fresh deployment of a
+     *      proxy it never touched — pointing the new ledger at old code.
+     *
+     *      Bumping this moves everything at once, so the retired deployment
+     *      keeps working, untouched, at addresses nothing here can reach.
+     *
+     *      v2 — `Slot` gained `hookData` and a regrouped storage layout, which
+     *      no live proxy can be upgraded into.
+     */
+    string internal constant NAMESPACE = "0xslots.v2";
 
     struct ChainConfig {
         string name;

@@ -72,7 +72,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     using SplitV2Lib for SplitV2Lib.Split;

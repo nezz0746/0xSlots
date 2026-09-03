@@ -36,6 +36,16 @@ struct SlotContext {
     /// `owed > paid` means the occupant has run dry. `afterSettle` only.
     uint256 owed;
     uint256 paid;
+    /// The slot's configuration FOR THIS HOOK, verbatim from `Slot.hookData`.
+    ///
+    /// What lets one deployment serve every configuration, instead of a
+    /// factory deploying a contract per setting. It is the slot's storage, not
+    /// the hook's — so a hook reading it stays stateless, and a slot whose
+    /// `mutableHook` is false has both halves of its rules frozen.
+    ///
+    /// Zero means the slot configured nothing. A hook whose behaviour is fully
+    /// determined by its own address ignores this field entirely.
+    bytes32 hookData;
 }
 
 /**
@@ -99,6 +109,25 @@ interface ISlotHook {
     /// @dev `view`, not `pure`: a composite answers this from storage, and
     ///      that is a legitimate hook rather than an edge case.
     function hooks() external view returns (HookFlags memory);
+
+    /**
+     * @notice Revert if `data` is not a configuration this hook accepts.
+     *
+     * @dev Called once, when the hook is attached, so a misconfiguration is
+     *      refused at the only moment somebody is around to fix it.
+     *
+     *      Not optional, and that is the point. `hookData` is opaque to the
+     *      slot: only the hook knows whether a given word means anything. Left
+     *      unchecked, a slot attaches a hook with data it will reject on every
+     *      callback — and since `before` is fail-closed, that is a slot nobody
+     *      can ever buy. Where `mutableHook` is false it is a slot nobody can
+     *      ever repair.
+     *
+     *      A hook that takes no configuration implements this as a no-op and
+     *      thereby accepts anything, including zero. Say so deliberately rather
+     *      than by omission.
+     */
+    function validateHookData(bytes32 data) external view;
 
     // ─── decisions: `view`, revert to veto ──────────────────────────────────
 

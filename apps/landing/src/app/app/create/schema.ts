@@ -44,11 +44,10 @@ export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
  * rather than a way of opting out of a list.
  *
  * `tenure` is the successor to the old occupancy-policy picker. The creator
- * names a duration and the address is DERIVED — `MinimumTenureHookFactory`
- * places one hook per duration at a CREATE2 address, so picking "7 days" twice
- * anywhere in the world yields the same hook rather than a second copy of it.
- * That is why it is its own mode rather than a preset in the known list: the
- * list is addresses someone already deployed, and this one may not exist yet.
+ * names a duration, which becomes the slot's `hookData` — the hook itself is
+ * one fixed address per chain serving every window. It is its own mode rather
+ * than an entry in the known list because it asks a QUESTION: the known list is
+ * addresses you attach as they are, and this one needs a number first.
  */
 export const hookModes = ["none", "known", "tenure", "custom"] as const;
 export type HookMode = (typeof hookModes)[number];
@@ -95,7 +94,10 @@ export const createSlotSchema = z
       ),
     minDepositUnit: z.enum(timeUnits),
     hookMode: z.enum(hookModes),
-    /** Minimum-tenure duration, when `hookMode` is "tenure". */
+    /**
+     * Minimum-tenure duration, when `hookMode` is "tenure". Becomes the slot's
+     * `hookData`, not part of the hook's address.
+     */
     tenureValue: z
       .string()
       .refine(
@@ -143,8 +145,9 @@ export const createSlotSchema = z
   .refine(
     (d) => {
       if (d.hookMode === "none") return true;
-      // A tenure hook's address is derived from the duration, so there is
-      // nothing in `hook` to insist on until the prediction resolves.
+      // In tenure mode `hook` is written by the section, not typed, so the
+      // only thing this layer can insist on is the duration behind it. Zero is
+      // not a short window — the hook refuses it — so the floor is real.
       if (d.hookMode === "tenure") return Number(d.tenureValue) > 0;
       return d.hook.trim().length > 0;
     },

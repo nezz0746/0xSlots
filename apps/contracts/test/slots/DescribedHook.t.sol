@@ -14,6 +14,8 @@ import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 /// @dev A hook that works but describes nothing — the case a client must
 ///      degrade on rather than fail on.
 contract SilentHook is ISlotHook {
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
     }
@@ -46,15 +48,20 @@ contract DescribedHookTest is Test {
             address(new SlotFactory()),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
         )));
-        tenure = new MinimumTenureHook(TENURE, "ipfs://bafyMinimumTenure");
+        tenure = new MinimumTenureHook();
     }
 
     function _slot(address hook) internal returns (Slot) {
+        return _slot(hook, bytes32(0));
+    }
+
+    function _slot(address hook, bytes32 data) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             recipient: address(0xF00D),
             currency: IERC20(address(0)),
             manager: address(this),
             hook: hook,
+            hookData: data,
             taxPercentage: 500,
             minDepositSeconds: 1 hours,
             mutableTax: true,
@@ -68,9 +75,18 @@ contract DescribedHookTest is Test {
         HookDescriptor[] memory d = tenure.descriptors();
         assertEq(d.length, 1);
         assertEq(d[0].family, keccak256("slots.hook.minimum-tenure"));
-        assertEq(d[0].version, 1);
-        assertEq(abi.decode(d[0].data, (uint256)), TENURE);
-        assertEq(d[0].metadataURI, "ipfs://bafyMinimumTenure");
+        assertEq(d[0].version, 2);
+    }
+
+    /// @notice The descriptor cannot name a window, because this deployment
+    ///         does not have one — every slot brings its own.
+    ///
+    /// @dev Version 1 encoded `tenureSeconds` here, when the address WAS the
+    ///      configuration. Reporting any number now would report one slot's
+    ///      terms to every other slot's reader.
+    function test_TheDescriptorNamesNoWindow() public view {
+        HookDescriptor[] memory d = tenure.descriptors();
+        assertEq(d[0].data.length, 0);
     }
 
     /// @notice The family id is a published constant. Pinned to its literal so
@@ -86,13 +102,21 @@ contract DescribedHookTest is Test {
         );
     }
 
-    /// @notice Data decodes to the value the hook actually enforces, not to a
-    ///         number it was told to report.
-    function test_TheDescribedTenureIsTheEnforcedTenure() public {
-        MinimumTenureHook other = new MinimumTenureHook(3 days, "");
-        assertEq(abi.decode(other.descriptors()[0].data, (uint256)), 3 days);
-        assertEq(other.tenureSeconds(), 3 days);
-        assertEq(other.descriptors()[0].metadataURI, "", "empty is legal");
+    /// @notice Two deployments of this hook are indistinguishable, which is
+    ///         the point: nothing about a slot's terms lives in the address.
+    function test_EveryDeploymentDescribesItselfIdentically() public {
+        MinimumTenureHook other = new MinimumTenureHook();
+        HookDescriptor[] memory a = tenure.descriptors();
+        HookDescriptor[] memory b = other.descriptors();
+        assertEq(a[0].family, b[0].family);
+        assertEq(a[0].version, b[0].version);
+        assertEq(a[0].data, b[0].data);
+    }
+
+    /// @notice The window comes from the slot's `hookData` and nowhere else.
+    function test_TheWindowIsReadOffTheSlotsConfiguration() public view {
+        assertEq(tenure.tenureOf(bytes32(uint256(3 days))), 3 days);
+        assertEq(tenure.tenureOf(bytes32(TENURE)), TENURE);
     }
 
     // ── composition ──────────────────────────────────────────────────────────
@@ -141,14 +165,12 @@ contract DescribedHookTest is Test {
         address[] memory l2 = abi.decode(
             CompositeHook(l1[0]).descriptors()[0].data, (address[])
         );
-        // depth 2 — the leaf, and the tenure it enforces
+        // depth 2 — the leaf. What it enforces is not asked of it here: the
+        // window belongs to whichever slot attaches this tree, so the walk
+        // recovers the SHAPE and the slot supplies the terms.
         assertEq(
             MinimumTenureHook(l2[0]).descriptors()[0].family,
             keccak256("slots.hook.minimum-tenure")
-        );
-        assertEq(
-            abi.decode(MinimumTenureHook(l2[0]).descriptors()[0].data, (uint256)),
-            TENURE
         );
     }
 
@@ -203,7 +225,7 @@ contract DescribedHookTest is Test {
     ///      implementation, including one that reads `descriptors()` on every
     ///      buy. Mutation-checked: adding such a read to `Slot` fails this.
     function test_TheSlotBytecodeDoesNotContainTheDescriptorsSelector() public {
-        _slot(address(tenure));
+        _slot(address(tenure), bytes32(TENURE));
         bytes4 sel = IDescribedHook.descriptors.selector;
         bytes memory code = factory.implementation().code;
         assertGt(code.length, 1000, "must be scanning the logic, not a proxy");

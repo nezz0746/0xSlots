@@ -151,7 +151,10 @@ export function SlotDetails({
   const attached = state.hook !== zeroAddress;
   const known = findKnownHook(chainId, attached ? state.hook : undefined);
   // Only ticks while there is a window to draw.
-  const tenureSeconds = useTenureWindow(attached ? state.hook : undefined);
+  const tenureSeconds = useTenureWindow(
+    attached ? state.hook : undefined,
+    attached ? state.hookData : undefined,
+  );
   const now = useNow(!!tenureSeconds && !state.isVacant, 1000);
 
   return (

@@ -38,6 +38,7 @@ import {
   NO_HOOK_FLAGS,
   readSlotTerms,
   ZERO_ADDR,
+  ZERO_DATA,
 } from "./helpers";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -727,6 +728,11 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     // The zero address is a real proposed value — "detach the hook" — which is
     // why `pendingHasHook` exists rather than testing this column for null.
     pendingHook: event.args.hook_ ? proposedHook : row.pendingHook,
+    // Under the same flag as the address, because the contract queues them
+    // together: a proposal that named a hook also named its configuration.
+    pendingHookData: event.args.hook_
+      ? lower(event.args.hookData)
+      : row.pendingHookData,
     pendingProposedAt: event.block.timestamp,
     updatedAt: event.block.timestamp,
   }));
@@ -740,6 +746,7 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     changeHook: event.args.hook_,
     taxPercentage: event.args.taxPercentage,
     hook: proposedHook,
+    hookData: lower(event.args.hookData),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -763,7 +770,9 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const s = await loadSlot(context, slotAddr);
 
   const nextHook = lower(event.args.hook);
+  const nextHookData = lower(event.args.hookData);
   const prevHook = s.hook;
+  const prevHookData = s.hookData ?? ZERO_DATA;
   const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
   const taxChanged = s.taxPercentage !== event.args.taxPercentage;
 
@@ -799,11 +808,15 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   await context.db.update(slot, { id: slotAddr }).set({
     taxPercentage: event.args.taxPercentage,
     hook: nextHook === ZERO_ADDR ? null : nextHook,
+    // Detaching clears it on chain, so mirroring the event rather than
+    // preserving the old value is what keeps this row honest.
+    hookData: nextHook === ZERO_ADDR ? null : nextHookData,
     ...hookFlagColumns(flags),
     pendingHasTax: false,
     pendingTaxPercentage: null,
     pendingHasHook: false,
     pendingHook: null,
+    pendingHookData: null,
     pendingProposedAt: null,
     updatedAt: event.block.timestamp,
   });
@@ -814,8 +827,10 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     slot: slotAddr,
     taxPercentage: event.args.taxPercentage,
     hook: nextHook,
+    hookData: nextHookData,
     previousTaxPercentage: s.taxPercentage,
     previousHook: prevHook ?? ZERO_ADDR,
+    previousHookData: prevHookData,
     taxChanged,
     hookChanged,
     timestamp: event.block.timestamp,
@@ -858,6 +873,7 @@ ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
     pendingTaxPercentage: tax ? null : s.pendingTaxPercentage,
     pendingHasHook: nextHasHook,
     pendingHook: hookFlag ? null : s.pendingHook,
+    pendingHookData: hookFlag ? null : s.pendingHookData,
     // Mirrors `if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0`.
     pendingProposedAt:
       nextHasTax || nextHasHook ? s.pendingProposedAt : null,

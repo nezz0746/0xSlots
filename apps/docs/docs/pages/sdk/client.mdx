@@ -187,27 +187,43 @@ await client.sell(slot, order, signature);           // as the occupant
 await client.cancelSellOrder(slot, nonce);           // buyer retracts an unfilled order
 ```
 
-### Hook helpers
+### Configuring a hook
 
-Hooks are minted per set of terms at a CREATE2 address, so you can compute one
-before it exists. These are standalone functions, not client methods:
+A hook's per-slot settings live on the SLOT, as `hookData` — 32 bytes the slot
+stores at creation and hands back on every callback. That is what lets one
+deployment serve every configuration: a seven-day minimum tenure and a thirty-day
+one point at the same contract.
 
 ```ts
-import {
-  predictTenureHook,
-  isTenureHookDeployed,
-  getOrDeployTenureHook,
-} from "@0xslots/sdk";
+import { minimumTenureHookAddress } from "@0xslots/contracts/slots";
+import { toHex } from "viem";
 
-const args = { publicClient, tenureSeconds: 7n * 24n * 3600n };
-const hook = await predictTenureHook(args);            // the address for these terms
-if (!(await isTenureHookDeployed(args))) {
-  await getOrDeployTenureHook({ ...args, walletClient, account }); // deploy it once
-}
+await client.createSlot({
+  // …
+  hook: minimumTenureHookAddress[chainId],
+  hookData: toHex(7n * 24n * 3600n, { size: 32 }),   // the window, in seconds
+});
 ```
 
-Pass the same `tenureSeconds` to `createSlot`'s `hook`, or feed several hooks to a
-`CompositeHook` for a slot that wants more than one behaviour.
+There used to be a `predictTenureHook` / `getOrDeployTenureHook` pair here,
+because a duration meant a whole contract at a derived address — an unusual
+number cost a second transaction. It costs nothing now, and those functions are
+gone.
+
+`hookData` travels with `hook` and only with it. Passing data alongside no hook
+is refused, and so is data the hook itself rejects — a `MinimumTenureHook` given
+a zero window says so at creation rather than vetoing every buy afterwards.
+
+```ts
+await client.proposeTerms(slot, {
+  hook: minimumTenureHookAddress[chainId],
+  hookData: toHex(30n * 24n * 3600n, { size: 32 }),
+});
+```
+
+A slot wanting more than one behaviour points at a `CompositeHook`, which
+forwards the same `hookData` to every child — so at most one child may take
+configuration, and the rest must be indifferent to it.
 
 ### Multicall
 

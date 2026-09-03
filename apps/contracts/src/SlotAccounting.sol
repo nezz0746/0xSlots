@@ -21,7 +21,7 @@ abstract contract SlotAccounting is SlotHooks {
     event TaxCollected(address indexed recipient, uint256 amount);
     event Credited(address indexed account, uint256 amount);
     event Claimed(address indexed account, uint256 amount);
-    event TermsApplied(uint256 taxPercentage, address hook);
+    event TermsApplied(uint256 taxPercentage, address hook, bytes32 hookData);
     /// @notice A queued hook could not be attached and was dropped instead of
     ///         being allowed to block the transition.
     event HookDetached(address indexed hook);
@@ -158,19 +158,21 @@ abstract contract SlotAccounting is SlotHooks {
             // thing rule 1 says nothing may do.
             //
             // A hook that will not say what it wants is attached as nothing.
-            (bool ok, uint8 flags) = _tryReadHookFlags(h);
+            (bool ok, uint8 flags) = _tryReadHookFlags(h, pending.hookData);
             if (ok) {
                 _hookFlags = flags;
                 hook = h;
+                hookData = pending.hookData;
             } else {
                 _hookFlags = 0;
                 hook = address(0);
+                hookData = bytes32(0);
                 emit HookDetached(h);
             }
         }
 
         delete pending;
-        emit TermsApplied(taxPercentage, hook);
+        emit TermsApplied(taxPercentage, hook, hookData);
     }
 
     /**

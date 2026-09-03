@@ -62,45 +62,123 @@ abstract contract SlotHooks is SlotStorage {
      *      permanent. A hook whose `hooks()` reverts is a hook that will not
      *      work; better to refuse it now than to attach it with no
      *      subscriptions and leave someone wondering why nothing fires.
+     *
+     *      Also where `hookData` is checked, for the same reason and by the
+     *      same argument. The slot cannot judge an opaque word, so it asks the
+     *      only party that can, once, while it is still fixable.
      */
     /**
      * @dev `_readHookFlags` without the right to revert.
      *
      *      Used only by `_applyPending`, which runs inside `_liquidate`. The
-     *      gas cap matters as much as the `try`: an uncapped read lets a hook
-     *      burn the caller's frame, which prices out an eviction rather than
-     *      blocking it — the same harm by a slower route. `HOOK_GAS` is the
-     *      same stipend `_after` grants, so no hook gets a bigger claim on an
-     *      eviction than any other.
+     *      gas cap matters as much as the fail-open: an uncapped read lets a
+     *      hook burn the caller's frame, which prices out an eviction rather
+     *      than blocking it — the same harm by a slower route.
      *
-     *      Returns ok=false for a revert, for all-false flags, and for a hook
-     *      whose answer does not decode. The caller attaches nothing.
+     *      Returns ok=false for a revert, for all-false flags, for a hook whose
+     *      answer does not decode, and for one that rejects `data`. The caller
+     *      attaches nothing.
+     *
+     *      ── Why this is assembly and not `try` ──────────────────────────
+     *
+     *      Because `try` does NOT catch everything that can revert. It catches
+     *      the CALL. The compiler emits code AROUND the call that is outside
+     *      the catch entirely, and both kinds were reachable here:
+     *
+     *        - `validateHookData` returns nothing, so solc cannot skip its
+     *          `extcodesize` guard and emits it BEFORE the call. A pending hook
+     *          with no code — a 7702-delegated EOA whose delegation was
+     *          revoked — reverted straight through the `catch`.
+     *        - `hooks()` returns a struct, so solc decodes AFTER the call.
+     *          Returndata under 256 bytes, or a bool word that is not 0 or 1,
+     *          reverted in the decoder, also outside the `catch`.
+     *
+     *      Either one reverts `_applyPending`, which runs inside `_liquidate`
+     *      — and `buy`, `sell` and `release` call it too, so the slot was not
+     *      merely un-evictable but frozen, with `cancelProposal` the only exit
+     *      and the manager who chose the hook the only one who could reach it.
+     *      That is rule 1 broken, by the one function written to uphold it.
+     *
+     *      So the calls are made raw and the answer is decoded by hand. Both
+     *      use a zero-length output buffer or a fixed 256-byte one, so a
+     *      returndata bomb cannot expand memory in this frame either.
+     *
+     *      The decoding is just as strict as solc's — a word that is not 0 or
+     *      1 is not a bool, and a hook that cannot encode one will not work.
+     *      What changes is what strictness DOES: it returns false and the
+     *      caller attaches nothing, where the compiler's decoder reverted. Read
+     *      leniently instead, garbage would attach a broken hook with all eight
+     *      subscriptions set, and `before` is fail-closed — so the reward for
+     *      answering nonsense would be a veto over every buy.
      */
-    function _tryReadHookFlags(address h)
+    function _tryReadHookFlags(address h, bytes32 data)
         internal
         view
         returns (bool ok, uint8 packed)
     {
         if (h == address(0)) return (false, 0);
 
-        try ISlotHook(h).hooks{gas: HOOK_GAS}() returns (HookFlags memory f) {
-            if (f.beforeBuy) packed |= F_BEFORE_BUY;
-            if (f.beforeSell) packed |= F_BEFORE_SELL;
-            if (f.beforeSelfAssess) packed |= F_BEFORE_SELF_ASSESS;
-            if (f.afterBuy) packed |= F_AFTER_BUY;
-            if (f.afterSell) packed |= F_AFTER_SELL;
-            if (f.afterRelease) packed |= F_AFTER_RELEASE;
-            if (f.afterLiquidate) packed |= F_AFTER_LIQUIDATE;
-            if (f.afterSettle) packed |= F_AFTER_SETTLE;
-            ok = packed != 0;
-            if (!ok) packed = 0;
-        } catch {
-            return (false, 0);
+        uint256 stipend = HOOK_GAS;
+
+        // Calldata is built in Solidity — `abi.encodeCall` type-checks the
+        // selector, so a signature change breaks the build rather than the
+        // eviction path.
+        bytes memory cd = abi.encodeCall(ISlotHook.validateHookData, (data));
+        bool answered;
+        assembly ("memory-safe") {
+            answered := staticcall(
+                stipend,
+                h,
+                add(cd, 0x20),
+                mload(cd),
+                0,
+                0
+            )
         }
+        if (!answered) return (false, 0);
+
+        cd = abi.encodeCall(ISlotHook.hooks, ());
+        // Eight bools, ABI-encoded one per word.
+        bytes memory ret = new bytes(256);
+        uint256 got;
+        assembly ("memory-safe") {
+            answered := staticcall(
+                stipend,
+                h,
+                add(cd, 0x20),
+                mload(cd),
+                add(ret, 0x20),
+                256
+            )
+            got := returndatasize()
+        }
+        if (!answered || got < 256) return (false, 0);
+
+        for (uint256 i; i < 8; ++i) {
+            uint256 word;
+            assembly ("memory-safe") {
+                word := mload(add(add(ret, 0x20), mul(i, 0x20)))
+            }
+            if (word > 1) return (false, 0);
+            // Bit positions match `HookFlags` field order, as the constants say.
+            if (word == 1) packed |= uint8(1 << i);
+        }
+
+        ok = packed != 0;
+        if (!ok) packed = 0;
     }
 
-    function _readHookFlags(address h) internal view returns (uint8 packed) {
+    function _readHookFlags(address h, bytes32 data)
+        internal
+        view
+        returns (uint8 packed)
+    {
         if (h == address(0)) return 0;
+
+        // Together, always. The flags and the configuration are the two halves
+        // of what attaching a hook means, and a path that checked one without
+        // the other is a path that attaches something nobody validated.
+        ISlotHook(h).validateHookData(data);
 
         HookFlags memory f = ISlotHook(h).hooks();
         if (f.beforeBuy) packed |= F_BEFORE_BUY;
@@ -122,6 +200,23 @@ abstract contract SlotHooks is SlotStorage {
         uint256 newPrice,
         uint256 depositAmount
     ) internal view returns (SlotContext memory) {
+        return _ctxFor(caller, account, newPrice, depositAmount, hookData);
+    }
+
+    /// @dev `_ctx` with the configuration named rather than read.
+    ///
+    ///      The counterpart to `_afterOn`, and needed for the same reason: a
+    ///      transition that swaps hooks has already overwritten `hookData` by
+    ///      the time the end-of-tenure callback goes out, so a context built
+    ///      from storage would hand the outgoing hook its successor's
+    ///      configuration — a window it never granted, on a tenure it did.
+    function _ctxFor(
+        address caller,
+        address account,
+        uint256 newPrice,
+        uint256 depositAmount,
+        bytes32 data
+    ) internal view returns (SlotContext memory) {
         return
             SlotContext({
                 slot: address(this),
@@ -134,7 +229,8 @@ abstract contract SlotHooks is SlotStorage {
                 newPrice: newPrice,
                 depositAmount: depositAmount,
                 owed: 0,
-                paid: 0
+                paid: 0,
+                hookData: data
             });
     }
 

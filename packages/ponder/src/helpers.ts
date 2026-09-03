@@ -16,6 +16,10 @@ const SPLIT_HASH_SELECTOR = toFunctionSelector("splitHash()").slice(2);
 export const ZERO_ADDR =
   "0x0000000000000000000000000000000000000000" as const satisfies Hex;
 
+/// "This slot configured nothing" — the `hookData` counterpart to ZERO_ADDR.
+export const ZERO_DATA =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as const satisfies Hex;
+
 export const evtId = (txHash: Hex, logIndex: number | bigint): string =>
   `${txHash}-${logIndex.toString()}`;
 
@@ -379,19 +383,16 @@ export async function readHookFlags(
  */
 export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
-  const [tax, minDeposit, mutTax, mutHook, manager, flags] = await readMany(
-    ctx,
-    address,
-    SlotAbi as unknown as Abi,
-    [
+  const [tax, minDeposit, mutTax, mutHook, manager, flags, hookData] =
+    await readMany(ctx, address, SlotAbi as unknown as Abi, [
       "taxPercentage",
       "minDepositSeconds",
       "mutableTax",
       "mutableHook",
       "manager",
       "hookFlags",
-    ],
-  );
+      "hookData",
+    ]);
 
   const managerAddr =
     typeof manager === "string" && lower(manager as Hex) !== ZERO_ADDR
@@ -411,6 +412,9 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
     /// The snapshot THIS SLOT obeys, which is what `hookFlags()` returns and
     /// is not re-read from the hook afterwards.
     flags: asFlags(flags) ?? NO_HOOK_FLAGS,
+    /// Read rather than taken from the event, for the same reason the flags
+    /// are: `SlotCreated` does not carry it, and the slot is the authority.
+    hookData: typeof hookData === "string" ? lower(hookData as Hex) : ZERO_DATA,
   };
 }
 

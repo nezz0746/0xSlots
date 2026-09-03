@@ -19,7 +19,8 @@ import {
 // Two things follow from that and shape everything below:
 //
 //   1. `hook` is a first-class entity, not a column. It is shared across slots
-//      (MinimumTenureHook is a stateless singleton, one deploy per duration),
+//      (MinimumTenureHook is a stateless singleton — ONE deploy, every
+//      duration, since the window is the slot's `hookData`),
 //      it carries a declared flag set, and the factory has an opinion about it
 //      (`attestedHooks`). All three want a row.
 //
@@ -135,10 +136,9 @@ export const factory = onchainTable(
  *
  * Chain-scoped by primary key, unlike `account` and `currency`. A hook is code
  * rather than an identity: the same address on two chains is two deployments
- * that may hold different constructor arguments — MinimumTenureHook's whole
- * configuration is its `tenureSeconds` immutable — and `attested` is an opinion
- * one chain's factory admin expressed about one of them. Merging the two rows
- * would merge those facts.
+ * that may differ in code or in constructor arguments, and `attested` is an
+ * opinion one chain's factory admin expressed about one of them. Merging the
+ * two rows would merge those facts.
  *
  * The `declared*` flags are read from the hook's own `hooks()` the first time
  * it is seen. They are NOT what any particular slot obeys: a slot obeys the
@@ -220,6 +220,11 @@ export const slot = onchainTable(
     /// NULL when the slot has no hook at all — which is the plain Harberger
     /// slot, and a perfectly ordinary configuration rather than a gap.
     hook: t.hex(),
+    /// This slot's configuration FOR THAT HOOK, 32 bytes, handed back on every
+    /// callback. Opaque here — only the hook knows what it means. A
+    /// minimum-tenure window lives here, which is why one hook deployment can
+    /// serve every duration. NULL when there is no hook.
+    hookData: t.hex(),
     /// Snapshotted when the hook was attached and never re-read, so a hook
     /// cannot widen its own reach mid-tenure. Compare against the `declared*`
     /// columns on `hook` to see whether it has since tried.
@@ -279,6 +284,10 @@ export const slot = onchainTable(
     pendingTaxPercentage: t.bigint(),
     pendingHasHook: t.boolean().notNull(),
     pendingHook: t.hex(),
+    /// Queued alongside `pendingHook` and only meaningful with it — the
+    /// contract proposes the two under one flag, because a hook and the word
+    /// meant for it are one decision.
+    pendingHookData: t.hex(),
     pendingProposedAt: t.bigint(),
 
     // ── bookkeeping ───────────────────────────────────────────────────────
@@ -444,6 +453,8 @@ export const slotCreatedEvent = onchainTable(
     currency: t.hex().notNull(),
     /// Zero address when the slot has no hook.
     hook: t.hex().notNull(),
+    /// The hook's configuration at creation. Read back from the slot.
+    hookData: t.hex().notNull(),
     /// Read back from the slot, not carried by the event. See `readSlotTerms`.
     taxPercentage: t.bigint().notNull(),
     minDepositSeconds: t.bigint().notNull(),
@@ -871,6 +882,9 @@ export const termsProposedEvent = onchainTable(
     taxPercentage: t.bigint().notNull(),
     /// Meaningful only when `changeHook`. Zero means "detach the hook".
     hook: t.hex().notNull(),
+    /// Meaningful only when `changeHook`, and always zero when `hook` is —
+    /// detaching takes the configuration with it.
+    hookData: t.hex().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),
@@ -896,8 +910,10 @@ export const termsAppliedEvent = onchainTable(
     slot: t.hex().notNull(),
     taxPercentage: t.bigint().notNull(),
     hook: t.hex().notNull(),
+    hookData: t.hex().notNull(),
     previousTaxPercentage: t.bigint().notNull(),
     previousHook: t.hex().notNull(),
+    previousHookData: t.hex().notNull(),
     taxChanged: t.boolean().notNull(),
     hookChanged: t.boolean().notNull(),
     timestamp: t.bigint().notNull(),

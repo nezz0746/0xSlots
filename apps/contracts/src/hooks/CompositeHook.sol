@@ -149,6 +149,16 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
         return declared;
     }
 
+    /// @dev Fanned out strictly, like a `before`: one word reaches every child
+    ///      verbatim, so every child has to accept it. A composite has one
+    ///      `hookData` and no way to split it, which means at most one of its
+    ///      children may take configuration — the rest must be indifferent to
+    ///      it. Asking them all is how that constraint gets checked instead of
+    ///      assumed.
+    function validateHookData(bytes32 data) external view {
+        _all(abi.encodeCall(ISlotHook.validateHookData, (data)));
+    }
+
     // ─── decisions: strict. any veto is the composite's veto ────────────────
 
     function beforeBuy(SlotContext calldata ctx) external view {

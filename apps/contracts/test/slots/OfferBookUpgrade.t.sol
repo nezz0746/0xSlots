@@ -53,6 +53,7 @@ contract OfferBookUpgradeTest is Test {
             currency: IERC20(address(token)),
             manager: address(this),
             hook: address(0),
+            hookData: bytes32(0),
             taxPercentage: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,

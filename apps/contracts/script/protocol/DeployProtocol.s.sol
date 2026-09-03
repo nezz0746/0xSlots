@@ -9,6 +9,7 @@ import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
+import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
@@ -154,6 +155,20 @@ contract DeployProtocol is ProtocolConfig {
             abi.encodeCall(AdLand.initialize, (cfg.admin))
         );
 
+        // Deployed here, once per chain, rather than per configuration. The
+        // window a slot enforces is its own `hookData`, so one contract serves
+        // every duration — which is what let the CREATE2 hook factory, its
+        // predicted-address dance and its resolver UI all go away.
+        //
+        // Not a proxy. It holds no configuration to migrate and one mapping of
+        // history, and a hook the whole protocol can be pointed at is a poor
+        // thing to make upgradeable by a single key.
+        address tenureHook = _deploy2(
+            "MinimumTenureHook",
+            TENURE_HOOK_VERSION,
+            type(MinimumTenureHook).creationCode
+        );
+
         vm.stopBroadcast();
 
         record("Slot", slotImpl, Slot(payable(slotImpl)).version());
@@ -166,13 +181,22 @@ contract DeployProtocol is ProtocolConfig {
             SlotCollectiveFactory(collectiveFactory).version()
         );
         record("AdLand", adLand, AdLand(adLand).version());
+        record("MinimumTenureHook", tenureHook, TENURE_HOOK_VERSION);
 
         console2.log("");
         console2.log("SlotFactory          ", factory);
         console2.log("OfferBook            ", book);
         console2.log("SlotCollectiveFactory", collectiveFactory);
         console2.log("AdLand               ", adLand);
+        console2.log("MinimumTenureHook    ", tenureHook);
     }
+
+    /// @dev `MinimumTenureHook` has no `version()` of its own — it is not
+    ///      upgradeable — so the salt's discriminator is stated here. Version 1
+    ///      was the shape whose window was an immutable, and it is deliberately
+    ///      NOT the same address: a slot still pointing at one of those has a
+    ///      hook that ignores `hookData` entirely.
+    uint64 internal constant TENURE_HOOK_VERSION = 2;
 
     /// @dev Deploy at a deterministic address, or return what is already there.
     function _deploy2(

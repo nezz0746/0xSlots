@@ -7,7 +7,6 @@
 // and the one address no deploy script writes.
 
 import type { Address } from "viem";
-import { anvil } from "viem/chains";
 import * as generated from "./generated";
 
 /** Everything wagmi generated: every ABI, every address map, every config. */
@@ -51,28 +50,21 @@ export const slotCollectiveImplementationAddress = map("slotCollectiveAddress");
 
 /** Local-only, written by `SeedSlots` — absent on a machine that never seeded. */
 export const slotsTestTokenAddress = map("slotsTestTokenAddress");
-export const minimumTenureHookAddress = map("minimumTenureHookAddress");
 
 /**
- * The `MinimumTenureHookFactory`, by chain.
+ * The one `MinimumTenureHook` per chain.
  *
- * One canonical `MinimumTenureHook` per configuration, deployed on demand: a
- * creator picks a duration in the UI and gets a hook for it without anybody
- * deploying one by hand, and the second slot to want that duration reuses the
- * first slot's hook rather than paying for its own.
+ * ONE, now, where there used to be one per duration behind a CREATE2 factory.
+ * The window a slot enforces is its own `hookData`, so every duration is served
+ * by this address — which is why the factory, the predicted-address dance and
+ * the "this duration is not deployed yet, expect two transactions" branch in
+ * the create form are all gone.
  *
- * `predict(tenureSeconds)` is a `view`, so a client resolves the address with
- * no transaction and only sends `getOrDeploy` when `isDeployed` says nothing is
- * there yet.
- *
- * The anvil address is CREATE2, from `script/protocol/DeployProtocol.s.sol`.
- * Deploy order no longer moves it — that used to be the reason this one had to
- * be deployed last.
+ * A client attaching it supplies the duration as `hookData`, 32 bytes,
+ * big-endian seconds. The hook refuses zero, at creation, rather than attaching
+ * and vetoing every buy afterwards.
  */
-export const minimumTenureHookFactoryAddress: Partial<Record<number, Address>> =
-  {
-    [anvil.id]: "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
-  };
+export const minimumTenureHookAddress = map("minimumTenureHookAddress");
 
 export interface KnownHook {
   address: Address;
@@ -106,18 +98,19 @@ const catalogue: readonly {
   },
 ];
 
-export const knownHooks: Partial<Record<number, readonly KnownHook[]>> = (() => {
-  const out: Record<number, KnownHook[]> = {};
-  for (const c of catalogue)
-    for (const [id, address] of Object.entries(c.addresses)) {
-      (out[Number(id)] ??= []).push({
-        address: address as Address,
-        name: c.name,
-        description: c.description,
-      });
-    }
-  return out;
-})();
+export const knownHooks: Partial<Record<number, readonly KnownHook[]>> =
+  (() => {
+    const out: Record<number, KnownHook[]> = {};
+    for (const c of catalogue)
+      for (const [id, address] of Object.entries(c.addresses)) {
+        (out[Number(id)] ??= []).push({
+          address: address as Address,
+          name: c.name,
+          description: c.description,
+        });
+      }
+    return out;
+  })();
 
 /** The known hook at `address`, if this client can name it. */
 export function findKnownHook(

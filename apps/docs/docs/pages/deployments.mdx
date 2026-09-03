@@ -21,18 +21,19 @@ address maps below, so the set of usable chains is exactly the set that has a
 ## Local anvil — 31337
 
 `pnpm dev:local` at the repo root starts a chain, deploys the protocol and runs
-an indexer against it. The addresses are **pinned** — they survive edits to the
-Solidity, which a plain CREATE2 would not, since CREATE2 hashes the init code and
-so moves whenever the contract changes. See `LocalBootstrap.sol`.
+an indexer against it — the same `DeployProtocol` script every testnet uses, so a
+local address is a real address. CREATE2 with `bytecode_hash = "none"`, so these
+survive a rebuild but move when a contract's own code changes; read them back
+from `apps/contracts/deployments/31337/` rather than trusting this table.
 
 | Contract | Address |
 |---|---|
-| SlotFactory | `0x15381307cb597d266646df5De8675D7d0e74520d` |
-| OfferBook | `0xA694f81Bd45229C7279C6BD7a174BAb70f494CA3` |
-| MinimumTenureHook | `0x3b326f66EF59FE6E3724d4FCd23E6F024f0c91f9` |
-| MinimumTenureHookFactory | `0xa513E6E4b8f2a923D98304ec87F64353C4D5C853` |
-| AdLand (hook) | `0x295016ED87CDef4DbE80B3BB74c5E23e326199c3` |
-| SlotsTestToken | `0x97B3FA892E0C220f66B2F665553aF1192B63dB12` |
+| SlotFactory | `0x4f873B105E240Eec832ee0b381184E1bd013c64c` |
+| OfferBook | `0xB5E018bC8C4e1aAb7889b328D24E341c669BFB4B` |
+| SlotCollectiveFactory | `0xAfAbF09bDb761A701D24e424FcFE9fc4D7b52cCF` |
+| MinimumTenureHook | `0x7a4A42bda60B989cA7d619b5eDb1E4E7dDAd9B68` |
+| AdLand (hook) | `0x4cD61863A4672CBFd4506862486f05460518eF58` |
+| SlotsTestToken | `0xeE7d50f1E410c9B42Ae0D39C4549C17FA135add5` |
 
 `CHAINS` filters anvil out unless `NODE_ENV === "development"`. Bundlers inline
 `NODE_ENV`, so a production build drops the entry at compile time rather than
@@ -65,10 +66,12 @@ the entries are derived from the deployment records — there is no per-chain ed
 to keep in sync. An address the catalogue does not know reads back as `undefined`
 rather than a guess; that is the honest answer for a hook anyone can deploy.
 
-For a hook minted at a CREATE2 address — the `MinimumTenureHook` family — the
-factory's `predict()` and `verify()` are the authoritative check that an address
-is a genuine instance of that kind. See
-[Hooks reference](/reference/hooks#verification).
+There is exactly ONE `MinimumTenureHook` per chain. It used to be one per
+duration, minted by a factory at a CREATE2 address; the window a slot enforces is
+now the slot's own `hookData`, so a single deployment serves every duration and
+there is nothing to predict or verify. What a client checks instead is what the
+hook CLAIMS — its `descriptors()` family id — which a `CompositeHook` fanning out
+to a tenure rule answers just as well.
 
 ## ABIs
 

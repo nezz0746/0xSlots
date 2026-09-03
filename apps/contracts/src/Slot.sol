@@ -18,6 +18,8 @@ struct SlotInit {
     IERC20 currency;
     address manager;
     address hook;
+    /// Opaque to the slot, meaningful to the hook. Must be zero when `hook` is.
+    bytes32 hookData;
     uint256 taxPercentage;
     uint256 minDepositSeconds;
     bool mutableTax;
@@ -50,7 +52,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -85,8 +87,14 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         lastSettled = uint64(block.timestamp);
 
         if (p.hook != address(0)) {
-            _hookFlags = _readHookFlags(p.hook);
+            _hookFlags = _readHookFlags(p.hook, p.hookData);
             hook = p.hook;
+            hookData = p.hookData;
+        } else if (p.hookData != bytes32(0)) {
+            // Configuration for a hook that is not there. Nothing would ever
+            // read it, so it can only be a mistake — and one that silently
+            // becomes live the day a hook is attached without its own data.
+            revert InvalidHook();
         }
 
         emit Initialized(p.recipient, address(p.currency));

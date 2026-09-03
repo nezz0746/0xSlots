@@ -2,14 +2,21 @@
 
 import {
   assertSlotInit,
-  getOrDeployTenureHook,
   type SlotInit,
+  ZERO_HOOK_DATA,
 } from "@0xslots/sdk/slots";
 import { SplitV2Type } from "@0xsplits/splits-sdk/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { type Address, getAddress, isAddress, zeroAddress } from "viem";
+import {
+  type Address,
+  getAddress,
+  type Hex,
+  isAddress,
+  toHex,
+  zeroAddress,
+} from "viem";
 import {
   useAccount,
   usePublicClient,
@@ -310,41 +317,27 @@ export default function CreatePage() {
     if (!isAddress(recipientAddress, { strict: false })) return;
 
     /**
-     * The hook to attach, deploying it first if the creator chose a tenure that
-     * nobody has used yet.
+     * The hook to attach, and its configuration.
      *
-     * `MinimumTenureHookFactory` puts one hook per duration at a CREATE2
-     * address, so this is get-or-deploy rather than deploy: a common tenure
-     * already exists and costs nothing, and an unusual one costs one extra
-     * transaction that everybody choosing that duration afterwards reuses. The
-     * section says which case it is in before the button is pressed.
-     *
-     * Awaited before `createSlot` because the slot's `initialize` reads the
-     * hook's declared flags — pointing it at an address with no code yet
-     * reverts.
+     * Both, together, because they are one decision. The tenure mode used to
+     * mean "get or deploy a hook for this duration" — a second wallet prompt on
+     * an unusual number, and a CREATE2 factory to make the address derivable.
+     * The duration now travels as the slot's own `hookData`, so one address
+     * serves every window and there is nothing to deploy.
      */
-    let hookAddress = (
+    const hookAddress = (
       data.hookMode === "none"
         ? zeroAddress
         : hookResolved.resolved || data.hook
     ) as Address;
 
-    if (data.hookMode === "tenure") {
-      if (!publicClient || !walletClient) return;
-      const deployed = await actions.preflight("Deploy tenure hook", async () =>
-        getOrDeployTenureHook({
-          publicClient,
-          walletClient,
-          tenureSeconds: toSeconds(data.tenureValue, data.tenureUnit),
-        }),
-      );
-      if (!deployed) return;
-      // Wait for the deploy's own receipt when one was sent; `hash` is
-      // undefined when the hook was already there and nothing went out.
-      if (deployed.hash)
-        await publicClient.waitForTransactionReceipt({ hash: deployed.hash });
-      hookAddress = deployed.hook;
-    }
+    // 32 bytes, big-endian seconds — the shape `MinimumTenureHook` decodes.
+    // Zero is not a short window but an unconfigured one, and the hook refuses
+    // it at creation rather than vetoing every buy afterwards.
+    const hookData: Hex =
+      data.hookMode === "tenure"
+        ? toHex(toSeconds(data.tenureValue, data.tenureUnit), { size: 32 })
+        : ZERO_HOOK_DATA;
 
     if (
       hookAddress !== zeroAddress &&
@@ -366,6 +359,7 @@ export default function CreatePage() {
           ? zeroAddress
           : getAddress(managerAddress),
       hook: hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
+      hookData,
       taxPercentage: percentToBps(data.taxPercentage),
       minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
       mutableTax: data.mutableTax,

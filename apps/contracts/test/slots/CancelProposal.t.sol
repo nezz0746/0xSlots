@@ -28,12 +28,13 @@ contract CancelProposalTest is Test {
             currency: IERC20(address(0)),
             manager: address(this),
             hook: address(0),
+            hookData: bytes32(0),
             taxPercentage: 500,
             minDepositSeconds: 1 hours,
             mutableTax: true,
             mutableHook: true
         }))));
-        hookA = address(new MinimumTenureHook(7 days, ""));
+        hookA = address(new MinimumTenureHook());
     }
 
     function _pending()
@@ -41,13 +42,13 @@ contract CancelProposalTest is Test {
         view
         returns (uint256 tax, address hook, bool hasTax, bool hasHook)
     {
-        (tax, hook, hasTax, hasHook, ) = slot.pending();
+        (tax, hook, hasTax, hasHook, , ) = slot.pending();
     }
 
     /// @notice The bug this replaced: one dimension's cancel wiping the other.
     function test_CancellingTheHookLeavesTheTaxProposalStanding() public {
-        slot.proposeTerms(750, address(0), true, false);
-        slot.proposeTerms(0, hookA, false, true);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
+        slot.proposeTerms(0, hookA, bytes32(uint256(7 days)), false, true);
 
         slot.cancelProposal(false, true);
 
@@ -59,8 +60,8 @@ contract CancelProposalTest is Test {
     }
 
     function test_CancellingTheTaxLeavesTheHookProposalStanding() public {
-        slot.proposeTerms(750, address(0), true, false);
-        slot.proposeTerms(0, hookA, false, true);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
+        slot.proposeTerms(0, hookA, bytes32(uint256(7 days)), false, true);
 
         slot.cancelProposal(true, false);
 
@@ -72,7 +73,7 @@ contract CancelProposalTest is Test {
     }
 
     function test_CancellingBothClearsEverything() public {
-        slot.proposeTerms(750, hookA, true, true);
+        slot.proposeTerms(750, hookA, bytes32(uint256(7 days)), true, true);
         slot.cancelProposal(true, true);
 
         (, , bool hasTax, bool hasHook) = _pending();
@@ -84,7 +85,7 @@ contract CancelProposalTest is Test {
     ///         reporting, not a silent no-op — it usually means the caller
     ///         believes they queued something they did not.
     function test_CancellingWhatWasNeverProposedReverts() public {
-        slot.proposeTerms(750, address(0), true, false);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
 
         vm.expectRevert();
         slot.cancelProposal(false, true);
@@ -98,7 +99,7 @@ contract CancelProposalTest is Test {
 
     /// @notice Only the manager may retract.
     function test_AStrangerCannotCancel() public {
-        slot.proposeTerms(750, address(0), true, false);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
         vm.prank(address(0xBAD));
         vm.expectRevert();
         slot.cancelProposal(true, false);
@@ -106,8 +107,8 @@ contract CancelProposalTest is Test {
 
     /// @notice A surviving proposal must still actually land.
     function test_TheSurvivingProposalStillApplies() public {
-        slot.proposeTerms(750, address(0), true, false);
-        slot.proposeTerms(0, hookA, false, true);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
+        slot.proposeTerms(0, hookA, bytes32(uint256(7 days)), false, true);
         slot.cancelProposal(false, true);
 
         // Terms are queued, ripen, then land at a transition.
@@ -134,7 +135,7 @@ contract CancelProposalTest is Test {
         uint256 price = 0.01 ether;
         uint256 atCurrentTax = slot.minDepositForBuy(price);
 
-        slot.proposeTerms(750, address(0), true, false);
+        slot.proposeTerms(750, address(0), bytes32(0), true, false);
         // Not yet: a queued rise the transition will not apply must not be
         // priced in, or the quote asks for money the slot will not take.
         assertEq(slot.minDepositForBuy(price), atCurrentTax, "not ripe yet");

@@ -1,6 +1,10 @@
 "use client";
 
-import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
+import {
+  findKnownHook,
+  knownHooks,
+  minimumTenureHookAddress,
+} from "@0xslots/contracts/slots";
 import {
   AlertCircle,
   Check,
@@ -31,9 +35,8 @@ import {
 import { useChain } from "@/context/chain";
 import { AddressInput } from "../address-input";
 import { useHookCheck } from "../hooks/use-hook-check";
-import { useHasTenureFactory, useTenureHook } from "../hooks/use-tenure-hook";
 import type { CreateSlotFormValues } from "../schema";
-import { timeUnits, toSeconds } from "../sections";
+import { timeUnits } from "../sections";
 
 /**
  * The slot's one extension point — and, with it, its occupancy terms.
@@ -63,30 +66,31 @@ export function SectionHook() {
   // pasted in — arguably more, since nobody typed its address.
   const check = useHookCheck(hook, chainId);
 
-  // ── Minimum tenure, by duration ─────────────────────────────────────────
-  const hasTenureFactory = useHasTenureFactory();
+  // ── Minimum tenure ──────────────────────────────────────────────────────
+  //
+  // A duration, and nothing else. The address no longer moves with it: one hook
+  // per chain serves every window, and the number the creator picks becomes the
+  // slot's `hookData` rather than a second contract.
+  const tenureHook = minimumTenureHookAddress[chainId];
   const tenureValue = form.watch("tenureValue");
   const tenureUnit = form.watch("tenureUnit");
-  const tenureSeconds = toSeconds(tenureValue, tenureUnit);
-  const tenure = useTenureHook(tenureSeconds, hookMode === "tenure");
 
   /**
-   * Keep `hook` in step with the predicted address.
+   * Keep `hook` pointed at this chain's tenure hook while that mode is chosen.
    *
-   * The address is DERIVED from the duration, so the field the form submits is
-   * not something the user types — it is the answer to what they picked.
-   * Writing it back here rather than at submit time means the summary card and
-   * the validation both see the address the button will actually use.
+   * The field the form submits is not something the user types — it is the
+   * answer to what they picked. Writing it back here rather than at submit time
+   * means the summary card and the validation both see the address the button
+   * will actually use.
    *
    * In an effect rather than during render: `setValue` triggers a re-render,
    * and doing that from the render pass is the "update a component while
    * rendering another" warning at best and a loop at worst.
    */
-  const predicted = tenure.data?.hook;
   useEffect(() => {
-    if (hookMode === "tenure" && predicted && hook !== predicted)
-      form.setValue("hook", predicted, { shouldValidate: true });
-  }, [hookMode, predicted, hook, form]);
+    if (hookMode === "tenure" && tenureHook && hook !== tenureHook)
+      form.setValue("hook", tenureHook, { shouldValidate: true });
+  }, [hookMode, tenureHook, hook, form]);
 
   return (
     <FormField
@@ -128,11 +132,11 @@ export function SectionHook() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No hook — instant buy</SelectItem>
-                {/* By duration, not by address. One hook per tenure lives at a
-                    CREATE2 address the factory derives, so this is a choice of
-                    NUMBER — the successor to the old occupancy-policy picker,
-                    which deployed a policy contract the same way. */}
-                {hasTenureFactory && (
+                {/* A choice of NUMBER, not of address — the successor to the
+                    old occupancy-policy picker. The duration is stored on the
+                    slot and handed to the hook on every callback, so this one
+                    address serves every window. */}
+                {tenureHook && (
                   <SelectItem value="tenure">
                     Minimum tenure — choose a duration
                   </SelectItem>
@@ -196,44 +200,21 @@ export function SectionHook() {
                   be evicted at any moment.
                 </p>
 
-                {/* The derived address, and whether it exists yet. The second
-                    half is the one worth saying: one hook per duration means a
-                    common tenure is already deployed and creating costs one
-                    transaction, while an unusual one needs a deploy first —
-                    which is a second wallet prompt, and a surprise if unsaid. */}
-                {tenure.isLoading && (
-                  <p className="flex items-center gap-1.5 text-[10px] text-blue-500">
-                    <Loader2 className="size-3 animate-spin" />
-                    Deriving the hook address…
-                  </p>
-                )}
-                {tenure.data && (
+                {/* The address, stated rather than derived. Worth showing even
+                    though the creator did not choose it: it is what the slot
+                    will point at, and it is the same one for every duration —
+                    which is the fact that replaced "expect two transactions". */}
+                {tenureHook && (
                   <div className="space-y-1 border bg-muted/40 p-2">
                     <p className="font-mono text-[10px] break-all text-muted-foreground">
-                      {tenure.data.hook}
+                      {tenureHook}
                     </p>
-                    {tenure.data.deployed ? (
-                      <p className="flex items-center gap-1.5 text-[10px] text-green-600">
-                        <Check className="size-3" />
-                        Already deployed — creating this slot is one
-                        transaction.
-                      </p>
-                    ) : (
-                      <p className="flex items-start gap-1.5 text-[10px] text-amber-600">
-                        <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                        No hook exists for this duration yet. It will be
-                        deployed first, so expect two transactions — the deploy
-                        is permissionless and anyone reusing this duration later
-                        gets the same address for free.
-                      </p>
-                    )}
+                    <p className="flex items-center gap-1.5 text-[10px] text-green-600">
+                      <Check className="size-3" />
+                      One hook serves every duration — creating this slot is one
+                      transaction.
+                    </p>
                   </div>
-                )}
-                {tenure.isError && (
-                  <p className="flex items-start gap-1.5 text-[10px] text-destructive">
-                    <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                    Could not reach the tenure factory on this chain.
-                  </p>
                 )}
               </div>
             )}
@@ -345,7 +326,9 @@ function HookPermissions({
   return (
     <div className="mt-2 space-y-1.5 rounded-md border bg-muted/30 px-3 py-2">
       <Row
-        icon={<ShieldAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-500" />}
+        icon={
+          <ShieldAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-500" />
+        }
         label="May refuse"
         items={mayRefuse}
         empty="nothing — it cannot veto any action"

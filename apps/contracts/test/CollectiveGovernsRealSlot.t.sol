@@ -62,13 +62,14 @@ contract CollectiveGovernsRealSlotTest is Test {
             currency: IERC20(address(0)),
             manager: address(collective),
             hook: address(0),
+            hookData: bytes32(0),
             taxPercentage: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
             mutableHook: true
         }))));
 
-        hookA = address(new MinimumTenureHook(7 days, ""));
+        hookA = address(new MinimumTenureHook());
         vm.deal(buyer, 100 ether);
     }
 
@@ -122,7 +123,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         view
         returns (uint256 tax, address hook, bool hasTax, bool hasHook)
     {
-        (tax, hook, hasTax, hasHook, ) = slot.pending();
+        (tax, hook, hasTax, hasHook, , ) = slot.pending();
     }
 
     /// @notice The tax manager's lever reaches a real slot.
@@ -144,7 +145,7 @@ contract CollectiveGovernsRealSlotTest is Test {
     ///         validates the hook rather than trusting the relay.
     function test_TheHookRelayReachesARealSlotAndTheSlotValidates() public {
         vm.prank(hookMgr);
-        collective.proposeHook(IManagedSlot(address(slot)), hookA);
+        collective.proposeHook(IManagedSlot(address(slot)), hookA, bytes32(uint256(7 days)));
 
         _ripen();
         _seat(buyer);
@@ -158,7 +159,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         // A hook that cannot answer `hooks()` is refused at the slot, not here.
         vm.prank(hookMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), address(warehouse));
+        collective.proposeHook(IManagedSlot(address(slot)), address(warehouse), bytes32(0));
     }
 
     /// @notice The assertion the whole port turns on, against real contracts:
@@ -168,7 +169,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(taxMgr);
         collective.proposeTax(IManagedSlot(address(slot)), 750);
         vm.prank(hookMgr);
-        collective.proposeHook(IManagedSlot(address(slot)), hookA);
+        collective.proposeHook(IManagedSlot(address(slot)), hookA, bytes32(uint256(7 days)));
 
         vm.prank(hookMgr);
         collective.cancelHookProposal(IManagedSlot(address(slot)));
@@ -193,7 +194,7 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), hookA);
+        collective.proposeHook(IManagedSlot(address(slot)), hookA, bytes32(uint256(7 days)));
 
         (, , bool hasTax, bool hasHook) = _pending();
         assertFalse(hasTax);
@@ -208,6 +209,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             currency: IERC20(address(0)),
             manager: address(0xA11CE),
             hook: address(0),
+            hookData: bytes32(0),
             taxPercentage: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,

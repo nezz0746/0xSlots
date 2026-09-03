@@ -34,17 +34,5 @@ export {
   SlotsClient,
   type SlotsClientConfig,
   TERMS_DELAY_SECONDS,
+  ZERO_HOOK_DATA,
 } from "./client";
-
-// The MinimumTenureHook factory: a duration in, a hook address out, so a
-// creator can pick a tenure without deploying a hook by hand. Its own module
-// rather than methods on `SlotsClient` — see the file header.
-export {
-  type GetOrDeployTenureHookParams,
-  getOrDeployTenureHook,
-  getTenureHookFactoryAddress,
-  isTenureHookDeployed,
-  predictTenureHook,
-  type TenureHookParams,
-  verifyTenureHook,
-} from "./hook-factory";

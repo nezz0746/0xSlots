@@ -11,6 +11,8 @@ import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
 import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
+interface IFlippable { function flip() external; }
+
 /// @dev 2 decimals, like GUSD — small units make truncation reachable.
 contract Small is ERC20 {
     constructor() ERC20("S", "S") {}
@@ -22,8 +24,86 @@ contract Small is ERC20 {
 contract FlipHook is ISlotHook {
     bool public broken;
     function flip() external { broken = true; }
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external view returns (HookFlags memory f) {
         if (broken) revert("gone");
+        f.beforeBuy = true;
+    }
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSell(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterSell(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+}
+
+/// @dev Honest until flipped, then answers `hooks()` with returndata too short
+///      to decode.
+///
+///      Not a revert — a SUCCESS the compiler's decoder then rejects. The
+///      decode sits outside `try`'s catch, so this used to revert
+///      `_applyPending` from inside `liquidate()`.
+contract ShortAnswerHook is ISlotHook {
+    bool public broken;
+    function flip() external { broken = true; }
+    function validateHookData(bytes32) external pure {}
+
+    function hooks() external view returns (HookFlags memory f) {
+        if (broken) assembly { mstore(0, 1) return(0, 32) } // 1 word, 256 wanted
+        f.beforeBuy = true;
+    }
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSell(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterSell(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+}
+
+/// @dev Honest until flipped, then answers with eight words that are none of
+///      them 0 or 1 — `validator_revert_t_bool` in the decoder, outside the catch.
+contract DirtyBoolHook is ISlotHook {
+    bool public broken;
+    function flip() external { broken = true; }
+    function validateHookData(bytes32) external pure {}
+
+    function hooks() external view returns (HookFlags memory f) {
+        if (broken) {
+            assembly {
+                for { let i := 0 } lt(i, 8) { i := add(i, 1) } {
+                    mstore(mul(i, 0x20), 0xff)
+                }
+                return(0, 256)
+            }
+        }
+        f.beforeBuy = true;
+    }
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSell(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterSell(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+}
+
+/// @dev Honest until flipped, then refuses every configuration. The one failure
+///      mode `try` did catch — kept so the rewrite cannot silently lose it.
+contract RejectingHook is ISlotHook {
+    error No();
+    bool public broken;
+    function flip() external { broken = true; }
+
+    function validateHookData(bytes32) external view {
+        if (broken) revert No();
+    }
+    function hooks() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
@@ -78,6 +158,7 @@ contract AuditRegressionsTest is Test {
             currency: IERC20(currency),
             manager: address(this),
             hook: address(0),
+            hookData: bytes32(0),
             taxPercentage: TAX,
             minDepositSeconds: minDep,
             mutableTax: true,
@@ -129,7 +210,7 @@ contract AuditRegressionsTest is Test {
         vm.stopPrank();
 
         FlipHook h = new FlipHook();
-        s.proposeTerms(0, address(h), false, true);
+        s.proposeTerms(0, address(h), bytes32(0), false, true);
 
         vm.warp(block.timestamp + 3650 days);
         assertTrue(s.isInsolvent());
@@ -140,6 +221,61 @@ contract AuditRegressionsTest is Test {
         assertEq(s.hook(), address(0), "and the hook was dropped, not attached");
     }
 
+    /// @dev Shared body: seat an occupant, queue `pending`, run them dry, evict.
+    ///      Every one of these queued hooks breaks the slot in a way `try`
+    ///      could not catch, so the assertion is simply that `liquidate`
+    ///      returns.
+    function _evictWithPendingHook(address pending, bool etchAway) internal {
+        Slot s = _slot(address(token), 0);
+        vm.startPrank(occ);
+        token.approve(address(s), type(uint256).max);
+        s.buy(occ, 100, PRICE, 0);
+        vm.stopPrank();
+
+        // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
+        // and would refuse it otherwise. The break happens afterwards, which is
+        // the whole point: the apply path cannot re-verify what it accepted.
+        s.proposeTerms(0, pending, bytes32(0), false, true);
+        if (etchAway) vm.etch(pending, "");
+        else IFlippable(pending).flip();
+
+        vm.warp(block.timestamp + 3650 days);
+        assertTrue(s.isInsolvent());
+
+        s.liquidate(); // must not revert
+        assertTrue(s.isVacant(), "eviction blocked by a pending hook");
+        assertEq(s.hook(), address(0), "and the hook was dropped, not attached");
+        assertEq(s.hookData(), bytes32(0), "its configuration went with it");
+    }
+
+    /// @notice A queued hook with NO CODE cannot block an eviction.
+    ///
+    /// @dev The `extcodesize` guard solc emits for a function returning nothing
+    ///      sits BEFORE the call and outside `try`'s catch, so this reverted
+    ///      straight through it. Reachable on Base today: a 7702-delegated EOA
+    ///      whose delegation is revoked between `proposeTerms` and the apply.
+    function test_ACodelessPendingHookCannotBlockLiquidation() public {
+        _evictWithPendingHook(address(new FlipHook()), true);
+    }
+
+    /// @notice A queued hook whose answer is too short to decode cannot block
+    ///         an eviction. The decode is outside the catch too.
+    function test_AShortHookAnswerCannotBlockLiquidation() public {
+        _evictWithPendingHook(address(new ShortAnswerHook()), false);
+    }
+
+    /// @notice Nor one whose bools are neither 0 nor 1.
+    function test_ADirtyHookAnswerCannotBlockLiquidation() public {
+        _evictWithPendingHook(address(new DirtyBoolHook()), false);
+    }
+
+    /// @notice Nor one that refuses its own configuration at apply time.
+    /// @dev The one failure mode `try` DID catch. Kept so the rewrite to raw
+    ///      staticcalls cannot silently lose it.
+    function test_AHookRejectingItsConfigurationCannotBlockLiquidation() public {
+        _evictWithPendingHook(address(new RejectingHook()), false);
+    }
+
     function test_AWeirdTokenReturnCannotBlockLiquidation() public {
         WeirdTok w = new WeirdTok(recipient);
         Slot s = Slot(payable(factory.createSlot(SlotInit({
@@ -147,6 +283,7 @@ contract AuditRegressionsTest is Test {
             currency: IERC20(address(w)),
             manager: address(this),
             hook: address(0),
+            hookData: bytes32(0),
             taxPercentage: TAX,
             minDepositSeconds: 0,
             mutableTax: true,
@@ -183,7 +320,7 @@ contract AuditRegressionsTest is Test {
 
     function test_QueuedTermsCannotBindTheNextBlocksBuyer() public {
         Slot s = _slot(address(token), 0);
-        s.proposeTerms(10_000, address(0), true, false);
+        s.proposeTerms(10_000, address(0), bytes32(0), true, false);
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);

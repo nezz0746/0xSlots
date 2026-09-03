@@ -141,6 +141,7 @@ contract DeployAndDriveCollective is Script {
                         currency: IERC20(address(0)),
                         manager: address(collective),
                         hook: address(0),
+                        hookData: bytes32(0),
                         taxPercentage: TAX_AT_BIRTH,
                         minDepositSeconds: 1 days,
                         mutableTax: true,
@@ -157,7 +158,11 @@ contract DeployAndDriveCollective is Script {
         collective.proposeTax(IManagedSlot(address(slot)), TAX_PROPOSED);
 
         vm.broadcast(PK_HOOK_MGR);
-        collective.proposeHook(IManagedSlot(address(slot)), hookAddr);
+        collective.proposeHook(
+            IManagedSlot(address(slot)),
+            hookAddr,
+            bytes32(uint256(7 days))
+        );
 
         vm.broadcast(PK_HOOK_MGR);
         collective.cancelHookProposal(IManagedSlot(address(slot)));
@@ -165,7 +170,7 @@ contract DeployAndDriveCollective is Script {
         // The assertion the port turns on, checked against the live chain
         // rather than against a fixture. If this trips, nothing downstream is
         // worth indexing.
-        (uint256 pendingTax, , bool hasTax, bool hasHook, ) = slot.pending();
+        (uint256 pendingTax, , bool hasTax, bool hasHook, , ) = slot.pending();
         require(hasTax, "the tax manager's proposal did not survive");
         require(pendingTax == TAX_PROPOSED, "wrong tax survived");
         require(!hasHook, "the hook proposal was not cancelled");
@@ -190,7 +195,7 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_ADMIN);
         collective.cancelAllProposals(IManagedSlot(address(slot)));
 
-        (, , bool leftTax, bool leftHook, ) = slot.pending();
+        (, , bool leftTax, bool leftHook, , ) = slot.pending();
         require(!leftTax && !leftHook, "cancelAllProposals left something");
 
         // ── 10. shrink the split ───────────────────────────────────────────

@@ -27,6 +27,8 @@ contract Recorder is ISlotHook {
     uint256 public settles;
     uint256 public lastPaid;
 
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
         f.afterSell = true;
@@ -51,6 +53,8 @@ contract Recorder is ISlotHook {
 /// @dev Refuses every buy. The canonical `before` hook.
 contract DenyBuys is ISlotHook {
     error Denied();
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
     }
@@ -66,6 +70,8 @@ contract DenyBuys is ISlotHook {
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
 contract Hostile is ISlotHook {
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
         f.afterRelease = true;
@@ -85,6 +91,8 @@ contract Hostile is ISlotHook {
 /// @dev Burns every unit of gas it is handed.
 contract GasBurner is ISlotHook {
     uint256 public sink;
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external pure returns (HookFlags memory f) {
         f.afterLiquidate = true;
         f.afterSettle = true;
@@ -151,6 +159,7 @@ contract SlotsTest is Test {
                 currency: IERC20(address(token)),
                 manager: manager,
                 hook: hook,
+                hookData: bytes32(0),
                 taxPercentage: 1000, // 10% / month
                 minDepositSeconds: minDep,
                 mutableTax: true,
@@ -211,7 +220,7 @@ contract SlotsTest is Test {
         _take(s, alice, 100 ether, 100 ether);
 
         vm.prank(manager);
-        s.proposeTerms(2000, address(0), true, false);
+        s.proposeTerms(2000, address(0), bytes32(0), true, false);
 
         vm.warp(block.timestamp + 10 days);
         assertEq(s.taxPercentage(), 1000, "alice's rate is untouched mid-tenure");
@@ -279,7 +288,7 @@ contract SlotsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(InvalidHook.selector);
-        s.proposeTerms(0, useless, false, true);
+        s.proposeTerms(0, useless, bytes32(0), false, true);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -455,6 +464,8 @@ contract SlotsTest is Test {
 
 /// @dev Declares no subscriptions at all.
 contract Nothing is ISlotHook {
+    function validateHookData(bytes32) external pure {}
+
     function hooks() external pure returns (HookFlags memory f) { return f; }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSell(SlotContext calldata) external view {}

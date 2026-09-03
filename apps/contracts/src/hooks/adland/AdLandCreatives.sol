@@ -204,6 +204,11 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
         f.afterLiquidate = true;
     }
 
+    /// @dev AdLand takes no configuration: what it needs it reads from the
+    ///      slot itself. Indifferent rather than unimplemented, so it can sit
+    ///      in a composite beside a hook that does take one.
+    function validateHookData(bytes32) external view {}
+
     function beforeBuy(SlotContext calldata) external view {}
 
     function beforeSell(SlotContext calldata) external view {}

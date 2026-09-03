@@ -21,6 +21,7 @@ contract MockSlot {
 
     uint256 public taxPct;
     address public hookAddr;
+    bytes32 public hookData;
 
     bool public hasTax;
     bool public hasHook;
@@ -45,6 +46,7 @@ contract MockSlot {
     function proposeTerms(
         uint256 newTax,
         address newHook,
+        bytes32 newHookData,
         bool changeTax,
         bool changeHook
     ) external onlyManager {
@@ -53,6 +55,7 @@ contract MockSlot {
             hasTax = true;
         }
         if (changeHook) {
+            hookData = newHookData;
             hookAddr = newHook;
             hasHook = true;
         }
@@ -174,7 +177,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = Wallet.Call({
             to: address(slot),
             value: 0,
-            data: abi.encodeCall(MockSlot.proposeTerms, (9999, address(0), true, false))
+            data: abi.encodeCall(MockSlot.proposeTerms, (9999, address(0), bytes32(0), true, false))
         });
 
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -199,7 +202,7 @@ contract SlotCollectiveTest is Test {
     function test_adminCanRelayBoth() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 250);
-        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE), bytes32(0));
         vm.stopPrank();
 
         assertEq(slot.taxPct(), 250);
@@ -210,11 +213,11 @@ contract SlotCollectiveTest is Test {
     ///      has to be able to express it.
     function test_theHookManagerCanDetachTheHook() public {
         vm.prank(hookMgr);
-        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE), bytes32(0));
         assertTrue(slot.hasHook());
 
         vm.prank(hookMgr);
-        mgr.proposeHook(IManagedSlot(address(slot)), address(0));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0), bytes32(0));
         assertTrue(slot.hasHook(), "still queued, now queued as a detach");
         assertEq(slot.hookAddr(), address(0));
     }
@@ -232,7 +235,7 @@ contract SlotCollectiveTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.proposeHook(IManagedSlot(address(slot)), address(1));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(1), bytes32(0));
     }
 
     /// @dev The gap the per-dimension cancel closed, and the reason the new
@@ -244,7 +247,7 @@ contract SlotCollectiveTest is Test {
         vm.prank(taxMgr);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(hookMgr);
-        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE), bytes32(0));
 
         vm.prank(hookMgr);
         mgr.cancelHookProposal(IManagedSlot(address(slot)));
@@ -281,7 +284,7 @@ contract SlotCollectiveTest is Test {
     function test_adminCanCancelEitherDimension() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
-        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE), bytes32(0));
         mgr.cancelTaxProposal(IManagedSlot(address(slot)));
         mgr.cancelHookProposal(IManagedSlot(address(slot)));
         vm.stopPrank();
@@ -309,7 +312,7 @@ contract SlotCollectiveTest is Test {
         vm.prank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(admin);
-        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE));
+        mgr.proposeHook(IManagedSlot(address(slot)), address(0xCAFE), bytes32(0));
         vm.prank(admin);
         mgr.cancelAllProposals(IManagedSlot(address(slot)));
         assertEq(slot.taxCancels(), 1);

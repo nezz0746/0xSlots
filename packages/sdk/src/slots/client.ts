@@ -10,6 +10,7 @@ import {
   encodeFunctionData,
   erc20Abi,
   type Hash,
+  type Hex,
   type PublicClient,
   type WalletClient,
   zeroAddress,
@@ -42,6 +43,16 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
  */
 export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
 
+/**
+ * "This slot configured nothing" — 32 zero bytes.
+ *
+ * The counterpart to {@link zeroAddress} for `hookData`, and it means the same
+ * thing: absence. A slot with no hook must carry this, and a hook that takes
+ * configuration is entitled to refuse it.
+ */
+export const ZERO_HOOK_DATA =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
 /**
@@ -67,6 +78,18 @@ export interface SlotInit {
   manager: Address;
   /** The single extension point. Zero for none. */
   hook: Address;
+  /**
+   * This slot's configuration FOR THAT HOOK — 32 bytes the slot stores and
+   * hands back on every callback. Omit for none.
+   *
+   * What lets one hook deployment serve every configuration. A minimum-tenure
+   * hook reads its window here, so a seven-day slot and a thirty-day slot point
+   * at the SAME contract. Meaningless to the slot, which never interprets it.
+   *
+   * Only legal alongside a hook, and only in a form that hook accepts — it is
+   * asked, at creation, and refuses rather than misbehaving later.
+   */
+  hookData?: Hex;
   /** Basis points per 30 days. 1..10000. */
   taxPercentage: bigint;
   /** Minimum runway, in seconds, a buyer must fund. Zero means no minimum. */
@@ -80,7 +103,7 @@ export interface SlotInit {
  *
  * viem encodes a struct argument BY COMPONENT NAME, so a stray or misspelled key
  * encodes a zero for the field it was meant to fill and says nothing about it.
- * Listing the eight fields here makes a missing one a type error in this file
+ * Listing the nine fields here makes a missing one a type error in this file
  * rather than a zero address on-chain — which is how the previous SDK and its
  * checked-in ABIs once drifted together, agreeing with each other and
  * disagreeing with the chain.
@@ -91,6 +114,7 @@ function encodeSlotInit(init: SlotInit) {
     currency: init.currency,
     manager: init.manager,
     hook: init.hook,
+    hookData: init.hookData ?? ZERO_HOOK_DATA,
     taxPercentage: init.taxPercentage,
     minDepositSeconds: init.minDepositSeconds,
     mutableTax: init.mutableTax,
@@ -122,6 +146,19 @@ export function assertSlotInit(init: SlotInit): void {
       "createSlot",
       "a fully immutable slot must have no manager — the zero address is what makes it immutable",
     );
+
+  // Configuration for a hook that is not there. Nothing would ever read it, so
+  // it can only be a mistake — and one that goes live the day a hook is
+  // attached without its own data.
+  if (
+    init.hook === zeroAddress &&
+    init.hookData !== undefined &&
+    init.hookData !== ZERO_HOOK_DATA
+  )
+    throw new SlotsError(
+      "createSlot",
+      "hookData needs a hook to interpret it — pass a hook, or drop the data",
+    );
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
@@ -149,6 +186,8 @@ export interface HookFlags {
 export interface PendingTerms {
   taxPercentage: bigint;
   hook: Address;
+  /** The queued hook's configuration. Travels with `hook`, never apart. */
+  hookData: Hex;
   hasTax: boolean;
   hasHook: boolean;
   proposedAt: bigint;
@@ -187,6 +226,12 @@ export interface ProposeTermsParams {
   taxPercentage?: bigint;
   /** The new hook, or {@link zeroAddress} to detach. Omit to leave it alone. */
   hook?: Address;
+  /**
+   * The new hook's configuration. Only meaningful alongside `hook`, and read
+   * only when `hook` is present — the two are one decision, and setting data
+   * for a hook you did not name is setting a word meant for its predecessor.
+   */
+  hookData?: Hex;
 }
 
 // ─── Signed sell orders ───────────────────────────────────────────────────────
@@ -284,6 +329,14 @@ export interface SlotState {
   recipient: Address;
   manager: Address;
   hook: Address;
+  /**
+   * The 32 bytes this slot hands its hook on every callback.
+   *
+   * Where a hook's per-slot configuration lives — a minimum-tenure window, say.
+   * Opaque here: only the hook knows what it means, and a slot with no hook has
+   * none.
+   */
+  hookData: Hex;
   hookFlags: HookFlags;
   pending: PendingTerms;
   /**
@@ -329,7 +382,8 @@ export interface SlotState {
 
 export interface SlotsClientConfig {
   /** The hook-protocol `SlotFactory`. Only `createSlot` needs it. */
-  factoryAddress?: Address;  publicClient?: PublicClient;
+  factoryAddress?: Address;
+  publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
 
@@ -577,18 +631,21 @@ export class SlotsClient {
    * inferring it against the wrong clock.
    */
   async pending(slot: Address): Promise<PendingTerms> {
-    const [[taxPercentage, hook, hasTax, hasHook, proposedAt], applies] =
-      await Promise.all([
-        this.read<readonly [bigint, Address, boolean, boolean, bigint]>(
-          slot,
-          "pending",
-        ),
-        this.pendingApplies(slot),
-      ]);
+    const [
+      [taxPercentage, hook, hasTax, hasHook, proposedAt, hookData],
+      applies,
+    ] = await Promise.all([
+      this.read<readonly [bigint, Address, boolean, boolean, bigint, Hex]>(
+        slot,
+        "pending",
+      ),
+      this.pendingApplies(slot),
+    ]);
     const isEmpty = !hasTax && !hasHook;
     return {
       taxPercentage,
       hook,
+      hookData,
       hasTax,
       hasHook,
       proposedAt,
@@ -657,6 +714,7 @@ export class SlotsClient {
       recipient,
       manager,
       hook,
+      hookData,
       hookFlags,
       pending,
       mutableTax,
@@ -679,6 +737,7 @@ export class SlotsClient {
       this.read<Address>(slot, "recipient"),
       this.read<Address>(slot, "manager"),
       this.hook(slot),
+      this.read<Hex>(slot, "hookData"),
       this.hookFlags(slot),
       this.pending(slot),
       this.read<boolean>(slot, "mutableTax"),
@@ -703,6 +762,7 @@ export class SlotsClient {
       recipient,
       manager,
       hook,
+      hookData,
       hookFlags,
       pending,
       mutableTax,
@@ -984,7 +1044,6 @@ export class SlotsClient {
     return this.write(slot, "liquidate", []);
   }
 
-
   // ═══════════════════════════════════════════════════════════════════════════
   // WRITE — holding
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1085,9 +1144,15 @@ export class SlotsClient {
           `taxPercentage must be 1..${MAX_TAX_BPS} basis points per 30 days`,
         );
     }
+    if (!changeHook && params.hookData !== undefined)
+      throw new SlotsError(
+        "proposeTerms",
+        "hookData travels with hook — name the hook it configures",
+      );
     return this.write(slot, "proposeTerms", [
       params.taxPercentage ?? 0n,
       params.hook ?? zeroAddress,
+      params.hookData ?? ZERO_HOOK_DATA,
       changeTax,
       changeHook,
     ]);

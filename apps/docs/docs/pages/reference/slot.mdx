@@ -93,7 +93,8 @@ manager. Proposed terms apply after a delay (`TERMS_DELAY`, 1 day).
 ```solidity
 function proposeTerms(
     uint256 newTax,
-    address newHook,   // address(0) detaches the hook
+    address newHook,       // address(0) detaches the hook
+    bytes32 newHookData,   // that hook's configuration; must be 0 when it is
     bool    changeTax,
     bool    changeHook
 ) external;
@@ -106,9 +107,16 @@ They may be governed by different parties behind one manager address; an
 all-or-nothing cancel would let whoever moves the hook wipe a queued tax change
 as a side effect. A change touching a mutable dimension you did not open reverts.
 
+`newHookData` is not a third dimension — it rides under `changeHook`, because a
+hook and the configuration meant for it are one decision. The hook is asked to
+validate it now: one that rejects it is refused here rather than attached and
+vetoing every callback afterwards.
+
 ```solidity
-event TermsProposed(uint256 taxPercentage, address hook, bool tax, bool hook_);
-event TermsApplied(uint256 taxPercentage, address hook);
+event TermsProposed(
+    uint256 taxPercentage, address hook, bytes32 hookData, bool tax, bool hook_
+);
+event TermsApplied(uint256 taxPercentage, address hook, bytes32 hookData);
 event ProposalCancelled(bool tax, bool hook);
 ```
 
@@ -129,7 +137,7 @@ struct SlotInfo {
     uint256 taxPercentage; uint256 minDepositSeconds;
     bool mutableTax; bool mutableHook;
     // extension
-    address hook; HookFlags hookFlags;
+    address hook; bytes32 hookData; HookFlags hookFlags;
     // occupancy
     address occupant; uint256 price; uint256 deposit;
     uint64 occupiedSince; uint64 tenureId; uint64 lastSettled;
@@ -137,7 +145,7 @@ struct SlotInfo {
     uint256 taxOwed; uint256 collectedTax;
     bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
     // queued terms
-    uint256 pendingTaxPercentage; address pendingHook;
+    uint256 pendingTaxPercentage; address pendingHook; bytes32 pendingHookData;
     bool pendingHasTax; bool pendingHasHook;
     uint64 pendingProposedAt; bool pendingApplies;
 }

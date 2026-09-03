@@ -13,6 +13,7 @@ optional, client-only extension for rendering.
 ```solidity
 interface ISlotHook {
     function hooks() external view returns (HookFlags memory);
+    function validateHookData(bytes32 data) external view;
 
     // decisions — view, revert to veto
     function beforeBuy(SlotContext calldata ctx) external view;
@@ -31,6 +32,13 @@ interface ISlotHook {
 `hooks()` is `view`, not `pure`: a composite answers it from storage. It is read
 **once** at attach and snapshotted, so a hook cannot widen its reach mid-tenure.
 
+`validateHookData` is read at the same moment and for the same reason. `hookData`
+is opaque to the slot, so only the hook can say whether a given word means
+anything; refusing it here is the only chance anyone gets, because `before` is
+fail-closed and a hook that rejects its own configuration vetoes every buy
+forever. A hook that takes no configuration implements it as a no-op and thereby
+accepts anything — say so deliberately rather than by omission.
+
 ## `SlotContext`
 
 One shape for every callback. Fields not meaningful for a given call are zero.
@@ -48,12 +56,24 @@ struct SlotContext {
     uint256 depositAmount;
     uint256 owed;          // afterSettle only — tax that accrued
     uint256 paid;          // afterSettle only — what could be taken from deposit
+    bytes32 hookData;      // THIS SLOT's configuration for this hook
 }
 ```
 
 `owed > paid` on `afterSettle` means the occupant has run dry — a useful distress
 signal. `newPrice` is a *proposal* in `beforeBuy` / `beforeSelfAssess` and a fact
 in the `after` callbacks.
+
+`hookData` is the slot's storage, not the hook's, and that is the load-bearing
+part. It is what lets one deployment serve every configuration — a
+`MinimumTenureHook` reads its window here, so a seven-day slot and a thirty-day
+slot point at the same address — and because it lives on the slot, a slot whose
+`mutableHook` is false has BOTH halves of its rules frozen. A hook keeping the
+same setting in its own storage could rewrite a slot's terms while the slot went
+on reporting itself immutable.
+
+Zero means the slot configured nothing. End-of-tenure callbacks carry the
+configuration the OUTGOING hook was attached with, not its successor's.
 
 ## `HookFlags`
 
@@ -88,7 +108,7 @@ Optional. Self-reported metadata for clients — **never** read by the slot.
 struct HookDescriptor {
     bytes32 family;      // identifies the behaviour; the lookup key
     uint32  version;     // the encoding of `data`, and nothing else
-    bytes   data;        // family-specific, e.g. abi-encoded tenure seconds
+    bytes   data;        // family-specific; empty where the slot holds the settings
     string  metadataURI; // the human half — label, units, icon. May be empty.
 }
 
@@ -105,18 +125,19 @@ refuse a buy. A hook that answers family X version 1 and meets version 2 should
 ignore v2 rather than decode its bytes with v1's layout.
 </Callout>
 
-## Verification
+## Identifying a hook
 
-Each hook kind ships a factory that deploys at a CREATE2 address derived from the
-hook's terms:
+Hook kinds used to ship a factory that deployed at a CREATE2 address derived from
+the hook's terms, so `factory.verify(hook)` proved an address was the genuine
+hook for those exact terms. That is gone, and with it the reason for it: terms
+are no longer part of an address. A `MinimumTenureHook` is one deployment per
+chain and every duration is a slot's `hookData`.
 
-```solidity
-factory.verify(hook) // → bool
-```
-
-Because CREATE2 binds the address to the deployer, init code and salt, only the
-genuine hook for those exact terms can occupy it. A client loops known
-factories rather than trusting a self-reported descriptor.
+What a client checks now is the `family` a hook claims in its `descriptors()`,
+which a `CompositeHook` fanning out to that behaviour answers just as well as a
+bare one — and then the slot's own `hookData` for the terms. `descriptors()` may
+still lie; the flags, which the slot snapshotted, are what say whether a hook can
+refuse a buy.
 
 ## Fees
 

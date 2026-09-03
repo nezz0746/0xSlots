@@ -43,6 +43,7 @@ contract AdLandTest is Test {
             currency: IERC20(address(0)),
             manager: address(this),
             hook: address(adland),
+            hookData: bytes32(0),
             taxPercentage: 500,
             minDepositSeconds: 7 days,
             mutableTax: true,
@@ -95,7 +96,7 @@ contract AdLandTest is Test {
         adland.publish(address(slot), "alice's ad");
 
         // Detach the hook, so no `afterBuy` can possibly run, then reseat.
-        slot.proposeTerms(0, address(0), false, true);
+        slot.proposeTerms(0, address(0), bytes32(0), false, true);
         vm.warp(block.timestamp + 8 days);
         _seat(bob, 1 ether);
 

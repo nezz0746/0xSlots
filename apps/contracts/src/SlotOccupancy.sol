@@ -196,9 +196,11 @@ abstract contract SlotOccupancy is SlotViews {
         uint256 refund = _deposit;
 
         // Cached before the swap: this callback belongs to the hook that
-        // governed the tenure now ending, not to whatever replaces it.
+        // governed the tenure now ending, not to whatever replaces it — and to
+        // the configuration that hook was attached with, not its successor's.
         address outgoing = hook;
         uint8 outgoingFlags = _hookFlags;
+        bytes32 outgoingData = hookData;
 
         _vacate();
         _applyPending();
@@ -211,7 +213,10 @@ abstract contract SlotOccupancy is SlotViews {
             outgoing,
             outgoingFlags,
             F_AFTER_RELEASE,
-            abi.encodeCall(ISlotHook.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
+            abi.encodeCall(
+                ISlotHook.afterRelease,
+                (_ctxFor(msg.sender, prev, 0, 0, outgoingData))
+            )
         );
     }
 
@@ -242,6 +247,7 @@ abstract contract SlotOccupancy is SlotViews {
         address prev = _occupant;
         address outgoing = hook;
         uint8 outgoingFlags = _hookFlags;
+        bytes32 outgoingData = hookData;
 
         _vacate();
         _applyPending();
@@ -252,7 +258,10 @@ abstract contract SlotOccupancy is SlotViews {
             outgoing,
             outgoingFlags,
             F_AFTER_LIQUIDATE,
-            abi.encodeCall(ISlotHook.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
+            abi.encodeCall(
+                ISlotHook.afterLiquidate,
+                (_ctxFor(msg.sender, prev, 0, 0, outgoingData))
+            )
         );
     }
 

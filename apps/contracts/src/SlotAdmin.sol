@@ -23,12 +23,20 @@ abstract contract SlotAdmin is SlotEscrow {
      * @dev Both dimensions in one call, because they share one deferral and one
      *      apply. Pass `changeTax`/`changeHook` false to leave one alone.
      *
-     *      The hook is validated NOW — a hook whose `hooks()` does not answer
-     *      is refused here rather than silently attached with no subscriptions.
+     *      The hook is validated NOW — a hook whose `hooks()` does not answer,
+     *      or which rejects `newHookData`, is refused here rather than silently
+     *      attached with no subscriptions or with a configuration it will veto
+     *      on every callback.
+     *
+     *      `newHookData` is not a third dimension. It travels under
+     *      `changeHook` because it is the same decision: swapping a hook and
+     *      leaving the old configuration behind means handing the new hook a
+     *      word meant for someone else.
      */
     function proposeTerms(
         uint256 newTax,
         address newHook,
+        bytes32 newHookData,
         bool changeTax,
         bool changeHook
     ) external onlyManager {
@@ -40,14 +48,25 @@ abstract contract SlotAdmin is SlotEscrow {
         }
         if (changeHook) {
             if (!mutableHook) revert NotMutable();
-            if (newHook != address(0)) _readHookFlags(newHook);
+            if (newHook != address(0)) {
+                _readHookFlags(newHook, newHookData);
+            } else if (newHookData != bytes32(0)) {
+                revert InvalidHook();
+            }
             pending.hook = newHook;
+            pending.hookData = newHookData;
             pending.hasHook = true;
         }
         if (!changeTax && !changeHook) revert NoPendingUpdate();
 
         pending.proposedAt = uint64(block.timestamp);
-        emit TermsProposed(newTax, newHook, changeTax, changeHook);
+        emit TermsProposed(
+            newTax,
+            newHook,
+            newHookData,
+            changeTax,
+            changeHook
+        );
     }
 
     /**
@@ -76,6 +95,7 @@ abstract contract SlotAdmin is SlotEscrow {
         if (cancelHook) {
             pending.hasHook = false;
             pending.hook = address(0);
+            pending.hookData = bytes32(0);
         }
         if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0;
 

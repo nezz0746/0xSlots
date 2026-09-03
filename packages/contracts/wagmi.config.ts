@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig } from "@wagmi/cli";
 import { foundry } from "@wagmi/cli/plugins";
@@ -36,7 +36,6 @@ const INCLUDE = [
   "AdLand",
   "CompositeHook",
   "MinimumTenureHook",
-  "MinimumTenureHookFactory",
   // Local only, and deployed by `SeedSlots` rather than `DeployProtocol`. It is
   // here for its ADDRESS: plain CREATE means it moves whenever the seed changes
   // what it deploys, and it was hand-typed in the SDK until it pointed at an

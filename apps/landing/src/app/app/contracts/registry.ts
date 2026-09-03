@@ -1,16 +1,16 @@
 import {
   adLandAbi,
   adLandAddress,
-  minimumTenureHookFactoryAbi,
-  minimumTenureHookFactoryAddress,
+  minimumTenureHookAbi,
+  minimumTenureHookAddress,
   offerBookAbi,
   offerBookAddress,
   slotAbi,
   slotCollectiveAbi,
   slotCollectiveFactoryAbi,
-  slotFactoryAbi as slotsFactoryAbi,
   slotCollectiveFactoryAddress,
   slotFactoryAddress,
+  slotFactoryAbi as slotsFactoryAbi,
 } from "@0xslots/contracts/slots";
 import type { Abi, Address } from "viem";
 
@@ -132,10 +132,10 @@ export const CONTRACTS: ContractEntry[] = [
     upgradeable: true,
   },
   {
-    name: "MinimumTenureHookFactory",
-    role: "Deterministic hooks — one address per tenure",
-    address: (c) => minimumTenureHookFactoryAddress[c],
-    abi: minimumTenureHookFactoryAbi as Abi,
+    name: "MinimumTenureHook",
+    role: "Minimum tenure — one hook, every duration",
+    address: (c) => minimumTenureHookAddress[c],
+    abi: minimumTenureHookAbi as Abi,
     hasVersion: false,
     upgradeable: false,
   },

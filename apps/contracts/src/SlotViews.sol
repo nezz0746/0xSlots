@@ -30,6 +30,7 @@ struct SlotInfo {
     bool mutableHook;
     // extension
     address hook;
+    bytes32 hookData;
     HookFlags hookFlags;
     // occupancy
     address occupant;
@@ -47,6 +48,7 @@ struct SlotInfo {
     // queued terms
     uint256 pendingTaxPercentage;
     address pendingHook;
+    bytes32 pendingHookData;
     bool pendingHasTax;
     bool pendingHasHook;
     uint64 pendingProposedAt;
@@ -101,6 +103,7 @@ abstract contract SlotViews is SlotOrders {
         info.mutableHook = mutableHook;
 
         info.hook = hook;
+        info.hookData = hookData;
         info.hookFlags = hookFlags();
 
         info.occupant = occupant();
@@ -118,6 +121,7 @@ abstract contract SlotViews is SlotOrders {
 
         info.pendingTaxPercentage = pending.taxPercentage;
         info.pendingHook = pending.hook;
+        info.pendingHookData = pending.hookData;
         info.pendingHasTax = pending.hasTax;
         info.pendingHasHook = pending.hasHook;
         info.pendingProposedAt = pending.proposedAt;
