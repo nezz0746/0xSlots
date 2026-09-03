@@ -4,10 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { NATIVE_CURRENCY_ADDRESS } from "../native";
 import {
   assertSlotInit,
-  SELL_ORDER_DOMAIN_NAME,
-  SELL_ORDER_DOMAIN_VERSION,
   type SlotInit,
   SlotsClient,
+  ZERO_HOOK_DATA,
 } from "./client";
 
 const SLOT = "0x1111111111111111111111111111111111111111" as const;
@@ -338,188 +337,6 @@ describe("ERC-20 slots", () => {
   });
 });
 
-describe("signed sell orders", () => {
-  const DAY = 86_400n;
-  const PRICE = 70n * 10n ** 6n;
-  const DEPOSIT = 10n ** 6n;
-
-  it("makeSellOrder approves the SLOT for price + deposit", async () => {
-    const { client, writeContract } = harness({
-      currency: ERC20,
-      allowance: 0n,
-      orderNonce: 0n,
-      arrearsOf: 0n,
-    });
-
-    await client.makeSellOrder(SLOT, {
-      price: PRICE,
-      deposit: DEPOSIT,
-      deadline: DAY,
-    });
-
-    const approve = sent(writeContract, "approve");
-    // Not a book, not the factory: `Slot.sell` pulls `price + deposit` from the
-    // buyer itself, so the slot is the only address an allowance here can help.
-    expect(approve.args[0]).toBe(SLOT);
-    expect(approve.args[1]).toBe(PRICE + DEPOSIT);
-  });
-
-  it("makeSellOrder funds the signer's ARREARS as well as the order", async () => {
-    // `sell` charges the incoming occupant's carried arrears in the same pull.
-    // The debt is a fact about the SIGNER and appears nowhere in the order they
-    // signed — funding only `price + deposit` leaves a perfectly valid
-    // signature the occupant cannot fill.
-    const { client, writeContract } = harness({
-      currency: ERC20,
-      allowance: 0n,
-      orderNonce: 0n,
-      arrearsOf: 5n * 10n ** 6n,
-    });
-
-    await client.makeSellOrder(SLOT, {
-      price: PRICE,
-      deposit: DEPOSIT,
-      deadline: DAY,
-    });
-
-    expect(sent(writeContract, "approve").args[1]).toBe(
-      PRICE + DEPOSIT + 5n * 10n ** 6n,
-    );
-  });
-
-  it("makeSellOrder skips the approval when the allowance already covers it", async () => {
-    const { client, writeContract, signTypedData } = harness({
-      currency: ERC20,
-      allowance: 10n ** 30n,
-      orderNonce: 0n,
-      arrearsOf: 0n,
-    });
-
-    await client.makeSellOrder(SLOT, {
-      price: PRICE,
-      deposit: DEPOSIT,
-      deadline: DAY,
-    });
-
-    // Raising a bid inside an allowance you already granted is one prompt, not
-    // two.
-    expect(approvals(writeContract)).toHaveLength(0);
-    expect(signTypedData).toHaveBeenCalledOnce();
-  });
-
-  it("signSellOrder signs over the SLOT's own EIP-712 domain", async () => {
-    const { client, signTypedData } = harness({
-      currency: ERC20,
-      orderNonce: 7n,
-    });
-
-    await client.signSellOrder(SLOT, {
-      price: PRICE,
-      deposit: DEPOSIT,
-      deadline: DAY,
-    });
-
-    const signed = signTypedData.mock.calls[0]![0] as any;
-    // Every slot recomputes its own separator, so `verifyingContract` is the
-    // slot and never the factory — a signature cannot be replayed onto another.
-    expect(signed.domain.verifyingContract).toBe(SLOT);
-    expect(signed.domain.name).toBe(SELL_ORDER_DOMAIN_NAME);
-    expect(signed.domain.name).toBe("Slots");
-    expect(signed.domain.version).toBe(SELL_ORDER_DOMAIN_VERSION);
-    expect(signed.domain.chainId).toBe(CHAIN_ID);
-    expect(signed.primaryType).toBe("SellOrder");
-  });
-
-  it("signSellOrder puts BOTH price and deposit in the message, at the read nonce", async () => {
-    const { client, signTypedData } = harness({
-      currency: ERC20,
-      orderNonce: 7n,
-    });
-
-    const { order, signature } = await client.signSellOrder(SLOT, {
-      price: PRICE,
-      deposit: DEPOSIT,
-      deadline: DAY,
-    });
-
-    // The split is fixed by the party whose money it is. A digest over price
-    // alone would let the occupant rebook the escrow half as their own proceeds
-    // and seat the buyer insolvent on arrival.
-    const signed = signTypedData.mock.calls[0]![0] as any;
-    expect(signed.message.price).toBe(PRICE);
-    expect(signed.message.deposit).toBe(DEPOSIT);
-    expect(signed.message.nonce).toBe(7n);
-    expect(signed.message.slot).toBe(SLOT);
-    expect(signed.message.buyer).toBe(ACCOUNT);
-    expect(order).toEqual(signed.message);
-    expect(signature).toBe("0xsignature");
-  });
-
-  it("signSellOrder honours an explicit nonce without reading one", async () => {
-    // No `orderNonce` in the double: passing a nonce must skip the read
-    // entirely, which is what lets a bidder sign several orders in one go.
-    const { client, signTypedData } = harness({ currency: ERC20 });
-
-    await client.signSellOrder(SLOT, {
-      price: PRICE,
-      deposit: DEPOSIT,
-      deadline: DAY,
-      nonce: 42n,
-    });
-
-    expect((signTypedData.mock.calls[0]![0] as any).message.nonce).toBe(42n);
-  });
-
-  it("refuses to sign an order against a native slot", async () => {
-    const { client, signTypedData } = harness({
-      currency: NATIVE_CURRENCY_ADDRESS,
-    });
-
-    await expect(
-      client.signSellOrder(SLOT, {
-        price: PRICE,
-        deposit: DEPOSIT,
-        deadline: DAY,
-      }),
-    ).rejects.toThrow(/native ETH/i);
-    expect(signTypedData).not.toHaveBeenCalled();
-  });
-
-  it("sell passes the buyer's order through verbatim and approves nothing", async () => {
-    // No reads at all in the double: the seller supplies no terms of their own,
-    // and needs no allowance — the buyer's is what gets pulled.
-    const { client, writeContract } = harness({});
-
-    const order = {
-      slot: SLOT,
-      buyer: ACCOUNT,
-      price: PRICE,
-      deposit: DEPOSIT,
-      nonce: 0n,
-      deadline: DAY,
-    };
-    await client.sell(SLOT, order, "0xsig");
-
-    expect(approvals(writeContract)).toHaveLength(0);
-    expect(sent(writeContract, "sell").args).toEqual([order, "0xsig"]);
-    expect(sent(writeContract, "sell").address).toBe(SLOT);
-  });
-
-  it("cancelSellOrder burns the nonce on the slot", async () => {
-    const { client, writeContract } = harness({});
-    await client.cancelSellOrder(SLOT, 3n);
-    const call = sent(writeContract, "cancelSellOrder");
-    expect(call.address).toBe(SLOT);
-    expect(call.args).toEqual([3n]);
-  });
-
-  it("orderNonce defaults to the connected account", async () => {
-    const { client, readContract } = harness({ orderNonce: 9n });
-    expect(await client.orderNonce(SLOT)).toBe(9n);
-    expect(readContract.mock.calls[0]![0].args).toEqual([ACCOUNT]);
-  });
-});
-
 describe("manager terms", () => {
   it("proposeTerms flags only the dimensions given", async () => {
     const { client, writeContract } = harness({});
@@ -529,6 +346,7 @@ describe("manager terms", () => {
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       250n,
       ZERO,
+      ZERO_HOOK_DATA,
       true,
       false,
     ]);
@@ -544,6 +362,7 @@ describe("manager terms", () => {
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       0n,
       ZERO,
+      ZERO_HOOK_DATA,
       false,
       true,
     ]);
@@ -555,6 +374,7 @@ describe("manager terms", () => {
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       100n,
       HOOK,
+      ZERO_HOOK_DATA,
       true,
       true,
     ]);
@@ -581,14 +401,20 @@ describe("creation", () => {
     mutableHook: false,
   };
 
-  it("createSlot sends the eight-field tuple to the factory", async () => {
+  it("createSlot sends the nine-field tuple to the factory", async () => {
     const { client, writeContract } = harness({});
 
     await client.createSlot({ ...base, hook: HOOK });
 
     const call = sent(writeContract, "createSlot");
     expect(call.address).toBe(FACTORY);
-    expect(call.args[0]).toEqual({ ...base, hook: HOOK });
+    expect(call.args[0]).toEqual({
+      ...base,
+      hook: HOOK,
+      // Supplied by `encodeSlotInit`, not by the caller — viem encodes a struct
+      // BY NAME, so a missing key would silently encode a zero.
+      hookData: ZERO_HOOK_DATA,
+    });
   });
 
   it("a mutable slot without a manager is refused before it costs gas", async () => {
@@ -679,10 +505,8 @@ describe("reads", () => {
   it("hookFlags passes the snapshotted struct through", async () => {
     const flags = {
       beforeBuy: true,
-      beforeSell: true,
       beforeSelfAssess: true,
       afterBuy: false,
-      afterSell: false,
       afterRelease: false,
       afterLiquidate: false,
       afterSettle: false,
@@ -779,29 +603,6 @@ describe("operator approvals belong to a tenure, not to an address", () => {
     expect(await client.isOperator(SLOT, OPERATOR)).toBe(false);
   });
 
-  it("a sale voids approvals the same way a buy does", async () => {
-    const { client } = harness(
-      { isOperator: true, tenureId: 1n },
-      seatingVoidsApprovals,
-    );
-
-    await client.sell(
-      SLOT,
-      {
-        slot: SLOT,
-        buyer: ACCOUNT,
-        price: 1n,
-        deposit: 1n,
-        nonce: 0n,
-        deadline: 1n,
-      },
-      "0xsig",
-    );
-
-    expect(await client.isOperator(SLOT, OPERATOR)).toBe(false);
-    expect(await client.tenureId(SLOT)).toBe(2n);
-  });
-
   it("isOperator hits the chain every call — nothing memoizes it", async () => {
     const { client, readContract } = harness({ isOperator: true });
 
@@ -846,12 +647,11 @@ describe("operator approvals belong to a tenure, not to an address", () => {
       recipient: ACCOUNT,
       manager: ZERO,
       hook: ZERO,
+      hookData: ZERO_HOOK_DATA,
       hookFlags: {
         beforeBuy: false,
-        beforeSell: false,
         beforeSelfAssess: false,
         afterBuy: false,
-        afterSell: false,
         afterRelease: false,
         afterLiquidate: false,
         afterSettle: false,

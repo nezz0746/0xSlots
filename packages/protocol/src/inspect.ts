@@ -25,9 +25,17 @@ export interface Upgradeable {
   owner?: string;
 }
 
+/**
+ * The upgradeable protocol.
+ *
+ * `OfferBook` is deliberately absent. It is deployed directly, not behind a
+ * proxy: occupants make it their slot's operator, and an operator may reprice —
+ * so an upgradeable book would mean every one of them had granted that power to
+ * whatever its admin deployed next. It ships immutable, and a new version is a
+ * new deployment that competes with the old one.
+ */
 export const PROXIES: Record<string, Upgradeable> = {
   SlotFactory: { target: "src/SlotFactory.sol:SlotFactory", kind: "uups" },
-  OfferBook: { target: "src/periphery/book/OfferBook.sol:OfferBook", kind: "uups" },
   SlotCollectiveFactory: {
     target: "src/collectives/SlotCollectiveFactory.sol:SlotCollectiveFactory",
     kind: "uups",

@@ -7,14 +7,7 @@ import {
   useWaitForTransactionReceipt,
   useWalletClient,
 } from "wagmi";
-import type {
-  BuyParams,
-  ProposeTermsParams,
-  SellOrder,
-  SignedSellOrder,
-  SignSellOrderParams,
-  SlotInit,
-} from "./client";
+import type { BuyParams, ProposeTermsParams, SlotInit } from "./client";
 import { SlotsClient } from "./client";
 
 // ─── Client ───────────────────────────────────────────────────────────────────
@@ -235,11 +228,6 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     (params: BuyParams) => exec("Buy slot", () => client.buy(params)),
     [exec, client],
   );
-  const sell = useCallback(
-    (slot: Address, order: SellOrder, signature: `0x${string}`) =>
-      exec("Sell slot", () => client.sell(slot, order, signature)),
-    [exec, client],
-  );
   const release = useCallback(
     (slot: Address) => exec("Release slot", () => client.release(slot)),
     [exec, client],
@@ -337,8 +325,6 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     [exec, client],
   );
 
-  // ─── Signed sell orders ───────────────────────────────────────────────────
-
   /**
    * Sign an order to buy `slot` from whoever occupies it.
    *
@@ -346,34 +332,11 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
    * allowance already covers `price + deposit`, so raising a bid inside an
    * allowance you already granted signs once.
    */
-  const makeSellOrder = useCallback(
-    async (
-      slot: Address,
-      params: SignSellOrderParams,
-    ): Promise<SignedSellOrder | undefined> =>
-      preflight("Sign order", () => client.makeSellOrder(slot, params)),
-    [preflight, client],
-  );
-  const signSellOrder = useCallback(
-    async (
-      slot: Address,
-      params: SignSellOrderParams,
-    ): Promise<SignedSellOrder | undefined> =>
-      preflight("Sign order", () => client.signSellOrder(slot, params)),
-    [preflight, client],
-  );
-  const cancelSellOrder = useCallback(
-    (slot: Address, nonce: bigint) =>
-      exec("Cancel order", () => client.cancelSellOrder(slot, nonce)),
-    [exec, client],
-  );
-
   return {
     // Factory
     createSlot,
     // Occupancy
     buy,
-    sell,
     release,
     liquidate,
     // Holding
@@ -389,9 +352,6 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     proposeTerms,
     cancelTerms,
     // Orders
-    makeSellOrder,
-    signSellOrder,
-    cancelSellOrder,
     // Escape hatches
     client,
     exec,

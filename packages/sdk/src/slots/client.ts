@@ -173,10 +173,8 @@ export function assertSlotInit(init: SlotInit): void {
  */
 export interface HookFlags {
   beforeBuy: boolean;
-  beforeSell: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
-  afterSell: boolean;
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
@@ -234,55 +232,18 @@ export interface ProposeTermsParams {
   hookData?: Hex;
 }
 
-// ─── Signed sell orders ───────────────────────────────────────────────────────
-
-/**
- * Terms a buyer signs so an occupant may sell them the slot.
- *
- * The occupant chooses nothing here. `price` AND `deposit` are both in the
- * digest, so the split is fixed by the party whose money it is — a buyer
- * approving exactly `price + deposit` could otherwise be sold `price + deposit,
- * 0`, the escrow half rebooked as seller proceeds and the buyer seated insolvent
- * on arrival.
- */
-export interface SellOrder {
-  slot: Address;
-  buyer: Address;
-  price: bigint;
-  deposit: bigint;
-  nonce: bigint;
-  deadline: bigint;
-}
-
-/** EIP-712 types. Must match `SlotOrders.SELL_ORDER_TYPEHASH`. */
-export const SELL_ORDER_TYPES = {
-  SellOrder: [
-    { name: "slot", type: "address" },
-    { name: "buyer", type: "address" },
-    { name: "price", type: "uint256" },
-    { name: "deposit", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint64" },
-  ],
-} as const;
-
-/** EIP-712 domain name. `keccak256("Slots")` in `SlotOrders._domainSeparator`. */
-export const SELL_ORDER_DOMAIN_NAME = "Slots";
-export const SELL_ORDER_DOMAIN_VERSION = "1";
-
-export interface SignSellOrderParams {
-  price: bigint;
-  deposit: bigint;
-  /** Unix seconds. The slot compares against `block.timestamp`. */
-  deadline: bigint;
-  /** Overrides the on-chain read. Pass one to sign several orders at once. */
-  nonce?: bigint;
-}
-
-export interface SignedSellOrder {
-  order: SellOrder;
-  signature: `0x${string}`;
-}
+// ─── Selling ──────────────────────────────────────────────────────────────────
+//
+// There is no `SellOrder` any more. The core carried `sell` — an occupant
+// submitting a buyer's EIP-712 order — and it was a SECOND seating path: it
+// reset the tenure like `buy` but ran `beforeSell` instead of `beforeBuy`, so a
+// hook author had two doors to police.
+//
+// A consensual sale is now `selfAssess` then `buy`, performed by the OfferBook
+// inside the occupant's own transaction. The occupant makes the book their
+// operator (`setOperator`), the bidder posts an offer on-chain, and the
+// occupant accepts it. Nothing is signed off-chain, so nothing here mirrors a
+// digest, a nonce or a domain.
 
 // ─── Params ───────────────────────────────────────────────────────────────────
 
@@ -979,51 +940,6 @@ export class SlotsClient {
     } as never);
   }
 
-  /**
-   * Ask the chain what {@link sell} would do, WITHOUT sending it.
-   *
-   * The failure this exists for is not a hook veto but an unfunded order: a
-   * signed order is legal whether or not the buyer still holds the tokens, and
-   * an occupant who fills a stale one otherwise learns nothing except that the
-   * button stopped working. Simulating names it — `ERC20InsufficientBalance`,
-   * `OrderExpired`, `OrderUsed` — before any gas is spent.
-   *
-   * Simulated as the CONNECTED account, because `sell` is the occupant's call
-   * and it is the occupant's permission being tested along with the buyer's
-   * funding.
-   */
-  async simulateSell(
-    slot: Address,
-    order: SellOrder,
-    signature: `0x${string}`,
-  ): Promise<void> {
-    await this.publicClient.simulateContract({
-      address: slot,
-      abi: SIMULATION_ABI,
-      functionName: "sell",
-      args: [order, signature],
-      account: this.account,
-    } as never);
-  }
-
-  /**
-   * Hand the slot you occupy to a buyer, on terms that buyer signed.
-   *
-   * You need no allowance of your own — the buyer's is what gets pulled. Pass
-   * the order and signature exactly as they were produced: the slot re-verifies
-   * the digest, so altering either fails rather than executing on other terms.
-   *
-   * ERC-20 only. Payment is pulled on the buyer's allowance and native ETH has
-   * none, which is why {@link signSellOrder} refuses to sign one at all.
-   */
-  sell(
-    slot: Address,
-    order: SellOrder,
-    signature: `0x${string}`,
-  ): Promise<Hash> {
-    return this.write(slot, "sell", [order, signature]);
-  }
-
   /** Give up the slot and take back what is left of your deposit. */
   release(slot: Address): Promise<Hash> {
     return this.write(slot, "release", []);
@@ -1186,123 +1102,6 @@ export class SlotsClient {
     return this.write(slot, "cancelTerms", [cancelTax, cancelHook]);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Signed sell orders
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /** The next nonce this buyer should sign with on `slot`. */
-  orderNonce(slot: Address, buyer?: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "orderNonce", [buyer ?? this.account]);
-  }
-
-  /** Whether a nonce has been burned — by a fill, or by {@link cancelSellOrder}. */
-  orderUsed(slot: Address, nonce: bigint, buyer?: Address): Promise<boolean> {
-    return this.read<boolean>(slot, "orderUsed", [
-      buyer ?? this.account,
-      nonce,
-    ]);
-  }
-
-  /** The digest the slot will check, straight from the slot. */
-  sellOrderHash(slot: Address, order: SellOrder): Promise<`0x${string}`> {
-    return this.read<`0x${string}`>(slot, "sellOrderHash", [order]);
-  }
-
-  /**
-   * Sign a sell order as the connected account. Off-chain and free.
-   *
-   * The EIP-712 `verifyingContract` is the SLOT, not the factory — every slot
-   * recomputes its own domain separator, so a signature can never be replayed
-   * onto a different one. That also means it cannot be cached: these are beacon
-   * proxies, and the implementation's constructor runs once for all of them.
-   *
-   * Refuses on a native slot. `sell` pulls the buyer's funds on an allowance and
-   * native ETH has none, so the order would be unfillable by construction.
-   */
-  async signSellOrder(
-    slot: Address,
-    params: SignSellOrderParams,
-  ): Promise<SignedSellOrder> {
-    this.assertPrice(params.price, "price");
-
-    const currency = await this.currency(slot);
-    if (isNativeCurrency(currency))
-      throw new SlotsError(
-        "signSellOrder",
-        "This slot is priced in native ETH. Selling pulls the buyer's funds on " +
-          "an allowance, and native ETH has none — the order could never be filled.",
-      );
-
-    const nonce = params.nonce ?? (await this.orderNonce(slot));
-
-    const order: SellOrder = {
-      slot,
-      buyer: this.account,
-      price: params.price,
-      deposit: params.deposit,
-      nonce,
-      deadline: params.deadline,
-    };
-
-    const signature = await this.wallet.signTypedData({
-      account: this.account,
-      domain: {
-        name: SELL_ORDER_DOMAIN_NAME,
-        version: SELL_ORDER_DOMAIN_VERSION,
-        chainId: this.chain.id,
-        verifyingContract: slot,
-      },
-      types: SELL_ORDER_TYPES,
-      primaryType: "SellOrder",
-      message: order,
-    });
-
-    return { order, signature };
-  }
-
-  /**
-   * Fund an order, then sign it.
-   *
-   * The allowance is granted to the SLOT, not to whatever venue the order gets
-   * published on: the slot is what pulls when the occupant sells. Nothing on
-   * chain checks it — an unfunded order is perfectly legal and simply never
-   * executes — so granting it here is what makes the order real.
-   *
-   * Skips the approve when the existing allowance already covers what will be
-   * pulled, because re-approving a spender that has enough is a wallet
-   * confirmation that buys nothing.
-   *
-   * What gets pulled is `price + deposit + arrearsOf(buyer)`, not `price +
-   * deposit`. `sell` charges the incoming occupant's carried arrears in the same
-   * pull as everything else — an account that once ran a deposit dry on this
-   * slot owes the shortfall on RE-ENTRY, and that is a fact about the signer,
-   * invisible in the order they signed. Funding only the order leaves a
-   * perfectly valid signature the occupant cannot fill.
-   */
-  async makeSellOrder(
-    slot: Address,
-    params: SignSellOrderParams,
-  ): Promise<SignedSellOrder> {
-    this.assertPrice(params.price, "price");
-
-    const currency = await this.currency(slot);
-    if (isNativeCurrency(currency))
-      throw new SlotsError(
-        "makeSellOrder",
-        "This slot is priced in native ETH. Selling pulls the buyer's funds on " +
-          "an allowance, and native ETH has none — the order could never be filled.",
-      );
-
-    const arrears = await this.arrearsOf(slot, this.account);
-    await this.ensureAllowance(
-      currency,
-      slot,
-      params.price + params.deposit + arrears,
-    );
-
-    return this.signSellOrder(slot, params);
-  }
-
   /**
    * Reprice and refund the deposit in one submission.
    *
@@ -1406,17 +1205,6 @@ export class SlotsClient {
         }),
       ),
     ]);
-  }
-
-  /**
-   * Burn one of your own nonces.
-   *
-   * A signed order is a standing authorisation that lives wherever it was
-   * published; deleting it from one order book revokes nothing. Burning the
-   * nonce kills every copy at once.
-   */
-  cancelSellOrder(slot: Address, nonce: bigint): Promise<Hash> {
-    return this.write(slot, "cancelSellOrder", [nonce]);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

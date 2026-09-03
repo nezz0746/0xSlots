@@ -68,7 +68,7 @@ contract DeployProtocol is ProtocolConfig {
             type(SlotFactory).creationCode
         );
         address bookImpl = _deploy2(
-            "OfferBookImpl",
+            "OfferBook",
             v.book,
             type(OfferBook).creationCode
         );
@@ -121,11 +121,12 @@ contract DeployProtocol is ProtocolConfig {
             factoryImpl,
             abi.encodeCall(SlotFactory.initialize, (cfg.admin, slotImpl))
         );
-        address book = _proxy(
-            "OfferBook",
-            bookImpl,
-            abi.encodeCall(OfferBook.initialize, (cfg.admin))
-        );
+        // Not a proxy. The book is an operator on every slot whose occupant
+        // has approved it, and an operator may reprice — so an upgradeable book
+        // would mean every one of them had granted that power to whatever its
+        // admin deployed next. Immutable, the code they approved is the code
+        // that runs.
+        address book = bookImpl;
         address collectiveFactory = _proxy(
             "SlotCollectiveFactory",
             collectiveFactoryImpl,

@@ -31,10 +31,8 @@ contract FlipHook is ISlotHook {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -56,10 +54,8 @@ contract ShortAnswerHook is ISlotHook {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -84,10 +80,8 @@ contract DirtyBoolHook is ISlotHook {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -107,10 +101,8 @@ contract RejectingHook is ISlotHook {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -124,10 +116,8 @@ contract Counter is ISlotHook {
         f.afterBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external { buys++; }
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -434,49 +424,19 @@ contract AuditRegressionsTest is Test {
         s.buy(occ, PRICE, 5_000, 0);
         vm.stopPrank();
 
-        OfferBook book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));
+        OfferBook book = new OfferBook();
         vm.prank(address(0xBAD));
         book.offer(
             address(s),
             type(uint256).max,
             1,
-            uint64(block.timestamp + 3650 days),
-            0,
-            hex"00"
+            uint64(block.timestamp + 3650 days)
         );
 
         // All read paths must still answer.
         book.best(address(s));
         book.liveCount(address(s));
         book.board(address(s));
-        book.bestOrder(address(s));
         assertEq(book.liveCount(address(s)), 0, "and it is not live");
-    }
-
-    function test_AnUnsignedOfferIsNotLive() public {
-        Slot s = _slot(address(token), 0);
-        vm.startPrank(occ);
-        token.approve(address(s), type(uint256).max);
-        s.buy(occ, PRICE, 5_000, 0);
-        vm.stopPrank();
-
-        OfferBook book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));
-        address faker = address(0xFA4E);
-        token.mint(faker, 10_000_000);
-        vm.startPrank(faker);
-        token.approve(address(s), type(uint256).max);
-        book.offer(
-            address(s),
-            1_000_000,
-            500,
-            uint64(block.timestamp + 30 days),
-            0,
-            hex"deadbeef"
-        );
-        vm.stopPrank();
-
-        assertEq(book.liveCount(address(s)), 0, "a garbage signature is not a bid");
-        (bool found, , ) = book.best(address(s));
-        assertFalse(found, "and it cannot mask the real best");
     }
 }

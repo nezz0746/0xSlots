@@ -8,7 +8,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotOrders, SellOrder} from "../../src/SlotOrders.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
 import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 import "../../src/SlotErrors.sol";
@@ -21,7 +20,6 @@ contract Tok is ERC20 {
 /// @dev A hook that records everything and refuses nothing.
 contract Recorder is ISlotHook {
     uint256 public buys;
-    uint256 public sells;
     uint256 public releases;
     uint256 public liquidations;
     uint256 public settles;
@@ -31,17 +29,14 @@ contract Recorder is ISlotHook {
 
     function subscriptions() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
-        f.afterSell = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.afterSettle = true;
     }
 
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external { buys++; }
-    function afterSell(SlotContext calldata) external { sells++; }
     function afterRelease(SlotContext calldata) external { releases++; }
     function afterLiquidate(SlotContext calldata) external { liquidations++; }
     function afterSettle(SlotContext calldata c) external {
@@ -59,10 +54,8 @@ contract DenyBuys is ISlotHook {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view { revert Denied(); }
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -79,7 +72,6 @@ contract Hostile is ISlotHook {
         f.afterSettle = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external pure { revert("no"); }
     function afterSell(SlotContext calldata) external pure { revert("no"); }
@@ -98,10 +90,8 @@ contract GasBurner is ISlotHook {
         f.afterSettle = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {
         while (true) sink++;
@@ -292,113 +282,17 @@ contract SlotsTest is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Signed sell orders
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function _order(Slot s, address buyer, uint256 p, uint256 d)
-        internal
-        view
-        returns (SellOrder memory)
-    {
-        return
-            SellOrder({
-                slot: address(s),
-                buyer: buyer,
-                price: p,
-                deposit: d,
-                nonce: s.orderNonce(buyer),
-                deadline: uint64(block.timestamp + 1 days)
-            });
-    }
-
-    function _sign(Slot s, SellOrder memory o, uint256 key)
-        internal
-        view
-        returns (bytes memory)
-    {
-        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(key, s.sellOrderHash(o));
-        return abi.encodePacked(r, ss, v);
-    }
-
-    function test_SellExecutesTheBuyersSignedTerms() public {
-        Slot s = _slot(address(0));
-        _take(s, alice, 100 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-
-        SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
-        bytes memory sig = _sign(s, o, bobKey);
-
-        vm.prank(alice);
-        s.sell(o, sig);
-
-        assertEq(s.occupant(), bob);
-        assertEq(s.price(), 70 ether, "the price he signed");
-        assertEq(s.deposit(), 10 ether, "and the escrow he signed");
-    }
-
-    /// @notice The occupant cannot repartition the buyer's approval.
-    /// @dev The split is in the digest precisely so this fails: taking the
-    ///      escrow half as proceeds would seat the buyer insolvent on arrival.
-    function test_TheOccupantCannotChangeTheSplit() public {
-        Slot s = _slot(address(0));
-        _take(s, alice, 100 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-
-        SellOrder memory intended = _order(s, bob, 70 ether, 10 ether);
-        bytes memory sig = _sign(s, intended, bobKey);
-
-        SellOrder memory greedy = SellOrder({
-            slot: intended.slot,
-            buyer: intended.buyer,
-            price: 80 ether,
-            deposit: 0,
-            nonce: intended.nonce,
-            deadline: intended.deadline
-        });
-
-        vm.prank(alice);
-        vm.expectRevert(OrderBadSignature.selector);
-        s.sell(greedy, sig);
-    }
-
-    function test_AnOrderIsSingleUse() public {
-        Slot s = _slot(address(0));
-        _take(s, alice, 100 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-        SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
-        bytes memory sig = _sign(s, o, bobKey);
-
-        vm.prank(alice);
-        s.sell(o, sig);
-
-        vm.prank(bob);
-        vm.expectRevert(OrderUsed.selector);
-        s.sell(o, sig);
-    }
-
-    function test_ABuyerCanRevokeASignatureTheyGave() public {
-        Slot s = _slot(address(0));
-        _take(s, alice, 100 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-        SellOrder memory o = _order(s, bob, 70 ether, 10 ether);
-        bytes memory sig = _sign(s, o, bobKey);
-
-        vm.prank(bob);
-        s.cancelSellOrder(o.nonce);
-
-        vm.prank(alice);
-        vm.expectRevert(OrderUsed.selector);
-        s.sell(o, sig);
-    }
-
+    // Signed sell orders — REMOVED WITH `sell`
+    //
+    // Three tests lived here: that the occupant could not repartition the
+    // buyer's approval, that an order was single-use, and that a cancelled
+    // nonce could not be filled. All three tested `Slot.sell`, which is gone —
+    // a consensual sale is now `selfAssess` then `buy`, performed by the
+    // OfferBook. What they were defending against goes with the mechanism: the
+    // book pulls exactly `quoteBuy` and spends it in the same transaction, so
+    // there is no approval to repartition and no nonce to replay.
+    //
+    // The book's own coverage is in `OfferBook.t.sol`.
     // ═══════════════════════════════════════════════════════════════════════
     // Arithmetic
     // ═══════════════════════════════════════════════════════════════════════
@@ -468,10 +362,8 @@ contract Nothing is ISlotHook {
 
     function subscriptions() external pure returns (HookFlags memory f) { return f; }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}

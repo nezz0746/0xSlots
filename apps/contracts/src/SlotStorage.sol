@@ -127,16 +127,18 @@ abstract contract SlotStorage is
 
     uint256[50] private __gapPending;
 
-    // ═══ delegation and orders ═══════════════════════════════════════════════
+    // ═══ delegation ══════════════════════════════════════════════════════════
     //
-    // Repricing delegated by the occupant, and the nonces that retire signed
-    // sell orders.
+    // Repricing delegated by the occupant, scoped to their tenure.
+    //
+    // This group also held the nonces that retired signed sell orders. `sell`
+    // was removed from the core — a consensual sale is now `selfAssess` then
+    // `buy`, executed by a periphery book the occupant has made its operator —
+    // so the orders, their signatures and their storage all went with it.
 
     mapping(uint64 => mapping(address => bool)) internal _operatorOf;
-    mapping(address => mapping(uint256 => bool)) public orderUsed;
-    mapping(address => uint256) public orderNonce;
 
-    uint256[50] private __gapOrders;
+    uint256[50] private __gapDelegation;
 
     // ═══════════════════════════════════════════════════════════════════════
     // APPEND BELOW THIS LINE ONLY.

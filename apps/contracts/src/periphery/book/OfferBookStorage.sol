@@ -1,26 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {VersionedUUPS} from "../../VersionedUUPS.sol";
+import {Versioned} from "../../Versioned.sol";
 
 /**
  * @title OfferBookStorage
  * @notice What the book remembers, and nothing else.
  *
- * @dev The storage base exists so that every layer above it is code. Solidity
- *      allocates base storage before derived, so keeping every state variable
- *      here means the layers can be reordered, split or extended without
- *      moving a single slot — which matters more than usual now the book is
- *      behind a proxy.
+ * @dev The storage base exists so that every layer above it is code, which
+ *      keeps the layers free to be reordered or split.
  *
- *      APPEND ONLY, below the marked line.
+ *      NOT behind a proxy, and that is deliberate. Occupants make this book
+ *      their slot's operator, and an operator may reprice — enough, at a dust
+ *      price, to lose the slot. An upgradeable book would mean every occupant
+ *      who ever approved it had granted that power to whatever its admin later
+ *      deployed. Immutable, the code they approved is the code that runs. It
+ *      has no admin at all for the same reason.
  */
-abstract contract OfferBookStorage is VersionedUUPS {
-    /// @notice Who may upgrade this book. Not a privilege over anyone's funds:
-    ///         the book never holds any, and an offer settles against the slot
-    ///         with the bidder's own signature.
-    address public admin; // slot 0
-
+abstract contract OfferBookStorage is Versioned {
     struct Offer {
         address bidder;
         /// @dev What the bidder pays the occupant. Also the price they will
@@ -30,13 +27,18 @@ abstract contract OfferBookStorage is VersionedUUPS {
         uint256 deposit;
         uint64 expiry;
         bool cancelled;
-        /// @dev The bidder's nonce on the slot, and their signature over
-        ///      (slot, bidder, price, deposit, nonce, expiry). Held together
-        ///      because `Slot.sell` needs both, and because storing the terms
-        ///      apart from the signature is what would let them drift.
-        uint256 nonce;
-        bytes signature;
+        /// @dev Set when the offer has been accepted. Distinct from
+        ///      `cancelled`: the bidder withdrew that one, this one was
+        ///      consumed, and an indexer conflating them cannot tell an
+        ///      abandoned bid from a filled one.
+        bool filled;
     }
+
+    // A nonce and an EIP-712 signature used to sit in `Offer`, because
+    // `Slot.sell` demanded the bidder's signature over the exact terms. The
+    // book now fills the offer itself, and `offer()` is already a transaction
+    // FROM the bidder — posting it is the consent. Both fields, the signature
+    // check and the slot's nonce storage all went with `sell`.
 
     /// @notice slot => offers. Ordering is computed, not stored — see `best`.
 
@@ -62,18 +64,20 @@ abstract contract OfferBookStorage is VersionedUUPS {
         uint256 deposit,
         uint64 expiry
     );
-    event Cancelled(address indexed slot, address indexed bidder, uint256 indexed id);
-    /// @dev Distinct from `Cancelled`: the bidder withdrew that one, whereas
-    ///      this one was consumed. An indexer that conflates them cannot tell a
-    ///      filled bid from an abandoned one.
+    event Cancelled(
+        address indexed slot,
+        address indexed bidder,
+        uint256 indexed id
+    );
 
-    event AdminTransferred(address indexed from, address indexed to);
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // APPEND BELOW THIS LINE ONLY.
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /// @dev Room to add state without disturbing anything a proxy already
-    ///      holds. Consumed from the top as fields are added.
-    uint256[45] private __gap;
+    /// @notice A bid was accepted: the occupant repriced to it and the bidder
+    ///         was seated.
+    event Filled(
+        address indexed slot,
+        address indexed bidder,
+        uint256 indexed id,
+        address seller,
+        uint256 price,
+        uint256 deposit
+    );
 }

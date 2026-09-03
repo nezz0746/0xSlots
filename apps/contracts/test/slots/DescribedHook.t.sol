@@ -20,10 +20,8 @@ contract SilentHook is ISlotHook {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}

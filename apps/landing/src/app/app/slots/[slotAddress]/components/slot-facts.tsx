@@ -71,12 +71,10 @@ export function SlotStatus({
 
 const DECIDES: [keyof HookFlags, string][] = [
   ["beforeBuy", "beforeBuy"],
-  ["beforeSell", "beforeSell"],
   ["beforeSelfAssess", "beforeSelfAssess"],
 ];
 const RECORDS: [keyof HookFlags, string][] = [
   ["afterBuy", "afterBuy"],
-  ["afterSell", "afterSell"],
   ["afterRelease", "afterRelease"],
   ["afterLiquidate", "afterLiquidate"],
   ["afterSettle", "afterSettle"],

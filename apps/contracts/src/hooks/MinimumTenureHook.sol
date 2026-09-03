@@ -156,7 +156,6 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
 
     function subscriptions() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
-        f.beforeSell = true;
         f.beforeSelfAssess = true;
         // Subscribed so the hook can see the ONE transition the protected party
         // controls. Without them, an occupant releases and retakes the slot in a
@@ -186,20 +185,12 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         if (block.timestamp < availableAt) revert TenureNotElapsed(availableAt);
     }
 
-    /// @notice A voluntary sale is allowed at any time, but it may not be used
-    ///         to do what `selfAssess` is forbidden from doing.
-    ///
-    /// @dev `sell` also sets a price and restarts the clock, and it was the only
-    ///      price-setting path this hook did not examine. An occupant could
-    ///      enter high, sell to an address they control at price 1, and hold a
-    ///      fresh window at a price the tax rounds to nothing — precisely the
-    ///      manoeuvre `beforeSelfAssess` refuses. The buyer's signature is no
-    ///      defence when the seller signs both sides.
-    function beforeSell(SlotContext calldata ctx) external view {
-        uint256 window = tenureOf(ctx.hookData);
-        _requireFunded(ctx, window);
-        _requireNoCutDuringTenure(ctx, window);
-    }
+    // `beforeSell` used to live here, refusing a sale that cut the price or
+    // underfunded the window. `Slot.sell` is gone: a sale is now `selfAssess`
+    // then `buy`, so both of those are enforced by `beforeSelfAssess` and
+    // `beforeBuy` — the checks this hook already had, on the one path that
+    // remains. The channel that let an occupant restart their own window by
+    // selling to themselves at a dust price closed with it.
 
     /// @notice No cutting your price while nobody is allowed to take it.
     function beforeSelfAssess(SlotContext calldata ctx) external view {
@@ -228,7 +219,6 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
 
     // Not subscribed — declared to satisfy the interface, never called.
     function afterBuy(SlotContext calldata) external {}
-    function afterSell(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
 
     /// @notice Tax due on `price` over a window of `tenureSeconds`.

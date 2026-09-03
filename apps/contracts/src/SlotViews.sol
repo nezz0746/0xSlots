@@ -5,7 +5,7 @@ import {SlotMath} from "./SlotMath.sol";
 import "./SlotErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HookFlags} from "./ISlotHook.sol";
-import {SlotOrders} from "./SlotOrders.sol";
+import {SlotAccounting} from "./SlotAccounting.sol";
 
 /// @notice One slot, whole, as of one block.
 ///
@@ -80,7 +80,7 @@ struct SlotConstantsInfo {
  *      move the state they report. Nothing here writes; if a function in this
  *      file is not `view`, it is in the wrong file.
  */
-abstract contract SlotViews is SlotOrders {
+abstract contract SlotViews is SlotAccounting {
     /**
      * @notice The whole slot, in one call.
      *

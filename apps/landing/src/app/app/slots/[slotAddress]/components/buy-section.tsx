@@ -289,42 +289,26 @@ export function BuySection({
   /**
    * Post a standing bid to the slot's offer book.
    *
-   * Two steps, and only the second costs gas on the bidder's side:
+   * One transaction. Posting IS the consent — the bid is an on-chain row from
+   * `msg.sender`, so there is nothing to sign off-chain and no signature that
+   * could disagree with the terms stored beside it. The bidder's signed order
+   * and the `makeSellOrder` step that produced it went with `Slot.sell`.
    *
-   *   1. `makeSellOrder` grants the allowance if the standing one is short and
-   *      signs the exact terms. The signature is what stops the occupant
-   *      selling to you at a price you never agreed to — the slot re-verifies
-   *      it, so neither this app nor the book can rewrite it.
-   *   2. `offer` publishes those terms so the occupant can FIND them. Without
-   *      this the order exists only in the bidder's browser, which is no use to
-   *      the person who has to accept it.
-   *
-   * The funds stay in the bidder's wallet throughout. The book custodies
-   * nothing and executes nothing; the occupant's own `sell` is the only
-   * transaction that moves anything.
+   * What the bidder must do separately is approve the BOOK for
+   * `price + deposit`. The book pulls the payment during the fill and spends it
+   * on `buy` in the same call, because `buy` charges `msg.sender` — which on a
+   * fill is the book, not the bidder. The funds stay in the bidder's wallet
+   * until the moment the occupant accepts.
    */
   const submitOffer = async () => {
     if (!book || !walletClient) return;
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60);
-    const signed = await actions.makeSellOrder(slot, {
-      price,
-      deposit,
-      deadline,
-    });
-    if (!signed) return;
     const hash = await actions.exec("Post offer", () =>
       walletClient.writeContract({
         address: book,
         abi: offerBookAbi,
         functionName: "offer",
-        args: [
-          slot,
-          signed.order.price,
-          signed.order.deposit,
-          deadline,
-          signed.order.nonce,
-          signed.signature,
-        ],
+        args: [slot, price, deposit, deadline],
         account: walletClient.account,
         chain: walletClient.chain,
       }),

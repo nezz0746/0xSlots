@@ -8,7 +8,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotOrders, SellOrder} from "../../src/SlotOrders.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import "../../src/SlotErrors.sol";
 
@@ -159,59 +158,6 @@ contract MinimumTenureHookTest is Test {
         assertEq(s.occupant(), bob, "no tenure to protect on a vacant slot");
     }
 
-    /// @notice Protection is a shield, not a cage.
-    /// @dev The policy this replaces shared `checkBuy` with `sell`, so an
-    ///      occupant could not sell their own slot during their own window.
-    ///      The window exists to stop the slot being taken FROM them; there is
-    ///      nobody to protect when they are the one handing it over.
-    function test_TheOccupantMayStillSellInsideTheirOwnWindow() public {
-        Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-
-        // At or above the sitting price: the window protects the occupant
-        // FROM the market, and there is nobody to protect when they are the
-        // one handing it over.
-        uint256 dep = hook.requiredDeposit(120 ether, TAX, TENURE) + 5 ether;
-        SellOrder memory o = SellOrder({
-            slot: address(s), buyer: bob, price: 120 ether, deposit: dep,
-            nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
-        });
-        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(bobKey, s.sellOrderHash(o));
-
-        vm.prank(alice);
-        s.sell(o, abi.encodePacked(r, ss, v)); // well inside alice's window
-
-        assertEq(s.occupant(), bob, "a voluntary sale is not blocked");
-    }
-
-    /// @notice But a sale may not do what `selfAssess` is forbidden from
-    ///         doing. Selling to an address you control at a dust price was
-    ///         the way to restart the window for nothing: the tax on 1 wei
-    ///         floors to zero, so the slot left forced sale entirely.
-    function test_ASaleCannotCutThePriceInsideTheWindow() public {
-        Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-
-        uint256 dep = hook.requiredDeposit(100 ether, TAX, TENURE) + 5 ether;
-        SellOrder memory o = SellOrder({
-            slot: address(s), buyer: bob, price: 1, deposit: dep,
-            nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
-        });
-        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(bobKey, s.sellOrderHash(o));
-
-        vm.prank(alice);
-        vm.expectRevert(MinimumTenureHook.PriceCutDuringTenure.selector);
-        s.sell(o, abi.encodePacked(r, ss, v));
-
-        assertEq(s.occupant(), alice, "the dust self-deal is refused");
-    }
-
     /// @notice And the account that just vacated cannot walk straight back in
     ///         to start a fresh window.
     function test_AVacatingAccountCannotImmediatelyRetake() public {
@@ -234,26 +180,6 @@ contract MinimumTenureHookTest is Test {
         s.buy(bob, 100 ether, dep, 0);
         assertEq(s.occupant(), bob);
     }
-
-    /// @notice ...but a sale cannot seat someone underfunded.
-    function test_ASaleStillHasToFundTheWindow() public {
-        Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
-
-        vm.prank(bob);
-        token.approve(address(s), type(uint256).max);
-
-        SellOrder memory o = SellOrder({
-            slot: address(s), buyer: bob, price: 70 ether, deposit: 0,
-            nonce: s.orderNonce(bob), deadline: uint64(block.timestamp + 1 days)
-        });
-        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(bobKey, s.sellOrderHash(o));
-
-        vm.prank(alice);
-        vm.expectRevert();
-        s.sell(o, abi.encodePacked(r, ss, v));
-    }
-
     /// @notice Liquidation is never vetoable, tenure or not.
     function test_LiquidationIgnoresTheWindowEntirely() public {
         Slot s = _slot();

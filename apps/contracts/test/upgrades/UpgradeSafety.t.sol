@@ -47,10 +47,24 @@ contract UpgradeSafetyTest is Test {
         impl.initialize(address(this), slotImpl);
     }
 
-    function test_OfferBookImplementationIsLocked() public {
-        OfferBook impl = new OfferBook();
-        vm.expectRevert();
-        impl.initialize(address(this));
+    /// @notice The book has no initializer to lock, and that is the point.
+    /// @dev It is not behind a proxy: occupants make it their slot's operator,
+    ///      and an operator may reprice. An upgradeable book would mean every
+    ///      one of them had granted that power to whatever its admin deployed
+    ///      next. Asserted as an ABSENCE, so restoring the proxy silently would
+    ///      fail here rather than in an incident.
+    function test_TheOfferBookIsNotUpgradeable() public {
+        OfferBook book = new OfferBook();
+        (bool ok, ) = address(book).call(
+            abi.encodeWithSignature("initialize(address)", address(this))
+        );
+        assertFalse(ok, "no initializer");
+        (ok, ) = address(book).call(
+            abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(1), "")
+        );
+        assertFalse(ok, "no upgrade path");
+        (ok, ) = address(book).call(abi.encodeWithSignature("admin()"));
+        assertFalse(ok, "and no admin to hold either");
     }
 
     // ── every upgradeable contract states its version ─────────────────────

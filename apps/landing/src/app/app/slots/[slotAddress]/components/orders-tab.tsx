@@ -14,7 +14,6 @@ import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { cn } from "@/lib/utils";
 import { formatBalance } from "@/utils";
 import { type BookOffer, useOrders } from "../hooks/use-orders";
-import { SellOrderPanel } from "./sell-order";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
@@ -56,37 +55,48 @@ export function OrdersTab({
     bestOffer,
     isLoading,
     refresh,
-    readBestOrder,
-    readOrderAt,
   } = useOrders(slot);
 
   const fmt = (v: bigint) =>
     `${formatBalance(v, currency.decimals)} ${currency.symbol}`;
 
   /**
-   * Take an offer.
+   * Accept an offer.
    *
-   * The bidder's own signed order is forwarded verbatim — the slot re-verifies
-   * it, so neither this app nor the book can alter the terms they agreed to.
-   * Simulated first for the same reason every other write is: an underfunded or
-   * already-consumed order is legal to hold and impossible to fill, and the
-   * occupant should be told which rather than watching a transaction fail.
+   * One call. The book reprices the slot to the bid and seats the bidder, both
+   * inside this transaction — which is why the occupant must first make the
+   * book their operator. That grant is scoped to their tenure and lapses the
+   * moment the slot changes hands, so it cannot be inherited.
    *
-   * No cleanup follows. The slot burns the bidder's nonce as it executes, so the
-   * consumed order is dead everywhere it was ever published and the board stops
-   * listing it on its own.
+   * No cleanup follows: the book marks the row filled as it goes, and the board
+   * stops listing it on its own.
    */
-  const accept = async (
-    read: () => Promise<{ order: never; signature: never } | null>,
-  ) => {
-    const found = await actions.preflight("Sell slot", read);
-    if (!found) return;
-    const ok = await actions.preflight("Sell slot", async () => {
-      await actions.client.simulateSell(slot, found.order, found.signature);
-      return true;
-    });
-    if (!ok) return;
-    const hash = await actions.sell(slot, found.order, found.signature);
+  const accept = async (id: number) => {
+    if (!walletClient || !book) return;
+    const hash = await actions.exec("Accept offer", () =>
+      walletClient.writeContract({
+        address: book,
+        abi: offerBookAbi,
+        functionName: "acceptOffer",
+        args: [slot, BigInt(id)],
+        account: walletClient.account,
+        chain: walletClient.chain,
+      }),
+    );
+    if (hash) refresh();
+  };
+
+  /**
+   * Let the book reprice this slot, for as long as this tenure lasts.
+   *
+   * `selfAssess` is `onlyOccupantOrOperator`, so without this the book cannot
+   * perform the sale at all. Deliberately a separate, explicit step: it is a
+   * real power — repricing to dust would let anyone take the slot cheaply — and
+   * the occupant should grant it knowingly rather than have it folded into a
+   * button labelled "accept".
+   */
+  const authorise = async () => {
+    const hash = await actions.setOperator(slot, book as Address, true);
     if (hash) refresh();
   };
 
@@ -112,20 +122,10 @@ export function OrdersTab({
     return (
       <div className="p-4">
         <p className="text-xs leading-snug text-muted-foreground">
-          No offer book is deployed on this chain, so there is no public place
-          to post or read bids. An order handed to the occupant privately can
-          still be filled — paste it below.
+          No offer book is deployed on this chain, so there is nowhere to post
+          or read bids — and nowhere to accept one from. A sale needs the book:
+          it is what reprices the slot and seats the bidder.
         </p>
-        <div className="mt-3">
-          <SellOrderPanel
-            slot={slot}
-            state={state}
-            currency={currency}
-            actions={actions}
-            isOccupant={isOccupant}
-            bare
-          />
-        </div>
       </div>
     );
 
@@ -180,7 +180,7 @@ export function OrdersTab({
                 <Button
                   size="sm"
                   disabled={actions.busy}
-                  onClick={() => accept(readBestOrder as never)}
+                  onClick={() => accept(bestId)}
                 >
                   {actions.busy ? (
                     <Loader2 className="size-3.5 animate-spin" />
@@ -223,8 +223,8 @@ export function OrdersTab({
             busy={actions.busy}
             fmt={fmt}
             onCancel={() => cancelOffer(o.id)}
-            onRevoke={() => actions.cancelSellOrder(slot, o.nonce)}
-            onAccept={() => accept((() => readOrderAt(o.id)) as never)}
+            onRevoke={() => cancelOffer(o.id)}
+            onAccept={() => accept(o.id)}
           />
         ))}
       </div>
@@ -233,24 +233,9 @@ export function OrdersTab({
         <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <p className="text-[11px] leading-snug text-muted-foreground">
           The book holds signatures, never funds, and never executes anything —
-          the occupant&apos;s own transaction settles a sale, and the slot
-          re-verifies the bidder&apos;s signature as it does. That is what makes
-          a public board safe to read from.
+          the occupant&apos;s own transaction settles a sale — the book reprices
+          and seats inside it, and custodies nothing along the way.
         </p>
-      </div>
-
-      {/* The private hand-over path. An order sent to the occupant directly was
-          never posted here, so the board cannot show it — this is how it gets
-          filled. */}
-      <div className="border-t pt-3">
-        <SellOrderPanel
-          slot={slot}
-          state={state}
-          currency={currency}
-          actions={actions}
-          isOccupant={isOccupant}
-          bare
-        />
       </div>
     </div>
   );

@@ -8,7 +8,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SellOrder} from "../../src/SlotOrders.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
 import {SlotMath} from "../../src/SlotMath.sol";
 import "../../src/SlotErrors.sol";
@@ -31,10 +30,8 @@ contract BrokenAfter is ISlotHook {
         f.afterBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external pure { revert("nope"); }
-    function afterSell(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -397,28 +394,6 @@ contract CoreEscrowTest is Test {
         vm.expectRevert(Vacant.selector);
         s.liquidate();
     }
-
-    /// @notice `sell` is ERC-20 only — payment is pulled on the buyer's
-    ///         allowance, and native ETH has none.
-    function test_SellIsRefusedOnANativeSlot() public {
-        Slot s = _slot(address(0));
-        uint256 need = s.minDepositForBuy(1 ether);
-        vm.prank(alice);
-        s.buy{value: need}(alice, 1 ether, need, 0);
-
-        SellOrder memory o = SellOrder({
-            slot: address(s),
-            buyer: bob,
-            price: 1 ether,
-            deposit: 0,
-            nonce: 0,
-            deadline: uint64(block.timestamp + 1 days)
-        });
-        vm.prank(alice);
-        vm.expectRevert(SellNeedsErc20.selector);
-        s.sell(o, "");
-    }
-
     /// @notice Native value sent to a slot outside `buy`/`deposit` is refused.
     function test_TheSlotRefusesStrayEther() public {
         Slot s = _slot(address(0));
@@ -503,60 +478,5 @@ contract CoreEscrowTest is Test {
             if (logs[k].topics[0] == sig) logged = true;
         }
         assertTrue(logged, "the failure was reported, not hidden");
-    }
-
-    // ─── signed orders ──────────────────────────────────────────────────────
-
-    /// @notice An order past its deadline is refused.
-    function test_AnExpiredSellOrderIsRefused() public {
-        (address buyer, uint256 key) = makeAddrAndKey("carol");
-        token.mint(buyer, 1_000 ether);
-
-        Slot s = _slot(address(token));
-        _take(s, alice, 10 ether, 1 ether);
-
-        vm.prank(buyer);
-        token.approve(address(s), type(uint256).max);
-
-        SellOrder memory o = SellOrder({
-            slot: address(s),
-            buyer: buyer,
-            price: 1 ether,
-            deposit: SlotMath.depositFor(1 ether, TAX, MIN_DEP),
-            nonce: s.orderNonce(buyer),
-            deadline: uint64(block.timestamp - 1)
-        });
-        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(key, s.sellOrderHash(o));
-
-        vm.prank(alice);
-        vm.expectRevert(OrderExpired.selector);
-        s.sell(o, abi.encodePacked(r, ss, v));
-    }
-
-    /// @notice An order naming a different slot is refused.
-    function test_AnOrderForAnotherSlotIsRefused() public {
-        (address buyer, uint256 key) = makeAddrAndKey("carol");
-        token.mint(buyer, 1_000 ether);
-
-        Slot s = _slot(address(token));
-        Slot other = _slot(address(token));
-        _take(s, alice, 10 ether, 1 ether);
-
-        vm.prank(buyer);
-        token.approve(address(s), type(uint256).max);
-
-        SellOrder memory o = SellOrder({
-            slot: address(other),
-            buyer: buyer,
-            price: 1 ether,
-            deposit: SlotMath.depositFor(1 ether, TAX, MIN_DEP),
-            nonce: s.orderNonce(buyer),
-            deadline: uint64(block.timestamp + 1 days)
-        });
-        (uint8 v, bytes32 r, bytes32 ss) = vm.sign(key, other.sellOrderHash(o));
-
-        vm.prank(alice);
-        vm.expectRevert(OrderWrongSlot.selector);
-        s.sell(o, abi.encodePacked(r, ss, v));
     }
 }

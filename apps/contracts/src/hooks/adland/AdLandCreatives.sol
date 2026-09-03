@@ -199,7 +199,6 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
         // tenure that has not ended, and a `before` hook here would let AdLand
         // veto a buy — which it has no business doing.
         f.afterBuy = true;
-        f.afterSell = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
     }
@@ -211,19 +210,13 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
 
     function beforeBuy(SlotContext calldata) external view {}
 
-    function beforeSell(SlotContext calldata) external view {}
-
     function beforeSelfAssess(SlotContext calldata) external view {}
 
     function afterBuy(SlotContext calldata) external {
         _clear();
     }
 
-    function afterSell(SlotContext calldata) external {
-        _clear();
-    }
-
-    function afterRelease(SlotContext calldata) external {
+        function afterRelease(SlotContext calldata) external {
         _clear();
     }
 

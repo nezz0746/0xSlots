@@ -30,12 +30,7 @@ interface ISlotEvents {
         uint256 deposit,
         uint256 paid
     );
-    event Sold(
-        address indexed seller,
-        address indexed buyer,
-        uint256 price,
-        uint256 deposit
-    );
+
     event Released(address indexed occupant, uint256 refund);
     event Liquidated(address indexed by, address indexed occupant);
     event PriceSet(address indexed by, uint256 oldPrice, uint256 newPrice);

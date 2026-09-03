@@ -6,9 +6,9 @@
 // `@0xslots/contracts`, so there is no reason for a second copy to exist.
 export {
   slotAbi as SlotAbi,
-  slotFactoryAbi as SlotFactoryAbi,
   slotCollectiveAbi as SlotCollectiveAbi,
   slotCollectiveFactoryAbi as SlotCollectiveFactoryAbi,
+  slotFactoryAbi as SlotFactoryAbi,
 } from "@0xslots/contracts/slots";
 
 // Hand-written, and not generated from this protocol's build: a minimal ERC-20

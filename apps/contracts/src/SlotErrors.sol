@@ -32,9 +32,4 @@ error NoPendingTerms();
 ///      pointed out they name different problems to different callers.
 error NothingProposed();
 
-error SellNeedsErc20();
-error OrderExpired();
-error OrderWrongSlot();
-error OrderUsed();
-error OrderBadSignature();
 error PaymentAboveMax();

@@ -11,14 +11,12 @@ import {
   hookCallFailedEvent,
   liquidatedEvent,
   operatorSetEvent,
-  orderCancelledEvent,
   priceSetEvent,
   releasedEvent,
   settledEvent,
   slot,
   slotCredit,
   slotOperator,
-  soldEvent,
   taxCollectedEvent,
   taxPaidEvent,
   termsAppliedEvent,
@@ -209,15 +207,6 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
     updatedAt: event.block.timestamp,
   });
 
-  // `sell` emits `Sold` immediately before this `Bought`, in the same call,
-  // so the preceding log index is an exact test for which path we are on. A
-  // primary-key lookup rather than a scan.
-  const viaSell =
-    event.log.logIndex > 0 &&
-    (await context.db.find(soldEvent, {
-      id: evtId(event.transaction.hash, event.log.logIndex - 1),
-    })) != null;
-
   await context.db.insert(boughtEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
@@ -228,7 +217,6 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
     price: event.args.price,
     deposit: event.args.deposit,
     paid: event.args.paid,
-    viaSell,
     tenure,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
@@ -236,37 +224,17 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
   });
 });
 
-/**
- * The seller's side of a negotiated sale.
+/*
+ * `Slot:Sold` USED TO BE HANDLED HERE.
  *
- * Records only. The `Bought` emitted one log later does the occupancy work —
- * see the ordering note at the top of this file.
+ * The core no longer has `sell`, so it no longer emits `Sold`. A consensual
+ * sale is `selfAssess` then `buy`, performed by the OfferBook — the `Bought`
+ * handler above already records the occupancy, and the seller's side is the
+ * book's `Filled(slot, bidder, id, seller, price, deposit)`.
+ *
+ * That event is NOT indexed yet: the book is not in `ponder.config.ts` at all.
+ * Adding it is what restores a queryable sale history.
  */
-ponder.on("Slot:Sold", async ({ event, context }) => {
-  const slotAddr = lower(event.log.address);
-  const s = await loadSlot(context, slotAddr);
-
-  await getOrCreateAccount(
-    context,
-    event.args.seller,
-    lower(event.args.seller) === lower(event.transaction.from),
-  );
-  await getOrCreateAccount(context, event.args.buyer);
-
-  await context.db.insert(soldEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId: context.chain.id,
-    slot: slotAddr,
-    currency: s.currency,
-    seller: lower(event.args.seller),
-    buyer: lower(event.args.buyer),
-    price: event.args.price,
-    deposit: event.args.deposit,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
 
 ponder.on("Slot:Released", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
@@ -891,51 +859,13 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   });
 });
 
-// ─── signed sell orders ────────────────────────────────────────────────────
-
-/**
- * A buyer burned one of their own nonces.
+/*
+ * `Slot:OrderCancelled` USED TO BE HANDLED HERE.
  *
- * This is the ONLY order-lifecycle event the protocol emits. A nonce is also
- * consumed when an order is FILLED, and `Sold` carries no nonce — so an order
- * book cannot distinguish a filled order from a live one by watching logs; it
- * has to call `orderUsed(buyer, nonce)`. Adding the nonce to `Sold` would close
- * that gap.
+ * It reported a buyer burning a signed sell-order nonce. There are no signed
+ * orders any more: a bid is an on-chain row in the OfferBook, and retracting it
+ * is `OfferBook.cancel`, which the book emits `Cancelled` for.
  */
-ponder.on("Slot:OrderCancelled", async ({ event, context }) => {
-  const chainId = context.chain.id;
-  const slotAddr = lower(event.log.address);
-  const buyer = lower(event.args.buyer);
-
-  await getOrCreateAccount(
-    context,
-    buyer,
-    buyer === lower(event.transaction.from),
-  );
-
-  await context.db
-    .insert(cancelledOrder)
-    .values({
-      slot: slotAddr,
-      buyer,
-      nonce: event.args.nonce,
-      chainId,
-      cancelledAt: event.block.timestamp,
-      tx: event.transaction.hash,
-    })
-    .onConflictDoNothing();
-
-  await context.db.insert(orderCancelledEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
-    slot: slotAddr,
-    buyer,
-    nonce: event.args.nonce,
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
 
 // ─── hooks ─────────────────────────────────────────────────────────────────
 

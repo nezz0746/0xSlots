@@ -75,14 +75,12 @@ export const adLandAbi = [
                 type: 'tuple',
                 components: [
                   { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-                  { name: 'beforeSell', internalType: 'bool', type: 'bool' },
                   {
                     name: 'beforeSelfAssess',
                     internalType: 'bool',
                     type: 'bool',
                   },
                   { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-                  { name: 'afterSell', internalType: 'bool', type: 'bool' },
                   { name: 'afterRelease', internalType: 'bool', type: 'bool' },
                   {
                     name: 'afterLiquidate',
@@ -178,14 +176,12 @@ export const adLandAbi = [
                 type: 'tuple',
                 components: [
                   { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-                  { name: 'beforeSell', internalType: 'bool', type: 'bool' },
                   {
                     name: 'beforeSelfAssess',
                     internalType: 'bool',
                     type: 'bool',
                   },
                   { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-                  { name: 'afterSell', internalType: 'bool', type: 'bool' },
                   { name: 'afterRelease', internalType: 'bool', type: 'bool' },
                   {
                     name: 'afterLiquidate',
@@ -344,33 +340,6 @@ export const adLandAbi = [
         ],
       },
     ],
-    name: 'afterSell',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: '',
-        internalType: 'struct SlotContext',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'caller', internalType: 'address', type: 'address' },
-          { name: 'account', internalType: 'address', type: 'address' },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
     name: 'afterSettle',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -426,33 +395,6 @@ export const adLandAbi = [
       },
     ],
     name: 'beforeSelfAssess',
-    outputs: [],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: '',
-        internalType: 'struct SlotContext',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'caller', internalType: 'address', type: 'address' },
-          { name: 'account', internalType: 'address', type: 'address' },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    name: 'beforeSell',
     outputs: [],
     stateMutability: 'view',
   },
@@ -629,10 +571,8 @@ export const adLandAbi = [
         type: 'tuple',
         components: [
           { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
           { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
           { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterSell', internalType: 'bool', type: 'bool' },
           { name: 'afterRelease', internalType: 'bool', type: 'bool' },
           { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
           { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -868,10 +808,8 @@ export const compositeHookAbi = [
         type: 'tuple',
         components: [
           { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
           { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
           { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterSell', internalType: 'bool', type: 'bool' },
           { name: 'afterRelease', internalType: 'bool', type: 'bool' },
           { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
           { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -1069,33 +1007,6 @@ export const compositeHookAbi = [
         ],
       },
     ],
-    name: 'afterSell',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: 'ctx',
-        internalType: 'struct SlotContext',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'caller', internalType: 'address', type: 'address' },
-          { name: 'account', internalType: 'address', type: 'address' },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
     name: 'afterSettle',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -1156,33 +1067,6 @@ export const compositeHookAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      {
-        name: 'ctx',
-        internalType: 'struct SlotContext',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'caller', internalType: 'address', type: 'address' },
-          { name: 'account', internalType: 'address', type: 'address' },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    name: 'beforeSell',
-    outputs: [],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [],
     name: 'childCount',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
@@ -1201,10 +1085,8 @@ export const compositeHookAbi = [
     name: 'declared',
     outputs: [
       { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-      { name: 'beforeSell', internalType: 'bool', type: 'bool' },
       { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
       { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-      { name: 'afterSell', internalType: 'bool', type: 'bool' },
       { name: 'afterRelease', internalType: 'bool', type: 'bool' },
       { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
       { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -1255,10 +1137,8 @@ export const compositeHookAbi = [
         type: 'tuple',
         components: [
           { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
           { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
           { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterSell', internalType: 'bool', type: 'bool' },
           { name: 'afterRelease', internalType: 'bool', type: 'bool' },
           { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
           { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -1430,33 +1310,6 @@ export const minimumTenureHookAbi = [
         ],
       },
     ],
-    name: 'afterSell',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: '',
-        internalType: 'struct SlotContext',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'caller', internalType: 'address', type: 'address' },
-          { name: 'account', internalType: 'address', type: 'address' },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
     name: 'afterSettle',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -1517,33 +1370,6 @@ export const minimumTenureHookAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      {
-        name: 'ctx',
-        internalType: 'struct SlotContext',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'caller', internalType: 'address', type: 'address' },
-          { name: 'account', internalType: 'address', type: 'address' },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    name: 'beforeSell',
-    outputs: [],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [],
     name: 'descriptors',
     outputs: [
@@ -1593,10 +1419,8 @@ export const minimumTenureHookAbi = [
         type: 'tuple',
         components: [
           { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
           { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
           { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterSell', internalType: 'bool', type: 'bool' },
           { name: 'afterRelease', internalType: 'bool', type: 'bool' },
           { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
           { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -1663,17 +1487,13 @@ export const minimumTenureHookConfig = {
 export const offerBookAbi = [
   {
     type: 'function',
-    inputs: [],
-    name: 'UPGRADE_INTERFACE_VERSION',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'admin',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'id', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'acceptOffer',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -1692,34 +1512,9 @@ export const offerBookAbi = [
           { name: 'deposit', internalType: 'uint256', type: 'uint256' },
           { name: 'expiry', internalType: 'uint64', type: 'uint64' },
           { name: 'cancelled', internalType: 'bool', type: 'bool' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'signature', internalType: 'bytes', type: 'bytes' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
         ],
       },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
-    name: 'bestOrder',
-    outputs: [
-      { name: 'found', internalType: 'bool', type: 'bool' },
-      { name: 'id', internalType: 'uint256', type: 'uint256' },
-      {
-        name: 'order',
-        internalType: 'struct SellOrder',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'buyer', internalType: 'address', type: 'address' },
-          { name: 'price', internalType: 'uint256', type: 'uint256' },
-          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'deadline', internalType: 'uint64', type: 'uint64' },
-        ],
-      },
-      { name: 'signature', internalType: 'bytes', type: 'bytes' },
     ],
     stateMutability: 'view',
   },
@@ -1738,8 +1533,7 @@ export const offerBookAbi = [
           { name: 'deposit', internalType: 'uint256', type: 'uint256' },
           { name: 'expiry', internalType: 'uint64', type: 'uint64' },
           { name: 'cancelled', internalType: 'bool', type: 'bool' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'signature', internalType: 'bytes', type: 'bytes' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
         ],
       },
       { name: 'live', internalType: 'bool[]', type: 'bool[]' },
@@ -1755,20 +1549,6 @@ export const offerBookAbi = [
     name: 'cancel',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'admin_', internalType: 'address', type: 'address' }],
-    name: 'initialize',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'initializedVersion',
-    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
-    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -1804,8 +1584,6 @@ export const offerBookAbi = [
       { name: 'price', internalType: 'uint256', type: 'uint256' },
       { name: 'deposit', internalType: 'uint256', type: 'uint256' },
       { name: 'expiry', internalType: 'uint64', type: 'uint64' },
-      { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-      { name: 'signature', internalType: 'bytes', type: 'bytes' },
     ],
     name: 'offer',
     outputs: [{ name: 'id', internalType: 'uint256', type: 'uint256' }],
@@ -1829,8 +1607,7 @@ export const offerBookAbi = [
           { name: 'deposit', internalType: 'uint256', type: 'uint256' },
           { name: 'expiry', internalType: 'uint64', type: 'uint64' },
           { name: 'cancelled', internalType: 'bool', type: 'bool' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'signature', internalType: 'bytes', type: 'bytes' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
@@ -1863,8 +1640,7 @@ export const offerBookAbi = [
           { name: 'deposit', internalType: 'uint256', type: 'uint256' },
           { name: 'expiry', internalType: 'uint64', type: 'uint64' },
           { name: 'cancelled', internalType: 'bool', type: 'bool' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'signature', internalType: 'bytes', type: 'bytes' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
@@ -1885,61 +1661,11 @@ export const offerBookAbi = [
           { name: 'deposit', internalType: 'uint256', type: 'uint256' },
           { name: 'expiry', internalType: 'uint64', type: 'uint64' },
           { name: 'cancelled', internalType: 'bool', type: 'bool' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'signature', internalType: 'bytes', type: 'bytes' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'slot', internalType: 'address', type: 'address' },
-      { name: 'id', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'orderOf',
-    outputs: [
-      {
-        name: 'order',
-        internalType: 'struct SellOrder',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'buyer', internalType: 'address', type: 'address' },
-          { name: 'price', internalType: 'uint256', type: 'uint256' },
-          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'deadline', internalType: 'uint64', type: 'uint64' },
-        ],
-      },
-      { name: 'signature', internalType: 'bytes', type: 'bytes' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'proxiableUUID',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'next', internalType: 'address', type: 'address' }],
-    name: 'transferAdmin',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'newImplementation', internalType: 'address', type: 'address' },
-      { name: 'data', internalType: 'bytes', type: 'bytes' },
-    ],
-    name: 'upgradeToAndCall',
-    outputs: [],
-    stateMutability: 'payable',
   },
   {
     type: 'function',
@@ -1947,15 +1673,6 @@ export const offerBookAbi = [
     name: 'version',
     outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
     stateMutability: 'pure',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'from', internalType: 'address', type: 'address', indexed: true },
-      { name: 'to', internalType: 'address', type: 'address', indexed: true },
-    ],
-    name: 'AdminTransferred',
   },
   {
     type: 'event',
@@ -1976,14 +1693,34 @@ export const offerBookAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
       {
-        name: 'version',
-        internalType: 'uint64',
-        type: 'uint64',
+        name: 'bidder',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'id', internalType: 'uint256', type: 'uint256', indexed: true },
+      {
+        name: 'seller',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'price',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'deposit',
+        internalType: 'uint256',
+        type: 'uint256',
         indexed: false,
       },
     ],
-    name: 'Initialized',
+    name: 'Filled',
   },
   {
     type: 'event',
@@ -2018,47 +1755,25 @@ export const offerBookAbi = [
     ],
     name: 'Offered',
   },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'implementation',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-    ],
-    name: 'Upgraded',
-  },
-  {
-    type: 'error',
-    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
-    name: 'AddressEmptyCode',
-  },
   { type: 'error', inputs: [], name: 'AlreadyCancelled' },
   { type: 'error', inputs: [], name: 'BadExpiry' },
-  {
-    type: 'error',
-    inputs: [
-      { name: 'implementation', internalType: 'address', type: 'address' },
-    ],
-    name: 'ERC1967InvalidImplementation',
-  },
-  { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
-  { type: 'error', inputs: [], name: 'FailedCall' },
-  { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  { type: 'error', inputs: [], name: 'FillFailed' },
+  { type: 'error', inputs: [], name: 'NativeSlotNotSupported' },
   { type: 'error', inputs: [], name: 'NoSuchOffer' },
-  { type: 'error', inputs: [], name: 'NotAdmin' },
   { type: 'error', inputs: [], name: 'NotBidder' },
-  { type: 'error', inputs: [], name: 'NotInitializing' },
-  { type: 'error', inputs: [], name: 'UUPSUnauthorizedCallContext' },
+  { type: 'error', inputs: [], name: 'NotOccupant' },
+  { type: 'error', inputs: [], name: 'NotOperator' },
+  { type: 'error', inputs: [], name: 'OfferNotLive' },
   {
     type: 'error',
-    inputs: [{ name: 'slot', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'UUPSUnsupportedProxiableUUID',
+    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
+    name: 'SafeERC20FailedOperation',
   },
-  { type: 'error', inputs: [], name: 'ZeroAdmin' },
+  {
+    type: 'error',
+    inputs: [{ name: 'shortfall', internalType: 'uint256', type: 'uint256' }],
+    name: 'TopUpRequired',
+  },
   { type: 'error', inputs: [], name: 'ZeroPrice' },
 ] as const
 
@@ -2066,7 +1781,7 @@ export const offerBookAbi = [
  *
  */
 export const offerBookAddress = {
-  31337: '0xbB8662d362EE8312Ae1B15a6117F650933439347',
+  31337: '0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2',
 } as const
 
 /**
@@ -2161,13 +1876,6 @@ export const slotAbi = [
     name: 'buy',
     outputs: [],
     stateMutability: 'payable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'nonce', internalType: 'uint256', type: 'uint256' }],
-    name: 'cancelSellOrder',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -2269,10 +1977,8 @@ export const slotAbi = [
             type: 'tuple',
             components: [
               { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-              { name: 'beforeSell', internalType: 'bool', type: 'bool' },
               { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
               { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-              { name: 'afterSell', internalType: 'bool', type: 'bool' },
               { name: 'afterRelease', internalType: 'bool', type: 'bool' },
               { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
               { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -2337,10 +2043,8 @@ export const slotAbi = [
         type: 'tuple',
         components: [
           { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
           { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
           { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterSell', internalType: 'bool', type: 'bool' },
           { name: 'afterRelease', internalType: 'bool', type: 'bool' },
           { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
           { name: 'afterSettle', internalType: 'bool', type: 'bool' },
@@ -2474,23 +2178,6 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'address', type: 'address' }],
-    name: 'orderNonce',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: '', internalType: 'address', type: 'address' },
-      { name: '', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'orderUsed',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [],
     name: 'pending',
     outputs: [
@@ -2560,49 +2247,6 @@ export const slotAbi = [
     name: 'selfAssess',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: 'order',
-        internalType: 'struct SellOrder',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'buyer', internalType: 'address', type: 'address' },
-          { name: 'price', internalType: 'uint256', type: 'uint256' },
-          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'deadline', internalType: 'uint64', type: 'uint64' },
-        ],
-      },
-      { name: 'signature', internalType: 'bytes', type: 'bytes' },
-    ],
-    name: 'sell',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: 'order',
-        internalType: 'struct SellOrder',
-        type: 'tuple',
-        components: [
-          { name: 'slot', internalType: 'address', type: 'address' },
-          { name: 'buyer', internalType: 'address', type: 'address' },
-          { name: 'price', internalType: 'uint256', type: 'uint256' },
-          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-          { name: 'nonce', internalType: 'uint256', type: 'uint256' },
-          { name: 'deadline', internalType: 'uint64', type: 'uint64' },
-        ],
-      },
-    ],
-    name: 'sellOrderHash',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -2845,25 +2489,6 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      {
-        name: 'buyer',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'nonce',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'OrderCancelled',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
       { name: 'by', internalType: 'address', type: 'address', indexed: true },
       {
         name: 'oldPrice',
@@ -2923,37 +2548,6 @@ export const slotAbi = [
       },
     ],
     name: 'Settled',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'seller',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'buyer',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'price',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-      {
-        name: 'deposit',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'Sold',
   },
   {
     type: 'event',
@@ -3111,10 +2705,6 @@ export const slotAbi = [
   { type: 'error', inputs: [], name: 'NothingToClaim' },
   { type: 'error', inputs: [], name: 'NothingToCollect' },
   { type: 'error', inputs: [], name: 'NothingToWithdraw' },
-  { type: 'error', inputs: [], name: 'OrderBadSignature' },
-  { type: 'error', inputs: [], name: 'OrderExpired' },
-  { type: 'error', inputs: [], name: 'OrderUsed' },
-  { type: 'error', inputs: [], name: 'OrderWrongSlot' },
   { type: 'error', inputs: [], name: 'PaymentAboveMax' },
   { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
   {
@@ -3122,7 +2712,6 @@ export const slotAbi = [
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
   },
-  { type: 'error', inputs: [], name: 'SellNeedsErc20' },
   { type: 'error', inputs: [], name: 'TransferFailed' },
   { type: 'error', inputs: [], name: 'Vacant' },
 ] as const
@@ -3131,7 +2720,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x32dAdCe13CEE40d01c8B807770a2418fF99e2B46',
+  31337: '0x2e609141F4669e11DB274EA442064119a42Ed493',
 } as const
 
 /**
@@ -4475,7 +4064,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0x101082d0740310eC238dA7F728e30786Ae5CDd91',
+  31337: '0x061a3512628A34137A59f04C82075623a1Df0623',
 } as const
 
 /**

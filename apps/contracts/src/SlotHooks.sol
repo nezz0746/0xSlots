@@ -27,13 +27,15 @@ import "./SlotErrors.sol";
 abstract contract SlotHooks is SlotStorage {
     /// @dev Bit positions match `HookFlags` field order.
     uint8 internal constant F_BEFORE_BUY = 1 << 0;
-    uint8 internal constant F_BEFORE_SELL = 1 << 1;
-    uint8 internal constant F_BEFORE_SELF_ASSESS = 1 << 2;
-    uint8 internal constant F_AFTER_BUY = 1 << 3;
-    uint8 internal constant F_AFTER_SELL = 1 << 4;
-    uint8 internal constant F_AFTER_RELEASE = 1 << 5;
-    uint8 internal constant F_AFTER_LIQUIDATE = 1 << 6;
-    uint8 internal constant F_AFTER_SETTLE = 1 << 7;
+    uint8 internal constant F_BEFORE_SELF_ASSESS = 1 << 1;
+    uint8 internal constant F_AFTER_BUY = 1 << 2;
+    uint8 internal constant F_AFTER_RELEASE = 1 << 3;
+    uint8 internal constant F_AFTER_LIQUIDATE = 1 << 4;
+    uint8 internal constant F_AFTER_SETTLE = 1 << 5;
+
+    /// @dev How many bools `subscriptions()` returns, and therefore how many
+    ///      ABI words a well-formed answer is. Six since `sell` left the core.
+    uint256 internal constant FLAG_COUNT = 6;
 
     /// @notice A hook callback reverted and was ignored.
     /// @dev Only ever emitted for the `after` side. A failing `before` reverts
@@ -44,10 +46,8 @@ abstract contract SlotHooks is SlotStorage {
     function hookFlags() public view returns (HookFlags memory f) {
         uint8 b = _hookFlags;
         f.beforeBuy = b & F_BEFORE_BUY != 0;
-        f.beforeSell = b & F_BEFORE_SELL != 0;
         f.beforeSelfAssess = b & F_BEFORE_SELF_ASSESS != 0;
         f.afterBuy = b & F_AFTER_BUY != 0;
-        f.afterSell = b & F_AFTER_SELL != 0;
         f.afterRelease = b & F_AFTER_RELEASE != 0;
         f.afterLiquidate = b & F_AFTER_LIQUIDATE != 0;
         f.afterSettle = b & F_AFTER_SETTLE != 0;
@@ -129,8 +129,8 @@ abstract contract SlotHooks is SlotStorage {
         if (!answered) return (false, 0);
 
         cd = abi.encodeCall(ISlotHook.subscriptions, ());
-        // Eight bools, ABI-encoded one per word.
-        bytes memory ret = new bytes(256);
+        // Six bools, ABI-encoded one per word.
+        bytes memory ret = new bytes(FLAG_COUNT * 32);
         uint256 got;
         assembly ("memory-safe") {
             answered := staticcall(
@@ -139,13 +139,13 @@ abstract contract SlotHooks is SlotStorage {
                 add(cd, 0x20),
                 mload(cd),
                 add(ret, 0x20),
-                256
+                mul(FLAG_COUNT, 0x20)
             )
             got := returndatasize()
         }
-        if (!answered || got < 256) return (false, 0);
+        if (!answered || got < FLAG_COUNT * 32) return (false, 0);
 
-        for (uint256 i; i < 8; ++i) {
+        for (uint256 i; i < FLAG_COUNT; ++i) {
             uint256 word;
             assembly ("memory-safe") {
                 word := mload(add(add(ret, 0x20), mul(i, 0x20)))
@@ -187,10 +187,8 @@ abstract contract SlotHooks is SlotStorage {
 
         HookFlags memory f = ISlotHook(h).subscriptions();
         if (f.beforeBuy) packed |= F_BEFORE_BUY;
-        if (f.beforeSell) packed |= F_BEFORE_SELL;
         if (f.beforeSelfAssess) packed |= F_BEFORE_SELF_ASSESS;
         if (f.afterBuy) packed |= F_AFTER_BUY;
-        if (f.afterSell) packed |= F_AFTER_SELL;
         if (f.afterRelease) packed |= F_AFTER_RELEASE;
         if (f.afterLiquidate) packed |= F_AFTER_LIQUIDATE;
         if (f.afterSettle) packed |= F_AFTER_SETTLE;

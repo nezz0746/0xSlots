@@ -27,7 +27,6 @@ contract Spy is ISlotHook {
 
     function beforeBuy(SlotContext calldata) external view virtual {}
 
-    function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
 
     function afterBuy(SlotContext calldata c) external {
@@ -35,7 +34,6 @@ contract Spy is ISlotHook {
         afterCalls++;
     }
 
-    function afterSell(SlotContext calldata) external {}
 
     function afterRelease(SlotContext calldata c) external {
         lastAfter = c.hookData;

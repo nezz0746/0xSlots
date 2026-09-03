@@ -182,11 +182,7 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
         _all(abi.encodeCall(ISlotHook.beforeBuy, (ctx)));
     }
 
-    function beforeSell(SlotContext calldata ctx) external view {
-        _all(abi.encodeCall(ISlotHook.beforeSell, (ctx)));
-    }
-
-    function beforeSelfAssess(SlotContext calldata ctx) external view {
+        function beforeSelfAssess(SlotContext calldata ctx) external view {
         _all(abi.encodeCall(ISlotHook.beforeSelfAssess, (ctx)));
     }
 
@@ -196,11 +192,7 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
         _each(abi.encodeCall(ISlotHook.afterBuy, (ctx)));
     }
 
-    function afterSell(SlotContext calldata ctx) external {
-        _each(abi.encodeCall(ISlotHook.afterSell, (ctx)));
-    }
-
-    function afterRelease(SlotContext calldata ctx) external {
+        function afterRelease(SlotContext calldata ctx) external {
         _each(abi.encodeCall(ISlotHook.afterRelease, (ctx)));
     }
 

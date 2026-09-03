@@ -70,10 +70,8 @@ struct SlotContext {
  */
 struct HookFlags {
     bool beforeBuy;
-    bool beforeSell;
     bool beforeSelfAssess;
     bool afterBuy;
-    bool afterSell;
     bool afterRelease;
     bool afterLiquidate;
     bool afterSettle;
@@ -106,6 +104,12 @@ struct HookFlags {
  *      beneath it. A badly built composite harms only the slot that chose it.
  */
 interface ISlotHook {
+    // `beforeSell` and `afterSell` used to sit beside these. `Slot.sell` was
+    // removed — a consensual sale is `selfAssess` then `buy`, performed by the
+    // OfferBook — so a sale now runs `beforeSelfAssess` and `beforeBuy` like
+    // any other seating. Leaving the two callbacks declared would have left a
+    // hook able to subscribe to something that can never fire.
+
     /// @dev `view`, not `pure`: a composite answers this from storage, and
     ///      that is a legitimate hook rather than an edge case.
     function subscriptions() external view returns (HookFlags memory);
@@ -133,15 +137,11 @@ interface ISlotHook {
 
     function beforeBuy(SlotContext calldata ctx) external view;
 
-    function beforeSell(SlotContext calldata ctx) external view;
-
     function beforeSelfAssess(SlotContext calldata ctx) external view;
 
     // ─── effects: capped, swallowed, cannot change the outcome ──────────────
 
     function afterBuy(SlotContext calldata ctx) external;
-
-    function afterSell(SlotContext calldata ctx) external;
 
     function afterRelease(SlotContext calldata ctx) external;
 

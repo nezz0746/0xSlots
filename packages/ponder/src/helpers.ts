@@ -261,10 +261,8 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
 /** The eight subscriptions a hook may declare. */
 export type HookFlagSet = {
   beforeBuy: boolean;
-  beforeSell: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
-  afterSell: boolean;
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
@@ -273,10 +271,8 @@ export type HookFlagSet = {
 /** What a slot with no hook obeys: nothing. */
 export const NO_HOOK_FLAGS: HookFlagSet = {
   beforeBuy: false,
-  beforeSell: false,
   beforeSelfAssess: false,
   afterBuy: false,
-  afterSell: false,
   afterRelease: false,
   afterLiquidate: false,
   afterSettle: false,
@@ -444,10 +440,8 @@ export async function getOrCreateHook(
     chainId,
     declaredKnown: declared !== null,
     declaredBeforeBuy: f.beforeBuy,
-    declaredBeforeSell: f.beforeSell,
     declaredBeforeSelfAssess: f.beforeSelfAssess,
     declaredAfterBuy: f.afterBuy,
-    declaredAfterSell: f.afterSell,
     declaredAfterRelease: f.afterRelease,
     declaredAfterLiquidate: f.afterLiquidate,
     declaredAfterSettle: f.afterSettle,
@@ -479,10 +473,8 @@ export async function bumpHookSlotCount(
 /** Columns for `slot`, from a flag snapshot. */
 export const hookFlagColumns = (f: HookFlagSet) => ({
   hookBeforeBuy: f.beforeBuy,
-  hookBeforeSell: f.beforeSell,
   hookBeforeSelfAssess: f.beforeSelfAssess,
   hookAfterBuy: f.afterBuy,
-  hookAfterSell: f.afterSell,
   hookAfterRelease: f.afterRelease,
   hookAfterLiquidate: f.afterLiquidate,
   hookAfterSettle: f.afterSettle,

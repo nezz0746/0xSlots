@@ -1,86 +1,80 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SellOrder} from "../../SlotOrders.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
 import {Versioned} from "../../Versioned.sol";
 import "./OfferBookErrors.sol";
 
-/// @title OfferBook — standing bids an occupant can sell into
-///
-/// @dev Ported to the hook-based protocol. The port is an interface rename and
-///      an import: `SellOrder` is field-for-field identical across the two, and
-///      the slot's nonce accessors lost their `sell` prefix. Nothing in the
-///      book's own logic is protocol-specific — it stores bids and reads
-///      allowances, and the core still knows nothing about it.
-///
-///      Worth stating plainly, because it was nearly deleted as retired: a
-///      SIGNED ORDER IS NOT AN OFFER BOOK. The signature is the settlement
-///      mechanism; this is the discovery mechanism. Without it an order is a
-///      blob a buyer has to hand to an occupant out of band, nobody can see
-///      what a slot has been bid, and there is no best to accept.
+/// @title OfferBook — standing bids, and the fill that settles them
 ///
 /// @notice Anyone may post "I will take that slot at this price". The occupant
-///         reads the best one and calls `Slot.sell(bidder, price, deposit)`.
-///         Nothing here is privileged: the book never holds a slot, never holds
-///         funds, and the core knows nothing about it. Deploy another and it
-///         competes.
+///         reads the best one and calls {acceptOffer}, which reprices the slot
+///         to that bid and seats the bidder in one transaction.
 ///
-/// @dev ── WHY OFFERS ARE ALLOWANCE-BACKED, NOT ESCROWED ─────────────────
-///      The obvious design escrows the bidder's price + deposit here. It does
-///      not work, and the reason is worth writing down.
+/// @dev ── WHY THE BOOK PERFORMS THE FILL ──────────────────────────────────
 ///
-///      `Slot.sell(buyer, …)` pulls from `buyer` and seats `buyer`. For the
-///      book to hold the money, the book would have to BE the buyer — and then
-///      the book occupies the slot, not the bidder. Splitting them needs a
-///      `payer` parameter, and that is quietly catastrophic: an occupant could
-///      then call `sell(carol, bob, …)` and spend Bob's allowance to seat
-///      somebody else. Bob's approval would stop meaning "I want this slot"
-///      and start meaning "anyone may spend this".
+///      The core used to carry `sell`: an occupant submitted a bidder's
+///      EIP-712 order and the slot seated them. That made a SECOND seating
+///      path — it reset `occupiedSince` like `buy` but ran `beforeSell`
+///      instead of `beforeBuy`, so every hook author had two doors to police
+///      and two audit findings were the same mistake of policing one.
 ///
-///      So offers are backed by an ERC-20 allowance to the SLOT, exactly as
-///      every on-chain order book does it. The guarantee arrives at the only
-///      moment it matters: if the funds are gone when the occupant sells, the
+///      It is gone. A consensual sale is now two calls the core already had:
+///
+///          slot.selfAssess(price)   // the occupant's own price, restated
+///          slot.buy(bidder, …)      // the ordinary market path
+///
+///      In one transaction, so nothing can be sniped between them. The
+///      economics are unchanged: `buy` already refunds the outgoing occupant
+///      their deposit plus the price. What changed is that there is one seating
+///      path, one set of hook checks, and no order machinery in the slot.
+///
+///      ── WHAT THE OCCUPANT GRANTS, AND WHY THIS IS NOT A PROXY ──────────
+///
+///      `selfAssess` is `onlyOccupantOrOperator`, so the occupant must make
+///      this book their operator first — `slot.setOperator(book, true)`. That
+///      grant is keyed by tenure on the far side, so it lapses by itself when
+///      the slot changes hands and cannot be inherited by the next occupant.
+///
+///      It is still a real power: repricing to dust would let anyone take the
+///      slot cheaply. Which is exactly why THIS CONTRACT IS NOT UPGRADEABLE.
+///      Behind a proxy, every occupant who ever approved it would have granted
+///      that power to whatever its admin deployed next. Immutable, the code
+///      they approved is the code that runs. It has no admin and no owner.
+///
+///      Within this code the grant is narrower still: {acceptOffer} is the only
+///      function that touches a slot, it reprices only to a live offer's price,
+///      and it reverts unless `msg.sender` is the occupant — so the book never
+///      acts except inside a transaction the occupant sent.
+///
+///      ── WHY OFFERS ARE ALLOWANCE-BACKED, NOT ESCROWED ──────────────────
+///
+///      The obvious design escrows the bidder's price + deposit here. It is not
+///      needed: the book pulls the payment during the fill and spends it in the
+///      same transaction, so an allowance is as strong a guarantee at the only
+///      moment it matters. If the funds are gone when the occupant accepts, the
 ///      `transferFrom` reverts and the seller loses gas and nothing else.
 ///
 ///      The cost is that one allowance can back offers on many slots —
-///      first-come-first-served, same as any limit order. `isFundable()` below
-///      lets a client grey out an offer whose backing has evaporated.
+///      first-come-first-served, same as any limit order. {isFundable} lets a
+///      client grey out an offer whose backing has evaporated.
 ///
-///      ── WHY AN OFFER CARRIES A SIGNATURE ───────────────────────────────
-///      An allowance says "you may spend up to this much". It never said "at a
-///      price my counterparty chooses", and `Slot.sell` used to read it as
-///      though it did — so an occupant could take a bidder's whole approval,
-///      or take the exact approval and rebook the escrow half as their own
-///      proceeds, seating the bidder insolvent.
+///      Note the allowance is to the BOOK, not to the slot. `buy` charges
+///      `msg.sender`, and on a fill that is this contract.
 ///
-///      `Slot.sell` now requires the buyer's EIP-712 signature over the exact
-///      terms, so an offer here is that signed order plus a place to publish
-///      it. The bidder signs off-chain for free; it costs them a wallet popup
-///      and no gas.
+///      ── NO SIGNATURE ───────────────────────────────────────────────────
 ///
-///      A consequence worth noticing: because the order is self-authenticating,
-///      this book is no longer load-bearing. The same signature works if it is
-///      handed to the occupant directly, or published anywhere else. This
-///      contract is now a convenience, not a dependency.
-///
-/// @dev ── Upgradeable, and what that is and is not ────────────────────────
-///
-///      Behind a UUPS proxy so a board can be fixed in place. That matters
-///      here specifically: a bug in this contract strands a slot's discovery
-///      surface, and before the overflow guard one free offer could brick
-///      every read path for a slot with no way to clear it. Redeploying would
-///      have meant abandoning every standing bid.
-///
-///      The admin's power stops at the code. The book never holds funds and
-///      never moves a slot: an offer settles when the OCCUPANT submits the
-///      bidder's own signature to the slot, which validates it against its own
-///      domain. An admin who replaced this contract with something hostile
-///      could lie about what is on the board; they could not spend a bidder's
-///      allowance or seat anybody. Discovery is upgradeable, settlement is
-///      not.
+///      An offer used to carry the bidder's EIP-712 signature, because
+///      `Slot.sell` demanded one and `offer` stored the terms and the signature
+///      without binding them. `offer()` is a transaction FROM the bidder:
+///      posting it is the consent, and there is no second artefact left to
+///      disagree with the terms beside it.
 contract OfferBook is OfferBookInternals {
+    using SafeERC20 for IERC20;
+
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
@@ -88,39 +82,11 @@ contract OfferBook is OfferBookInternals {
         return 2;
     }
 
-    /// @notice Which migration has run against THIS proxy's storage.
-    /// @dev OpenZeppelin already tracks this and already refuses to run a
-    ///      `reinitializer(N)` twice or out of order — so an upgrade that
-    ///      needs new state gets its monotonicity enforced by the library
-    ///      rather than by a script. Exposed because it is otherwise
-    ///      internal, and during an incident you want both numbers.
-
-    function initialize(address admin_) external initializer {
-        if (admin_ == address(0)) revert ZeroAdmin();
-        admin = admin_;
-        // The genesis admin, as a log. See `SlotFactory.initialize`.
-        emit AdminTransferred(address(0), admin_);
-    }
-
-    /// @notice Hand the upgrade right to somebody else.
-    function transferAdmin(address next) external {
-        if (msg.sender != admin) revert NotAdmin();
-        if (next == address(0)) revert ZeroAdmin();
-        emit AdminTransferred(admin, next);
-        admin = next;
-    }
-
-    function _authorizeUpgrade(address) internal view override {
-        if (msg.sender != admin) revert NotAdmin();
-    }
-
     function offer(
         address slot,
         uint256 price,
         uint256 deposit,
-        uint64 expiry,
-        uint256 nonce,
-        bytes calldata signature
+        uint64 expiry
     ) external returns (uint256 id) {
         if (price == 0) revert ZeroPrice();
         if (expiry <= block.timestamp) revert BadExpiry();
@@ -133,8 +99,10 @@ contract OfferBook is OfferBookInternals {
             o.deposit = deposit;
             o.expiry = expiry;
             o.cancelled = false;
-            o.nonce = nonce;
-            o.signature = signature;
+            // Reposting revives a FILLED offer too. The bidder held the slot
+            // and lost it; wanting back in is an ordinary intention, and the
+            // alternative is one dead array entry per bidder per tenure.
+            o.filled = false;
         } else {
             id = _offers[slot].length;
             _offers[slot].push(
@@ -144,8 +112,7 @@ contract OfferBook is OfferBookInternals {
                     deposit: deposit,
                     expiry: expiry,
                     cancelled: false,
-                    nonce: nonce,
-                    signature: signature
+                    filled: false
                 })
             );
             _offerIdOf[slot][msg.sender] = id + 1;
@@ -154,50 +121,87 @@ contract OfferBook is OfferBookInternals {
         emit Offered(slot, msg.sender, id, price, deposit, expiry);
     }
 
-    /// @notice Rebuild the signed order an offer stands for.
-    /// @dev The occupant needs this to call `Slot.sell`; a client needs it to
-    ///      show what was actually signed.
-    function orderOf(address slot, uint256 id)
-        public
-        view
-        returns (SellOrder memory order, bytes memory signature)
-    {
-        Offer storage o = _offers[slot][id];
-        order = SellOrder({
-            slot: slot,
-            buyer: o.bidder,
-            price: o.price,
-            deposit: o.deposit,
-            nonce: o.nonce,
-            deadline: o.expiry
-        });
-        signature = o.signature;
-    }
+    // ─── the fill ───────────────────────────────────────────────────────────
 
-    /// @notice The best standing offer as a ready-to-submit signed order.
-    ///
-    /// @dev Deliberately a VIEW, not an executor. `Slot.sell` is
-    ///      `onlyOccupant`, so a book that tried to call it on the occupant's
-    ///      behalf would arrive as the wrong `msg.sender` — and giving the
-    ///      book standing to move somebody's slot is exactly the authority
-    ///      this design refuses it.
-    ///
-    ///      So the occupant fetches the bidder's own signed order from here and
-    ///      submits it themselves, in one transaction. The book publishes; it
-    ///      never acts.
-    function bestOrder(address slot)
-        external
-        view
-        returns (
-            bool found,
-            uint256 id,
-            SellOrder memory order,
-            bytes memory signature
-        )
-    {
-        (found, id, ) = best(slot);
-        if (!found) return (false, 0, order, signature);
-        (order, signature) = orderOf(slot, id);
+    /**
+     * @notice Accept a standing bid: reprice the slot to it and seat the
+     *         bidder. Occupant only.
+     *
+     * @dev The whole of this book's authority over a slot, in one function.
+     *
+     *      Two core calls, in this order and in one transaction:
+     *
+     *        1. `selfAssess(price)` — the occupant's own declared price,
+     *           restated to what they have agreed to sell at. Needs the
+     *           operator grant.
+     *        2. `buy(bidder, price, deposit, price + deposit + arrears)` — the
+     *           ordinary market path. It pays the outgoing occupant their
+     *           deposit plus the price, which is exactly what `sell` used to.
+     *
+     *      Atomic, so nothing can take the slot between the reprice and the
+     *      fill. If step 2 reverts, step 1 rolls back with it and the occupant
+     *      is left at the price they started at.
+     *
+     *      The hooks a slot has attached still get their say — `beforeSelfAssess`
+     *      on the reprice and `beforeBuy` on the seating — and either may veto.
+     *      That is the point of routing a sale through the market path rather
+     *      than around it: there is no second door for a hook to have missed.
+     */
+    function acceptOffer(address slot, uint256 id) external {
+        Offer storage o = _offers[slot][id];
+        if (o.bidder == address(0)) revert NoSuchOffer();
+
+        address seller = ISellableSlot(slot).occupant();
+        if (msg.sender != seller) revert NotOccupant();
+        if (!ISellableSlot(slot).isOperator(address(this)))
+            revert NotOperator();
+        if (!_live(slot, o, seller)) revert OfferNotLive();
+
+        address currency = ISellableSlot(slot).currency();
+        if (currency == address(0)) revert NativeSlotNotSupported();
+
+        uint256 price = o.price;
+        uint256 dep = o.deposit;
+        address bidder = o.bidder;
+
+        // Raising the declared price raises the escrow floor with it, and
+        // `selfAssess` enforces that floor against the deposit ALREADY in the
+        // slot — the seller's, not the bidder's. Reported here, with the number
+        // needed, rather than surfacing from the slot as a bare
+        // `InvalidDeposit` that names neither the cause nor the cure.
+        uint256 floor_ = ISellableSlot(slot).minDepositForBuy(price);
+        uint256 held = ISellableSlot(slot).deposit();
+        if (held < floor_) revert TopUpRequired(floor_ - held);
+
+        // Marked before any external call. The book is about to hand control to
+        // the slot, its hooks and an ERC-20, and a re-entrant `acceptOffer` on
+        // a half-filled row is not a state worth reasoning about.
+        o.filled = true;
+
+        // Reprice FIRST, then quote. `quoteBuy` charges the sitting price, so
+        // asking before the reprice quotes the price being replaced — which on
+        // a higher bid is too little, and `buy` then refuses its own
+        // `maxPayment` with `PaymentAboveMax`.
+        ISellableSlot(slot).selfAssess(price);
+
+        // Pull from the bidder, spend it on their behalf, leave nothing behind.
+        // `buy` charges `msg.sender`, and on a fill that is this book — which
+        // is why the allowance `_fundable` checks is to the book, not the slot.
+        uint256 owed = ISellableSlot(slot).quoteBuy(bidder, dep);
+        IERC20(currency).safeTransferFrom(bidder, address(this), owed);
+        IERC20(currency).forceApprove(slot, owed);
+
+        ISellableSlot(slot).buy(bidder, price, dep, owed);
+
+        // Never leave an allowance standing between calls.
+        IERC20(currency).forceApprove(slot, 0);
+
+        // Cannot happen against a canonical slot. Asserted because this book is
+        // repricing somebody else's position, and a silent no-op here would
+        // leave the seller repriced and not paid.
+        if (ISellableSlot(slot).occupant() != bidder) revert FillFailed();
+
+        emit Filled(slot, bidder, id, seller, price, dep);
     }
 
     /// @notice A bidder's standing offer on a slot, if any.

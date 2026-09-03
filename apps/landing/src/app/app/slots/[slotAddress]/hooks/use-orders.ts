@@ -1,24 +1,26 @@
 "use client";
 
 import { offerBookAbi, offerBookAddress } from "@0xslots/contracts/slots";
-import type { SellOrder } from "@0xslots/sdk/slots";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import type { Address, Hex } from "viem";
+import type { Address } from "viem";
 import { usePublicClient } from "wagmi";
 import { useChain } from "@/context/chain";
 
 /**
  * The on-chain offer book for one slot.
  *
- * ── Discovery, not settlement ────────────────────────────────────────────
+ * ── Discovery AND settlement, now ────────────────────────────────────────
  *
- * A signed sell order is how a sale SETTLES: the occupant hands
- * `(order, signature)` to `Slot.sell`, which re-verifies it, so nothing here
- * can alter the terms the bidder agreed to. The book is how a bid is FOUND —
- * bidders publish their signed terms, anyone reads them, the occupant accepts
- * the best. It never executes and never custodies funds, which is exactly why
- * it is safe to treat as untrusted infrastructure.
+ * The core used to carry `sell`, and the book only published signed orders for
+ * an occupant to submit. `sell` is gone — it was a second seating path with its
+ * own hook callbacks — so a sale is `selfAssess` then `buy`, and the BOOK
+ * performs both inside the occupant's own transaction.
+ *
+ * That means the occupant must first make the book their operator
+ * (`setOperator(book, true)`), which lapses with their tenure. The book still
+ * custodies nothing: it pulls the bidder's payment and spends it in the same
+ * call. And it is immutable, precisely because occupants grant it that power.
  *
  * An earlier version of this hook kept orders in `localStorage`, on the belief
  * that a bid was only ever handed over privately. That was wrong, and the cost
@@ -41,23 +43,20 @@ import { useChain } from "@/context/chain";
  * `board(slot)` gives the list and the contract's own per-entry liveness
  * verdict in ONE call, which is why it is preferred over `offers` plus N
  * `isLive` reads — and why the verdict is never recomputed here from
- * `cancelled` and `expiry`. A filled offer sets no flag on itself (the bidder
- * simply becomes the occupant), so a local `!cancelled && !expired` test calls
- * it live long after it was consumed.
+ * `cancelled` and `expiry` — the book also tracks `filled`, and its own verdict
+ * is the only one guaranteed to account for every reason a bid is dead.
  */
 
 export interface BookOffer {
-  /** Index into the slot's board — the id `cancel` and `orderOf` take. */
+  /** Index into the slot's board — the id `cancel` and `acceptOffer` take. */
   id: number;
   bidder: Address;
   price: bigint;
   deposit: bigint;
   expiry: bigint;
   cancelled: boolean;
-  /** The bidder's nonce on the SLOT. Burned when their order executes. */
-  nonce: bigint;
-  /** Their EIP-712 signature over these exact terms. */
-  signature: Hex;
+  /** Set when the bid has been accepted. Distinct from `cancelled`. */
+  filled: boolean;
 }
 
 type RawOffer = {
@@ -66,8 +65,7 @@ type RawOffer = {
   deposit: bigint;
   expiry: bigint;
   cancelled: boolean;
-  nonce: bigint;
-  signature: Hex;
+  filled: boolean;
 };
 
 /** The book for the current chain, if one is deployed there. */
@@ -131,45 +129,6 @@ export function useOrders(slot: Address | undefined) {
     queryClient.invalidateQueries({ queryKey: ["slots", "offer-book"] });
   }, [queryClient]);
 
-  /**
-   * The bidder's own signed order for the best offer, ready for `Slot.sell`.
-   *
-   * Read at accept time rather than assembled from the board row: `bestOrder`
-   * returns the `(SellOrder, signature)` pair the slot will verify, so the
-   * occupant forwards exactly what the bidder signed and this app never has to
-   * reconstruct a struct whose field order it could get wrong.
-   */
-  const readBestOrder = useCallback(async (): Promise<{
-    order: SellOrder;
-    signature: Hex;
-  } | null> => {
-    if (!book || !slot || !publicClient) return null;
-    const [found, , order, signature] = (await publicClient.readContract({
-      address: book,
-      abi: offerBookAbi,
-      functionName: "bestOrder",
-      args: [slot],
-    })) as readonly [boolean, bigint, SellOrder, Hex];
-    return found ? { order, signature } : null;
-  }, [book, slot, publicClient]);
-
-  /** One board row's signed order, for accepting something other than the best. */
-  const readOrderAt = useCallback(
-    async (
-      id: number,
-    ): Promise<{ order: SellOrder; signature: Hex } | null> => {
-      if (!book || !slot || !publicClient) return null;
-      const [order, signature] = (await publicClient.readContract({
-        address: book,
-        abi: offerBookAbi,
-        functionName: "orderOf",
-        args: [slot, BigInt(id)],
-      })) as readonly [SellOrder, Hex];
-      return { order, signature };
-    },
-    [book, slot, publicClient],
-  );
-
   return {
     /** Undefined means this chain has no book — not that the book is empty. */
     book,
@@ -181,7 +140,5 @@ export function useOrders(slot: Address | undefined) {
     bestOffer: query.data?.bestOffer,
     isLoading: query.isLoading,
     refresh,
-    readBestOrder,
-    readOrderAt,
   };
 }

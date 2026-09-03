@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {ISlotHook} from "./ISlotHook.sol";
-import {SellOrder} from "./SlotOrders.sol";
 import "./SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
 
@@ -127,75 +126,30 @@ abstract contract SlotOccupancy is SlotViews {
     }
 
     /**
-     * @notice Hand the slot to a buyer on terms that buyer signed.
+     * ── `sell` USED TO LIVE HERE ────────────────────────────────────────────
      *
-     * @dev The missing half of `buy`. `buy` is "anyone may take this at the
-     *      price the occupant set"; `sell` is "the occupant may hand it to a
-     *      buyer who agreed to these terms". Without it the only exits were
-     *      being bought at your own asking price, or walking away with nothing.
+     * It took a buyer's EIP-712 order and seated them at a price the two had
+     * agreed. It is gone, and this note is here so nobody adds it back without
+     * knowing why.
      *
-     *      ERC-20 only: payment is pulled on the buyer's allowance, and native
-     *      ETH has none.
+     * It was a SECOND seating path. It reset `occupiedSince` like `buy`, but
+     * routed through `beforeSell` rather than `beforeBuy` — so every hook
+     * author had to police two doors, and two audit findings were the same
+     * mistake of policing only one. Its `order.price` was both the payment and
+     * the new declared price, so one number chosen by one party settled what
+     * changed hands and what the slot was then worth; when that party signed
+     * both sides, nothing was left to check.
+     *
+     * What it offered over the market — choosing your counterparty — is the
+     * one thing this protocol is built to deny. An occupant who wants price P
+     * calls `selfAssess(P)` and anybody may take it. They receive P either way.
+     *
+     * A consensual sale is now `selfAssess` then `buy`, in one transaction, by
+     * a periphery book the occupant has made its operator for their tenure.
+     * The economics are identical — `buy` already refunds the outgoing occupant
+     * `_deposit + _price` — but there is one seating path, one set of hook
+     * checks, and 128 lines and three storage mappings less in every slot.
      */
-    function sell(SellOrder calldata order, bytes calldata signature)
-        external
-        nonReentrant
-        onlyOccupant
-    {
-        if (_isNative()) revert SellNeedsErc20();
-        if (order.price == 0 || order.price > MAX_PRICE) revert InvalidPrice();
-        if (order.buyer == address(0)) revert InvalidRecipient();
-
-        _consumeOrder(order, signature);
-        _settle();
-
-        address prev = _occupant;
-        if (order.buyer == prev) revert CannotBuyFromYourself();
-
-        // Applied before the hook is asked, for the same reason as `buy`.
-        _applyPending();
-        _requireFunded(order.deposit, order.price);
-
-        _before(
-            F_BEFORE_SELL,
-            abi.encodeCall(
-                ISlotHook.beforeSell,
-                (_ctx(msg.sender, order.buyer, order.price, order.deposit))
-            )
-        );
-
-        uint256 debt = arrearsOf[order.buyer];
-        if (debt != 0) {
-            arrearsOf[order.buyer] = 0;
-            collectedTax += debt;
-        }
-
-        _pull(order.buyer, order.price + order.deposit + debt);
-
-        uint256 proceeds = _deposit + order.price;
-
-        _occupant = order.buyer;
-        unchecked { ++tenureId; }
-        _price = order.price;
-        _deposit = order.deposit;
-        occupiedSince = uint64(block.timestamp);
-        lastSettled = uint64(block.timestamp);
-
-        _payOrCredit(prev, proceeds);
-
-        emit Sold(prev, order.buyer, order.price, order.deposit);
-        // `Bought` as well, deliberately: the occupancy transition IS a buy and
-        // every indexer and feed already reads it that way. Emitting only
-        // `Sold` would make slots silently vanish from anything watching.
-        emit Bought(order.buyer, prev, order.price, order.deposit, order.price);
-        _after(
-            F_AFTER_SELL,
-            abi.encodeCall(
-                ISlotHook.afterSell,
-                (_ctx(msg.sender, order.buyer, order.price, order.deposit))
-            )
-        );
-    }
 
     /// @notice Give up the slot and take back what is left of your deposit.
     function release() external nonReentrant onlyOccupant {

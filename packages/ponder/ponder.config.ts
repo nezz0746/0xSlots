@@ -91,7 +91,9 @@ function anvilCollectiveFactory(): Deployment {
     | undefined;
   if (fromEnv) {
     const block = Number(process.env.SLOTS_COLLECTIVE_START_BLOCK_ANVIL ?? 0);
-    console.log(`[local] collective factory ${fromEnv} from block ${block} (env)`);
+    console.log(
+      `[local] collective factory ${fromEnv} from block ${block} (env)`,
+    );
     return { address: fromEnv, startBlock: block };
   }
   try {
@@ -160,7 +162,10 @@ function remoteFactory(
   // Otherwise the record the deploy script wrote.
   try {
     const raw = readFileSync(
-      join(__dirname, `../../apps/contracts/deployments/${chainId}/${name}.json`),
+      join(
+        __dirname,
+        `../../apps/contracts/deployments/${chainId}/${name}.json`,
+      ),
       "utf8",
     );
     const rec = JSON.parse(raw) as Deployment & { version?: number };
