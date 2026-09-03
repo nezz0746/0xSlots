@@ -54,20 +54,6 @@ abstract contract SlotHooks is SlotStorage {
     }
 
     /**
-     * @dev Read a hook's declared subscriptions and pack them.
-     *
-     *      Deliberately NOT fail-open. Everywhere else a misbehaving hook is
-     *      tolerated, but this read happens once, while attaching, in a call
-     *      the manager sent on purpose — and getting it wrong is silent and
-     *      permanent. A hook whose `hooks()` reverts is a hook that will not
-     *      work; better to refuse it now than to attach it with no
-     *      subscriptions and leave someone wondering why nothing fires.
-     *
-     *      Also where `hookData` is checked, for the same reason and by the
-     *      same argument. The slot cannot judge an opaque word, so it asks the
-     *      only party that can, once, while it is still fixable.
-     */
-    /**
      * @dev `_readHookFlags` without the right to revert.
      *
      *      Used only by `_applyPending`, which runs inside `_liquidate`. The
@@ -118,7 +104,12 @@ abstract contract SlotHooks is SlotStorage {
     {
         if (h == address(0)) return (false, 0);
 
-        uint256 stipend = HOOK_GAS;
+        // HALF each, so the PAIR costs what the single call used to. The
+        // docstring's promise is about what an eviction can be made to cost,
+        // and two full stipends quietly doubled it. Splitting keeps the budget
+        // where it was: no hook has a bigger claim on an eviction than any
+        // other, however many questions the slot has to ask it.
+        uint256 stipend = HOOK_GAS / 2;
 
         // Calldata is built in Solidity — `abi.encodeCall` type-checks the
         // selector, so a signature change breaks the build rather than the
@@ -168,6 +159,20 @@ abstract contract SlotHooks is SlotStorage {
         if (!ok) packed = 0;
     }
 
+    /**
+     * @dev Read a hook's declared subscriptions and pack them.
+     *
+     *      Deliberately NOT fail-open. Everywhere else a misbehaving hook is
+     *      tolerated, but this read happens once, while attaching, in a call
+     *      the manager sent on purpose — and getting it wrong is silent and
+     *      permanent. A hook whose `hooks()` reverts is a hook that will not
+     *      work; better to refuse it now than to attach it with no
+     *      subscriptions and leave someone wondering why nothing fires.
+     *
+     *      Also where `hookData` is checked, for the same reason and by the
+     *      same argument. The slot cannot judge an opaque word, so it asks the
+     *      only party that can, once, while it is still fixable.
+     */
     function _readHookFlags(address h, bytes32 data)
         internal
         view
@@ -200,22 +205,37 @@ abstract contract SlotHooks is SlotStorage {
         uint256 newPrice,
         uint256 depositAmount
     ) internal view returns (SlotContext memory) {
-        return _ctxFor(caller, account, newPrice, depositAmount, hookData);
+        return
+            _ctxFor(
+                caller,
+                account,
+                newPrice,
+                depositAmount,
+                hookData,
+                taxPercentage
+            );
     }
 
-    /// @dev `_ctx` with the configuration named rather than read.
+    /// @dev `_ctx` with the outgoing terms named rather than read.
     ///
     ///      The counterpart to `_afterOn`, and needed for the same reason: a
-    ///      transition that swaps hooks has already overwritten `hookData` by
-    ///      the time the end-of-tenure callback goes out, so a context built
-    ///      from storage would hand the outgoing hook its successor's
-    ///      configuration — a window it never granted, on a tenure it did.
+    ///      transition that swaps hooks has already overwritten `hookData` and
+    ///      `taxPercentage` by the time the end-of-tenure callback goes out, so
+    ///      a context built from storage would hand the outgoing hook its
+    ///      successor's terms — a rate it never charged and a configuration it
+    ///      never granted, on a tenure it did govern.
+    ///
+    ///      `occupant`, `occupiedSince` and `currentPrice` are deliberately the
+    ///      post-`_vacate` zeros: the tenure is over, and a hook closing its
+    ///      books needs to know that. What it must not get is the SUCCESSOR's
+    ///      terms wearing the authority of the tenure it is being told about.
     function _ctxFor(
         address caller,
         address account,
         uint256 newPrice,
         uint256 depositAmount,
-        bytes32 data
+        bytes32 data,
+        uint256 tax
     ) internal view returns (SlotContext memory) {
         return
             SlotContext({
@@ -224,7 +244,7 @@ abstract contract SlotHooks is SlotStorage {
                 account: account,
                 occupant: _occupant,
                 occupiedSince: occupiedSince,
-                taxPercentage: taxPercentage,
+                taxPercentage: tax,
                 currentPrice: _price,
                 newPrice: newPrice,
                 depositAmount: depositAmount,

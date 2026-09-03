@@ -32,6 +32,17 @@ import {SlotConstants} from "../SlotConstants.sol";
  *      it, one broken observer would silence every other one.
  */
 contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
+    /// @notice Who deployed this composite. Provenance, and nothing more.
+    ///
+    /// @dev It confers NO powers. `add()` was deliberately removed — the child
+    ///      set is snapshotted by the slot when it attaches, so a composite
+    ///      that could grow would be a hook widening its own reach mid-tenure
+    ///      — and `NotOwner` went with it. What survives is a public record of
+    ///      who assembled this tree, for a reader deciding whether to trust it.
+    ///
+    ///      Named `owner` rather than `deployer` only because that is what the
+    ///      ecosystem reads. Nothing here is gated on it, so do not read a
+    ///      public `owner()` on a hook as authority.
     address public immutable owner;
 
     address[] public children;
@@ -42,8 +53,7 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
     /// @dev Headroom left for this contract's own loop and return.
     uint256 internal constant GAS_FLOOR = 10_000;
 
-    /// @dev Per-child stipend for `after` callbacks, derived from the budget
-    ///      rather than guessed.
+    /// @dev Nominal per-child stipend, quoted for clients sizing a call.
     ///
     ///      It was a flat 100_000 against `MAX_CHILDREN = 8`, promising 800k
     ///      out of the 500k the slot actually forwards. The failure was not
@@ -52,13 +62,20 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
     ///      too, and the slot swallowed it as one `HookCallFailed`. A lenient
     ///      fan-out that drops all of its children is the exact failure it
     ///      exists to prevent.
+    ///
+    ///      NOT what `_each` actually forwards — see `_share`. A constant
+    ///      cannot be right here, because the budget this contract is called
+    ///      with is not a constant.
     uint256 public constant CHILD_GAS = HOOK_GAS / MAX_CHILDREN;
 
-    error NotOwner();
     error TooManyChildren();
     error ChildHasNoCode();
 
-    event ChildAdded(address indexed child);
+    /// @notice A child callback failed and was skipped.
+    /// @dev The composite's counterpart to the slot's `HookCallFailed`. Only
+    ///      ever emitted on the `after` side: a failing `before` reverts the
+    ///      whole fan-out and never reaches here.
+    event ChildCallFailed(address indexed child, bytes4 selector);
 
 
     /// @notice Identifies this as a composite. See `IDescribedHook`.
@@ -195,10 +212,49 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
         _each(abi.encodeCall(ISlotHook.afterSettle, (ctx)));
     }
 
+    /**
+     * @dev What the next child may spend: an equal share of what is LEFT.
+     *
+     *      Recomputed every iteration, for two reasons.
+     *
+     *      It fixes a bug a constant guaranteed. The stipend was
+     *      `CHILD_GAS = HOOK_GAS / MAX_CHILDREN`, so a NESTED composite —
+     *      entered with one child's share rather than the slot's full one —
+     *      met `gasleft() < CHILD_GAS + GAS_FLOOR` on its very first iteration
+     *      and returned. Not a tight margin: arithmetic. Its entire subtree
+     *      received no `after` callbacks, ever, and because the inner call
+     *      SUCCEEDED nothing emitted `HookCallFailed`. Silent.
+     *
+     *      And it is self-correcting. A child that under-spends leaves more for
+     *      the rest instead of stranding it, and there is no boundary case on
+     *      the last child — dividing by the number REMAINING keeps the last one
+     *      funded exactly as well as the first.
+     *
+     *      Returns 0 when the frame is down to its own headroom, which the
+     *      callers read as "stop".
+     */
+    function _shareOf(uint256 remaining) internal view returns (uint256) {
+        uint256 budget = gasleft();
+        if (budget <= GAS_FLOOR) return 0;
+        unchecked {
+            return (budget - GAS_FLOOR) / remaining;
+        }
+    }
+
+    /// @dev Strict: any child's revert is the composite's revert. Capped per
+    ///      child even so — `_all` is reachable from `validateHookData`, which
+    ///      `_applyPending` calls inside `liquidate()`, and an uncapped
+    ///      fan-out there hands an untrusted subtree the whole eviction frame.
+    ///      A child that runs out under its share reverts, which is a veto and
+    ///      is what strict means; the cap only bounds what it costs to say so.
     function _all(bytes memory call) internal view {
         uint256 n = children.length;
         for (uint256 i; i < n; ++i) {
-            (bool ok, bytes memory err) = children[i].staticcall(call);
+            uint256 share = _shareOf(n - i);
+            if (share == 0) return;
+            (bool ok, bytes memory err) = children[i].staticcall{gas: share}(
+                call
+            );
             if (ok) continue;
             assembly {
                 revert(add(err, 0x20), mload(err))
@@ -215,8 +271,12 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
             // (worse) the composite's own frame can die and roll back every
             // child that already succeeded. Returning cleanly keeps the ones
             // that ran.
-            if (gasleft() < CHILD_GAS + GAS_FLOOR) return;
-            children[i].call{gas: CHILD_GAS}(call);
+            uint256 share = _shareOf(n - i);
+            if (share == 0) return;
+            (bool ok, ) = children[i].call{gas: share}(call);
+            // Say so. The slot emits `HookCallFailed` for exactly this and the
+            // composite was the one layer that swallowed a failure in silence.
+            if (!ok) emit ChildCallFailed(children[i], bytes4(call));
         }
     }
 }

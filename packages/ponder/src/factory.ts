@@ -109,12 +109,10 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
 
   if (hasHook) {
     await getOrCreateHook(context, hookAddr, event.block.timestamp);
-    await context.db
-      .update(hook, { id: hookAddr, chainId })
-      .set((row) => ({
-        slotCount: row.slotCount + 1,
-        updatedAt: event.block.timestamp,
-      }));
+    await context.db.update(hook, { id: hookAddr, chainId }).set((row) => ({
+      slotCount: row.slotCount + 1,
+      updatedAt: event.block.timestamp,
+    }));
   }
 
   await context.db.insert(slot).values({

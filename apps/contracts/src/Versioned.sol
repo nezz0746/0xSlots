@@ -27,9 +27,10 @@ pragma solidity ^0.8.24;
  *
  *      ── The rule ────────────────────────────────────────────────────────
  *
- *      Bump it in the same commit as the change. CI enforces this: a PR that
- *      alters an upgradeable contract's bytecode without raising its version
- *      fails, because the alternative is discovering it at upgrade time.
+ *      Bump it in the same commit as the change. Nothing enforces this — there
+ *      is no CI for the contracts, by choice, and no hook. It is a rule kept by
+ *      review, and the cost of missing it is discovering the drift at upgrade
+ *      time. `pnpm protocol upgrade --dry` is where you would notice.
  */
 abstract contract Versioned {
     /// @notice The implementation's version. Strictly increasing, forever.

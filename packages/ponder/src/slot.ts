@@ -720,17 +720,17 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
   const proposedHook = lower(event.args.hook);
 
   await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    pendingHasTax: event.args.tax || row.pendingHasTax,
-    pendingTaxPercentage: event.args.tax
+    pendingHasTax: event.args.changeTax || row.pendingHasTax,
+    pendingTaxPercentage: event.args.changeTax
       ? event.args.taxPercentage
       : row.pendingTaxPercentage,
-    pendingHasHook: event.args.hook_ || row.pendingHasHook,
+    pendingHasHook: event.args.changeHook || row.pendingHasHook,
     // The zero address is a real proposed value — "detach the hook" — which is
     // why `pendingHasHook` exists rather than testing this column for null.
-    pendingHook: event.args.hook_ ? proposedHook : row.pendingHook,
+    pendingHook: event.args.changeHook ? proposedHook : row.pendingHook,
     // Under the same flag as the address, because the contract queues them
     // together: a proposal that named a hook also named its configuration.
-    pendingHookData: event.args.hook_
+    pendingHookData: event.args.changeHook
       ? lower(event.args.hookData)
       : row.pendingHookData,
     pendingProposedAt: event.block.timestamp,
@@ -742,8 +742,8 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     chainId: context.chain.id,
     slot: slotAddr,
     manager: s.manager ?? lower(event.transaction.from),
-    changeTax: event.args.tax,
-    changeHook: event.args.hook_,
+    changeTax: event.args.changeTax,
+    changeHook: event.args.changeHook,
     taxPercentage: event.args.taxPercentage,
     hook: proposedHook,
     hookData: lower(event.args.hookData),
@@ -774,26 +774,21 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const prevHook = s.hook;
   const prevHookData = s.hookData ?? ZERO_DATA;
   const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
+  const hookDataChanged = prevHookData !== nextHookData;
   const taxChanged = s.taxPercentage !== event.args.taxPercentage;
 
+  // Re-read unconditionally, never carried over from the row.
+  //
+  // `_applyPending` calls `_tryReadHookFlags` every time it applies, precisely
+  // because a hook could have been upgraded since it was proposed — so the
+  // snapshot the slot just took is the only authority on what it obeys. This
+  // used to reuse the row whenever the ADDRESS was unchanged, which is exactly
+  // the case an upgradeable hook presents: same address, different code,
+  // different flags, and the row drifting permanently.
   let flags = NO_HOOK_FLAGS;
   if (nextHook !== ZERO_ADDR) {
-    if (hookChanged) {
-      // A new hook: read the snapshot the slot just took.
-      const terms = await readSlotTerms(context, slotAddr);
-      flags = terms.flags;
-    } else {
-      flags = {
-        beforeBuy: s.hookBeforeBuy,
-        beforeSell: s.hookBeforeSell,
-        beforeSelfAssess: s.hookBeforeSelfAssess,
-        afterBuy: s.hookAfterBuy,
-        afterSell: s.hookAfterSell,
-        afterRelease: s.hookAfterRelease,
-        afterLiquidate: s.hookAfterLiquidate,
-        afterSettle: s.hookAfterSettle,
-      };
-    }
+    const terms = await readSlotTerms(context, slotAddr);
+    flags = terms.flags;
   }
 
   if (hookChanged) {
@@ -833,6 +828,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     previousHookData: prevHookData,
     taxChanged,
     hookChanged,
+    hookDataChanged,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -860,7 +856,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
 ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { tax, hook: hookFlag } = event.args;
+  const { cancelTax: tax, cancelHook: hookFlag } = event.args;
 
   const hadTax = s.pendingHasTax && tax;
   const hadHook = s.pendingHasHook && hookFlag;
@@ -875,8 +871,7 @@ ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
     pendingHook: hookFlag ? null : s.pendingHook,
     pendingHookData: hookFlag ? null : s.pendingHookData,
     // Mirrors `if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0`.
-    pendingProposedAt:
-      nextHasTax || nextHasHook ? s.pendingProposedAt : null,
+    pendingProposedAt: nextHasTax || nextHasHook ? s.pendingProposedAt : null,
     updatedAt: event.block.timestamp,
   });
 
@@ -962,12 +957,10 @@ ponder.on("Slot:HookCallFailed", async ({ event, context }) => {
   const hookAddr = lower(event.args.hook);
 
   await bumpHookSlotCount(context, hookAddr, event.block.timestamp, 0);
-  await context.db
-    .update(hook, { id: hookAddr, chainId })
-    .set((row) => ({
-      failedCallCount: row.failedCallCount + 1,
-      updatedAt: event.block.timestamp,
-    }));
+  await context.db.update(hook, { id: hookAddr, chainId }).set((row) => ({
+    failedCallCount: row.failedCallCount + 1,
+    updatedAt: event.block.timestamp,
+  }));
 
   await context.db.insert(hookCallFailedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),

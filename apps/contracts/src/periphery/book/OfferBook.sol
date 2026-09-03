@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SellOrder} from "../../SlotOrders.sol";
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
@@ -99,6 +98,8 @@ contract OfferBook is OfferBookInternals {
     function initialize(address admin_) external initializer {
         if (admin_ == address(0)) revert ZeroAdmin();
         admin = admin_;
+        // The genesis admin, as a log. See `SlotFactory.initialize`.
+        emit AdminTransferred(address(0), admin_);
     }
 
     /// @notice Hand the upgrade right to somebody else.

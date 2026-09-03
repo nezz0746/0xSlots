@@ -14,7 +14,7 @@ import {Versioned} from "../Versioned.sol";
 ///
 /// @notice A slot names two addresses at creation and never lets go of either:
 ///         `recipient`, which money flows to, and `manager`, which may propose
-///         tax / utility / occupancy-policy changes. The protocol deliberately
+///         tax and hook changes. The protocol deliberately
 ///         keeps them separate — "receives money" and "has admin powers" are
 ///         different jobs. This contract is for the case where you want them to
 ///         be the same address anyway, without collapsing them into one person:
@@ -23,7 +23,7 @@ import {Versioned} from "../Versioned.sol";
 ///
 ///         Point a slot's `recipient` AND `config.manager` at an instance of
 ///         this and you get: tax accrues here, `distribute()` fans it out over
-///         the split, and each of the slot's three governable dimensions is
+///         the split, and each of the slot's two governable dimensions is
 ///         gated behind its own role.
 ///
 /// @dev ── THIS IS ONE OF TWO PAYOUT ENGINES ───────────────────────────────
@@ -43,7 +43,7 @@ import {Versioned} from "../Versioned.sol";
 ///      that function would completely defeat everything below it: the owner
 ///      would simply call
 ///
-///          execCalls([{ to: slot, data: proposeTaxUpdate(9999) }])
+///          execCalls([{ to: slot, data: proposeTerms(9999, …, true, false) }])
 ///
 ///      and bypass `TAX_MANAGER_ROLE` entirely. The roles would be decoration.
 ///
@@ -110,7 +110,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     // ═══════════════════════════════════════════════════════════
 
     /// @param admin Holder of `DEFAULT_ADMIN_ROLE`. Can call every relay below
-    ///        and is the admin of all four manager roles.
+    ///        and is the admin of all three manager roles.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
     /// @param hookManagers Initial `POLICY_MANAGER_ROLE` holders — the role
     ///        that governs the hook. May be empty. There is no longer a

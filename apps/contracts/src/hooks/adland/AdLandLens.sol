@@ -62,8 +62,26 @@ abstract contract AdLandLens is AdLandStorage {
     function creativeOf(address slot) external view returns (string memory) {
         Creative storage c = _creative[slot];
         if (bytes(c.uri).length == 0) return "";
-        if (ISlotAd(slot).occupant() == address(0)) return "";
-        if (ISlotAd(slot).tenureId() != c.tenureId) return "";
+
+        // Guarded like `ad()`, and for the same two reasons. A staticcall to a
+        // codeless address SUCCEEDS returning nothing, which decodes as zero —
+        // and a slot too old to answer these reverts. Both were unguarded here
+        // while `ad()` handled them, so the file's own promise that nothing
+        // reverts held only on the path a render actually takes.
+        if (slot.code.length == 0) return "";
+
+        try ISlotAd(slot).occupant() returns (address occupant) {
+            if (occupant == address(0)) return "";
+        } catch {
+            return "";
+        }
+
+        try ISlotAd(slot).tenureId() returns (uint64 id) {
+            if (id != c.tenureId) return "";
+        } catch {
+            return "";
+        }
+
         return c.uri;
     }
 

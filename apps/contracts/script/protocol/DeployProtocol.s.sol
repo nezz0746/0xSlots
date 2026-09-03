@@ -222,25 +222,6 @@ contract DeployProtocol is ProtocolConfig {
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     /**
-     * @dev Bring a proxy to `impl`, deploying it the first time and UPGRADING it
-     *      every time after.
-     *
-     *      This used to CREATE2 the proxy unconditionally, and it had a bug that
-     *      the surrounding comment denied: a proxy's initcode embeds its
-     *      implementation address, so the predicted address MOVED whenever the
-     *      implementation's bytecode changed. `_deploy2Raw` skips only when code
-     *      already exists at the predicted address — and a moved address has
-     *      none. So a routine implementation change did not upgrade anything; it
-     *      deployed a second protocol beside the first and left every slot the
-     *      live factory had created pointing at the abandoned one.
-     *
-     *      The fix is to stop deriving the address at all after the first
-     *      deployment. The record in `deployments/<chainid>/` is where the proxy
-     *      lives; CREATE2 only decides where a proxy that does not exist yet
-     *      goes. That also makes this the same operation CI runs: `upgrade`
-     *      really upgrades.
-     */
-    /**
      * Point a factory's beacon at `impl`, if it is not there already.
      *
      * Both factories own their beacon and gate `upgradeBeacon` behind their
@@ -280,6 +261,25 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("beacon   ", name, impl);
     }
 
+    /**
+     * @dev Bring a proxy to `impl`, deploying it the first time and UPGRADING it
+     *      every time after.
+     *
+     *      This used to CREATE2 the proxy unconditionally, and it had a bug that
+     *      the surrounding comment denied: a proxy's initcode embeds its
+     *      implementation address, so the predicted address MOVED whenever the
+     *      implementation's bytecode changed. `_deploy2Raw` skips only when code
+     *      already exists at the predicted address — and a moved address has
+     *      none. So a routine implementation change did not upgrade anything; it
+     *      deployed a second protocol beside the first and left every slot the
+     *      live factory had created pointing at the abandoned one.
+     *
+     *      The fix is to stop deriving the address at all after the first
+     *      deployment. The record in `deployments/<chainid>/` is where the proxy
+     *      lives; CREATE2 only decides where a proxy that does not exist yet
+     *      goes. That also makes this the same operation CI runs: `upgrade`
+     *      really upgrades.
+     */
     function _proxy(
         string memory name,
         address impl,

@@ -7,7 +7,6 @@ pragma solidity ^0.8.24;
 error NotManager();
 error NotOccupant();
 error NotOccupantOrOperator();
-error AlreadyInitialized();
 
 error InvalidPrice();
 error InvalidTax();
@@ -17,7 +16,6 @@ error InvalidDeposit();
 error InvalidValue();
 error InvalidHook();
 
-error Occupied();
 error Vacant();
 error NotInsolvent();
 error CannotBuyFromYourself();

@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotsTestToken} from "./SlotsTestToken.sol";
+import {SlotMath} from "../../src/SlotMath.sol";
 
 /**
  * @title SeedSlots
@@ -25,8 +25,6 @@ import {SlotsTestToken} from "./SlotsTestToken.sol";
  *      which is the state that is effectively untestable against a testnet.
  */
 contract SeedSlots is Script {
-    uint256 internal constant MONTH = 30 days;
-    uint256 internal constant BASIS_POINTS = 10_000;
 
     SlotFactory internal factory;
 
@@ -159,15 +157,16 @@ contract SeedSlots is Script {
         pure
         returns (uint256)
     {
-        return Math.ceilDiv(price * tax * window, MONTH * BASIS_POINTS);
+        // The slot's own formula, not a copy of it. This hand-wrote
+        // `ceilDiv(price * tax * window, MONTH * BASIS_POINTS)` against its own
+        // local constants — the plain product being exactly the overflow
+        // `SlotMath` exists to avoid, and the constants exactly what
+        // `SlotConstants` exists to stop anyone hardcoding. A seed that funds
+        // slots by a different formula than the slot charges by is a seed that
+        // drifts, silently, into slots nobody can buy.
+        return SlotMath.depositFor(price, tax, window);
     }
 
-    /// @dev The shape `DeployProtocol` writes, so every consumer reads one
-    ///      format. `version` is not decoration: it is the discriminator that
-    ///      tells a record written by this protocol from one the retired
-    ///      protocol left under the same filename, and `sync-deployments`
-    ///      ignores any record without it. No `startBlock` — nothing indexes
-    ///      these two.
     /// @dev The address `DeployProtocol` wrote down. Reverts loudly when the
     ///      protocol has not been deployed to this chain, which is the only
     ///      honest answer — seeding against a half-built chain produces slots
@@ -185,6 +184,12 @@ contract SeedSlots is Script {
         return vm.parseJsonAddress(raw, ".address");
     }
 
+    /// @dev The shape `DeployProtocol` writes, so every consumer reads one
+    ///      format. `version` is not decoration: it is the discriminator that
+    ///      tells a record written by this protocol from one the retired
+    ///      protocol left under the same filename, and `sync-deployments`
+    ///      ignores any record without it. No `startBlock` — nothing indexes
+    ///      these two.
     function _record(string memory name, address addr) internal {
         string memory obj = name;
         vm.serializeUint(obj, "version", 1);

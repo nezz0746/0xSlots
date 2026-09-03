@@ -6,7 +6,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 import {SlotConstants} from "./SlotConstants.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
-import {ISlot} from "./interfaces/ISlot.sol";
+import {ISlotEvents} from "./ISlotEvents.sol";
 import "./SlotErrors.sol";
 
 /**
@@ -52,7 +52,7 @@ import "./SlotErrors.sol";
  *      several more concerns; not worth it for the shape below.
  */
 abstract contract SlotStorage is
-    ISlot,
+    ISlotEvents,
     SlotConstants,
     Initializable,
     ReentrancyGuard,

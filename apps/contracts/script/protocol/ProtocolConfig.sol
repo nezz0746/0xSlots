@@ -57,7 +57,6 @@ abstract contract ProtocolConfig is Script {
 
     error NoConfigForChain(uint256 chainId);
     error AdminNotSet(uint256 chainId);
-    error MainnetNeedsAnExplicitFlag(uint256 chainId);
 
     function chainConfig() internal view returns (ChainConfig memory c) {
         string memory path = string.concat(
@@ -219,13 +218,4 @@ abstract contract ProtocolConfig is Script {
         return raw.readAddress(".address");
     }
 
-    function deployedVersion(string memory name)
-        internal
-        view
-        returns (uint64)
-    {
-        string memory path = recordPath(name);
-        if (!vm.exists(path)) return 0;
-        return uint64(vm.readFile(path).readUint(".version"));
-    }
 }

@@ -116,6 +116,23 @@ contract RejectingHook is ISlotHook {
     function afterSettle(SlotContext calldata) external {}
 }
 
+/// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
+contract Counter is ISlotHook {
+    uint256 public buys;
+    function validateHookData(bytes32) external pure {}
+    function hooks() external pure returns (HookFlags memory f) {
+        f.afterBuy = true;
+    }
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSell(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external { buys++; }
+    function afterSell(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+}
+
 /// @dev `transfer` succeeds but answers with a word that is neither 0 nor 1.
 contract WeirdTok is ERC20 {
     address public trap;
@@ -150,6 +167,7 @@ contract AuditRegressionsTest is Test {
         )));
         token = new Small();
         token.mint(occ, 10_000_000);
+        token.mint(grinder, 10_000_000);
     }
 
     function _slot(address currency, uint256 minDep) internal returns (Slot) {
@@ -274,6 +292,56 @@ contract AuditRegressionsTest is Test {
     ///      staticcalls cannot silently lose it.
     function test_AHookRejectingItsConfigurationCannotBlockLiquidation() public {
         _evictWithPendingHook(address(new RejectingHook()), false);
+    }
+
+    /**
+     * @notice A composite inside a composite still delivers `after` callbacks.
+     *
+     * @dev The stipend was the constant `CHILD_GAS = HOOK_GAS / MAX_CHILDREN`,
+     *      so an inner composite — entered with one child's share rather than
+     *      the slot's full stipend — met `gasleft() < CHILD_GAS + GAS_FLOOR` on
+     *      its first iteration and returned. Arithmetic, not a margin: its
+     *      whole subtree got nothing, on every transition, and because the
+     *      inner call SUCCEEDED nothing emitted `HookCallFailed`.
+     *
+     *      Mutation-checked: restoring the constant fails this.
+     */
+    function test_ANestedCompositeStillReachesItsChildren() public {
+        Counter leaf = new Counter();
+        HookFlags memory f;
+        f.afterBuy = true;
+
+        address[] memory inner = new address[](1);
+        inner[0] = address(leaf);
+        CompositeHook mid = new CompositeHook(address(this), inner, f, "");
+
+        address[] memory outer = new address[](1);
+        outer[0] = address(mid);
+        CompositeHook root = new CompositeHook(address(this), outer, f, "");
+
+        Slot s = _slot(address(token), 0);
+        s.proposeTerms(0, address(root), bytes32(0), false, true);
+        vm.warp(block.timestamp + 2 days);
+
+        vm.startPrank(occ);
+        token.approve(address(s), type(uint256).max);
+        s.buy(occ, 100, PRICE, 0); // the transition that applies the hook
+        vm.stopPrank();
+        assertEq(s.hook(), address(root), "the tree is attached");
+        // The transition that attaches a hook also notifies it, so count from
+        // here rather than from zero.
+        uint256 before = leaf.buys();
+
+        vm.startPrank(grinder);
+        token.approve(address(s), type(uint256).max);
+        s.buy(grinder, 100, PRICE, type(uint256).max);
+        vm.stopPrank();
+
+        assertEq(
+            leaf.buys(),
+            before + 1,
+            "two composites deep, and the leaf still ran"
+        );
     }
 
     function test_AWeirdTokenReturnCannotBlockLiquidation() public {

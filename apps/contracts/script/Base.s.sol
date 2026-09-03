@@ -101,6 +101,22 @@ abstract contract BaseScript is Script {
       )
     );
 
+    // Refuse to overwrite the CURRENT protocol's ledger.
+    //
+    // These scripts belong to the retired protocol, and they write the same
+    // filenames `ProtocolConfig.record` does — so a stray `forge script` here
+    // silently replaces a live v2 record with a v1 address, in exactly the
+    // shape that re-pointed a live beacon on Base once already. `version` is
+    // the discriminator: only `DeployProtocol` and `SeedSlots` write it, so its
+    // presence means this file is not ours to touch.
+    if (vm.exists(filePathWithEncodePacked)) {
+      string memory prev = vm.readFile(filePathWithEncodePacked);
+      require(
+        !vm.keyExistsJson(prev, ".version"),
+        "refusing to overwrite a v2 deployment record"
+      );
+    }
+
     json = vm.serializeAddress(objectName, "address", contractAddress);
     json = vm.serializeUint(objectName, "startBlock", block.number);
 

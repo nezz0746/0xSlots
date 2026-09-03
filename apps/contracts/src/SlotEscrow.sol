@@ -90,7 +90,7 @@ abstract contract SlotEscrow is SlotOccupancy {
         onlyOccupant
     {
         _operatorOf[tenureId][operator] = allowed;
-        emit OperatorSet(operator, allowed);
+        emit OperatorSet(operator, allowed, tenureId);
     }
 
 

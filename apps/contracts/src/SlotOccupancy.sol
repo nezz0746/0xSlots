@@ -201,6 +201,7 @@ abstract contract SlotOccupancy is SlotViews {
         address outgoing = hook;
         uint8 outgoingFlags = _hookFlags;
         bytes32 outgoingData = hookData;
+        uint256 outgoingTax = taxPercentage;
 
         _vacate();
         _applyPending();
@@ -215,7 +216,7 @@ abstract contract SlotOccupancy is SlotViews {
             F_AFTER_RELEASE,
             abi.encodeCall(
                 ISlotHook.afterRelease,
-                (_ctxFor(msg.sender, prev, 0, 0, outgoingData))
+                (_ctxFor(msg.sender, prev, 0, 0, outgoingData, outgoingTax))
             )
         );
     }
@@ -248,6 +249,7 @@ abstract contract SlotOccupancy is SlotViews {
         address outgoing = hook;
         uint8 outgoingFlags = _hookFlags;
         bytes32 outgoingData = hookData;
+        uint256 outgoingTax = taxPercentage;
 
         _vacate();
         _applyPending();
@@ -260,7 +262,7 @@ abstract contract SlotOccupancy is SlotViews {
             F_AFTER_LIQUIDATE,
             abi.encodeCall(
                 ISlotHook.afterLiquidate,
-                (_ctxFor(msg.sender, prev, 0, 0, outgoingData))
+                (_ctxFor(msg.sender, prev, 0, 0, outgoingData, outgoingTax))
             )
         );
     }

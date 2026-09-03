@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotMath} from "./SlotMath.sol";
 import {SlotHooks} from "./SlotHooks.sol";
 import {ISlotHook, SlotContext} from "./ISlotHook.sol";
@@ -21,7 +20,11 @@ abstract contract SlotAccounting is SlotHooks {
     event TaxCollected(address indexed recipient, uint256 amount);
     event Credited(address indexed account, uint256 amount);
     event Claimed(address indexed account, uint256 amount);
-    event TermsApplied(uint256 taxPercentage, address hook, bytes32 hookData);
+    event TermsApplied(
+        uint256 taxPercentage,
+        address indexed hook,
+        bytes32 hookData
+    );
     /// @notice A queued hook could not be attached and was dropped instead of
     ///         being allowed to block the transition.
     event HookDetached(address indexed hook);
@@ -116,13 +119,6 @@ abstract contract SlotAccounting is SlotHooks {
         _after(F_AFTER_SETTLE, abi.encodeCall(ISlotHook.afterSettle, (ctx)));
     }
 
-    /**
-     * @dev Apply terms queued by the manager.
-     *
-     *      Called at every occupancy transition — that boundary IS the
-     *      guarantee. An occupant's terms cannot move under them; they change
-     *      only when the seat does.
-     */
     /// @notice Whether queued terms are ripe enough to land on the next
     ///         occupancy transition.
     /// @dev A transition is WHERE terms land; the delay is WHEN they may.
@@ -138,8 +134,37 @@ abstract contract SlotAccounting is SlotHooks {
         return block.timestamp >= pending.proposedAt + TERMS_DELAY;
     }
 
+    /**
+     * @dev Apply terms queued by the manager.
+     *
+     *      Called at every occupancy transition — that boundary IS the
+     *      guarantee. An occupant's terms cannot move under them; they change
+     *      only when the seat does.
+     */
     function _applyPending() internal {
         if (!pendingApplies()) return;
+
+        // Refuse to answer for a hook we cannot afford to ask.
+        //
+        // A starved read is indistinguishable from a misbehaving hook — both
+        // return false — and the consequence was `delete pending`, permanently
+        // discarding the manager's queued change. So anyone could destroy a
+        // proposal by calling `liquidate()` or `release()` with a gas limit
+        // tuned to leave just enough for the transition and not enough for the
+        // hook. Cheap, repeatable, and it looked exactly like the hook's fault.
+        //
+        // The 64/63 is EIP-150: forwarding a stipend of X needs X * 64/63 in
+        // hand, so checking for X alone would still starve the call it is
+        // trying to protect. `HOOK_GAS` covers both halves of the read, since
+        // `_tryReadHookFlags` splits one stipend across its two calls.
+        //
+        // Returning early leaves `pending` intact and ripe, so the terms land
+        // at the next transition. The griefer can delay a change; they can no
+        // longer erase it.
+        if (
+            pending.hasHook &&
+            gasleft() < (HOOK_GAS * 64) / 63 + HOOK_READ_FLOOR
+        ) return;
 
         if (pending.hasTax) taxPercentage = pending.taxPercentage;
         if (pending.hasHook) {

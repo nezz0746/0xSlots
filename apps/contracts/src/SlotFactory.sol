@@ -69,7 +69,7 @@ contract SlotFactory is VersionedUUPS {
         _;
     }
 
-    function initialize(address admin_, address implementation)
+    function initialize(address admin_, address implementation_)
         external
         initializer
     {
@@ -81,7 +81,7 @@ contract SlotFactory is VersionedUUPS {
         // the caller OZ sees is this contract; and beacon ownership would be
         // frozen at whoever deployed, so `transferAdmin` would hand over an
         // admin role that silently no longer carries the power to upgrade.
-        beacon = new UpgradeableBeacon(implementation, address(this));
+        beacon = new UpgradeableBeacon(implementation_, address(this));
         emit AdminTransferred(address(0), admin_);
     }
 
@@ -118,9 +118,9 @@ contract SlotFactory is VersionedUUPS {
 
     /// @notice Point every slot at new code. The single most consequential
     ///         action in the protocol.
-    function upgradeBeacon(address implementation) external onlyAdmin {
-        beacon.upgradeTo(implementation);
-        emit BeaconUpgraded(implementation);
+    function upgradeBeacon(address implementation_) external onlyAdmin {
+        beacon.upgradeTo(implementation_);
+        emit BeaconUpgraded(implementation_);
     }
 
     function implementation() external view returns (address) {

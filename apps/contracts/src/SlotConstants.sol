@@ -49,6 +49,13 @@ abstract contract SlotConstants {
     //      expensive and unreliable. 30k covers an EOA and a typical Safe.
     uint256 public constant PAYOUT_GAS = 30_000;
 
+    /// @notice Headroom `_applyPending` keeps for its own work beyond the hook
+    ///         read, before it will attempt that read at all.
+    /// @dev Below this it leaves the proposal queued rather than concluding the
+    ///      hook misbehaved — see `_applyPending`. Sized for the surrounding
+    ///      SSTOREs and the event, not for the call itself.
+    uint256 public constant HOOK_READ_FLOOR = 20_000;
+
     // How long a proposal must sit before an occupancy transition may apply it.
     //
     // Without this, `proposeTerms` in block N binds a buyer in block N: the

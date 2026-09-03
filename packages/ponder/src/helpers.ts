@@ -1,5 +1,11 @@
 import type { Context } from "ponder:registry";
-import { account, accountChain, accountSlot, currency, hook } from "ponder:schema";
+import {
+  account,
+  accountChain,
+  accountSlot,
+  currency,
+  hook,
+} from "ponder:schema";
 import {
   type Abi,
   type Address,
@@ -165,11 +171,7 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
     const checksum = getAddress(id);
     const abi = ERC20Abi as unknown as readonly unknown[];
 
-    const take = (
-      n: unknown,
-      s: unknown,
-      d: unknown,
-    ): { any: boolean } => {
+    const take = (n: unknown, s: unknown, d: unknown): { any: boolean } => {
       let any = false;
       if (typeof n === "string") {
         name = n;
@@ -468,12 +470,10 @@ export async function bumpHookSlotCount(
   const id = lower(hookAddrRaw);
   if (id === ZERO_ADDR) return;
   await getOrCreateHook(ctx, id, timestamp);
-  await ctx.db
-    .update(hook, { id, chainId: ctx.chain.id })
-    .set((row) => ({
-      slotCount: Math.max(0, row.slotCount + delta),
-      updatedAt: timestamp,
-    }));
+  await ctx.db.update(hook, { id, chainId: ctx.chain.id }).set((row) => ({
+    slotCount: Math.max(0, row.slotCount + delta),
+    updatedAt: timestamp,
+  }));
 }
 
 /** Columns for `slot`, from a flag snapshot. */

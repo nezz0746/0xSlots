@@ -916,6 +916,11 @@ export const termsAppliedEvent = onchainTable(
     previousHookData: t.hex().notNull(),
     taxChanged: t.boolean().notNull(),
     hookChanged: t.boolean().notNull(),
+    /// Separate from `hookChanged`, because re-proposing the SAME hook with new
+    /// configuration is now the only way to change a window — and it leaves the
+    /// address untouched, so a consumer diffing on `hookChanged` alone sees
+    /// nothing happen.
+    hookDataChanged: t.boolean().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),

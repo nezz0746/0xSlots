@@ -13,9 +13,9 @@ import {VersionedUUPS} from "../VersionedUUPS.sol";
 /// @title SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon
 ///
 /// @notice A `SlotCollective` is a 0xSplits PushSplit wearing a role-gated control
-///         panel: it receives a slot's tax AND governs that slot's tax, utility
-///         and occupancy policy. Deploying one by hand means getting a warehouse
-///         address, a validated split, four role arrays and a self-bound owner
+///         panel: it receives a slot's tax AND governs that slot's tax
+///         and hook. Deploying one by hand means getting a warehouse
+///         address, a validated split, three role arrays and a self-bound owner
 ///         right in a single constructor call, on every chain, every time.
 ///
 ///         This mints them instead, from one implementation, with the same
@@ -118,10 +118,12 @@ contract SlotCollectiveFactory is VersionedUUPS {
             revert ImplementationRequired();
 
         admin = _admin;
-        // Owned by this factory from the start, unlike `SlotFactory` — whose
-        // beacon was created owned by the admin EOA and later had to be
-        // transferred, which is why mainnet needed its own one-shot upgrade
-        // script. Starting here costs nothing and skips that.
+        // The genesis admin, emitted so an indexer can build the whole custody
+        // chain from logs alone rather than reading storage for the first link.
+        emit AdminTransferred(address(0), _admin);
+        // Owned by this factory from the start, exactly as `SlotFactory` does
+        // it — the factory must be the beacon's owner for `upgradeBeacon` to
+        // work at all.
         beacon = new UpgradeableBeacon(_managerImplementation, address(this));
     }
 
