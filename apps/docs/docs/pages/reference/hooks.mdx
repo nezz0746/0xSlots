@@ -12,25 +12,31 @@ optional, client-only extension for rendering.
 
 ```solidity
 interface ISlotHook {
-    function hooks() external view returns (HookFlags memory);
+    function subscriptions() external view returns (HookFlags memory);
     function validateHookData(bytes32 data) external view;
 
     // decisions — view, revert to veto
     function beforeBuy(SlotContext calldata ctx) external view;
-    function beforeSell(SlotContext calldata ctx) external view;
     function beforeSelfAssess(SlotContext calldata ctx) external view;
 
     // effects — gas-capped, revert swallowed, cannot change the outcome
     function afterBuy(SlotContext calldata ctx) external;
-    function afterSell(SlotContext calldata ctx) external;
     function afterRelease(SlotContext calldata ctx) external;
     function afterLiquidate(SlotContext calldata ctx) external;
     function afterSettle(SlotContext calldata ctx) external;
 }
 ```
 
-`hooks()` is `view`, not `pure`: a composite answers it from storage. It is read
+`subscriptions()` is `view`, not `pure`: a composite answers it from storage. It is read
 **once** at attach and snapshotted, so a hook cannot widen its reach mid-tenure.
+
+<Callout type="info">
+There were eight callbacks until `Slot.sell` was removed. A consensual sale is
+now `selfAssess` then `buy`, performed by the OfferBook, so a sale runs
+`beforeSelfAssess` and `beforeBuy` like any other seating — and `beforeSell` /
+`afterSell` are gone. That is the point of the removal: there is one seating
+path, so there is no second door for a hook to have forgotten to police.
+</Callout>
 
 `validateHookData` is read at the same moment and for the same reason. `hookData`
 is opaque to the slot, so only the hook can say whether a given word means
@@ -50,7 +56,7 @@ struct SlotContext {
     address account;       // incoming occupant on a transition; current otherwise
     address occupant;      // who holds it now; zero when vacant
     uint256 occupiedSince; // when the current occupancy began; zero when vacant
-    uint256 taxPercentage; // basis points per 30 days
+    uint256 taxBps; // basis points per 30 days
     uint256 currentPrice;
     uint256 newPrice;      // proposed in `before`, just-set in `after`
     uint256 depositAmount;
@@ -82,10 +88,8 @@ Which callbacks a hook wants. Declared by the hook, snapshotted by the slot.
 ```solidity
 struct HookFlags {
     bool beforeBuy;
-    bool beforeSell;
     bool beforeSelfAssess;
     bool afterBuy;
-    bool afterSell;
     bool afterRelease;
     bool afterLiquidate;
     bool afterSettle;

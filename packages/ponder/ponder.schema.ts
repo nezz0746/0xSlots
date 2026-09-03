@@ -910,7 +910,7 @@ export const termsAppliedEvent = onchainTable(
  * the actual role holder is in `collectiveActionEvent.by` and nowhere else.
  */
 export const termsCancelledEvent = onchainTable(
-  "proposal_cancelled_event",
+  "terms_cancelled_event",
   (t) => ({
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
@@ -932,6 +932,304 @@ export const termsCancelledEvent = onchainTable(
     slotIdx: index().on(table.slot),
   }),
 );
+
+export const accountRelations = relations(account, ({ many }) => ({
+  accountSlots: many(accountSlot),
+  // The inverses of slot's two account links. Both need the same relationName
+  // as the `one()` side, or drizzle cannot tell which of the two it is looking
+  // at — a slot points at an account twice, for different reasons.
+  slotsAsRecipient: many(slot, { relationName: "recipient" }),
+  slotsAsOccupant: many(slot, { relationName: "occupant" }),
+  /// One row per chain this account has ever held or received a slot on.
+  chains: many(accountChain),
+  credits: many(slotCredit),
+}));
+
+export const accountChainRelations = relations(accountChain, ({ one }) => ({
+  accountRef: one(account, {
+    fields: [accountChain.account],
+    references: [account.id],
+  }),
+}));
+
+export const accountSlotRelations = relations(accountSlot, ({ one }) => ({
+  accountRef: one(account, {
+    fields: [accountSlot.account],
+    references: [account.id],
+  }),
+  slotRef: one(slot, {
+    fields: [accountSlot.slot],
+    references: [slot.id],
+  }),
+}));
+
+export const factoryRelations = relations(factory, ({ many }) => ({
+  slots: many(slot),
+  attestations: many(hookAttestedEvent),
+  adminTransfers: many(adminTransferredEvent),
+  upgrades: many(beaconUpgradedEvent),
+}));
+
+export const hookRelations = relations(hook, ({ many }) => ({
+  slots: many(slot),
+  failures: many(hookCallFailedEvent),
+  attestations: many(hookAttestedEvent),
+}));
+
+export const slotOperatorRelations = relations(slotOperator, ({ one }) => ({
+  slotRef: one(slot, { fields: [slotOperator.slot], references: [slot.id] }),
+}));
+
+export const slotCreditRelations = relations(slotCredit, ({ one }) => ({
+  slotRef: one(slot, { fields: [slotCredit.slot], references: [slot.id] }),
+  accountRef: one(account, {
+    fields: [slotCredit.account],
+    references: [account.id],
+  }),
+}));
+
+export const cancelledOrderRelations = relations(cancelledOrder, ({ one }) => ({
+  slotRef: one(slot, { fields: [cancelledOrder.slot], references: [slot.id] }),
+}));
+
+export const slotCreatedEventRelations = relations(
+  slotCreatedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [slotCreatedEvent.slot],
+      references: [slot.id],
+    }),
+    factoryRef: one(factory, {
+      fields: [slotCreatedEvent.factory],
+      references: [factory.id],
+    }),
+  }),
+);
+
+export const hookAttestedEventRelations = relations(
+  hookAttestedEvent,
+  ({ one }) => ({
+    factoryRef: one(factory, {
+      fields: [hookAttestedEvent.factory],
+      references: [factory.id],
+    }),
+    hookRef: one(hook, {
+      fields: [hookAttestedEvent.hook, hookAttestedEvent.chainId],
+      references: [hook.id, hook.chainId],
+    }),
+  }),
+);
+
+export const adminTransferredEventRelations = relations(
+  adminTransferredEvent,
+  ({ one }) => ({
+    factoryRef: one(factory, {
+      fields: [adminTransferredEvent.factory],
+      references: [factory.id],
+    }),
+  }),
+);
+
+export const beaconUpgradedEventRelations = relations(
+  beaconUpgradedEvent,
+  ({ one }) => ({
+    factoryRef: one(factory, {
+      fields: [beaconUpgradedEvent.factory],
+      references: [factory.id],
+    }),
+  }),
+);
+
+export const boughtEventRelations = relations(boughtEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [boughtEvent.slot], references: [slot.id] }),
+  buyerRef: one(account, {
+    fields: [boughtEvent.buyer],
+    references: [account.id],
+  }),
+}));
+
+export const releasedEventRelations = relations(releasedEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [releasedEvent.slot], references: [slot.id] }),
+  occupantRef: one(account, {
+    fields: [releasedEvent.occupant],
+    references: [account.id],
+  }),
+}));
+
+export const liquidatedEventRelations = relations(
+  liquidatedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [liquidatedEvent.slot],
+      references: [slot.id],
+    }),
+    occupantRef: one(account, {
+      fields: [liquidatedEvent.occupant],
+      references: [account.id],
+    }),
+  }),
+);
+
+export const priceSetEventRelations = relations(priceSetEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [priceSetEvent.slot], references: [slot.id] }),
+}));
+
+export const depositedEventRelations = relations(depositedEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [depositedEvent.slot], references: [slot.id] }),
+}));
+
+export const withdrawnEventRelations = relations(withdrawnEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [withdrawnEvent.slot], references: [slot.id] }),
+}));
+
+export const settledEventRelations = relations(settledEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [settledEvent.slot], references: [slot.id] }),
+}));
+
+export const taxPaidEventRelations = relations(taxPaidEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [taxPaidEvent.slot], references: [slot.id] }),
+  payerRef: one(account, {
+    fields: [taxPaidEvent.payer],
+    references: [account.id],
+  }),
+}));
+
+export const taxCollectedEventRelations = relations(
+  taxCollectedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [taxCollectedEvent.slot],
+      references: [slot.id],
+    }),
+    recipientRef: one(account, {
+      fields: [taxCollectedEvent.recipient],
+      references: [account.id],
+    }),
+  }),
+);
+
+export const creditedEventRelations = relations(creditedEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [creditedEvent.slot], references: [slot.id] }),
+  accountRef: one(account, {
+    fields: [creditedEvent.account],
+    references: [account.id],
+  }),
+}));
+
+export const claimedEventRelations = relations(claimedEvent, ({ one }) => ({
+  slotRef: one(slot, { fields: [claimedEvent.slot], references: [slot.id] }),
+  accountRef: one(account, {
+    fields: [claimedEvent.account],
+    references: [account.id],
+  }),
+}));
+
+export const operatorSetEventRelations = relations(
+  operatorSetEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [operatorSetEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const termsProposedEventRelations = relations(
+  termsProposedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [termsProposedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const termsAppliedEventRelations = relations(
+  termsAppliedEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [termsAppliedEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const termsCancelledEventRelations = relations(
+  termsCancelledEvent,
+  ({ one }) => ({
+    slotRef: one(slot, {
+      fields: [termsCancelledEvent.slot],
+      references: [slot.id],
+    }),
+  }),
+);
+
+export const slotRelations = relations(slot, ({ one, many }) => ({
+  recipientAccountRef: one(account, {
+    fields: [slot.recipientAccount],
+    references: [account.id],
+    relationName: "recipient",
+  }),
+  occupantAccountRef: one(account, {
+    fields: [slot.occupantAccount],
+    references: [account.id],
+    relationName: "occupant",
+  }),
+  currencyRef: one(currency, {
+    fields: [slot.currency],
+    references: [currency.id],
+  }),
+  factoryRef: one(factory, {
+    fields: [slot.factory],
+    references: [factory.id],
+  }),
+  // Two columns, because `hook` is chain-scoped by primary key — the same
+  // address on two chains is two deployments with possibly different
+  // constructor arguments.
+  hookRef: one(hook, {
+    fields: [slot.hook, slot.chainId],
+    references: [hook.id, hook.chainId],
+  }),
+
+  // A slot names two addresses, and a SlotCollective can be BOTH of them. Each
+  // link resolves to null when the address is an ordinary EOA, which is the
+  // common case — these say "governed by / paid to a collective", not "has
+  // one". Distinct relationNames because a slot may point at the same
+  // collective twice, for different reasons.
+  managerCollectiveRef: one(slotCollective, {
+    fields: [slot.manager],
+    references: [slotCollective.id],
+    relationName: "collectiveManagedSlots",
+  }),
+  recipientCollectiveRef: one(slotCollective, {
+    fields: [slot.recipient],
+    references: [slotCollective.id],
+    relationName: "collectiveReceivingSlots",
+  }),
+
+  accountSlots: many(accountSlot),
+  operators: many(slotOperator),
+  credits: many(slotCredit),
+  cancelledOrders: many(cancelledOrder),
+
+  createdEvents: many(slotCreatedEvent),
+  buys: many(boughtEvent),
+  releases: many(releasedEvent),
+  liquidations: many(liquidatedEvent),
+  priceChanges: many(priceSetEvent),
+  deposits: many(depositedEvent),
+  withdrawals: many(withdrawnEvent),
+  settlements: many(settledEvent),
+  taxPayments: many(taxPaidEvent),
+  taxCollections: many(taxCollectedEvent),
+  creditsIssued: many(creditedEvent),
+  claims: many(claimedEvent),
+  operatorChanges: many(operatorSetEvent),
+  termsProposals: many(termsProposedEvent),
+  termsApplications: many(termsAppliedEvent),
+  termsCancellations: many(termsCancelledEvent),
+  hookFailures: many(hookCallFailedEvent),
+}));
 
 /**
  * An `after` callback reverted and was swallowed.

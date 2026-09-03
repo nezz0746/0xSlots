@@ -2,21 +2,32 @@ import { Callout } from 'vocs'
 
 # Deployments
 
-The protocol lives on **Base Sepolia** and a **local anvil** chain. There is no
-Base mainnet deployment yet.
+The protocol currently lives on a **local anvil** chain only.
+
+Base and Base Sepolia are mid-redeploy. `Slot`'s storage layout was regrouped and
+its version bumped, which no live proxy can be upgraded into, so the deployment
+namespace moved to `0xslots.v2` and the old records were cleared. Until
+`pnpm protocol deploy --chain base-sepolia` is broadcast there is no recorded
+deployment on either chain, and the SDK reports none.
 
 The SDK never needs these hardcoded — `CHAINS`, `DEFAULT_CHAIN` and
 `isDeployedOn(chainId)` from `@0xslots/contracts` are all derived from the
 address maps below, so the set of usable chains is exactly the set that has a
 `SlotFactory` recorded.
 
-## Base Sepolia — 84532
+## Base and Base Sepolia
 
-| Contract | Address |
-|---|---|
-| SlotFactory | `0xAd348684dc13127C18e2b96d7FFdC0cC6B3E2dAA` |
-| OfferBook | `0xC8b5Fb19F5bF22105FB037aCD874CA7Fd2D562Ba` |
-| AdLand (hook) | `0xdE45867E66a252C59b5546dd77848ba519F752E9` |
+Nothing recorded. The previous deployment's contracts still exist on chain, but
+they are the retired generation: this repo can no longer reach them, because
+every address is derived from `keccak(NAMESPACE, name, version)` and the
+namespace moved.
+
+<Callout type="warning">
+Do not restore the old addresses to make something resolve. An old `Slot` running
+the current implementation reads `lastSettled == 0` — the field moved from slot
+2's high bytes to slot 162 — and is instantly, permanently insolvent. The
+namespace bump is what keeps the two generations apart.
+</Callout>
 
 ## Local anvil — 31337
 
@@ -28,11 +39,11 @@ from `apps/contracts/deployments/31337/` rather than trusting this table.
 
 | Contract | Address |
 |---|---|
-| SlotFactory | `0x4f873B105E240Eec832ee0b381184E1bd013c64c` |
-| OfferBook | `0xB5E018bC8C4e1aAb7889b328D24E341c669BFB4B` |
-| SlotCollectiveFactory | `0xAfAbF09bDb761A701D24e424FcFE9fc4D7b52cCF` |
-| MinimumTenureHook | `0x7a4A42bda60B989cA7d619b5eDb1E4E7dDAd9B68` |
-| AdLand (hook) | `0x4cD61863A4672CBFd4506862486f05460518eF58` |
+| SlotFactory | `0x8F7d16a1EC17966cd3915a081e1647fa71daFcf0` |
+| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` |
+| SlotCollectiveFactory | `0x13B0014f05438C430dC07b0A45C6FA52D7B6181d` |
+| MinimumTenureHook | `0x582921D7C1c1AF750eF24f9c4F840be7738f9913` |
+| AdLand (hook) | `0xc5ee1d668B8Ca9579B2086Da45175dFd9F7f458c` |
 | SlotsTestToken | `0xeE7d50f1E410c9B42Ae0D39C4549C17FA135add5` |
 
 `CHAINS` filters anvil out unless `NODE_ENV === "development"`. Bundlers inline

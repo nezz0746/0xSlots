@@ -1,5 +1,6 @@
 "use client";
 
+import { Blockie } from "@/components/blockie";
 import { useEnsAvatar, useEnsName } from "@/lib/ens";
 import { cn } from "@/lib/utils";
 import { truncateAddress } from "@/utils";
@@ -12,9 +13,11 @@ import { truncateAddress } from "@/utils";
  * no avatar record — so each falls back on its own rather than the whole thing
  * collapsing to a raw address.
  *
- * The fallback disc is a deterministic hue from the address, so an
- * avatar-less recipient is still visually distinct from its neighbours in a
- * list instead of a row of identical grey circles.
+ * The fallback is a blockie — the same identicon the user menu and the
+ * recipient page already use, so one address wears one face everywhere. It
+ * replaced a gradient disc derived from the address: also deterministic, but
+ * two addresses landing on neighbouring hues were indistinguishable, and a
+ * blockie's 8x8 grid carries far more of the address than a hue does.
  */
 export function EnsIdentity({
   address,
@@ -34,8 +37,6 @@ export function EnsIdentity({
   const { data: avatar } = useEnsAvatar(ensName);
 
   const display = ensName || truncateAddress(address);
-  // Hue from the address so the disc is stable per identity, not random.
-  const hue = Number.parseInt(address.slice(2, 8), 16) % 360;
 
   return (
     <span className={cn("inline-flex items-center gap-1.5", className)}>
@@ -52,14 +53,10 @@ export function EnsIdentity({
           style={{ width: size, height: size }}
         />
       ) : (
-        <span
-          aria-hidden
+        <Blockie
+          address={address}
           className="rounded-full shrink-0"
-          style={{
-            width: size,
-            height: size,
-            background: `linear-gradient(135deg, hsl(${hue} 70% 62%), hsl(${(hue + 40) % 360} 70% 48%))`,
-          }}
+          style={{ width: size, height: size }}
         />
       )}
       {showName && (

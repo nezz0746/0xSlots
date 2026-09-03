@@ -191,7 +191,10 @@
 }
 
 @utility eyebrow {
-  font-family: var(--font-mono);
+  /* Sans. The mono face is reserved for actual code — a label is not code, and
+     an eyebrow in a monospace face reads as a system readout rather than a
+     heading. `--font-mono` stays defined for the two <code> elements. */
+  font-family: var(--font-sans);
   font-size: 0.6875rem;
   font-weight: 500;
   text-transform: uppercase;

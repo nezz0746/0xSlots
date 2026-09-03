@@ -71,7 +71,7 @@ export function DelegationTab({
           value={operator}
           placeholder="0x…"
           onChange={(e) => setOperator(e.target.value)}
-          className="rounded-none font-mono text-xs"
+          className="rounded-none text-xs"
         />
         <Button
           type="button"
@@ -110,16 +110,16 @@ export function DelegationTab({
             <>
               <Check className="size-3.5 text-emerald-500" />
               <span>
-                <span className="font-mono">{truncateAddress(candidate)}</span>{" "}
-                may reprice this slot for you.
+                <span>{truncateAddress(candidate)}</span> may reprice this slot
+                for you.
               </span>
             </>
           ) : (
             <>
               <X className="size-3.5 text-muted-foreground" />
               <span className="text-muted-foreground">
-                <span className="font-mono">{truncateAddress(candidate)}</span>{" "}
-                is not an operator on this slot.
+                <span>{truncateAddress(candidate)}</span> is not an operator on
+                this slot.
               </span>
             </>
           )}
@@ -130,11 +130,11 @@ export function DelegationTab({
         <ShieldOff className="mt-0.5 size-4 shrink-0 text-amber-500" />
         <p className="text-[11px] leading-snug text-muted-foreground">
           Approvals are scoped to your current tenure (
-          <span className="font-mono">#{state.tenureId.toString()}</span>) and
-          end with it. If the slot is sold, released or liquidated, every
-          operator you named stops being one — with no event and no notice.
-          Retaking the slot later starts a fresh tenure that approves nobody, so
-          a grant never comes back from the dead.
+          <span>#{state.tenureId.toString()}</span>) and end with it. If the
+          slot is sold, released or liquidated, every operator you named stops
+          being one — with no event and no notice. Retaking the slot later
+          starts a fresh tenure that approves nobody, so a grant never comes
+          back from the dead.
         </p>
       </div>
     </div>

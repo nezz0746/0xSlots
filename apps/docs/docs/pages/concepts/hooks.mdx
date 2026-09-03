@@ -35,7 +35,7 @@ Every other property of a hook falls out of that one line:
 There is deliberately no way to write during `before`. A hook that wants to
 record something about a decision does it in the matching `after`.
 
-## The eight callbacks
+## The six callbacks
 
 One context struct — `SlotContext` — is passed to all of them; fields that
 aren't meaningful for a callback are zero.
@@ -43,10 +43,8 @@ aren't meaningful for a callback are zero.
 | Callback | Kind | Fires |
 |---|---|---|
 | `beforeBuy` | decide | someone tries to buy the slot |
-| `beforeSell` | decide | the occupant tries to sell into an offer |
 | `beforeSelfAssess` | decide | the occupant re-prices |
 | `afterBuy` | record | a buy went through |
-| `afterSell` | record | a sale went through |
 | `afterRelease` | record | the occupant left |
 | `afterLiquidate` | record | an insolvent occupant was removed |
 | `afterSettle` | record | tax was charged |
@@ -55,12 +53,10 @@ aren't meaningful for a callback are zero.
 flowchart LR
     subgraph decide["before — view, may veto"]
         BB["beforeBuy"]
-        BS["beforeSell"]
         BA["beforeSelfAssess"]
     end
     subgraph record["after — capped, swallowed"]
         AB["afterBuy"]
-        AS["afterSell"]
         AR["afterRelease"]
         AL["afterLiquidate"]
         AT["afterSettle"]
@@ -71,6 +67,11 @@ flowchart LR
     classDef d fill:#000,stroke:#000,color:#fff
     class decide d
 ```
+
+There is no `beforeSell` or `afterSell`. `Slot.sell` was removed — a consensual
+sale is `selfAssess` then `buy`, performed by the OfferBook — so a sale runs
+`beforeSelfAssess` and `beforeBuy` like any other seating. One seating path, one
+set of checks, and no second door for a hook to have forgotten.
 
 A hook declares which callbacks it wants in a **`HookFlags`** struct, read once
 when it is attached and then **snapshotted** — never re-read. A hook that could

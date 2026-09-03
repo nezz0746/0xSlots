@@ -523,29 +523,6 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         price
         paid
         deposit
-        viaSell
-        timestamp
-        tx
-        slotRef {
-          currencyRef {
-            symbol
-            decimals
-          }
-        }
-      }
-    }
-    soldEvents(
-      where: { chainId: $chainId }
-      orderBy: "timestamp"
-      orderDirection: "desc"
-      limit: $limit
-    ) {
-      items {
-        id
-        slot
-        seller
-        buyer
-        price
         timestamp
         tx
         slotRef {
@@ -799,7 +776,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         tx
       }
     }
-    proposalCancelledEvents(
+    termsCancelledEvents(
       where: { chainId: $chainId }
       orderBy: "timestamp"
       orderDirection: "desc"
@@ -811,21 +788,6 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         manager
         cancelTax
         cancelHook
-        timestamp
-        tx
-      }
-    }
-    orderCancelledEvents(
-      where: { chainId: $chainId }
-      orderBy: "timestamp"
-      orderDirection: "desc"
-      limit: $limit
-    ) {
-      items {
-        id
-        slot
-        buyer
-        nonce
         timestamp
         tx
       }

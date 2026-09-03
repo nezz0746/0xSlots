@@ -19,12 +19,12 @@ import {
   useTakeQuote,
 } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
-import { useCurrencyBalance } from "@/hooks/use-currency-balance";
 import { useSlotBounds } from "@/hooks/use-slot-bounds";
 import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
 import { formatBalance, formatBps } from "@/utils";
 import { useOrders } from "../hooks/use-orders";
 import { Panel } from "./panel";
+import { UserCurrencyBalance } from "./user-balance";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
@@ -62,6 +62,7 @@ export function BuySection({
   currency,
   actions,
   bare,
+  showBalance,
   trailing,
 }: {
   slot: Address;
@@ -70,6 +71,8 @@ export function BuySection({
   actions: Actions;
   /** Render without panel chrome, for the valuation card that already has a header. */
   bare?: boolean;
+  /** Draw the viewer's balance under the valuation field. Off when disconnected. */
+  showBalance?: boolean;
   /** Sits beside the submit — the "more actions" disclosure. See ActionsCard. */
   trailing?: React.ReactNode;
 }) {
@@ -77,7 +80,6 @@ export function BuySection({
   const { chainId } = useChain();
   const { data: walletClient } = useWalletClient({ chainId });
   const { book, refresh: refreshOrders } = useOrders(slot);
-  const balance = useCurrencyBalance(state.currency);
   const { decimals, symbol } = currency;
 
   // Base only — see the hook. `toUsd` returns null everywhere else, and every
@@ -360,6 +362,11 @@ export function BuySection({
           symbol={symbol}
           disabled={actions.busy}
           hint={`Current: ${formatBalance(state.price, decimals)} ${symbol}`}
+          below={
+            showBalance ? (
+              <UserCurrencyBalance currency={state.currency} meta={currency} />
+            ) : null
+          }
           toUsd={toUsd}
         />
         <Button
@@ -406,6 +413,11 @@ export function BuySection({
         symbol={symbol}
         disabled={actions.busy}
         hint="What the next holder pays to take it from you"
+        below={
+          showBalance ? (
+            <UserCurrencyBalance currency={state.currency} meta={currency} />
+          ) : null
+        }
         toUsd={toUsd}
       />
 
@@ -427,21 +439,21 @@ export function BuySection({
         symbol={symbol}
         disabled={actions.busy}
         note={
+          // Only the RIPE case earns a note. Then the escrow really is sized
+          // against a rate that is not the one in the figures above, which is
+          // a surprise worth an amber line.
+          //
+          // An unripe proposal gets none: `_applyPending` refuses it, so the
+          // buy is funded at the rate already on display, and the banner under
+          // the figures has said what is queued and when. A note here too was
+          // the same sentence three times on one screen.
           state.pending.hasTax && state.pending.applies
             ? `Sized at the queued ${formatBps(
                 Number(state.pending.taxBps),
               )}/mo, which takes effect on this buy`
-            : state.pending.hasTax
-              ? // Queued but not yet ripe. `_applyPending` refuses it, so this
-                // buy is priced and funded at the CURRENT rate — saying
-                // otherwise would size the deposit against a rate the
-                // transition will not use.
-                `Sized at the current ${formatBps(
-                  Number(state.taxBps),
-                )}/mo — the queued rate is not binding yet`
-              : noMinimum
-                ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."
-                : undefined
+            : noMinimum
+              ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."
+              : undefined
         }
       />
 
@@ -458,7 +470,7 @@ export function BuySection({
             value={seat}
             placeholder={address ?? "0x…"}
             onChange={(e) => setSeat(e.target.value)}
-            className="rounded-none font-mono text-xs"
+            className="rounded-none text-xs"
           />
           <p className="text-[10px] leading-snug text-muted-foreground">
             You pay; this address occupies. The protocol connects the two with
@@ -563,12 +575,9 @@ export function BuySection({
             the new one.
           </p>
         ) : null}
-        <div className="flex justify-between pt-1 text-[11px] text-muted-foreground">
-          <span>Your balance</span>
-          <span className="tabular-nums">
-            {formatBalance(balance, decimals)} {symbol}
-          </span>
-        </div>
+        {/* The balance moved under the valuation field, where the question it
+            answers is asked. Repeating it in the total made the same number
+            appear twice on one card. */}
       </div>
 
       {isOffer ? (

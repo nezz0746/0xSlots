@@ -36,9 +36,11 @@ function rows(field: any): any[] {
  *     the slot was vacant, which is the "claimed" wording rather than a
  *     buy-out. `paid` is what actually went to that occupant and `price` is
  *     the buyer's own new assessment; showing both is the point of the row.
- *   * `Sell` is NEW. `sell` emits `Sold` and then `Bought` in one call, so a
- *     negotiated hand-over produces two rows and `viaSell` on the buy says so
- *     — without it the pair reads as two unrelated transitions.
+ *     There is no `Sell` row, and no `viaSell` to key one off. A consensual
+ *     hand-over is no longer a core operation: the periphery `OfferBook`
+ *     performs `selfAssess` then `buy` as the occupant's operator, so it
+ *     reaches the chain as an ordinary `Bought` and nothing distinguishes it
+ *     from a contested one. The feed says "bought" rather than guessing.
  *   * `Liquidate` no longer carries a bounty. There ISN'T one in this
  *     protocol, so the row shows how long the evicted occupant had held it.
  *   * `Tax Proposed` and `Hook Proposed` both come from ONE
@@ -100,19 +102,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       actor: e.buyer,
       detail: vacant
         ? `claimed @ ${formatPrice(e.price, d)} ${s}`
-        : `${e.viaSell ? "bought" : "force-bought"} @ ${formatPrice(e.paid, d)} → ${formatPrice(e.price, d)} ${s}`,
-      timestamp: Number(e.timestamp),
-      tx: e.tx,
-    });
-  }
-
-  for (const e of rows(data.soldEvents)) {
-    events.push({
-      id: e.id,
-      type: "Sell",
-      slot: getSlot(e),
-      actor: e.seller,
-      detail: `→ ${truncateAddress(e.buyer)} @ ${formatPrice(e.price, getDecimals(e))} ${getSymbol(e)}`,
+        : `bought @ ${formatPrice(e.paid, d)} → ${formatPrice(e.price, d)} ${s}`,
       timestamp: Number(e.timestamp),
       tx: e.tx,
     });
@@ -303,7 +293,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     });
   }
 
-  for (const e of rows(data.proposalCancelledEvents)) {
+  for (const e of rows(data.termsCancelledEvents)) {
     const cancelled = [
       e.cancelTax ? "tax" : null,
       e.cancelHook ? "hook" : null,
@@ -314,18 +304,6 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       slot: getSlot(e),
       actor: e.manager,
       detail: cancelled.length > 0 ? cancelled.join(" + ") : "",
-      timestamp: Number(e.timestamp),
-      tx: e.tx,
-    });
-  }
-
-  for (const e of rows(data.orderCancelledEvents)) {
-    events.push({
-      id: e.id,
-      type: "Order Cancelled",
-      slot: getSlot(e),
-      actor: e.buyer,
-      detail: `nonce ${e.nonce}`,
       timestamp: Number(e.timestamp),
       tx: e.tx,
     });

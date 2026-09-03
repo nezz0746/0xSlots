@@ -80,7 +80,7 @@ export function CopyAddress({
     <span className={cn("inline-flex items-center gap-1.5", className)}>
       {showAddress && (
         <span
-          className={cn("text-xs", !ensName && !ens && "font-mono")}
+          className={cn("text-xs", !ensName && !ens && "")}
           // The name replaces the address on screen, so the address has to stay
           // reachable — and `truncate={false}` callers already show it in full.
           title={truncate ? address : undefined}

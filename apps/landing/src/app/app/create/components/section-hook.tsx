@@ -205,7 +205,7 @@ export function SectionHook() {
                     which is the fact that replaced "expect two transactions". */}
                 {tenureHook && (
                   <div className="space-y-1 border bg-muted/40 p-2">
-                    <p className="font-mono text-[10px] break-all text-muted-foreground">
+                    <p className="text-[10px] break-all text-muted-foreground">
                       {tenureHook}
                     </p>
                     <p className="flex items-center gap-1.5 text-[10px] text-green-600">

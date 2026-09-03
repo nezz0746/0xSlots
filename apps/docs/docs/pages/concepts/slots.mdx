@@ -65,7 +65,7 @@ stateDiagram-v2
     Vacant --> Occupied: buy()
     Occupied --> Occupied: selfAssess() / topUp() / withdraw()
     Occupied --> Occupied: buy() — taken by someone else
-    Occupied --> Occupied: sell() — sold into a standing offer
+    Occupied --> Occupied: acceptOffer() — the book reprices and seats a bidder
     Occupied --> Vacant: release()
     Occupied --> Vacant: liquidate() — deposit exhausted
 ```

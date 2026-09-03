@@ -14,7 +14,6 @@ import {
   ShoppingCart,
   Tag,
   TriangleAlert,
-  Undo2,
   Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -36,12 +35,6 @@ const EVENT_TYPES: Record<EventType, { color: string; icon: ReactNode }> = {
   Buy: {
     color: "bg-green-500/10 text-green-600",
     icon: <ShoppingCart className="size-3" />,
-  },
-  // The seller's half of a negotiated hand-over. Same family as Buy, because
-  // the two are always the same transition seen from two sides.
-  Sell: {
-    color: "bg-teal-500/10 text-teal-600",
-    icon: <HandCoins className="size-3" />,
   },
   Release: {
     color: "bg-yellow-500/10 text-yellow-600",
@@ -102,10 +95,6 @@ const EVENT_TYPES: Record<EventType, { color: string; icon: ReactNode }> = {
   "Update Cancelled": {
     color: "bg-gray-500/10 text-gray-600",
     icon: <Ban className="size-3" />,
-  },
-  "Order Cancelled": {
-    color: "bg-gray-500/10 text-gray-600",
-    icon: <Undo2 className="size-3" />,
   },
   "Hook Failed": {
     color: "bg-red-500/15 text-red-700 dark:text-red-400",

@@ -4,13 +4,10 @@ import type { SlotState } from "@0xslots/sdk/slots";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  Banknote,
   ChevronDown,
-  Clock,
   Flame,
   HandCoins,
   Loader2,
-  Wallet,
 } from "lucide-react";
 import { useState } from "react";
 import type { Address } from "viem";
@@ -35,25 +32,17 @@ import { cn } from "@/lib/utils";
 import { formatBalance } from "@/utils";
 import { BuySection } from "./buy-section";
 import { ManageTerms } from "./manage-terms";
-import { PendingUpdatesPanel, type PendingViewer } from "./pending-updates";
-import { formatRunway } from "./slot-facts";
-import { UserCurrencyBalance } from "./user-balance";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
  * The valuation card: the facts, then the form that acts on them.
  *
- * The ordering is the design. Price, deposit and the three counting figures sit
- * DIRECTLY above the valuation form, in one card, because they are the inputs
- * to the single decision this column exists for — what to value the slot at,
- * and whether the deposit behind it survives. Split into a separate panel
- * elsewhere on the page, the reader has to hold "liquidation in 40 minutes" in
- * their head while scrolling to the field it should change.
- *
- * Everything that merely describes the slot — its terms, its hook, its history
- * — lives in the tabbed column beside this one. This card is the part you act
- * with.
+ * Only the things you ACT with. The escrow figures — deposit, tax owed, escrow
+ * left, runway — used to sit above the form as well as in the info tab, so the
+ * page showed the same six numbers twice and this column had to be scrolled
+ * past to reach the button. They live in the tab now; this card is the field
+ * and the actions, and nothing else.
  */
 export function ActionsCard({
   slot,
@@ -61,8 +50,6 @@ export function ActionsCard({
   currency,
   accrual,
   actions,
-  viewer,
-  nowSeconds,
   isManager,
   isOccupant,
 }: {
@@ -71,15 +58,12 @@ export function ActionsCard({
   currency: CurrencyMeta;
   accrual: LiveAccrual;
   actions: Actions;
-  viewer: PendingViewer;
-  nowSeconds: number;
   isManager: boolean;
   isOccupant: boolean;
 }) {
   const { address, isConnected } = useAccount();
   const [moreOpen, setMoreOpen] = useState(false);
   const { decimals, symbol } = currency;
-  const amount = (v: bigint) => `${formatBalance(v, decimals)} ${symbol}`;
 
   /**
    * What a `collect` would actually pay out.
@@ -155,8 +139,15 @@ export function ActionsCard({
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center justify-between gap-2 border-b bg-muted/50 px-3 py-3">
+        {/* Named for the action, not the figure. It read `Valuation: 0.02 ETH`,
+            which was the third place that number appeared on the page — the
+            info tab leads with it and the field below IS it. */}
         <h2 className="text-sm font-semibold">
-          {state.isVacant ? "Vacant slot" : `Valuation: ${amount(state.price)}`}
+          {isOccupant
+            ? "Your position"
+            : state.isVacant
+              ? "Claim this slot"
+              : "Take this slot"}
         </h2>
         {role && (
           <span
@@ -170,93 +161,14 @@ export function ActionsCard({
         )}
       </div>
 
-      {state.isVacant ? (
-        <div className="border-b p-4">
-          <p className="text-sm text-muted-foreground">
-            Nobody holds this slot, so there is no escrow and no tax accruing.
-            Claiming it costs the deposit alone.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2.5 border-b p-4 text-sm">
-          <div className="flex justify-between">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Banknote className="size-3" /> Deposit
-            </span>
-            <span className="tabular-nums">{amount(state.deposit)}</span>
-          </div>
-
-          {/* These three count rather than sit. The figures come from the
-              interpolation, and the tax row tints for a beat each time it
-              moves — which is what makes it read as accruing rather than as a
-              number that happens to differ from the last time you looked. */}
-          <div className="flex justify-between">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <HandCoins className="size-3" /> Tax owed
-            </span>
-            <span
-              className={cn(
-                "tabular-nums transition-colors duration-500",
-                accrual.rising && "text-emerald-600 dark:text-emerald-500",
-              )}
-            >
-              {amount(accrual.taxOwed)}
-            </span>
-          </div>
-
-          <div className="flex justify-between">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Wallet className="size-3" /> Net balance
-            </span>
-            <span
-              className={cn(
-                "font-bold tabular-nums",
-                accrual.insolvent && "text-destructive",
-              )}
-            >
-              {amount(accrual.remaining)}
-            </span>
-          </div>
-
-          <div className="flex justify-between">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Clock className="size-3" /> Liquidation in
-            </span>
-            <span
-              className={cn(
-                "tabular-nums",
-                accrual.insolvent && "font-bold text-destructive",
-              )}
-            >
-              {accrual.insolvent
-                ? "NOW"
-                : formatRunway(accrual.secondsUntilLiquidation)}
-            </span>
-          </div>
-
-          {accrual.insolvent && (
-            <div className="border border-destructive bg-destructive/10 py-1 text-center text-xs font-bold text-destructive">
-              INSOLVENT — ANYONE MAY EVICT
-            </div>
-          )}
+      {/* INSOLVENT stays. It is not a figure — the figures moved to the info
+          tab — it is the one piece of state that changes what the buttons below
+          do, and it belongs beside them. */}
+      {accrual.insolvent && !state.isVacant && (
+        <div className="border-b border-destructive bg-destructive/10 px-4 py-1.5 text-center text-xs font-bold text-destructive">
+          INSOLVENT — ANYONE MAY EVICT
         </div>
       )}
-
-      {isConnected && (
-        <UserCurrencyBalance currency={state.currency} meta={currency} />
-      )}
-
-      {/* Before the form, not after it: on this column a queued change is not a
-          fact about the slot, it is a term of the transaction the form is about
-          to send. */}
-      <PendingUpdatesPanel
-        slot={slot}
-        state={state}
-        viewer={viewer}
-        nowSeconds={nowSeconds}
-        actions={isManager ? actions : undefined}
-        bare
-      />
 
       <div className="space-y-3 p-4">
         {isOccupant ? (
@@ -267,6 +179,7 @@ export function ActionsCard({
             accrual={accrual}
             actions={actions}
             bare
+            showBalance={isConnected}
             trailing={hasMoreActions ? moreTrigger : undefined}
           />
         ) : (
@@ -276,6 +189,7 @@ export function ActionsCard({
             currency={currency}
             actions={actions}
             bare
+            showBalance={isConnected}
             trailing={hasMoreActions ? moreTrigger : undefined}
           />
         )}

@@ -234,7 +234,7 @@ function ConnectedMenu({
               {ensName && (
                 <p className="text-sm font-medium truncate">{ensName}</p>
               )}
-              <p className="text-xs text-muted-foreground font-mono">
+              <p className="text-xs text-muted-foreground">
                 {truncateAddress(account.address)}
               </p>
               {connector && (

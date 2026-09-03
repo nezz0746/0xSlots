@@ -71,9 +71,7 @@ function SlotRow({ slot }: { slot: CreatedSlot }) {
       className="cursor-pointer"
       onClick={() => push(`/app/slots/${slot.address}`)}
     >
-      <TableCell className="font-mono text-xs">
-        {truncateAddress(slot.address)}
-      </TableCell>
+      <TableCell className="text-xs">{truncateAddress(slot.address)}</TableCell>
       <TableCell>
         {state ? (
           <StatusCell
@@ -84,7 +82,7 @@ function SlotRow({ slot }: { slot: CreatedSlot }) {
           <span className="text-xs text-muted-foreground">…</span>
         )}
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">
+      <TableCell className="text-xs text-muted-foreground">
         {state ? (state.isVacant ? "—" : truncateAddress(state.occupant)) : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">

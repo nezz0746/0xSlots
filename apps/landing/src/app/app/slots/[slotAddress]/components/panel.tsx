@@ -102,7 +102,7 @@ export function AddressText({
         setTimeout(() => setCopied(false), 1200);
       }}
       className={cn(
-        "inline-flex items-center gap-1 font-mono text-xs hover:text-foreground text-muted-foreground",
+        "inline-flex items-center gap-1 text-xs hover:text-foreground text-muted-foreground",
         className,
       )}
     >

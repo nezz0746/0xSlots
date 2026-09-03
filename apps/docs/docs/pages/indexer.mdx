@@ -46,7 +46,7 @@ Every chain-scoped row carries `chainId`.
 
 | Entity | Key fields |
 |---|---|
-| `slot` | `id`, `chainId`, `recipient`, `currency`, `occupant`, `isOccupied`, `price`, `deposit`, `taxPercentage`, `collectedTax`, `taxPaidTotal`, `totalCollected`, `hook`, `tenureId`, `createdAt` |
+| `slot` | `id`, `chainId`, `recipient`, `currency`, `occupant`, `isOccupied`, `price`, `deposit`, `taxBps`, `collectedTax`, `taxPaidTotal`, `totalCollected`, `hook`, `hookData`, `tenureId`, `createdAt` |
 | `hook` | `id`, `chainId`, `attested`, `attestedAt`, the `declared*` flag snapshot, `slotCount`, `failedCallCount` |
 | `account` | `id`, `type` (EOA/CONTRACT/DELEGATED/SPLIT), `slotCount`, `occupiedCount`, `totalHoldTime` |
 | `accountChain` | `account`, `chainId`, `slotCount`, `occupiedCount`, `occupiedAsRecipient` |
@@ -59,8 +59,12 @@ the count of `after` calls that reverted and were swallowed. A hook accumulating
 those is quietly broken.
 
 `slot` also carries its pending terms, so "what is queued right now" no longer
-needs an RPC call per slot: `pendingHasTax` / `pendingTaxPercentage`,
-`pendingHasHook` / `pendingHook`, and `pendingProposedAt`.
+needs an RPC call per slot: `pendingHasTax` / `pendingTaxBps`,
+`pendingHasHook` / `pendingHook` / `pendingHookData`, and `pendingProposedAt`.
+
+`hookData` is the slot's 32-byte configuration FOR its hook — a minimum-tenure
+window, say — and it is what lets one hook deployment serve every configuration.
+Opaque to the indexer: only the hook knows what the word means.
 
 <Callout type="warning">
 Read the `pendingHas*` boolean, not the value column. A `NULL` on a value column
@@ -108,7 +112,7 @@ together.
       isOccupied
       price
       deposit
-      taxPercentage
+      taxBps
       currencyRef { symbol decimals }
       hookRef { attested slotCount failedCallCount }
       createdAt
@@ -124,7 +128,7 @@ together.
 ```graphql
 query GetSlotActivity($slot: String!) {
   boughtEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
-    items { buyer from price deposit paid viaSell timestamp }
+    items { buyer from price deposit paid timestamp }
   }
   releasedEvents(where: { slot: $slot }, orderBy: "timestamp", orderDirection: "desc") {
     items { occupant refund timestamp }
@@ -136,6 +140,15 @@ query GetSlotActivity($slot: String!) {
 ```
 
 **SDK equivalent:** `await client.getSlotActivity({ slot: "0x..." })`
+
+<Callout type="warning">
+**Sales are not indexed yet.** `soldEvent` and `orderCancelledEvent` are gone —
+`Slot.sell` was removed, so the events that filled them no longer exist, and
+`boughtEvent.viaSell` went with them. A consensual sale now emits `Bought` on the
+slot (so occupancy history is complete) and `Filled` on the OfferBook — and the
+book is not in `ponder.config.ts`, so the seller's side of a sale is currently
+unqueryable. Adding the book to the indexer is what restores it.
+</Callout>
 
 ### Recipients on one chain
 

@@ -34,7 +34,7 @@ import { DelegationTab } from "./components/delegation";
 import { SlotEventHistory } from "./components/event-history";
 import { OrdersTab } from "./components/orders-tab";
 import { AddressText } from "./components/panel";
-import { PendingUpdatesPanel } from "./components/pending-updates";
+import { PendingTermsBanner } from "./components/pending-updates";
 import { OccupantPanel } from "./components/slot-actions";
 import { SlotDetails, SlotStatus } from "./components/slot-facts";
 import { ManageTermsPanel } from "./components/slot-terms";
@@ -121,21 +121,6 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
   const canReprice = isOccupant || !!isOperator;
   const wrongChain = isConnected && walletChainId !== selectedChainId;
 
-  /**
-   * Which reading of the queued terms this visitor needs.
-   *
-   * Manager outranks occupant: a manager sitting on their own slot needs the
-   * retract controls, and they already know the change does not touch their
-   * tenure. Everyone who is not seated is a prospective buyer, including a
-   * disconnected visitor — the buyer's reading is the one that warns, and
-   * warning someone who turns out not to buy costs nothing.
-   */
-  const pendingViewer = isManager
-    ? "manager"
-    : isOccupant
-      ? "occupant"
-      : "buyer";
-
   return (
     <div className="min-h-screen">
       <PageHeader>
@@ -150,10 +135,11 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
             <h1 className="text-lg font-bold leading-tight tracking-tight">
               Slot {truncateAddress(slot ?? slotAddress)}
             </h1>
-            <AddressText
-              address={slot ?? slotAddress}
-              label={slot ?? slotAddress}
-            />
+            {/* No `label`: AddressText truncates by default, and the full
+                42 characters under a heading that already names the slot was
+                the widest thing on the page. The whole address is still on the
+                clipboard and in the tooltip. */}
+            <AddressText address={slot ?? slotAddress} />
           </div>
           <SlotStatus state={state} />
         </div>
@@ -241,17 +227,17 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
                   <div className="space-y-4 p-4">
                     <SlotDetails
                       state={state}
+                      accrual={accrual}
                       currency={currency}
                       minDeposit={minDepositFor(state.price)}
                       isManager={isManager}
                       isOccupant={isOccupant}
-                    />
-                    <PendingUpdatesPanel
-                      slot={slot!}
-                      state={state}
-                      viewer={pendingViewer}
-                      nowSeconds={nowSeconds}
-                      actions={isManager ? actions : undefined}
+                      banner={
+                        <PendingTermsBanner
+                          state={state}
+                          nowSeconds={nowSeconds}
+                        />
+                      }
                     />
                   </div>
                 )}
@@ -310,8 +296,6 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
                 currency={currency}
                 accrual={accrual}
                 actions={actions}
-                viewer={pendingViewer}
-                nowSeconds={nowSeconds}
                 isManager={isManager}
                 isOccupant={isOccupant}
               />
@@ -335,8 +319,6 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
               currency={currency}
               accrual={accrual}
               actions={actions}
-              viewer={pendingViewer}
-              nowSeconds={nowSeconds}
               isManager={isManager}
               isOccupant={isOccupant}
             />

@@ -248,7 +248,7 @@ function RecipientSlotRow({
 
   return (
     <TableRow className="cursor-pointer" onClick={onOpen}>
-      <TableCell className="font-mono text-xs">{truncateAddress(id)}</TableCell>
+      <TableCell className="text-xs">{truncateAddress(id)}</TableCell>
       <TableCell>
         {state ? (
           <SlotStatusBadge

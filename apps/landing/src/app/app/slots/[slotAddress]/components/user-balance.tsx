@@ -8,10 +8,10 @@ import { formatBalance } from "@/utils";
 /**
  * What the viewer holds of the slot's own currency.
  *
- * Sits between the escrow figures and the form that spends them, because that
- * is the question the form raises: the total is meaningless without knowing
- * whether you can cover it, and sending someone to their wallet to find out is
- * how a buy gets abandoned halfway.
+ * Sits directly UNDER the valuation field, not above the form. Above, it read
+ * as one more statistic in a column already full of them. Under the field you
+ * are typing a number into, it is the answer to the question that number
+ * raises — can I afford that — at the moment it occurs to you.
  *
  * Takes the resolved {@link CurrencyMeta} rather than reading `symbol` and
  * `decimals` itself. It used to issue its own pair of ERC-20 reads, which meant
@@ -29,13 +29,11 @@ export function UserCurrencyBalance({
   const balance = useCurrencyBalance(currency);
 
   return (
-    <div className="flex justify-between border-b px-4 py-2 text-sm">
-      <span className="text-muted-foreground">
-        Your {meta.symbol || "token"} balance
-      </span>
-      <span className="font-bold tabular-nums">
+    <p className="mt-1 flex items-baseline justify-between gap-2 text-[10px] text-muted-foreground">
+      <span>Your {meta.symbol || "token"} balance</span>
+      <span className="font-medium tabular-nums text-foreground">
         {formatBalance(balance, meta.decimals)}
       </span>
-    </div>
+    </p>
   );
 }

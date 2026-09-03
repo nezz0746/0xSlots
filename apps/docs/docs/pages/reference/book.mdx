@@ -1,0 +1,164 @@
+import { Callout } from 'vocs'
+
+# OfferBook
+
+Standing bids on a slot, and the fill that settles them. Anyone may post "I will
+take that slot at this price"; the occupant reads the best one and accepts it.
+
+The book is **periphery**. The core knows nothing about it — deploy another and
+it competes.
+
+## Why the book performs the fill
+
+`Slot.sell` used to exist: the occupant submitted a bidder's EIP-712 order and
+the slot seated them. That was a second seating path — it reset the tenure like
+`buy` but ran `beforeSell` instead of `beforeBuy`, so every hook author had two
+doors to police, and two audit findings were the same mistake of policing one.
+
+A consensual sale is now two calls the core already had, in one transaction:
+
+```solidity
+slot.selfAssess(price)                 // the occupant's price, restated
+slot.buy(bidder, price, deposit, max)  // the ordinary market path
+```
+
+The economics are unchanged — `buy` already refunds the outgoing occupant their
+deposit plus the price. What changed is that there is one seating path, one set
+of hook checks, and no order machinery in the slot.
+
+## Posting a bid
+
+```solidity
+function offer(
+    address slot,
+    uint256 price,
+    uint256 deposit,
+    uint64  expiry
+) external returns (uint256 id);
+
+function cancel(address slot, uint256 id) external;   // bidder only
+```
+
+One transaction, and no signature: `offer` is already a call **from** the bidder,
+so posting is the consent. An offer used to carry an EIP-712 signature because
+`Slot.sell` demanded one; there is no second artefact left to disagree with the
+terms stored beside it.
+
+Bids are **allowance-backed, not escrowed**. The book pulls the payment during
+the fill and spends it in the same transaction, so an allowance is as strong a
+guarantee at the only moment it matters — if the funds are gone when the occupant
+accepts, the transfer reverts and the seller loses gas and nothing else.
+
+<Callout type="warning">
+Approve the **book**, not the slot, for `price + deposit`. `buy` charges
+`msg.sender`, and on a fill that is the book. An offer posted under the old
+arrangement — allowance to the slot — reads as unfunded, which is the correct
+answer rather than a stale one.
+</Callout>
+
+One offer per bidder per slot: posting again replaces your standing one. Two
+offers from one address are backed by the same allowance, so at most one could
+ever execute, and a stale high one would mask its owner's real intent.
+
+## Accepting a bid
+
+```solidity
+function acceptOffer(address slot, uint256 id) external;   // occupant only
+```
+
+`selfAssess` is `onlyOccupantOrOperator`, so the occupant must make the book
+their operator first:
+
+```solidity
+slot.setOperator(book, true);
+book.acceptOffer(slot, id);
+```
+
+That grant is keyed by tenure on the slot's side, so it lapses by itself when the
+slot changes hands and cannot be inherited by the next occupant.
+
+<Callout type="warning">
+It is a real power — repricing to dust would let anyone take the slot cheaply.
+Which is why **the book is not upgradeable**. Behind a proxy, every occupant who
+ever approved it would have granted that power to whatever its admin deployed
+next. Immutable, the code they approved is the code that runs. It has no admin
+and no owner.
+
+Within that code the grant is narrower still: `acceptOffer` is the only function
+that touches a slot, it reprices only to a live offer's price, and it reverts
+unless `msg.sender` is the occupant — so the book never acts except inside a
+transaction the occupant sent.
+</Callout>
+
+The hooks a slot has attached still get their say — `beforeSelfAssess` on the
+reprice and `beforeBuy` on the seating — and either may veto. That is the point
+of routing a sale through the market path rather than around it.
+
+### Errors worth handling
+
+| Error | Meaning |
+|---|---|
+| `NotOccupant` | only the sitting occupant may accept a bid on their slot |
+| `NotOperator` | the book has not been granted `setOperator` for this tenure |
+| `OfferNotLive` | cancelled, expired, filled, unfunded, or the bidder is the occupant |
+| `NativeSlotNotSupported` | native slots cannot be filled — see below |
+| `TopUpRequired(shortfall)` | accepting a higher bid raises the escrow floor above what the seller holds |
+
+`TopUpRequired` is the one that surprises people. Raising the declared price
+raises the minimum escrow with it, and `selfAssess` enforces that floor against
+the deposit **already in the slot** — the seller's, not the bidder's. Top up by
+the reported shortfall and retry; it comes straight back in the sale proceeds.
+
+<Callout type="info">
+**ERC-20 only.** The occupant sends the transaction, so there is no way to reach
+the bidder's ETH. A native slot's offers never read as live.
+</Callout>
+
+## Reading the board
+
+```solidity
+function board(address slot) external view
+    returns (Offer[] memory offers, bool[] memory live);
+
+function best(address slot) external view
+    returns (bool found, uint256 id, Offer memory offer);
+
+function liveCount(address slot) external view returns (uint256);
+function offerCount(address slot) external view returns (uint256);
+function isLive(address slot, uint256 id) external view returns (bool);
+function isFundable(address slot, uint256 id) external view returns (bool);
+function offerOf(address slot, address bidder) external view returns (…);
+function offerAt(address slot, uint256 id) external view returns (Offer memory);
+function offers(address slot) external view returns (Offer[] memory);
+```
+
+`board` returns the list **and** the contract's own per-entry liveness verdict in
+one call, which is why it is preferred over `offers` plus N `isLive` reads.
+
+<Callout type="warning">
+Count `liveCount`, never `offerCount` — the latter counts every row ever posted,
+cancelled and filled included, and has no way down.
+
+Filter on `isLive`, never `isFundable`. They answer different questions:
+`isFundable` asks only whether the bidder could still pay, and a **filled** offer
+goes on answering yes, because consuming it is not what changed their balance.
+Rendering a filled offer as acceptable is a button that lies to the occupant.
+</Callout>
+
+## Events
+
+```solidity
+event Offered(address indexed slot, address indexed bidder, uint256 indexed id,
+              uint256 price, uint256 deposit, uint64 expiry);
+event Cancelled(address indexed slot, address indexed bidder, uint256 indexed id);
+event Filled(address indexed slot, address indexed bidder, uint256 indexed id,
+             address seller, uint256 price, uint256 deposit);
+```
+
+`Filled` is the seller's side of a sale. The slot emits `Bought` in the same
+transaction, so occupancy history is complete from the slot alone.
+
+<Callout type="info">
+The book is not in the indexer's `ponder.config.ts` yet, so `Filled` is not
+queryable — see [Indexer](/indexer).
+</Callout>

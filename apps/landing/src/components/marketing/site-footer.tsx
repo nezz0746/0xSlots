@@ -22,7 +22,7 @@ export function SiteFooter() {
         <nav className="flex flex-wrap items-center gap-x-7 gap-y-3">
           <Link
             href={MARKETING_LINKS.explorer}
-            className="font-mono text-[11px] uppercase tracking-[0.14em] text-foreground transition-colors hover:text-destructive"
+            className="text-[11px] uppercase tracking-[0.14em] text-foreground transition-colors hover:text-destructive"
           >
             Explorer
           </Link>
@@ -32,7 +32,7 @@ export function SiteFooter() {
               href={item.href}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.14em] text-foreground transition-colors hover:text-destructive"
+              className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] text-foreground transition-colors hover:text-destructive"
             >
               {item.label}
               <span
@@ -46,7 +46,7 @@ export function SiteFooter() {
         </nav>
 
         {/* The studio that builds this — same credit, less furniture. */}
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
           Made by{" "}
           <a
             href={studio.url}

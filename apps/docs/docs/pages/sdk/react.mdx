@@ -33,11 +33,10 @@ import { useSlotAction } from "@0xslots/sdk/react";
 
 const {
   createSlot,                                  // factory
-  buy, sell, release, liquidate,               // occupancy
+  buy, release, liquidate,                     // occupancy
   selfAssess, topUp, withdraw, setOperator,    // holding
   collect, claim,                              // money out
-  proposeTerms, cancelProposal, manageTerms,   // manager
-  makeSellOrder, signSellOrder, cancelSellOrder, // signed offers
+  proposeTerms, cancelTerms, manageTerms,      // manager
   exec,          // generic executor
   preflight,     // dry-run a call
   busy,          // isPending || isConfirming
@@ -51,8 +50,12 @@ const {
 });
 ```
 
-`proposeTerms(slot, { taxPercentage?, hook? })` queues the tax rate, the hook, or
-both; `cancelProposal(slot, cancelTax?, cancelHook?)` retracts them, one
+`sell`, `makeSellOrder`, `signSellOrder` and `cancelSellOrder` are gone with
+`Slot.sell`. A consensual sale is `setOperator(book, true)` once per tenure, then
+`book.acceptOffer(slot, id)` — see [Selling into an offer](/sdk/client).
+
+`proposeTerms(slot, { taxBps?, hook? })` queues the tax rate, the hook, or
+both; `cancelTerms(slot, cancelTax?, cancelHook?)` retracts them, one
 dimension or both. There is no separate call per dimension — a slot has two
 mutable terms, tax and hook, and they move through the same pair of functions.
 
@@ -66,7 +69,7 @@ Fetches a single slot's state from on-chain via RPC. Auto-invalidates on new blo
 import { useSlotOnChain } from "@0xslots/sdk/react";
 
 const { data: slot, isLoading, refetch } = useSlotOnChain(address, 8453);
-// slot: { occupant, price, deposit, taxPercentage, insolvent, currencySymbol, ... }
+// slot: { occupant, price, deposit, taxBps, insolvent, currencySymbol, ... }
 ```
 
 ---

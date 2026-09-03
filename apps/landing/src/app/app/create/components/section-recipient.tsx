@@ -87,7 +87,7 @@ export function SectionRecipient() {
             <div className="rounded-lg border bg-muted/30 p-2 md:p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">My Account</p>
-                <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {address
                     ? truncateAddress(address)
                     : "Connect a wallet first."}

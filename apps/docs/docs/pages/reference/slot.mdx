@@ -11,8 +11,8 @@ nothing runs on a timer.
 ```solidity
 function buy(
     address account,          // who gets SEATED — not necessarily msg.sender
-    uint256 depositAmount,
     uint256 selfAssessedPrice,
+    uint256 depositAmount,
     uint256 maxPayment        // ceiling on the total charged; 0 disables it
 ) external payable;
 
@@ -35,27 +35,35 @@ Native buys are incidentally safe (`buy` checks `msg.value` for equality). Pass
 
 ## Selling into an offer
 
-Buying is not the only way a slot changes hands. A buyer can sign a standing
-**offer**, and the occupant sells into it.
+`Slot.sell` no longer exists. It took a buyer's signed order and seated them —
+a SECOND seating path, resetting the tenure like `buy` but running `beforeSell`
+instead of `beforeBuy`, so every hook author had two doors to police.
+
+A consensual sale is now two calls the core already had, performed by the
+[OfferBook](/reference/book) inside the occupant's own transaction:
 
 ```solidity
-function sell(SellOrder calldata order, bytes calldata signature) external; // occupant only
-function cancelSellOrder(uint256 nonce) external;                           // the buyer, off-book
-
-struct SellOrder {
-    address slot;
-    address buyer;
-    uint256 price;
-    uint256 deposit;
-    uint256 nonce;
-    uint64  deadline;
-}
+slot.selfAssess(price)                 // the occupant's price, restated
+slot.buy(bidder, price, deposit, max)  // the ordinary market path
 ```
 
-The buyer signs the order (EIP-712), fixing **both** `price` and `deposit`, so
-the split is set by the party whose money it is — the occupant chooses nothing.
-ERC-20 slots only: `sell` reverts on a native slot, which has no allowance to
-pull the buyer's funds from.
+Atomic, so nothing can take the slot between them. The economics are unchanged —
+`buy` already refunds the outgoing occupant their deposit plus the price.
+
+For the book to make the first call the occupant must make it their operator:
+
+```solidity
+slot.setOperator(book, true);   // lapses with the tenure
+book.acceptOffer(slot, id);     // occupant only
+```
+
+<Callout type="info">
+Choosing your counterparty went with `sell`, deliberately: it is the one thing a
+Harberger market exists to deny. An occupant who wants price `P` calls
+`selfAssess(P)` and anybody may take it — they receive `P` either way. What the
+book adds is that they are at `P` for zero blocks rather than sitting exposed at
+a valuation they only wanted if somebody bought it.
+</Callout>
 
 ## Permissionless operations
 
@@ -99,7 +107,7 @@ function proposeTerms(
     bool    changeHook
 ) external;
 
-function cancelProposal(bool cancelTax, bool cancelHook) external;
+function cancelTerms(bool cancelTax, bool cancelHook) external;
 ```
 
 Tax and hook are proposed and cancelled **independently**, with a flag each.
@@ -114,10 +122,10 @@ vetoing every callback afterwards.
 
 ```solidity
 event TermsProposed(
-    uint256 taxPercentage, address hook, bytes32 hookData, bool tax, bool hook_
+    uint256 taxBps, address hook, bytes32 hookData, bool tax, bool hook_
 );
-event TermsApplied(uint256 taxPercentage, address hook, bytes32 hookData);
-event ProposalCancelled(bool tax, bool hook);
+event TermsApplied(uint256 taxBps, address hook, bytes32 hookData);
+event TermsCancelled(bool tax, bool hook);
 ```
 
 ## Reading state
@@ -134,7 +142,7 @@ assembling individual getters, which each re-read and re-settle.
 struct SlotInfo {
     // terms
     address recipient; IERC20 currency; address manager;
-    uint256 taxPercentage; uint256 minDepositSeconds;
+    uint256 taxBps; uint256 minDepositSeconds;
     bool mutableTax; bool mutableHook;
     // extension
     address hook; bytes32 hookData; HookFlags hookFlags;
@@ -145,9 +153,9 @@ struct SlotInfo {
     uint256 taxOwed; uint256 collectedTax;
     bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
     // queued terms
-    uint256 pendingTaxPercentage; address pendingHook; bytes32 pendingHookData;
+    uint256 pendingTaxBps; address pendingHook; bytes32 pendingHookData;
     bool pendingHasTax; bool pendingHasHook;
-    uint64 pendingProposedAt; bool pendingApplies;
+    uint64 pendingProposedAt; bool hasRipeTerms;
 }
 ```
 
@@ -164,11 +172,11 @@ function isVacant() external view returns (bool);
 
 ## Events
 
-The occupancy and money log:
+The occupancy and money log. `Sold` and `OrderCancelled` went with `sell` — a
+sale now emits `Bought` on the slot and `Filled` on the book.
 
 ```solidity
 event Bought(/* buyer, account, price, deposit, … */);
-event Sold(/* buyer, price, deposit, … */);
 event Released(address indexed occupant, uint256 refund);
 event Liquidated(address indexed by, address indexed occupant);
 event PriceSet(address indexed by, uint256 oldPrice, uint256 newPrice);
@@ -177,9 +185,15 @@ event Withdrawn(address indexed occupant, uint256 amount, uint256 left);
 event Settled(uint256 owed, uint256 paid, uint256 depositLeft);
 event TaxPaid(address indexed payer, uint256 owed, uint256 paid);
 event TaxCollected(address indexed recipient, uint256 amount);
-event OperatorSet(address indexed operator, bool allowed);
-event OrderCancelled(address indexed buyer, uint256 nonce);
+event OperatorSet(address indexed operator, bool allowed, uint64 indexed tenureId);
+event Credited(address indexed account, uint256 amount);   // a push payment failed
+event Claimed(address indexed account, uint256 amount);    // and was later pulled
 ```
+
+`OperatorSet` carries the `tenureId` it is scoped to. An approval dies with the
+tenure and there is no revocation event, so a log without it cannot be replayed
+into `isOperator` — an indexer would show a previous occupant's bot as a
+co-signer on somebody else's asking price.
 
 `TaxPaid` is the one to reduce over for per-address accounting, and it **always**
 fires — including when an `after` hook call fails. A failed hook emits

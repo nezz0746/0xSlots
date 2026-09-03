@@ -26,7 +26,7 @@ const FAUCET_ABI = [
   },
 ] as const;
 
-const MINT_AMOUNT = 100;
+const MINT_AMOUNT = 10_000;
 
 /**
  * Testnet faucet for the chain's mintable currency.

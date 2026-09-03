@@ -19,7 +19,6 @@
 export type EventType =
   | "Deploy"
   | "Buy"
-  | "Sell"
   | "Release"
   | "Liquidate"
   | "Price"
@@ -34,5 +33,4 @@ export type EventType =
   | "Hook Proposed"
   | "Terms Applied"
   | "Update Cancelled"
-  | "Order Cancelled"
   | "Hook Failed";

@@ -16,6 +16,7 @@ import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
 import { cn } from "@/lib/utils";
 import { formatBalance, formatDuration } from "@/utils";
 import { Panel } from "./panel";
+import { UserCurrencyBalance } from "./user-balance";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
@@ -106,6 +107,7 @@ export function ManageTerms({
   accrual,
   actions,
   bare,
+  showBalance,
   trailing,
 }: {
   slot: Address;
@@ -116,6 +118,8 @@ export function ManageTerms({
   actions: Actions;
   /** Render without panel chrome, for the valuation card that already has a header. */
   bare?: boolean;
+  /** Draw the viewer's balance under the valuation field. Off when disconnected. */
+  showBalance?: boolean;
   /** Sits beside the submit — the "more actions" disclosure. See ActionsCard. */
   trailing?: React.ReactNode;
 }) {
@@ -272,6 +276,11 @@ export function ManageTerms({
         symbol={symbol}
         disabled={working}
         hint="What the next holder pays to take it from you"
+        below={
+          showBalance ? (
+            <UserCurrencyBalance currency={state.currency} meta={currency} />
+          ) : null
+        }
         toUsd={toUsd}
       />
 

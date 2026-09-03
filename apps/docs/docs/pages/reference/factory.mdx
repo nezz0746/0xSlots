@@ -22,12 +22,19 @@ struct SlotInit {
     IERC20  currency;          // token for tax and price; address(0) = native ETH
     address manager;           // may change what is mutable; zero on an immutable slot
     address hook;              // the single extension point; zero for none
-    uint256 taxPercentage;     // basis points per 30 days (100 = 1%), 1..10000
+    bytes32 hookData;          // that hook's configuration; must be 0 when hook is
+    uint256 taxBps;            // basis points per 30 days (100 = 1%), 1..10000
     uint256 minDepositSeconds; // deposit a buy must fund; zero = no minimum
     bool    mutableTax;
     bool    mutableHook;
 }
 ```
+
+`hookData` is 32 bytes the slot stores and hands its hook on every callback — a
+minimum-tenure window, say. It is what lets one hook deployment serve every
+configuration, and it is refused unless there is a hook to interpret it. The hook
+validates it at creation, so a configuration it will reject fails there rather
+than vetoing every buy afterwards.
 
 Two mutability flags, not three. A slot has one hook, so it has one promise
 about that hook — separate from the promise about its tax rate. A slot can offer

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { NumberField, Panel } from "./panel";
+import { QueuedTermsControls } from "./pending-updates";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
@@ -53,6 +54,12 @@ export function ManageTermsPanel({
         <span className="text-[10px] text-muted-foreground">manager only</span>
       }
     >
+      {/* Before the form, because `proposeTerms` OVERWRITES whatever is
+          pending: a manager about to queue a change has to see the change they
+          are about to replace. It is also the only retraction control on the
+          page — the info tab's banner is read-only. */}
+      <QueuedTermsControls slot={slot} state={state} actions={actions} />
+
       {state.mutableTax ? (
         <div className="space-y-1">
           <label className="flex items-center gap-1.5 text-[11px] font-medium">
@@ -96,7 +103,7 @@ export function ManageTermsPanel({
                 value={hook}
                 placeholder="0x… — leave blank to detach"
                 onChange={(e) => setHook(e.target.value)}
-                className="rounded-none font-mono text-xs"
+                className="rounded-none text-xs"
               />
               <p className="text-[10px] leading-snug text-muted-foreground">
                 {hookTrimmed === ""

@@ -110,10 +110,10 @@ a `true` here.
 
 ```ts
 const info = await client.getSlotInfo("0x...");
-// terms (recipient, currency, taxPercentage, mutableTax, mutableHook), the
+// terms (recipient, currency, taxBps, mutableTax, mutableHook), the
 // attached hook and its snapshotted flags, live occupancy and financials
 // (occupant, price, deposit, taxOwed, secondsUntilLiquidation, isInsolvent),
-// and any queued terms (pendingTaxPercentage, pendingHook, pendingApplies).
+// and any queued terms (pendingTaxBps, pendingHook, hasRipeTerms).
 
 const infos = await client.getSlotsInfo(["0x...", "0x..."]);  // multicall
 const p = await client.pending("0x...");   // just the queued terms
@@ -128,12 +128,12 @@ All return `Promise<Hash>`. ERC-20 approval is handled automatically.
 // Create — one struct, no batch variant
 await client.createSlot({
   recipient, currency, manager, hook,   // hook: a hook address, or ZERO for none
-  taxPercentage: 100n, minDepositSeconds: 0n,
+  taxBps: 100n, minDepositSeconds: 0n,
   mutableTax: true, mutableHook: false,
 });
 
 // Occupant interactions
-await client.buy({ slot, account, depositAmount, selfAssessedPrice /*, maxPayment */ });
+await client.buy({ slot, account, selfAssessedPrice, depositAmount /*, maxPayment */ });
 await client.selfAssess(slot, newPrice);
 await client.topUp(slot, amount);
 await client.withdraw(slot, amount);
@@ -144,7 +144,9 @@ await client.claim(slot);        // pull a credited refund
 ```
 
 `buy` takes an `account` — who becomes occupant. It need not be the signer, so
-you can buy on someone's behalf. Pass `maxPayment` to cap what an ERC-20 buy can
+you can buy on someone's behalf. The SDK takes named params, but note the
+on-chain order is `(account, selfAssessedPrice, depositAmount, maxPayment)` —
+price before deposit, matching every other pair in the protocol. Pass `maxPayment` to cap what an ERC-20 buy can
 cost against the occupant raising the price between your quote and your inclusion.
 
 ### SlotInit
@@ -157,7 +159,7 @@ error rather than a silent zero address on-chain.
 type SlotInit = {
   recipient: Address; currency: Address;   // currency ZERO = native ETH
   manager: Address; hook: Address;          // both ZERO for immutable, hookless
-  taxPercentage: bigint; minDepositSeconds: bigint;
+  taxBps: bigint; minDepositSeconds: bigint;
   mutableTax: boolean; mutableHook: boolean;
 };
 ```
@@ -168,24 +170,37 @@ Tax and hook are the two mutable dimensions, proposed and cancelled
 independently. Proposed terms apply after a one-day delay.
 
 ```ts
-await client.proposeTerms(slot, { taxPercentage: 200n });      // just the tax
+await client.proposeTerms(slot, { taxBps: 200n });      // just the tax
 await client.proposeTerms(slot, { hook: newHook });            // just the hook
-await client.proposeTerms(slot, { taxPercentage: 200n, hook: newHook });
+await client.proposeTerms(slot, { taxBps: 200n, hook: newHook });
 await client.proposeTerms(slot, { hook: ZERO_ADDRESS });       // detach the hook
 
-await client.cancelProposal(slot, true, false);   // just the tax
-await client.cancelProposal(slot);                 // both (cancelTax/cancelHook default true)
+await client.cancelTerms(slot, true, false);   // just the tax
+await client.cancelTerms(slot);                 // both (cancelTax/cancelHook default true)
 ```
 
 ### Selling into an offer
 
-A buyer signs a `SellOrder`; the occupant sells into it. ERC-20 slots only.
+`client.sell`, `makeSellOrder` and `cancelSellOrder` are gone with `Slot.sell`.
+Nothing is signed off-chain any more: a bid is an on-chain row in the [OfferBook](/reference/book),
+and the book performs the sale itself.
 
 ```ts
-const order = await client.makeSellOrder(/* … */);   // build + sign, as the buyer
-await client.sell(slot, order, signature);           // as the occupant
-await client.cancelSellOrder(slot, nonce);           // buyer retracts an unfilled order
+// as the bidder — one transaction, funds stay in your wallet
+await book.offer(slot, price, deposit, expiry);
+
+// as the occupant — grant once per tenure, then accept
+await client.setOperator(slot, book, true);
+await book.acceptOffer(slot, id);
 ```
+
+`acceptOffer` reprices the slot to the bid and seats the bidder in one
+transaction, which is why the book needs the operator grant. That grant is keyed
+by tenure on the slot's side, so it lapses when the slot changes hands and cannot
+be inherited by the next occupant.
+
+The bidder approves the **book** for `price + deposit`, not the slot: `buy`
+charges `msg.sender`, and on a fill that is the book.
 
 ### Configuring a hook
 

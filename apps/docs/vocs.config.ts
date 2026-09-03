@@ -62,6 +62,7 @@ export default defineConfig({
       items: [
         { text: "SlotFactory", link: "/reference/factory" },
         { text: "Slot", link: "/reference/slot" },
+        { text: "OfferBook", link: "/reference/book" },
         { text: "Hooks", link: "/reference/hooks" },
       ],
     },
