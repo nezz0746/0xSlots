@@ -34,7 +34,7 @@ contract OperatorTenureTest is Test {
             manager: address(this),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 1_000,
+            taxBps: 1_000,
             minDepositSeconds: 1 hours,
             mutableTax: true,
             mutableHook: true
@@ -46,7 +46,7 @@ contract OperatorTenureTest is Test {
 
     function _seat(address who) internal {
         vm.prank(who);
-        slot.buy{value: slot.quoteBuy(address(this), dep)}(who, dep, PRICE, 0);
+        slot.buy{value: slot.quoteBuy(address(this), dep)}(who, PRICE, dep, 0);
     }
 
     /// @notice The ordinary case: your operator can reprice for you.

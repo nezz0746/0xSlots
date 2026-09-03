@@ -1,6 +1,5 @@
 "use client";
 
-import type { AccountType } from "@/lib/indexer";
 import { Banknote, Check, Copy, HandCoins, LandPlot } from "lucide-react";
 import { useState } from "react";
 import { getAddress, isAddress } from "viem";
@@ -25,6 +24,7 @@ import { NavLink, useNavigation } from "@/context/navigation";
 import { useCurrencyMeta, useSlotState } from "@/hooks/slots/use-slots";
 import { useExplorerSlots } from "@/hooks/use-explorer";
 import { useEnsAvatar, useEnsName } from "@/lib/ens";
+import type { AccountType } from "@/lib/indexer";
 import { formatBalance, formatBps, truncateAddress } from "@/utils";
 
 /**
@@ -275,7 +275,7 @@ function RecipientSlotRow({
         {state ? amount(state.price) : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
-        {state ? `${formatBps(Number(state.taxPercentage))}/mo` : "…"}
+        {state ? `${formatBps(Number(state.taxBps))}/mo` : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
         {state ? amount(state.deposit) : "…"}

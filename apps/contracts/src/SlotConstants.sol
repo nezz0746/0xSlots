@@ -23,7 +23,7 @@ import {SlotMath} from "./SlotMath.sol";
  */
 abstract contract SlotConstants {
     // Ceiling on a self-assessed price.
-    // So `price * taxPercentage * elapsed` cannot be driven to overflow. That
+    // So `price * taxBps * elapsed` cannot be driven to overflow. That
     //      product is computed on every settle, and every entry point settles
     //      first — so an overflow there used to revert `liquidate()` and brick a
     //      slot permanently, for the cost of gas. 2^128-1 is ~3.4e38, past any

@@ -59,11 +59,7 @@ export const adLandAbi = [
                 type: 'address',
               },
               { name: 'manager', internalType: 'address', type: 'address' },
-              {
-                name: 'taxPercentage',
-                internalType: 'uint256',
-                type: 'uint256',
-              },
+              { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
               {
                 name: 'minDepositSeconds',
                 internalType: 'uint256',
@@ -116,7 +112,7 @@ export const adLandAbi = [
                 type: 'uint256',
               },
               {
-                name: 'pendingTaxPercentage',
+                name: 'pendingTaxBps',
                 internalType: 'uint256',
                 type: 'uint256',
               },
@@ -133,7 +129,7 @@ export const adLandAbi = [
                 internalType: 'uint64',
                 type: 'uint64',
               },
-              { name: 'pendingApplies', internalType: 'bool', type: 'bool' },
+              { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
             ],
           },
         ],
@@ -166,11 +162,7 @@ export const adLandAbi = [
                 type: 'address',
               },
               { name: 'manager', internalType: 'address', type: 'address' },
-              {
-                name: 'taxPercentage',
-                internalType: 'uint256',
-                type: 'uint256',
-              },
+              { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
               {
                 name: 'minDepositSeconds',
                 internalType: 'uint256',
@@ -223,7 +215,7 @@ export const adLandAbi = [
                 type: 'uint256',
               },
               {
-                name: 'pendingTaxPercentage',
+                name: 'pendingTaxBps',
                 internalType: 'uint256',
                 type: 'uint256',
               },
@@ -240,7 +232,7 @@ export const adLandAbi = [
                 internalType: 'uint64',
                 type: 'uint64',
               },
-              { name: 'pendingApplies', internalType: 'bool', type: 'bool' },
+              { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
             ],
           },
         ],
@@ -261,7 +253,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -288,7 +280,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -315,7 +307,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -342,7 +334,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -369,7 +361,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -396,7 +388,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -423,7 +415,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -450,7 +442,7 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -468,8 +460,8 @@ export const adLandAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'address', type: 'address' },
-      { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
       { name: 'selfAssessedPrice', internalType: 'uint256', type: 'uint256' },
+      { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
       { name: 'maxPayment', internalType: 'uint256', type: 'uint256' },
       { name: 'uri', internalType: 'string', type: 'string' },
     ],
@@ -481,8 +473,8 @@ export const adLandAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'address', type: 'address' },
-      { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
       { name: 'selfAssessedPrice', internalType: 'uint256', type: 'uint256' },
+      { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
       { name: 'maxPayment', internalType: 'uint256', type: 'uint256' },
       { name: 'uri', internalType: 'string', type: 'string' },
       { name: 'permitValue', internalType: 'uint256', type: 'uint256' },
@@ -530,29 +522,6 @@ export const adLandAbi = [
           { name: 'version', internalType: 'uint32', type: 'uint32' },
           { name: 'data', internalType: 'bytes', type: 'bytes' },
           { name: 'metadataURI', internalType: 'string', type: 'string' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'hooks',
-    outputs: [
-      {
-        name: 'f',
-        internalType: 'struct HookFlags',
-        type: 'tuple',
-        components: [
-          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterSell', internalType: 'bool', type: 'bool' },
-          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
@@ -648,6 +617,29 @@ export const adLandAbi = [
     name: 'slotOf',
     outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'subscriptions',
+    outputs: [
+      {
+        name: 'f',
+        internalType: 'struct HookFlags',
+        type: 'tuple',
+        components: [
+          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
+          { name: 'beforeSell', internalType: 'bool', type: 'bool' },
+          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
+          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
+          { name: 'afterSell', internalType: 'bool', type: 'bool' },
+          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
+          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
+          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -852,7 +844,7 @@ export const adLandAbi = [
  *
  */
 export const adLandAddress = {
-  31337: '0xF48dDfC8246DB93C018515fC57cA7A3F07800aeB',
+  31337: '0xBCAb83327128875D1d7Fcd1cA6937DbE81242139',
 } as const
 
 /**
@@ -986,7 +978,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1013,7 +1005,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1040,7 +1032,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1067,7 +1059,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1094,7 +1086,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1121,7 +1113,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1148,7 +1140,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1175,7 +1167,7 @@ export const compositeHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1241,7 +1233,21 @@ export const compositeHookAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'hooks',
+    name: 'metadataURI',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'subscriptions',
     outputs: [
       {
         name: '',
@@ -1259,20 +1265,6 @@ export const compositeHookAbi = [
         ],
       },
     ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'metadataURI',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'owner',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
   {
@@ -1347,7 +1339,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1374,7 +1366,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1401,7 +1393,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1428,7 +1420,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1455,7 +1447,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1482,7 +1474,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1509,7 +1501,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1536,7 +1528,7 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
@@ -1571,8 +1563,29 @@ export const minimumTenureHookAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: '', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
+    ],
+    name: 'reentryAllowedAt',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'price', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'tenureSeconds', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'requiredDeposit',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [],
-    name: 'hooks',
+    name: 'subscriptions',
     outputs: [
       {
         name: 'f',
@@ -1590,27 +1603,6 @@ export const minimumTenureHookAbi = [
         ],
       },
     ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: '', internalType: 'address', type: 'address' },
-      { name: '', internalType: 'address', type: 'address' },
-    ],
-    name: 'reentryAllowedAt',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'price', internalType: 'uint256', type: 'uint256' },
-      { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
-      { name: 'tenureSeconds', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'requiredDeposit',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'pure',
   },
   {
@@ -1650,7 +1642,7 @@ export const minimumTenureHookAbi = [
  *
  */
 export const minimumTenureHookAddress = {
-  31337: '0x1B05f48696e6A8986347086D87094A34868bE82c',
+  31337: '0xf78d2aD9d7aF6b10bC5Db7C8d162bf62C6Ed28C5',
 } as const
 
 /**
@@ -1766,16 +1758,6 @@ export const offerBookAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'slot', internalType: 'address', type: 'address' },
-      { name: 'id', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'fundable',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'admin_', internalType: 'address', type: 'address' }],
     name: 'initialize',
     outputs: [],
@@ -1786,6 +1768,16 @@ export const offerBookAbi = [
     inputs: [],
     name: 'initializedVersion',
     outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'id', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'isFundable',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -2074,7 +2066,7 @@ export const offerBookAbi = [
  *
  */
 export const offerBookAddress = {
-  31337: '0x2049212dC5108F540F578dd72672383C749A338f',
+  31337: '0xbB8662d362EE8312Ae1B15a6117F650933439347',
 } as const
 
 /**
@@ -2162,8 +2154,8 @@ export const slotAbi = [
     type: 'function',
     inputs: [
       { name: 'account', internalType: 'address', type: 'address' },
-      { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
       { name: 'selfAssessedPrice', internalType: 'uint256', type: 'uint256' },
+      { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
       { name: 'maxPayment', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'buy',
@@ -2172,18 +2164,18 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'cancelTax', internalType: 'bool', type: 'bool' },
-      { name: 'cancelHook', internalType: 'bool', type: 'bool' },
-    ],
-    name: 'cancelProposal',
+    inputs: [{ name: 'nonce', internalType: 'uint256', type: 'uint256' }],
+    name: 'cancelSellOrder',
     outputs: [],
     stateMutability: 'nonpayable',
   },
   {
     type: 'function',
-    inputs: [{ name: 'nonce', internalType: 'uint256', type: 'uint256' }],
-    name: 'cancelSellOrder',
+    inputs: [
+      { name: 'cancelTax', internalType: 'bool', type: 'bool' },
+      { name: 'cancelHook', internalType: 'bool', type: 'bool' },
+    ],
+    name: 'cancelTerms',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -2261,7 +2253,7 @@ export const slotAbi = [
             type: 'address',
           },
           { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           {
             name: 'minDepositSeconds',
             internalType: 'uint256',
@@ -2301,20 +2293,23 @@ export const slotAbi = [
             internalType: 'uint256',
             type: 'uint256',
           },
-          {
-            name: 'pendingTaxPercentage',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
+          { name: 'pendingTaxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'pendingHook', internalType: 'address', type: 'address' },
           { name: 'pendingHookData', internalType: 'bytes32', type: 'bytes32' },
           { name: 'pendingHasTax', internalType: 'bool', type: 'bool' },
           { name: 'pendingHasHook', internalType: 'bool', type: 'bool' },
           { name: 'pendingProposedAt', internalType: 'uint64', type: 'uint64' },
-          { name: 'pendingApplies', internalType: 'bool', type: 'bool' },
+          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'hasRipeTerms',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -2371,7 +2366,7 @@ export const slotAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'hook', internalType: 'address', type: 'address' },
           { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           {
             name: 'minDepositSeconds',
             internalType: 'uint256',
@@ -2499,20 +2494,13 @@ export const slotAbi = [
     inputs: [],
     name: 'pending',
     outputs: [
-      { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
       { name: 'hook', internalType: 'address', type: 'address' },
       { name: 'hasTax', internalType: 'bool', type: 'bool' },
       { name: 'hasHook', internalType: 'bool', type: 'bool' },
       { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
       { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
     ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'pendingApplies',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -2525,7 +2513,7 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'newTax', internalType: 'uint256', type: 'uint256' },
+      { name: 'newTaxBps', internalType: 'uint256', type: 'uint256' },
       { name: 'newHook', internalType: 'address', type: 'address' },
       { name: 'newHookData', internalType: 'bytes32', type: 'bytes32' },
       { name: 'changeTax', internalType: 'bool', type: 'bool' },
@@ -2629,14 +2617,14 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'taxOwed',
+    name: 'taxBps',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     inputs: [],
-    name: 'taxPercentage',
+    name: 'taxOwed',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -2896,20 +2884,6 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'cancelTax', internalType: 'bool', type: 'bool', indexed: false },
-      {
-        name: 'cancelHook',
-        internalType: 'bool',
-        type: 'bool',
-        indexed: false,
-      },
-    ],
-    name: 'ProposalCancelled',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
       {
         name: 'occupant',
         internalType: 'address',
@@ -3030,7 +3004,7 @@ export const slotAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'taxPercentage',
+        name: 'taxBps',
         internalType: 'uint256',
         type: 'uint256',
         indexed: false,
@@ -3049,8 +3023,22 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'cancelTax', internalType: 'bool', type: 'bool', indexed: false },
       {
-        name: 'taxPercentage',
+        name: 'cancelHook',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+    ],
+    name: 'TermsCancelled',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'taxBps',
         internalType: 'uint256',
         type: 'uint256',
         indexed: false,
@@ -3112,13 +3100,14 @@ export const slotAbi = [
   { type: 'error', inputs: [], name: 'InvalidRecipient' },
   { type: 'error', inputs: [], name: 'InvalidTax' },
   { type: 'error', inputs: [], name: 'InvalidValue' },
-  { type: 'error', inputs: [], name: 'NoPendingUpdate' },
+  { type: 'error', inputs: [], name: 'NoPendingTerms' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotInsolvent' },
   { type: 'error', inputs: [], name: 'NotManager' },
   { type: 'error', inputs: [], name: 'NotMutable' },
   { type: 'error', inputs: [], name: 'NotOccupant' },
   { type: 'error', inputs: [], name: 'NotOccupantOrOperator' },
+  { type: 'error', inputs: [], name: 'NothingProposed' },
   { type: 'error', inputs: [], name: 'NothingToClaim' },
   { type: 'error', inputs: [], name: 'NothingToCollect' },
   { type: 'error', inputs: [], name: 'NothingToWithdraw' },
@@ -3142,7 +3131,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x766002AB54fd1F8c9071edd27a1A6B57522d6228',
+  31337: '0x32dAdCe13CEE40d01c8B807770a2418fF99e2B46',
 } as const
 
 /**
@@ -3431,7 +3420,7 @@ export const slotCollectiveAbi = [
         ],
       },
     ],
-    name: 'initializeManager',
+    name: 'initializeCollective',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -3512,7 +3501,7 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
-      { name: 'newPct', internalType: 'uint256', type: 'uint256' },
+      { name: 'newTaxBps', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'proposeTax',
     outputs: [],
@@ -3653,6 +3642,15 @@ export const slotCollectiveAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'by', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'AllTermsCancelled',
+  },
   { type: 'event', anonymous: false, inputs: [], name: 'EIP712DomainChanged' },
   {
     type: 'event',
@@ -3703,15 +3701,6 @@ export const slotCollectiveAbi = [
       },
     ],
     name: 'OwnershipTransferred',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
-      { name: 'by', internalType: 'address', type: 'address', indexed: true },
-    ],
-    name: 'PendingUpdatesCancelled',
   },
   {
     type: 'event',
@@ -3842,7 +3831,7 @@ export const slotCollectiveAbi = [
         indexed: true,
       },
     ],
-    name: 'UpdateCancelRelayed',
+    name: 'TermsCancelRelayed',
   },
   {
     type: 'event',
@@ -3863,7 +3852,7 @@ export const slotCollectiveAbi = [
         indexed: false,
       },
     ],
-    name: 'UpdateRelayed',
+    name: 'TermsRelayed',
   },
   { type: 'error', inputs: [], name: 'AccessControlBadConfirmation' },
   {
@@ -3918,7 +3907,7 @@ export const slotCollectiveAbi = [
  *
  */
 export const slotCollectiveAddress = {
-  31337: '0xB49A15A15b8CC991949dc77FBe1f29663B95dFea',
+  31337: '0x7a9436d5d20B3a3A66400d5DF85302cE49867671',
 } as const
 
 /**
@@ -3962,6 +3951,20 @@ export const slotCollectiveFactoryAbi = [
   },
   {
     type: 'function',
+    inputs: [],
+    name: 'collectiveCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    name: 'collectives',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [
       {
         name: 'split',
@@ -3998,8 +4001,8 @@ export const slotCollectiveFactoryAbi = [
         ],
       },
     ],
-    name: 'createManager',
-    outputs: [{ name: 'manager', internalType: 'address', type: 'address' }],
+    name: 'createCollective',
+    outputs: [{ name: 'collective', internalType: 'address', type: 'address' }],
     stateMutability: 'nonpayable',
   },
   {
@@ -4007,7 +4010,7 @@ export const slotCollectiveFactoryAbi = [
     inputs: [
       { name: '_admin', internalType: 'address', type: 'address' },
       {
-        name: '_managerImplementation',
+        name: '_collectiveImplementation',
         internalType: 'address',
         type: 'address',
       },
@@ -4028,20 +4031,6 @@ export const slotCollectiveFactoryAbi = [
     inputs: [{ name: '', internalType: 'address', type: 'address' }],
     name: 'isSlotCollective',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'managerCount',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    name: 'managers',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
   {
@@ -4134,7 +4123,7 @@ export const slotCollectiveFactoryAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'manager',
+        name: 'collective',
         internalType: 'address',
         type: 'address',
         indexed: true,
@@ -4198,7 +4187,7 @@ export const slotCollectiveFactoryAbi = [
  *
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0x46eA0305e52003981E67582Fe055f97aeA00b8e0',
+  31337: '0x13B0014f05438C430dC07b0A45C6FA52D7B6181d',
 } as const
 
 /**
@@ -4274,7 +4263,7 @@ export const slotFactoryAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'hook', internalType: 'address', type: 'address' },
           { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'taxPercentage', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
           {
             name: 'minDepositSeconds',
             internalType: 'uint256',
@@ -4486,7 +4475,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0xE15af7E769081F1F8C8918AB2D2915Bf254d5910',
+  31337: '0x101082d0740310eC238dA7F728e30786Ae5CDd91',
 } as const
 
 /**

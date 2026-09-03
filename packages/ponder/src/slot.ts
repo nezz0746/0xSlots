@@ -13,7 +13,6 @@ import {
   operatorSetEvent,
   orderCancelledEvent,
   priceSetEvent,
-  proposalCancelledEvent,
   releasedEvent,
   settledEvent,
   slot,
@@ -23,6 +22,7 @@ import {
   taxCollectedEvent,
   taxPaidEvent,
   termsAppliedEvent,
+  termsCancelledEvent,
   termsProposedEvent,
   withdrawnEvent,
 } from "ponder:schema";
@@ -721,9 +721,7 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
 
   await context.db.update(slot, { id: slotAddr }).set((row) => ({
     pendingHasTax: event.args.changeTax || row.pendingHasTax,
-    pendingTaxPercentage: event.args.changeTax
-      ? event.args.taxPercentage
-      : row.pendingTaxPercentage,
+    pendingTaxBps: event.args.changeTax ? event.args.taxBps : row.pendingTaxBps,
     pendingHasHook: event.args.changeHook || row.pendingHasHook,
     // The zero address is a real proposed value — "detach the hook" — which is
     // why `pendingHasHook` exists rather than testing this column for null.
@@ -744,7 +742,7 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     manager: s.manager ?? lower(event.transaction.from),
     changeTax: event.args.changeTax,
     changeHook: event.args.changeHook,
-    taxPercentage: event.args.taxPercentage,
+    taxBps: event.args.taxBps,
     hook: proposedHook,
     hookData: lower(event.args.hookData),
     timestamp: event.block.timestamp,
@@ -775,7 +773,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const prevHookData = s.hookData ?? ZERO_DATA;
   const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
   const hookDataChanged = prevHookData !== nextHookData;
-  const taxChanged = s.taxPercentage !== event.args.taxPercentage;
+  const taxChanged = s.taxBps !== event.args.taxBps;
 
   // Re-read unconditionally, never carried over from the row.
   //
@@ -801,14 +799,14 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   }
 
   await context.db.update(slot, { id: slotAddr }).set({
-    taxPercentage: event.args.taxPercentage,
+    taxBps: event.args.taxBps,
     hook: nextHook === ZERO_ADDR ? null : nextHook,
     // Detaching clears it on chain, so mirroring the event rather than
     // preserving the old value is what keeps this row honest.
     hookData: nextHook === ZERO_ADDR ? null : nextHookData,
     ...hookFlagColumns(flags),
     pendingHasTax: false,
-    pendingTaxPercentage: null,
+    pendingTaxBps: null,
     pendingHasHook: false,
     pendingHook: null,
     pendingHookData: null,
@@ -820,10 +818,10 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
-    taxPercentage: event.args.taxPercentage,
+    taxBps: event.args.taxBps,
     hook: nextHook,
     hookData: nextHookData,
-    previousTaxPercentage: s.taxPercentage,
+    previousTaxPercentage: s.taxBps,
     previousHook: prevHook ?? ZERO_ADDR,
     previousHookData: prevHookData,
     taxChanged,
@@ -838,7 +836,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
 /**
  * A queued proposal retracted, per dimension.
  *
- * `cancelProposal` takes the same two flags `proposeTerms` does — so this
+ * `cancelTerms` takes the same two flags `proposeTerms` does — so this
  * clears only the dimensions the event names, and a slot with a tax change and
  * a hook change queued keeps whichever one was not cancelled. Clearing both
  * unconditionally here would reintroduce, in the indexer, exactly the
@@ -849,11 +847,11 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
  * nothing is left queued, because a surviving proposal keeps its clock.
  *
  * The pre-clear values are copied into the event row. The chain does not carry
- * them here (`ProposalCancelled` names the flags and nothing else), so if they
+ * them here (`TermsCancelled` names the flags and nothing else), so if they
  * are not captured before the update, what was retracted is unrecoverable
  * without replaying the preceding `TermsProposed`.
  */
-ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
+ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
   const { cancelTax: tax, cancelHook: hookFlag } = event.args;
@@ -866,7 +864,7 @@ ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
 
   await context.db.update(slot, { id: slotAddr }).set({
     pendingHasTax: nextHasTax,
-    pendingTaxPercentage: tax ? null : s.pendingTaxPercentage,
+    pendingTaxBps: tax ? null : s.pendingTaxBps,
     pendingHasHook: nextHasHook,
     pendingHook: hookFlag ? null : s.pendingHook,
     pendingHookData: hookFlag ? null : s.pendingHookData,
@@ -875,17 +873,17 @@ ponder.on("Slot:ProposalCancelled", async ({ event, context }) => {
     updatedAt: event.block.timestamp,
   });
 
-  await context.db.insert(proposalCancelledEvent).values({
+  await context.db.insert(termsCancelledEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId: context.chain.id,
     slot: slotAddr,
-    // `cancelProposal` is `onlyManager`, so the manager on the row IS the
+    // `cancelTerms` is `onlyManager`, so the manager on the row IS the
     // canceller. `transaction.from` is the fallback only for the impossible
     // case of a slot with no manager, where nothing could have emitted this.
     manager: s.manager ?? lower(event.transaction.from),
     cancelTax: tax,
     cancelHook: hookFlag,
-    cancelledTaxPercentage: hadTax ? s.pendingTaxPercentage : null,
+    cancelledTaxPercentage: hadTax ? s.pendingTaxBps : null,
     cancelledHook: hadHook ? s.pendingHook : null,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,

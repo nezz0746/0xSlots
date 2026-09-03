@@ -109,7 +109,7 @@ export default function CreateCollectivePage() {
       eventName: "SlotCollectiveDeployed",
       logs: receipt.logs,
     });
-    return log?.args.manager;
+    return log?.args.collective;
   }, [receipt]);
 
   // Written once per deployment. The field stays editable afterwards — the
@@ -174,7 +174,7 @@ export default function CreateCollectivePage() {
       {
         address: factory,
         abi: slotCollectiveFactoryAbi,
-        functionName: "createManager",
+        functionName: "createCollective",
         args: [
           {
             recipients: validPayees.map((p) => p.address as Address),

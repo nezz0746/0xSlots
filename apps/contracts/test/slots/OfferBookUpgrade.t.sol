@@ -54,7 +54,7 @@ contract OfferBookUpgradeTest is Test {
             manager: address(this),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
             mutableHook: true
@@ -67,7 +67,7 @@ contract OfferBookUpgradeTest is Test {
         }
         uint256 dep = slot.minDepositForBuy(100e18);
         vm.prank(occ);
-        slot.buy(occ, dep, 100e18, 0);
+        slot.buy(occ, 100e18, dep, 0);
     }
 
     function test_TheAdminCanUpgradeTheBoard() public {

@@ -21,20 +21,20 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 ///      The old local copy of `UpdateKind` is gone too, and with it the hazard
 ///      that justified importing it: an enum passed ACROSS the boundary is
 ///      positional, so a local copy drifting by one member would cancel the
-///      wrong dimension. `proposeTerms` and `cancelProposal` take plain bools,
+///      wrong dimension. `proposeTerms` and `cancelTerms` take plain bools,
 ///      so nothing positional crosses any more. The `Dimension` enum below
 ///      never leaves this contract — it labels events and nothing else — which
 ///      is why redeclaring it here is safe where the old one was not.
 interface IManagedSlot {
     function proposeTerms(
-        uint256 newTax,
+        uint256 newTaxBps,
         address newHook,
         bytes32 newHookData,
         bool changeTax,
         bool changeHook
     ) external;
 
-    function cancelProposal(bool cancelTax, bool cancelHook) external;
+    function cancelTerms(bool cancelTax, bool cancelHook) external;
 
     function collect() external;
 
@@ -118,7 +118,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // `Tax`, the left-padded address for `Hook`.
 
     /// @notice A role holder relayed a pending-update proposal to `slot`.
-    event UpdateRelayed(
+    event TermsRelayed(
         address indexed slot,
         address indexed by,
         Dimension indexed kind,
@@ -126,18 +126,18 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     );
 
     /// @notice A role holder retracted `slot`'s pending update for one dimension.
-    event UpdateCancelRelayed(
+    event TermsCancelRelayed(
         address indexed slot,
         address indexed by,
         Dimension indexed kind
     );
 
     /// @notice An admin dropped every pending proposal on `slot` at once.
-    /// @dev Distinct from `UpdateCancelRelayed`: this is the admin-only reach
+    /// @dev Distinct from `TermsCancelRelayed`: this is the admin-only reach
     ///      across both dimensions, not a per-dimension retraction.
-    event PendingUpdatesCancelled(address indexed slot, address indexed by);
+    event AllTermsCancelled(address indexed slot, address indexed by);
 
-    /// @dev Widens an address to the `bytes32` `UpdateRelayed` carries, so one
+    /// @dev Widens an address to the `bytes32` `TermsRelayed` carries, so one
     ///      event shape describes a rate and two contract addresses. Mirrors
     ///      `Slot._asValue`.
     function _asValue(address a) internal pure returns (bytes32) {
@@ -209,12 +209,12 @@ abstract contract SlotGovernance is AccessControl, Initializable {
 
     /// @notice Propose a new tax rate on `slot`. Applies on its next occupancy
     ///         transition, not immediately.
-    function proposeTax(IManagedSlot slot, uint256 newPct)
+    function proposeTax(IManagedSlot slot, uint256 newTaxBps)
         external
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
     {
-        slot.proposeTerms(newPct, address(0), bytes32(0), true, false);
-        emit UpdateRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(newPct));
+        slot.proposeTerms(newTaxBps, address(0), bytes32(0), true, false);
+        emit TermsRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(newTaxBps));
     }
 
     /// @notice Propose a new hook on `slot` — what holding it grants, and who
@@ -225,7 +225,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      `changeHook` flag and this relay always sets it: there is no way to
     ///      express "detach" if a zero address means "leave alone".
     ///
-    ///      The slot validates the hook now — one whose `hooks()` does not
+    ///      The slot validates the hook now — one whose `subscriptions()` does not
     ///      answer, or which rejects `newHookData`, is refused here rather than
     ///      attached broken — so this relay does not re-check. One validation,
     ///      one authority.
@@ -239,7 +239,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         bytes32 newHookData
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         slot.proposeTerms(0, newHook, newHookData, false, true);
-        emit UpdateRelayed(
+        emit TermsRelayed(
             address(slot),
             msg.sender,
             Dimension.Hook,
@@ -256,8 +256,8 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         external
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
     {
-        slot.cancelProposal(true, false);
-        emit UpdateCancelRelayed(address(slot), msg.sender, Dimension.Tax);
+        slot.cancelTerms(true, false);
+        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Tax);
     }
 
     /// @notice Retract this role's own queued hook proposal on `slot`.
@@ -265,8 +265,8 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
-        slot.cancelProposal(false, true);
-        emit UpdateCancelRelayed(address(slot), msg.sender, Dimension.Hook);
+        slot.cancelTerms(false, true);
+        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Hook);
     }
 
     /// @notice Drop every pending proposal on `slot`, across both dimensions.
@@ -286,10 +286,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         // solhint-disable-next-line no-empty-blocks
-        try slot.cancelProposal(true, false) {} catch {}
+        try slot.cancelTerms(true, false) {} catch {}
         // solhint-disable-next-line no-empty-blocks
-        try slot.cancelProposal(false, true) {} catch {}
-        emit PendingUpdatesCancelled(address(slot), msg.sender);
+        try slot.cancelTerms(false, true) {} catch {}
+        emit AllTermsCancelled(address(slot), msg.sender);
     }
 
     // ═══════════════════════════════════════════════════════════

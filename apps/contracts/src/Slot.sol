@@ -17,7 +17,7 @@ struct SlotInit {
     address hook;
     /// Opaque to the slot, meaningful to the hook. Must be zero when `hook` is.
     bytes32 hookData;
-    uint256 taxPercentage;
+    uint256 taxBps;
     uint256 minDepositSeconds;
     bool mutableTax;
     bool mutableHook;
@@ -59,7 +59,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
 
     function initialize(SlotInit calldata p) external initializer {
         if (p.recipient == address(0)) revert InvalidRecipient();
-        if (p.taxPercentage == 0 || p.taxPercentage > MAX_TAX_BPS)
+        if (p.taxBps == 0 || p.taxBps > MAX_TAX_BPS)
             revert InvalidTax();
         if (
             address(p.currency) != address(0) &&
@@ -77,7 +77,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         recipient = p.recipient;
         currency = p.currency;
         manager = p.manager;
-        taxPercentage = p.taxPercentage;
+        taxBps = p.taxBps;
         minDepositSeconds = p.minDepositSeconds;
         mutableTax = p.mutableTax;
         mutableHook = p.mutableHook;

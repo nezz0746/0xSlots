@@ -64,7 +64,7 @@ export function MobileBottomBar({
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxPercentage = form.watch("taxPercentage");
+  const taxBps = form.watch("taxBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
@@ -206,7 +206,7 @@ export function MobileBottomBar({
                 icon={<HandCoins className="size-3" />}
                 onJump={jumpTo}
               >
-                {taxPercentage || "0"}% / 30d
+                {taxBps || "0"}% / 30d
               </SummaryRow>
 
               {/* Min Deposit */}

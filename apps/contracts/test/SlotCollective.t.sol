@@ -30,7 +30,7 @@ contract MockSlot {
     uint256 public hookCancels;
 
     error NotManager();
-    error NoPendingUpdate();
+    error NoPendingTerms();
 
     constructor(address _manager) {
         manager = _manager;
@@ -44,14 +44,14 @@ contract MockSlot {
     /// @dev Mirrors the real slot: each dimension is set only when its own
     ///      flag is passed, so two roles can queue independently.
     function proposeTerms(
-        uint256 newTax,
+        uint256 newTaxBps,
         address newHook,
         bytes32 newHookData,
         bool changeTax,
         bool changeHook
     ) external onlyManager {
         if (changeTax) {
-            taxPct = newTax;
+            taxPct = newTaxBps;
             hasTax = true;
         }
         if (changeHook) {
@@ -59,19 +59,19 @@ contract MockSlot {
             hookAddr = newHook;
             hasHook = true;
         }
-        if (!changeTax && !changeHook) revert NoPendingUpdate();
+        if (!changeTax && !changeHook) revert NoPendingTerms();
     }
 
     /// @dev Reverts on a dimension holding nothing, as the real slot does —
     ///      which is what makes the admin's cancel-everything relay need to
     ///      attempt each leg separately.
-    function cancelProposal(bool cancelTax, bool cancelHook)
+    function cancelTerms(bool cancelTax, bool cancelHook)
         external
         onlyManager
     {
-        if (!cancelTax && !cancelHook) revert NoPendingUpdate();
-        if (cancelTax && !hasTax) revert NoPendingUpdate();
-        if (cancelHook && !hasHook) revert NoPendingUpdate();
+        if (!cancelTax && !cancelHook) revert NoPendingTerms();
+        if (cancelTax && !hasTax) revert NoPendingTerms();
+        if (cancelHook && !hasHook) revert NoPendingTerms();
         if (cancelTax) {
             hasTax = false;
             taxPct = 0;
@@ -125,7 +125,7 @@ contract SlotCollectiveTest is Test {
             )
         );
 
-        mgr = SlotCollective(payable(factory.createManager(_split(), _roles())));
+        mgr = SlotCollective(payable(factory.createCollective(_split(), _roles())));
         slot = new MockSlot(address(mgr));
     }
 
@@ -411,7 +411,7 @@ contract SlotCollectiveTest is Test {
         SlotCollective.InitialRoles memory r = _roles();
         r.admin = address(0);
         vm.expectRevert(SlotGovernance.AdminRequired.selector);
-        factory.createManager(_split(), r);
+        factory.createCollective(_split(), r);
     }
 
     function test_rejectsSplitThatCouldNeverDistribute() public {
@@ -421,7 +421,7 @@ contract SlotCollectiveTest is Test {
         bad.totalAllocation = 0;
 
         vm.expectRevert(SlotCollective.EmptySplit.selector);
-        factory.createManager(bad, _roles());
+        factory.createCollective(bad, _roles());
     }
 
     function test_rejectsEmptyRecipients() public {
@@ -433,7 +433,7 @@ contract SlotCollectiveTest is Test {
         });
 
         vm.expectRevert(SlotCollective.EmptySplit.selector);
-        factory.createManager(bad, _roles());
+        factory.createCollective(bad, _roles());
     }
 
     receive() external payable {}

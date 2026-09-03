@@ -21,7 +21,7 @@ abstract contract SlotAccounting is SlotHooks {
     event Credited(address indexed account, uint256 amount);
     event Claimed(address indexed account, uint256 amount);
     event TermsApplied(
-        uint256 taxPercentage,
+        uint256 taxBps,
         address indexed hook,
         bytes32 hookData
     );
@@ -38,12 +38,12 @@ abstract contract SlotAccounting is SlotHooks {
     function taxOwed() public view returns (uint256) {
         if (_occupant == address(0)) return 0;
         uint256 elapsed = block.timestamp - lastSettled;
-        return SlotMath.taxFor(_price, taxPercentage, elapsed);
+        return SlotMath.taxFor(_price, taxBps, elapsed);
     }
 
     /// @notice The smallest deposit that funds `minDepositSeconds` at `price_`.
     function _minDepositFor(uint256 price_) internal view returns (uint256) {
-        return SlotMath.depositFor(price_, taxPercentage, minDepositSeconds);
+        return SlotMath.depositFor(price_, taxBps, minDepositSeconds);
     }
 
     function _requireFunded(uint256 depositAmount, uint256 price_) internal view {
@@ -111,7 +111,7 @@ abstract contract SlotAccounting is SlotHooks {
             uint256 secondsPaid = SlotMath.secondsFor(
                 paid,
                 _price,
-                taxPercentage
+                taxBps
             );
             uint256 elapsed = upTo - lastSettled;
             if (secondsPaid >= elapsed) lastSettled = uint64(upTo);
@@ -145,7 +145,7 @@ abstract contract SlotAccounting is SlotHooks {
     ///      deposit against the pending rate has to agree with `_applyPending`
     ///      about whether that rate is going to apply — disagreeing in either
     ///      direction quotes a number the transaction will not accept.
-    function pendingApplies() public view returns (bool) {
+    function hasRipeTerms() public view returns (bool) {
         if (!pending.hasTax && !pending.hasHook) return false;
         return block.timestamp >= pending.proposedAt + TERMS_DELAY;
     }
@@ -158,7 +158,7 @@ abstract contract SlotAccounting is SlotHooks {
      *      only when the seat does.
      */
     function _applyPending() internal {
-        if (!pendingApplies()) return;
+        if (!hasRipeTerms()) return;
 
         // Refuse to answer for a hook we cannot afford to ask.
         //
@@ -182,7 +182,7 @@ abstract contract SlotAccounting is SlotHooks {
             gasleft() < (HOOK_GAS * 64) / 63 + HOOK_READ_FLOOR
         ) return;
 
-        if (pending.hasTax) taxPercentage = pending.taxPercentage;
+        if (pending.hasTax) taxBps = pending.taxBps;
         if (pending.hasHook) {
             address h = pending.hook;
             // Re-read the subscriptions here rather than at proposal time: a
@@ -213,7 +213,7 @@ abstract contract SlotAccounting is SlotHooks {
         }
 
         delete pending;
-        emit TermsApplied(taxPercentage, hook, hookData);
+        emit TermsApplied(taxBps, hook, hookData);
     }
 
     /**

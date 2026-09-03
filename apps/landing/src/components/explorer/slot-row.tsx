@@ -120,7 +120,7 @@ export function SlotRow({
           {currencySymbol}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
-          ({Number(slot.taxPercentage) / 100}%/mo)
+          ({Number(slot.taxBps) / 100}%/mo)
         </span>
       </TableCell>
 

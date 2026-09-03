@@ -120,7 +120,7 @@ export function ManageTerms({
   trailing?: React.ReactNode;
 }) {
   const { decimals, symbol } = currency;
-  const taxBps = state.taxPercentage;
+  const taxBps = state.taxBps;
   const { chainId } = useChain();
   const { toUsd } = useUsdPrice(state.currency, chainId);
   const walletBalance = useCurrencyBalance(state.currency);

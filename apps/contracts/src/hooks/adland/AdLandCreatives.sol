@@ -66,12 +66,12 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
     ///      `msg.sender`, so this frame has already proved what `publish` asks.
     function buyAndPublish(
         address slot,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment,
         string calldata uri
     ) external payable {
-        _buy(slot, depositAmount, selfAssessedPrice, maxPayment);
+        _buy(slot, selfAssessedPrice, depositAmount, maxPayment);
         _publish(slot, uri);
     }
 
@@ -81,8 +81,8 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
     ///      Base implements 2612, which is what makes it worth carrying.
     function buyAndPublishWithPermit(
         address slot,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment,
         string calldata uri,
         uint256 permitValue,
@@ -113,7 +113,7 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
             )
         {} catch {}
 
-        _buy(slot, depositAmount, selfAssessedPrice, maxPayment);
+        _buy(slot, selfAssessedPrice, depositAmount, maxPayment);
         _publish(slot, uri);
     }
 
@@ -130,8 +130,8 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
     ///      wanted.
     function _buy(
         address slot,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment
     ) internal {
         address currency = ISlotAd(slot).currency();
@@ -143,8 +143,8 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
             // second copy of that arithmetic, free to drift from the first.
             ISlotAd(slot).buy{value: msg.value}(
                 msg.sender,
-                depositAmount,
                 selfAssessedPrice,
+                depositAmount,
                 maxPayment
             );
             return;
@@ -172,8 +172,8 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
 
         ISlotAd(slot).buy(
             msg.sender,
-            depositAmount,
             selfAssessedPrice,
+            depositAmount,
             maxPayment
         );
 
@@ -194,7 +194,7 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
 
     // ─── hook surface ───────────────────────────────────────────────────────
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         // Every path that ends a tenure. `afterSettle` is tax moving under a
         // tenure that has not ended, and a `before` hook here would let AdLand
         // veto a buy — which it has no business doing.

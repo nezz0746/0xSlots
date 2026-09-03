@@ -73,7 +73,7 @@ export const createSlotSchema = z
     // The FLOOR is the one worth stating out loud: a zero-tax slot accrues
     // nothing, so nobody could ever be liquidated off it — it would be a slot
     // that can be taken once and then held for free forever.
-    taxPercentage: z
+    taxBps: z
       .string()
       .min(1, "Required")
       .refine(
@@ -223,7 +223,7 @@ export const defaultValues: CreateSlotFormValues = {
   customCurrency: "",
   // 1% per 30 days, funded a day ahead: a slot that plainly works, and every
   // number visible on first paint rather than a form of empty required fields.
-  taxPercentage: "1",
+  taxBps: "1",
   minDepositValue: "1",
   minDepositUnit: "days",
   // No hook — a plain instant-buy slot. An untouched form produces the

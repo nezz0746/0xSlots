@@ -25,20 +25,29 @@ abstract contract SlotOccupancy is SlotViews {
      * @dev `account` is seated; `msg.sender` pays. Those are deliberately
      *      separable — it is what lets a contract acquire a slot on someone's
      *      behalf without any protocol permission.
+     *
+     *      PRICE BEFORE DEPOSIT, and it used to be the other way round. Every
+     *      other price/deposit pair in the protocol is price-first —
+     *      `SellOrder`, `SlotContext`, `Bought`, `Offered`,
+     *      `SlotMath.depositFor` — so this one function inverted the order a
+     *      caller's hands already knew. Two adjacent `uint256`s, and swapped it
+     *      does not revert: it buys at your deposit and escrows your price.
+     *      Fixed in the redeploy that was already breaking every client, since
+     *      it is the one rename an old caller survives silently.
      */
     function buy(
         address account,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment
     ) external payable nonReentrant {
-        _buy(account, depositAmount, selfAssessedPrice, maxPayment);
+        _buy(account, selfAssessedPrice, depositAmount, maxPayment);
     }
 
     function _buy(
         address account,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment
     ) internal {
         if (selfAssessedPrice == 0 || selfAssessedPrice > MAX_PRICE)
@@ -56,7 +65,7 @@ abstract contract SlotOccupancy is SlotViews {
         //
         // The hook was previously handed `_ctx` built from the outgoing
         // configuration and the slot then charged the incoming one, so any
-        // hook sizing a requirement from `ctx.taxPercentage` under-charged by
+        // hook sizing a requirement from `ctx.taxBps` under-charged by
         // the full ratio of the two rates. Asking a policy to judge terms the
         // same transaction is about to discard is not a policy check.
         _applyPending();
@@ -201,7 +210,7 @@ abstract contract SlotOccupancy is SlotViews {
         address outgoing = hook;
         uint8 outgoingFlags = _hookFlags;
         bytes32 outgoingData = hookData;
-        uint256 outgoingTax = taxPercentage;
+        uint256 outgoingTax = taxBps;
 
         _vacate();
         _applyPending();
@@ -249,7 +258,7 @@ abstract contract SlotOccupancy is SlotViews {
         address outgoing = hook;
         uint8 outgoingFlags = _hookFlags;
         bytes32 outgoingData = hookData;
-        uint256 outgoingTax = taxPercentage;
+        uint256 outgoingTax = taxBps;
 
         _vacate();
         _applyPending();

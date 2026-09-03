@@ -83,7 +83,7 @@ contract SlotCollectiveFactoryTest is Test {
     }
 
     function _create(address admin_) internal returns (SlotCollective) {
-        return SlotCollective(payable(factory.createManager(_split(), _roles(admin_))));
+        return SlotCollective(payable(factory.createCollective(_split(), _roles(admin_))));
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -122,14 +122,14 @@ contract SlotCollectiveFactoryTest is Test {
     }
 
     function test_registryTracksEveryManager() public {
-        assertEq(factory.managerCount(), 0);
+        assertEq(factory.collectiveCount(), 0);
 
         SlotCollective a = _create(managerAdmin);
         SlotCollective b = _create(stranger);
 
-        assertEq(factory.managerCount(), 2);
-        assertEq(factory.managers(0), address(a));
-        assertEq(factory.managers(1), address(b));
+        assertEq(factory.collectiveCount(), 2);
+        assertEq(factory.collectives(0), address(a));
+        assertEq(factory.collectives(1), address(b));
         assertFalse(factory.isSlotCollective(makeAddr("notAManager")));
     }
 
@@ -152,7 +152,7 @@ contract SlotCollectiveFactoryTest is Test {
     ///      is what closes it.
     function test_implementationCannotBeInitialized() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        implementation.initializeManager(_split(), _roles(stranger));
+        implementation.initializeCollective(_split(), _roles(stranger));
     }
 
     function test_managerCannotBeReinitialized() public {
@@ -160,7 +160,7 @@ contract SlotCollectiveFactoryTest is Test {
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         vm.prank(stranger);
-        mgr.initializeManager(_split(), _roles(stranger));
+        mgr.initializeCollective(_split(), _roles(stranger));
 
         // And the original admin is untouched.
         assertTrue(mgr.hasRole(mgr.DEFAULT_ADMIN_ROLE(), managerAdmin));

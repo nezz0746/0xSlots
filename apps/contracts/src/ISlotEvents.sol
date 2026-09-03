@@ -60,11 +60,11 @@ interface ISlotEvents {
     ///      clients looking like a typo. They are named for what they mean, and
     ///      for what `proposeTerms` calls them.
     event TermsProposed(
-        uint256 taxPercentage,
+        uint256 taxBps,
         address indexed hook,
         bytes32 hookData,
         bool changeTax,
         bool changeHook
     );
-    event ProposalCancelled(bool cancelTax, bool cancelHook);
+    event TermsCancelled(bool cancelTax, bool cancelHook);
 }

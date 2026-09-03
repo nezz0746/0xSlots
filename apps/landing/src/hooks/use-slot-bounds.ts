@@ -6,7 +6,7 @@ import { useMemo } from "react";
 /**
  * The slot's arithmetic bounds.
  *
- * `MAX_PRICE` and `MAX_TAX_BPS` exist so `price * taxPercentage * elapsed`
+ * `MAX_PRICE` and `MAX_TAX_BPS` exist so `price * taxBps * elapsed`
  * cannot be driven to overflow — which would revert `_settle()`, and with it
  * every entry point including `liquidate()`, bricking a slot permanently. The
  * UI reads them so a price over the ceiling is caught beside the field rather

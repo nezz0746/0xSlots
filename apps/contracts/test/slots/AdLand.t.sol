@@ -44,7 +44,7 @@ contract AdLandTest is Test {
             manager: address(this),
             hook: address(adland),
             hookData: bytes32(0),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 7 days,
             mutableTax: true,
             mutableHook: true
@@ -58,7 +58,7 @@ contract AdLandTest is Test {
         uint256 dep = slot.minDepositForBuy(price);
         vm.prank(who);
         slot.buy{value: dep + (slot.occupant() == address(0) ? 0 : slot.price())}(
-            who, dep, price, type(uint256).max
+            who, price, dep, type(uint256).max
         );
     }
 
@@ -124,7 +124,7 @@ contract AdLandTest is Test {
         uint256 dep = slot.minDepositForBuy(1 ether);
         vm.prank(bob);
         adland.buyAndPublish{value: dep}(
-            address(slot), dep, 1 ether, type(uint256).max, "bob's ad"
+            address(slot), 1 ether, dep, type(uint256).max, "bob's ad"
         );
 
         assertEq(slot.occupant(), bob, "bob is seated");
@@ -142,7 +142,7 @@ contract AdLandTest is Test {
         assertEq(v.uri, "alice's ad");
         assertEq(v.info.occupant, alice);
         assertEq(v.info.price, 1 ether);
-        assertEq(v.info.taxPercentage, 500);
+        assertEq(v.info.taxBps, 500);
     }
 
     function test_TheLensNeverRevertsOnRubbish() public {

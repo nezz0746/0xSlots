@@ -23,7 +23,7 @@ struct SlotInfo {
     address recipient;
     IERC20 currency;
     address manager;
-    uint256 taxPercentage;
+    uint256 taxBps;
     uint256 minDepositSeconds;
     bool mutableTax;
     bool mutableHook;
@@ -45,13 +45,13 @@ struct SlotInfo {
     bool isInsolvent;
     uint256 secondsUntilLiquidation;
     // queued terms
-    uint256 pendingTaxPercentage;
+    uint256 pendingTaxBps;
     address pendingHook;
     bytes32 pendingHookData;
     bool pendingHasTax;
     bool pendingHasHook;
     uint64 pendingProposedAt;
-    bool pendingApplies;
+    bool hasRipeTerms;
 }
 
 /// @notice The protocol's fixed numbers, in one call.
@@ -96,7 +96,7 @@ abstract contract SlotViews is SlotOrders {
         info.recipient = recipient;
         info.currency = currency;
         info.manager = manager;
-        info.taxPercentage = taxPercentage;
+        info.taxBps = taxBps;
         info.minDepositSeconds = minDepositSeconds;
         info.mutableTax = mutableTax;
         info.mutableHook = mutableHook;
@@ -118,13 +118,13 @@ abstract contract SlotViews is SlotOrders {
         info.isInsolvent = isInsolvent();
         info.secondsUntilLiquidation = secondsUntilLiquidation();
 
-        info.pendingTaxPercentage = pending.taxPercentage;
+        info.pendingTaxBps = pending.taxBps;
         info.pendingHook = pending.hook;
         info.pendingHookData = pending.hookData;
         info.pendingHasTax = pending.hasTax;
         info.pendingHasHook = pending.hasHook;
         info.pendingProposedAt = pending.proposedAt;
-        info.pendingApplies = pendingApplies();
+        info.hasRipeTerms = hasRipeTerms();
     }
 
     /// @notice Every protocol constant, in one call.
@@ -178,7 +178,7 @@ abstract contract SlotViews is SlotOrders {
         // the function then answered "never" for a position that was genuinely
         // insolvent within the month. That is the wrong direction to be wrong
         // in: it is keepers and UIs that read this.
-        return SlotMath.secondsFor(_deposit - owed, _price, taxPercentage);
+        return SlotMath.secondsFor(_deposit - owed, _price, taxBps);
     }
 
     /**
@@ -188,7 +188,7 @@ abstract contract SlotViews is SlotOrders {
      *      occupancy transition and `_applyPending` runs before the funding
      *      check — so a buyer funds the terms they are buying into, not the
      *      ones they can see today. A client sizing the deposit from
-     *      `taxPercentage()` underquotes through exactly that window and the
+     *      `taxBps()` underquotes through exactly that window and the
      *      buy reverts `InvalidDeposit`.
      *
      *      `selfAssess` is deliberately not covered here: it is not a
@@ -196,9 +196,9 @@ abstract contract SlotViews is SlotOrders {
      */
     function minDepositForBuy(uint256 price_) public view returns (uint256) {
         if (minDepositSeconds == 0) return 0;
-        uint256 tax = (pending.hasTax && pendingApplies())
-            ? pending.taxPercentage
-            : taxPercentage;
+        uint256 tax = (pending.hasTax && hasRipeTerms())
+            ? pending.taxBps
+            : taxBps;
         return SlotMath.depositFor(price_, tax, minDepositSeconds);
     }
 

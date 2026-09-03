@@ -93,11 +93,7 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
   const minDepositFor = useCallback(
     (price: bigint) =>
       state
-        ? client.minDepositFor(
-            price,
-            state.taxPercentage,
-            state.minDepositSeconds,
-          )
+        ? client.minDepositFor(price, state.taxBps, state.minDepositSeconds)
         : 0n,
     [client, state],
   );

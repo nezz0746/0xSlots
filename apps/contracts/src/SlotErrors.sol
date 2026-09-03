@@ -25,7 +25,12 @@ error NothingToClaim();
 error TransferFailed();
 
 error NotMutable();
-error NoPendingUpdate();
+/// @dev Nothing is queued, so there is nothing to cancel.
+error NoPendingTerms();
+/// @dev A proposal that proposes nothing — both flags false. The opposite
+///      mistake to `NoPendingTerms`, and they were one error until an audit
+///      pointed out they name different problems to different callers.
+error NothingProposed();
 
 error SellNeedsErc20();
 error OrderExpired();

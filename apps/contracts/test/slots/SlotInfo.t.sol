@@ -35,7 +35,7 @@ contract SlotInfoTest is Test {
             manager: address(this),
             hook: address(new MinimumTenureHook()),
             hookData: bytes32(uint256(7 days)),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
             mutableHook: true
@@ -48,7 +48,7 @@ contract SlotInfoTest is Test {
         assertEq(i.recipient, slot.recipient());
         assertEq(address(i.currency), address(slot.currency()));
         assertEq(i.manager, slot.manager());
-        assertEq(i.taxPercentage, slot.taxPercentage());
+        assertEq(i.taxBps, slot.taxBps());
         assertEq(i.minDepositSeconds, slot.minDepositSeconds());
         assertEq(i.mutableTax, slot.mutableTax());
         assertEq(i.mutableHook, slot.mutableHook());
@@ -65,10 +65,10 @@ contract SlotInfoTest is Test {
         assertEq(i.isVacant, slot.isVacant());
         assertEq(i.isInsolvent, slot.isInsolvent());
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
-        assertEq(i.pendingApplies, slot.pendingApplies());
+        assertEq(i.hasRipeTerms, slot.hasRipeTerms());
         (uint256 pt, address ph, bool hasT, bool hasH, uint64 at, ) = slot
             .pending();
-        assertEq(i.pendingTaxPercentage, pt);
+        assertEq(i.pendingTaxBps, pt);
         assertEq(i.pendingHook, ph);
         assertEq(i.pendingHasTax, hasT);
         assertEq(i.pendingHasHook, hasH);
@@ -83,7 +83,7 @@ contract SlotInfoTest is Test {
         uint256 dep = slot.minDepositForBuy(100e18) + 1e18;
         vm.startPrank(occ);
         token.approve(address(slot), type(uint256).max);
-        slot.buy(occ, dep, 100e18, 0);
+        slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
         _assertAgrees();
     }
@@ -92,23 +92,23 @@ contract SlotInfoTest is Test {
         uint256 dep = slot.minDepositForBuy(100e18) + 1e18;
         vm.startPrank(occ);
         token.approve(address(slot), type(uint256).max);
-        slot.buy(occ, dep, 100e18, 0);
+        slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
 
         slot.proposeTerms(750, address(0), bytes32(0), true, false);
         _assertAgrees();                     // queued, not ripe
-        assertFalse(slot.getSlotInfo().pendingApplies);
+        assertFalse(slot.getSlotInfo().hasRipeTerms);
 
         vm.warp(block.timestamp + 1 days + 1);
         _assertAgrees();                     // ripe
-        assertTrue(slot.getSlotInfo().pendingApplies);
+        assertTrue(slot.getSlotInfo().hasRipeTerms);
     }
 
     function test_AgreesWhenInsolvent() public {
         uint256 dep = slot.minDepositForBuy(100e18) + 1e18;
         vm.startPrank(occ);
         token.approve(address(slot), type(uint256).max);
-        slot.buy(occ, dep, 100e18, 0);
+        slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 3650 days);
@@ -135,7 +135,7 @@ contract SlotInfoTest is Test {
         vm.startPrank(occ);
         token.approve(address(slot), type(uint256).max);
         vm.expectRevert();                       // price above MAX_PRICE
-        slot.buy(occ, 1, c.maxPrice + 1, 0);
+        slot.buy(occ, c.maxPrice + 1, 1, 0);
         vm.stopPrank();
 
         vm.expectRevert();                       // tax above MAX_TAX_BPS

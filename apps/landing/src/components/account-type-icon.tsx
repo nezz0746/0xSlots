@@ -1,10 +1,10 @@
-import type { AccountType } from "@/lib/indexer";
 import { File, FileUser, Split, User } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { AccountType } from "@/lib/indexer";
 
 const CONFIG: Record<
   AccountType,

@@ -23,7 +23,7 @@ abstract contract SlotAdmin is SlotEscrow {
      * @dev Both dimensions in one call, because they share one deferral and one
      *      apply. Pass `changeTax`/`changeHook` false to leave one alone.
      *
-     *      The hook is validated NOW — a hook whose `hooks()` does not answer,
+     *      The hook is validated NOW — a hook whose `subscriptions()` does not answer,
      *      or which rejects `newHookData`, is refused here rather than silently
      *      attached with no subscriptions or with a configuration it will veto
      *      on every callback.
@@ -34,7 +34,7 @@ abstract contract SlotAdmin is SlotEscrow {
      *      word meant for someone else.
      */
     function proposeTerms(
-        uint256 newTax,
+        uint256 newTaxBps,
         address newHook,
         bytes32 newHookData,
         bool changeTax,
@@ -42,8 +42,8 @@ abstract contract SlotAdmin is SlotEscrow {
     ) external onlyManager {
         if (changeTax) {
             if (!mutableTax) revert NotMutable();
-            if (newTax == 0 || newTax > MAX_TAX_BPS) revert InvalidTax();
-            pending.taxPercentage = newTax;
+            if (newTaxBps == 0 || newTaxBps > MAX_TAX_BPS) revert InvalidTax();
+            pending.taxBps = newTaxBps;
             pending.hasTax = true;
         }
         if (changeHook) {
@@ -57,11 +57,11 @@ abstract contract SlotAdmin is SlotEscrow {
             pending.hookData = newHookData;
             pending.hasHook = true;
         }
-        if (!changeTax && !changeHook) revert NoPendingUpdate();
+        if (!changeTax && !changeHook) revert NothingProposed();
 
         pending.proposedAt = uint64(block.timestamp);
         emit TermsProposed(
-            newTax,
+            newTaxBps,
             newHook,
             newHookData,
             changeTax,
@@ -80,17 +80,17 @@ abstract contract SlotAdmin is SlotEscrow {
      *      with nothing to signal it happened. Cancelling must not reach
      *      further than proposing does.
      */
-    function cancelProposal(bool cancelTax, bool cancelHook)
+    function cancelTerms(bool cancelTax, bool cancelHook)
         external
         onlyManager
     {
-        if (!cancelTax && !cancelHook) revert NoPendingUpdate();
-        if (cancelTax && !pending.hasTax) revert NoPendingUpdate();
-        if (cancelHook && !pending.hasHook) revert NoPendingUpdate();
+        if (!cancelTax && !cancelHook) revert NothingProposed();
+        if (cancelTax && !pending.hasTax) revert NoPendingTerms();
+        if (cancelHook && !pending.hasHook) revert NoPendingTerms();
 
         if (cancelTax) {
             pending.hasTax = false;
-            pending.taxPercentage = 0;
+            pending.taxBps = 0;
         }
         if (cancelHook) {
             pending.hasHook = false;
@@ -99,7 +99,7 @@ abstract contract SlotAdmin is SlotEscrow {
         }
         if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0;
 
-        emit ProposalCancelled(cancelTax, cancelHook);
+        emit TermsCancelled(cancelTax, cancelHook);
     }
 
 }

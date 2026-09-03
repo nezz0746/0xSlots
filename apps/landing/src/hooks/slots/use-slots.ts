@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  slotFactoryAbi,
-  slotFactoryAddress,
-} from "@0xslots/contracts/slots";
+import { slotFactoryAbi, slotFactoryAddress } from "@0xslots/contracts/slots";
 import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
 import type { SlotState } from "@0xslots/sdk/slots";
 import { useSlotsClient } from "@0xslots/sdk/slots/react";
@@ -34,7 +31,6 @@ export function useSlotsFactory(): Address | undefined {
   const { chainId } = useChain();
   return slotFactoryAddress[chainId];
 }
-
 
 /** A {@link SlotsClient} pinned to the explorer's chain and factory. */
 export function useSlots() {
@@ -319,7 +315,7 @@ export function useIsOperator(
 /**
  * The smallest deposit a BUY will accept at `price`, asked of the slot itself.
  *
- * NOT `minDepositFor(price, taxPercentage, minDepositSeconds)`. Entry is an
+ * NOT `minDepositFor(price, taxBps, minDepositSeconds)`. Entry is an
  * occupancy transition, so `_applyPending` runs before the funding check — a
  * buyer funds the terms they are buying INTO. Where a tax rise is queued, the
  * local formula sizes from the visible rate, under-quotes, and the buy reverts

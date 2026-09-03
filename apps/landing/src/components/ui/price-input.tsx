@@ -174,7 +174,7 @@ export function PriceInput({
     [value, onChange],
   );
 
-  // `taxPercentage` is basis points PER MONTH, so this needs no time
+  // `taxBps` is basis points PER MONTH, so this needs no time
   // conversion. Off `display` rather than `value`: the whole point is that the
   // bill counts up alongside the price.
   const perMonth = (display * Number(taxBps)) / 10_000;

@@ -18,7 +18,7 @@ contract Spy is ISlotHook {
 
     function validateHookData(bytes32) external pure virtual {}
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
         f.afterBuy = true;
         f.afterRelease = true;
@@ -100,7 +100,7 @@ contract HookDataTest is Test {
             manager: address(this),
             hook: hook,
             hookData: data,
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 hours,
             mutableTax: true,
             mutableHook: true
@@ -110,7 +110,7 @@ contract HookDataTest is Test {
     function _take(Slot s, address who) internal {
         uint256 need = s.minDepositForBuy(1 ether);
         vm.prank(who);
-        s.buy{value: s.quoteBuy(who, need)}(who, need, 1 ether, type(uint256).max);
+        s.buy{value: s.quoteBuy(who, need)}(who, 1 ether, need, type(uint256).max);
     }
 
     // ─── it arrives, verbatim ───────────────────────────────────────────────
@@ -136,7 +136,7 @@ contract HookDataTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(Loud.SawConfiguration.selector, CONFIG)
         );
-        s.buy{value: pay}(alice, need, 1 ether, type(uint256).max);
+        s.buy{value: pay}(alice, 1 ether, need, type(uint256).max);
     }
 
     /// @notice Two slots, one hook, two configurations — neither leaking into
@@ -204,7 +204,7 @@ contract HookDataTest is Test {
     function test_CancellingClearsTheQueuedConfiguration() public {
         Slot s = _slot(address(0), bytes32(0));
         s.proposeTerms(0, address(spy), CONFIG, false, true);
-        s.cancelProposal(false, true);
+        s.cancelTerms(false, true);
 
         (, address hook, , , , bytes32 pendingData) = s.pending();
         assertEq(hook, address(0));

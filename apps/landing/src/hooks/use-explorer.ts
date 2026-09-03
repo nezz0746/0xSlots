@@ -1,10 +1,10 @@
 "use client";
 
-import type { AccountType } from "@/lib/indexer";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Address } from "viem";
 import { useChain } from "@/context/chain";
+import type { AccountType } from "@/lib/indexer";
 import { indexerUrlFor } from "@/lib/indexer";
 
 /**
@@ -69,8 +69,9 @@ async function indexerFetch<T>(
 
     if (first?.extensions?.code === "GRAPHQL_VALIDATION_FAILED") {
       const fields = json.errors
-        .map((e: { message?: string }) =>
-          /Cannot query field "([^"]+)"/.exec(e.message ?? "")?.[1],
+        .map(
+          (e: { message?: string }) =>
+            /Cannot query field "([^"]+)"/.exec(e.message ?? "")?.[1],
         )
         .filter(Boolean)
         .slice(0, 4);
@@ -126,7 +127,7 @@ export interface ExplorerSlot {
   currencyRef: CurrencyRef | null;
   price: string;
   deposit: string;
-  taxPercentage: string;
+  taxBps: string;
   minDepositSeconds: string;
   /** Null is an ordinary configuration — the plain Harberger slot. */
   hook: Address | null;
@@ -170,7 +171,7 @@ const SLOT_FIELDS = /* GraphQL */ `
   }
   price
   deposit
-  taxPercentage
+  taxBps
   minDepositSeconds
   hook
   hookRef {
@@ -387,7 +388,7 @@ const SORTABLE = new Set([
   "createdAt",
   "isOccupied",
   "price",
-  "taxPercentage",
+  "taxBps",
   "updatedAt",
 ]);
 
@@ -773,7 +774,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         manager
         changeTax
         changeHook
-        taxPercentage
+        taxBps
         hook
         timestamp
         tx
@@ -788,7 +789,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
       items {
         id
         slot
-        taxPercentage
+        taxBps
         hook
         previousTaxPercentage
         previousHook

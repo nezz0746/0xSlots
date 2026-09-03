@@ -45,7 +45,7 @@ import "./OfferBookErrors.sol";
 ///      `transferFrom` reverts and the seller loses gas and nothing else.
 ///
 ///      The cost is that one allowance can back offers on many slots —
-///      first-come-first-served, same as any limit order. `fundable()` below
+///      first-come-first-served, same as any limit order. `isFundable()` below
 ///      lets a client grey out an offer whose backing has evaporated.
 ///
 ///      ── WHY AN OFFER CARRIES A SIGNATURE ───────────────────────────────
@@ -271,7 +271,7 @@ contract OfferBook is OfferBookInternals {
     ///      NOT occupancy. A funded offer from the current occupant still
     ///      cannot execute, so this is a narrower question than "can I sell
     ///      into it": ask `board` for that.
-    function fundable(address slot, uint256 id) external view returns (bool) {
+    function isFundable(address slot, uint256 id) external view returns (bool) {
         Offer[] storage list = _offers[slot];
         if (id >= list.length) return false;
         Offer storage o = list[id];
@@ -285,7 +285,7 @@ contract OfferBook is OfferBookInternals {
 
     /// @notice Whether one offer could actually be accepted right now.
     ///
-    /// @dev The distinction `fundable` does NOT make. `fundable` asks only
+    /// @dev The distinction `isFundable` does NOT make. `isFundable` asks only
     ///      whether the bidder can pay; this also refuses a cancelled or
     ///      expired offer, one whose author is already the occupant, and one
     ///      whose nonce the slot has burned by filling it. A client listing

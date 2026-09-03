@@ -32,7 +32,7 @@ contract UpgradeSafetyTest is Test {
         Slot impl = new Slot();
         SlotInit memory init;
         init.recipient = address(this);
-        init.taxPercentage = 500;
+        init.taxBps = 500;
         vm.expectRevert();
         impl.initialize(init);
     }

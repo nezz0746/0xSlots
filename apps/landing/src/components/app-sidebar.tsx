@@ -4,10 +4,10 @@ import { CHAINS } from "@0xslots/contracts";
 import {
   Check,
   ChevronDown,
+  FileCode2,
   PlusIcon,
   User,
   Users,
-  FileCode2,
 } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";

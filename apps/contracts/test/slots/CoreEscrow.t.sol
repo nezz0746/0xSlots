@@ -27,7 +27,7 @@ contract Deaf {
 ///      swallow it and say so.
 contract BrokenAfter is ISlotHook {
     function validateHookData(bytes32) external pure {}
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
@@ -81,7 +81,7 @@ contract CoreEscrowTest is Test {
             manager: address(0),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: TAX,
+            taxBps: TAX,
             minDepositSeconds: MIN_DEP,
             mutableTax: false,
             mutableHook: false
@@ -97,7 +97,7 @@ contract CoreEscrowTest is Test {
             manager: address(0),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: TAX,
+            taxBps: TAX,
             minDepositSeconds: 0,
             mutableTax: false,
             mutableHook: false
@@ -107,7 +107,7 @@ contract CoreEscrowTest is Test {
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
         vm.startPrank(who);
         token.approve(address(s), type(uint256).max);
-        s.buy(who, dep, price, 0);
+        s.buy(who, price, dep, 0);
         vm.stopPrank();
     }
 
@@ -190,13 +190,13 @@ contract CoreEscrowTest is Test {
 
         uint256 need = s.minDepositForBuy(1 ether);
         vm.prank(address(deaf));
-        s.buy{value: need}(address(deaf), need, 1 ether, 0);
+        s.buy{value: need}(address(deaf), 1 ether, need, 0);
 
         // Bob buys it out. The seller cannot receive, so it is credited.
         uint256 bobDep = s.minDepositForBuy(2 ether);
         uint256 pay = s.quoteBuy(bob, bobDep);
         vm.prank(bob);
-        s.buy{value: pay}(bob, bobDep, 2 ether, type(uint256).max);
+        s.buy{value: pay}(bob, 2 ether, bobDep, type(uint256).max);
 
         uint256 owedToDeaf = s.withdrawableOf(address(deaf));
         assertGt(owedToDeaf, 0, "the push failed and became a credit");
@@ -370,7 +370,7 @@ contract CoreEscrowTest is Test {
         token.approve(address(s), type(uint256).max);
         // Alice's asking price is 5 ether; bob will not pay more than 1.
         vm.expectRevert(PaymentAboveMax.selector);
-        s.buy(bob, dep, 6 ether, 1 ether);
+        s.buy(bob, 6 ether, dep, 1 ether);
         vm.stopPrank();
     }
 
@@ -380,7 +380,7 @@ contract CoreEscrowTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert(CannotBuyFromYourself.selector);
-        s.buy(alice, 1 ether, 2 ether, type(uint256).max);
+        s.buy(alice, 2 ether, 1 ether, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -404,7 +404,7 @@ contract CoreEscrowTest is Test {
         Slot s = _slot(address(0));
         uint256 need = s.minDepositForBuy(1 ether);
         vm.prank(alice);
-        s.buy{value: need}(alice, need, 1 ether, 0);
+        s.buy{value: need}(alice, 1 ether, need, 0);
 
         SellOrder memory o = SellOrder({
             slot: address(s),
@@ -432,20 +432,20 @@ contract CoreEscrowTest is Test {
     function _init() internal view returns (SlotInit memory i) {
         i.recipient = recipient;
         i.currency = IERC20(address(token));
-        i.taxPercentage = TAX;
+        i.taxBps = TAX;
         i.minDepositSeconds = MIN_DEP;
     }
 
     function test_AZeroTaxSlotIsRefused() public {
         SlotInit memory i = _init();
-        i.taxPercentage = 0;
+        i.taxBps = 0;
         vm.expectRevert(InvalidTax.selector);
         factory.createSlot(i);
     }
 
     function test_ATaxAboveTheCeilingIsRefused() public {
         SlotInit memory i = _init();
-        i.taxPercentage = 10_001;
+        i.taxBps = 10_001;
         vm.expectRevert(InvalidTax.selector);
         factory.createSlot(i);
     }
@@ -492,7 +492,7 @@ contract CoreEscrowTest is Test {
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
         vm.recordLogs();
-        s.buy(alice, dep, 1 ether, 0);
+        s.buy(alice, 1 ether, dep, 0);
         vm.stopPrank();
 
         assertEq(s.occupant(), alice, "the buy stood");

@@ -210,7 +210,7 @@ export const slot = onchainTable(
 
     // ── terms ─────────────────────────────────────────────────────────────
     /// Basis points per 30 days.
-    taxPercentage: t.bigint().notNull(),
+    taxBps: t.bigint().notNull(),
     /// Minimum runway, in seconds, a buyer must fund. Zero means no minimum.
     minDepositSeconds: t.bigint().notNull(),
     mutableTax: t.boolean().notNull(),
@@ -281,7 +281,7 @@ export const slot = onchainTable(
     // is a real change somebody proposed, and is indistinguishable from "no
     // hook change queued" if you only look at `pendingHook`.
     pendingHasTax: t.boolean().notNull(),
-    pendingTaxPercentage: t.bigint(),
+    pendingTaxBps: t.bigint(),
     pendingHasHook: t.boolean().notNull(),
     pendingHook: t.hex(),
     /// Queued alongside `pendingHook` and only meaningful with it — the
@@ -456,7 +456,7 @@ export const slotCreatedEvent = onchainTable(
     /// The hook's configuration at creation. Read back from the slot.
     hookData: t.hex().notNull(),
     /// Read back from the slot, not carried by the event. See `readSlotTerms`.
-    taxPercentage: t.bigint().notNull(),
+    taxBps: t.bigint().notNull(),
     minDepositSeconds: t.bigint().notNull(),
     mutableTax: t.boolean().notNull(),
     mutableHook: t.boolean().notNull(),
@@ -865,7 +865,7 @@ export const operatorSetEvent = onchainTable(
  * Terms queued by the manager, landing at the next occupancy transition.
  *
  * `changeTax` / `changeHook` are what make this readable. The event carries
- * both `taxPercentage` and `hook` on every emission regardless of which one
+ * both `taxBps` and `hook` on every emission regardless of which one
  * the manager actually touched, so the value columns are only meaningful when
  * their flag is true.
  */
@@ -879,7 +879,7 @@ export const termsProposedEvent = onchainTable(
     changeTax: t.boolean().notNull(),
     changeHook: t.boolean().notNull(),
     /// Meaningful only when `changeTax`.
-    taxPercentage: t.bigint().notNull(),
+    taxBps: t.bigint().notNull(),
     /// Meaningful only when `changeHook`. Zero means "detach the hook".
     hook: t.hex().notNull(),
     /// Meaningful only when `changeHook`, and always zero when `hook` is —
@@ -908,7 +908,7 @@ export const termsAppliedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    taxPercentage: t.bigint().notNull(),
+    taxBps: t.bigint().notNull(),
     hook: t.hex().notNull(),
     hookData: t.hex().notNull(),
     previousTaxPercentage: t.bigint().notNull(),
@@ -934,17 +934,17 @@ export const termsAppliedEvent = onchainTable(
 /**
  * A queued proposal retracted, per dimension.
  *
- * `cancelProposal` takes the same two flags `proposeTerms` does, which is what
+ * `cancelTerms` takes the same two flags `proposeTerms` does, which is what
  * lets a collective's tax manager and hook manager retract their own work
  * without destroying each other's — so the flags here say WHICH dimension was
  * dropped, and a row with only one of them true is the normal case rather than
  * a partial write.
  *
- * The slot's event carries no canceller: `cancelProposal` is `onlyManager`, so
+ * The slot's event carries no canceller: `cancelTerms` is `onlyManager`, so
  * the manager is the slot's own column, and when that manager is a collective
  * the actual role holder is in `collectiveActionEvent.by` and nowhere else.
  */
-export const proposalCancelledEvent = onchainTable(
+export const termsCancelledEvent = onchainTable(
   "proposal_cancelled_event",
   (t) => ({
     id: t.text().primaryKey(),
@@ -1131,7 +1131,7 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
   operatorChanges: many(operatorSetEvent),
   termsProposals: many(termsProposedEvent),
   termsApplications: many(termsAppliedEvent),
-  proposalCancellations: many(proposalCancelledEvent),
+  proposalCancellations: many(termsCancelledEvent),
   orderCancellations: many(orderCancelledEvent),
   hookFailures: many(hookCallFailedEvent),
 }));
@@ -1325,10 +1325,10 @@ export const termsAppliedEventRelations = relations(
 );
 
 export const proposalCancelledEventRelations = relations(
-  proposalCancelledEvent,
+  termsCancelledEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [proposalCancelledEvent.slot],
+      fields: [termsCancelledEvent.slot],
       references: [slot.id],
     }),
   }),
@@ -1509,12 +1509,12 @@ export const collectiveSplitUpdatedEvent = onchainTable(
 
 /// @notice Governance actions relayed through the collective to a slot.
 /// @dev The reason this table can exist at all: the slot's own `TermsProposed`
-///      and `ProposalCancelled` carry NO actor, and `transaction.from` is wrong
+///      and `TermsCancelled` carry NO actor, and `transaction.from` is wrong
 ///      whenever the role holder is a Safe or the call is bundled. `by` here is
 ///      the actual role holder, which is recoverable from nowhere else.
 ///
 ///      Join to the slot side on `tx` — one relay produces exactly one
-///      `TermsProposed`/`ProposalCancelled` on the slot in the same
+///      `TermsProposed`/`TermsCancelled` on the slot in the same
 ///      transaction, so `collectiveActionEvent` supplies the WHO and the slot's
 ///      own tables supply the WHAT.
 export const collectiveActionEvent = onchainTable(

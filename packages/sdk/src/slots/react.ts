@@ -324,7 +324,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
    * a hook row cancelling under one shared label spin together, and the reader
    * cannot tell which retraction is actually in flight.
    */
-  const cancelProposal = useCallback(
+  const cancelTerms = useCallback(
     (slot: Address, cancelTax = true, cancelHook = true) =>
       exec(
         cancelTax && cancelHook
@@ -332,7 +332,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
           : cancelTax
             ? "Cancel tax update"
             : "Cancel hook update",
-        () => client.cancelProposal(slot, cancelTax, cancelHook),
+        () => client.cancelTerms(slot, cancelTax, cancelHook),
       ),
     [exec, client],
   );
@@ -387,7 +387,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     claim,
     // Manager
     proposeTerms,
-    cancelProposal,
+    cancelTerms,
     // Orders
     makeSellOrder,
     signSellOrder,

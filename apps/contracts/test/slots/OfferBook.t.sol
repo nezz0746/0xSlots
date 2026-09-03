@@ -52,7 +52,7 @@ contract OfferBookSlotsTest is Test {
             manager: address(this),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
             mutableHook: true
@@ -68,7 +68,7 @@ contract OfferBookSlotsTest is Test {
         // Alice sits on the slot.
         uint256 dep = slot.minDepositForBuy(PRICE);
         vm.prank(alice);
-        slot.buy(alice, dep, PRICE, 0);
+        slot.buy(alice, PRICE, dep, 0);
     }
 
     function _sign(uint256 key, uint256 price, uint256 deposit, uint256 nonce, uint64 deadline)
@@ -140,7 +140,7 @@ contract OfferBookSlotsTest is Test {
         vm.prank(carol);
         token.approve(address(slot), 0);
 
-        assertFalse(book.fundable(address(slot), rich));
+        assertFalse(book.isFundable(address(slot), rich));
         (bool found, , OfferBook.Offer memory o) = book.best(address(slot));
         assertTrue(found);
         assertEq(o.bidder, bob, "falls back to the funded bid");
@@ -149,7 +149,7 @@ contract OfferBookSlotsTest is Test {
     /// @notice Filling burns the nonce, so the book stops offering a dead order.
     function test_AFilledOrderStopsBeingOffered() public {
         uint256 id = _post(bobKey, 70e18);
-        assertTrue(book.fundable(address(slot), id));
+        assertTrue(book.isFundable(address(slot), id));
 
         (, , SellOrder memory order, bytes memory sig) = book.bestOrder(address(slot));
         vm.prank(alice);
@@ -157,9 +157,9 @@ contract OfferBookSlotsTest is Test {
 
         assertTrue(slot.orderUsed(bob, 0), "nonce burned on the slot");
 
-        // `fundable` asks only whether the bidder can pay, and bob still can —
+        // `isFundable` asks only whether the bidder can pay, and bob still can —
         // liveness is the separate question, and the one a list must ask.
-        assertTrue(book.fundable(address(slot), id), "still funded");
+        assertTrue(book.isFundable(address(slot), id), "still funded");
         assertFalse(book.isLive(address(slot), id), "but no longer acceptable");
         assertEq(book.liveCount(address(slot)), 0, "the count a UI renders");
         assertEq(book.offerCount(address(slot)), 1, "the raw row is still there");

@@ -1,9 +1,9 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { usePublicClient, useReadContracts } from "wagmi";
 import { CopyAddress } from "@/components/copy-address";

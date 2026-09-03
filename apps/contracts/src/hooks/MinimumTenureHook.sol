@@ -154,7 +154,7 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         });
     }
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
         f.beforeSell = true;
         f.beforeSelfAssess = true;
@@ -237,13 +237,13 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
     ///      slot claimable for nothing.
     function requiredDeposit(
         uint256 price,
-        uint256 taxPercentage,
+        uint256 taxBps,
         uint256 tenureSeconds
     ) public pure returns (uint256) {
         // The slot's own formula, not a copy of it. A hook cannot inherit from
         // the slot, and a hand-written duplicate that drifts seats an occupant
         // this hook believed had funded the window.
-        return SlotMath.depositFor(price, taxPercentage, tenureSeconds);
+        return SlotMath.depositFor(price, taxBps, tenureSeconds);
     }
 
     /// @dev Sized against the HIGHER of the incoming and sitting price.
@@ -261,7 +261,7 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         uint256 basis = ctx.newPrice > ctx.currentPrice
             ? ctx.newPrice
             : ctx.currentPrice;
-        uint256 required = requiredDeposit(basis, ctx.taxPercentage, window);
+        uint256 required = requiredDeposit(basis, ctx.taxBps, window);
         if (ctx.depositAmount < required) revert TenureUnderfunded(required);
     }
 

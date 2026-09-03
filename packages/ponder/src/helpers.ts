@@ -387,7 +387,7 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
   const [tax, minDeposit, mutTax, mutHook, manager, flags, hookData] =
     await readMany(ctx, address, SlotAbi as unknown as Abi, [
-      "taxPercentage",
+      "taxBps",
       "minDepositSeconds",
       "mutableTax",
       "mutableHook",
@@ -402,7 +402,7 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
       : null;
 
   return {
-    taxPercentage: typeof tax === "bigint" ? tax : 0n,
+    taxBps: typeof tax === "bigint" ? tax : 0n,
     minDepositSeconds: typeof minDeposit === "bigint" ? minDeposit : 0n,
     mutableTax: mutTax === true,
     mutableHook: mutHook === true,

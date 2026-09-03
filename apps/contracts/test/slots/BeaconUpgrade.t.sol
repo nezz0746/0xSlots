@@ -49,7 +49,7 @@ contract BeaconUpgradeTest is Test {
             manager: admin,
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 1_000,
+            taxBps: 1_000,
             minDepositSeconds: 1 hours,
             mutableTax: true,
             mutableHook: true

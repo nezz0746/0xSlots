@@ -67,7 +67,7 @@ export function ManageTermsPanel({
             <NumberField
               label="New tax"
               suffix="% / 30 days"
-              placeholder={String(Number(state.taxPercentage) / 100)}
+              placeholder={String(Number(state.taxBps) / 100)}
               value={tax}
               onChange={setTax}
               hint={
@@ -116,7 +116,7 @@ export function ManageTermsPanel({
           disabled={!ready || actions.busy}
           onClick={() =>
             actions.proposeTerms(slot, {
-              ...(changeTax ? { taxPercentage: taxBps } : {}),
+              ...(changeTax ? { taxBps: taxBps } : {}),
               ...(changeHook ? { hook: hookAddress } : {}),
             })
           }

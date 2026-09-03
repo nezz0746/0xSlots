@@ -93,7 +93,7 @@ function SlotRow({ slot }: { slot: CreatedSlot }) {
           : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
-        {state ? `${formatBps(Number(state.taxPercentage))}/mo` : "…"}
+        {state ? `${formatBps(Number(state.taxBps))}/mo` : "…"}
       </TableCell>
       <TableCell className="text-xs">
         {slot.currency === zeroAddress ? "ETH" : currency.symbol || "ERC-20"}

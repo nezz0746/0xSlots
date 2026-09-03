@@ -110,7 +110,7 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
 
     // `add` is deliberately gone.
     //
-    // The slot snapshots `hooks()` once so a hook cannot widen its reach under
+    // The slot snapshots `subscriptions()` once so a hook cannot widen its reach under
     // a sitting occupant. `add` walked around that: the flags stayed as
     // snapshotted while what ran behind them changed, letting this contract's
     // owner — a third party to the slot — install a veto mid-tenure on every
@@ -162,7 +162,7 @@ contract CompositeHook is ISlotHook, IDescribedHook, SlotConstants {
     /// @dev The union its children need, declared at construction. Not derived
     ///      from them: a child added later must not silently widen what the
     ///      slot snapshotted when this was attached.
-    function hooks() external view returns (HookFlags memory) {
+    function subscriptions() external view returns (HookFlags memory) {
         return declared;
     }
 

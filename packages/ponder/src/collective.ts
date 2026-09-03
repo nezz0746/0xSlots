@@ -109,9 +109,9 @@ ponder.on(
     // Set before the slot handlers ever see the address — a collective is
     // deployed before it can be named a slot's recipient — and `SPLIT` is not
     // one of the transitions `getOrCreateAccount` overwrites, so it holds.
-    const manager = lower(event.args.manager);
-    await getOrCreateAccount(context, manager);
-    await context.db.update(account, { id: manager }).set({ type: "SPLIT" });
+    const collective = lower(event.args.collective);
+    await getOrCreateAccount(context, collective);
+    await context.db.update(account, { id: collective }).set({ type: "SPLIT" });
 
     // UPSERT, and touching only this event's own fields on conflict.
     //
@@ -127,7 +127,7 @@ ponder.on(
     await context.db
       .insert(slotCollective)
       .values({
-        id: lower(event.args.manager),
+        id: lower(event.args.collective),
         chainId: context.chain.id,
         admin: lower(event.args.admin),
         deployer: lower(event.args.deployer),
@@ -343,7 +343,7 @@ ponder.on("SlotCollective:SetPaused", async ({ event, context }) => {
 // ── Governance relays ───────────────────────────────────────
 //
 // Why these are worth indexing at all: the SLOT's own `TermsProposed` and
-// `ProposalCancelled` carry no actor, and `transaction.from` is wrong exactly
+// `TermsCancelled` carry no actor, and `transaction.from` is wrong exactly
 // where it matters — a Safe holding a role reports whichever owner executed, a
 // bundled call reports the bundler. `by` below is the actual role holder,
 // recoverable from nowhere else.
@@ -351,7 +351,7 @@ ponder.on("SlotCollective:SetPaused", async ({ event, context }) => {
 // One relay, one slot-side event, one transaction: join on `tx` to put the WHO
 // next to the WHAT.
 
-ponder.on("SlotCollective:UpdateRelayed", async ({ event, context }) => {
+ponder.on("SlotCollective:TermsRelayed", async ({ event, context }) => {
   await getOrCreateAccount(context, event.args.by);
   await context.db.insert(collectiveActionEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -371,7 +371,7 @@ ponder.on("SlotCollective:UpdateRelayed", async ({ event, context }) => {
   });
 });
 
-ponder.on("SlotCollective:UpdateCancelRelayed", async ({ event, context }) => {
+ponder.on("SlotCollective:TermsCancelRelayed", async ({ event, context }) => {
   await getOrCreateAccount(context, event.args.by);
   await context.db.insert(collectiveActionEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -394,28 +394,25 @@ ponder.on("SlotCollective:UpdateCancelRelayed", async ({ event, context }) => {
  * `kind` is null because the event names none — and unlike a per-dimension
  * cancel, this one does not say what it actually dropped. `cancelAllProposals`
  * try/catches each leg, so a collective with only a tax proposal queued emits
- * exactly the same log as one with both. The slot's own `ProposalCancelled`
+ * exactly the same log as one with both. The slot's own `TermsCancelled`
  * rows in the same transaction are what say which legs succeeded.
  */
-ponder.on(
-  "SlotCollective:PendingUpdatesCancelled",
-  async ({ event, context }) => {
-    await getOrCreateAccount(context, event.args.by);
-    await context.db.insert(collectiveActionEvent).values({
-      id: evtId(event.transaction.hash, event.log.logIndex),
-      collective: lower(event.log.address),
-      chainId: context.chain.id,
-      slot: lower(event.args.slot),
-      by: lower(event.args.by),
-      action: "cancelAll",
-      kind: null,
-      value: null,
-      timestamp: event.block.timestamp,
-      blockNumber: event.block.number,
-      tx: event.transaction.hash,
-    });
-  },
-);
+ponder.on("SlotCollective:AllTermsCancelled", async ({ event, context }) => {
+  await getOrCreateAccount(context, event.args.by);
+  await context.db.insert(collectiveActionEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    collective: lower(event.log.address),
+    chainId: context.chain.id,
+    slot: lower(event.args.slot),
+    by: lower(event.args.by),
+    action: "cancelAll",
+    kind: null,
+    value: null,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
 
 // ── Distributions ───────────────────────────────────────────
 

@@ -22,24 +22,24 @@ import {VersionedUUPS} from "../VersionedUUPS.sol";
 ///         upgrade path `SlotFactory` gives slots.
 ///
 /// @dev ── SHAPE, AND WHY IT MATCHES SlotFactory ───────────────────────────────
-///      UUPS proxy for the factory, `UpgradeableBeacon` for the managers. The
+///      UUPS proxy for the factory, `UpgradeableBeacon` for the collectives. The
 ///      protocol already has exactly this arrangement one layer down, and a
 ///      second pattern for the same job would mean two upgrade runbooks and two
 ///      sets of assumptions about who can move what.
 ///
 ///      ── WHAT A BEACON MEANS HERE, WHICH IS NOT WHAT IT MEANS FOR SLOTS ─────
-///      Read this before shipping it. A slot holds a deposit; a manager holds
+///      Read this before shipping it. A slot holds a deposit; a collective holds
 ///      *revenue* and is the named `recipient` of every slot pointed at it. One
-///      `upgradeBeacon` call rewrites the code of every manager at once — so
+///      `upgradeBeacon` call rewrites the code of every collective at once — so
 ///      whoever holds `admin` here can, in one transaction, change how every
-///      manager on the chain distributes money that is not theirs.
+///      collective on the chain distributes money that is not theirs.
 ///
 ///      That is the same authority the slot beacon already carries, which is why
 ///      this is a considered trade rather than an oversight. But slots and
-///      managers are not equally attractive targets, and if these are ever
+///      collectives are not equally attractive targets, and if these are ever
 ///      handed to third parties the honest answer may be immutable clones
-///      (EIP-1167) with no beacon at all. `createManager` would be unchanged;
-///      only `_deployManager` and the beacon plumbing would go.
+///      (EIP-1167) with no beacon at all. `createCollective` would be unchanged;
+///      only `_deployCollective` and the beacon plumbing would go.
 ///
 ///      ── WHY MANAGERS ARE PROXIES AT ALL ───────────────────────────────────
 ///      `SplitWalletV2` keeps `SPLITS_WAREHOUSE`, `NATIVE_TOKEN` and `FACTORY`
@@ -47,7 +47,7 @@ import {VersionedUUPS} from "../VersionedUUPS.sol";
 ///      are therefore read correctly through a delegatecall. The first two are
 ///      chain-wide constants and want to be shared. The third would have been a
 ///      problem — it gates the inherited `initialize` on `msg.sender == FACTORY`
-///      — except `SlotCollective.initializeManager` does that work itself and never
+///      — except `SlotCollective.initializeCollective` does that work itself and never
 ///      touches it. See the constructor note over there.
 contract SlotCollectiveFactory is VersionedUUPS {
 
@@ -69,12 +69,12 @@ contract SlotCollectiveFactory is VersionedUUPS {
     // EVENTS
     // ═══════════════════════════════════════════════════════════
 
-    /// @dev `admin` is the manager's own `DEFAULT_ADMIN_ROLE` holder, which is
-    ///      NOT this factory's admin. Indexed because "which managers can this
+    /// @dev `admin` is the collective's own `DEFAULT_ADMIN_ROLE` holder, which is
+    ///      NOT this factory's admin. Indexed because "which collectives can this
     ///      address govern" is the question a UI actually asks, and it cannot be
     ///      answered from the split or from role events alone.
     event SlotCollectiveDeployed(
-        address indexed manager,
+        address indexed collective,
         address indexed admin,
         address indexed deployer
     );
@@ -85,7 +85,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
     // STATE
     // ═══════════════════════════════════════════════════════════
 
-    /// @notice The beacon every manager proxy points at.
+    /// @notice The beacon every collective proxy points at.
     UpgradeableBeacon public beacon;
 
     /// @notice Can upgrade this factory and the beacon.
@@ -96,8 +96,9 @@ contract SlotCollectiveFactory is VersionedUUPS {
     ///         before naming an address as both `recipient` and `manager`.
     mapping(address => bool) public isSlotCollective;
 
-    /// @notice Deployed managers, in order, so a UI can enumerate without logs.
-    address[] public managers;
+    /// @notice Deployed collectives, in order, so a UI can enumerate without
+    ///         logs.
+    address[] public collectives;
 
     // ═══════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -107,14 +108,14 @@ contract SlotCollectiveFactory is VersionedUUPS {
 
     /// @notice Initialize the factory (called once, through its proxy).
     /// @param _admin Upgrades this factory and the beacon.
-    /// @param _managerImplementation A deployed `SlotCollective`, constructed with
+    /// @param _collectiveImplementation A deployed `SlotCollective`, constructed with
     ///        this chain's canonical `SplitsWarehouse`.
     function initialize(
         address _admin,
-        address _managerImplementation
+        address _collectiveImplementation
     ) external initializer {
         if (_admin == address(0)) revert AdminRequired();
-        if (_managerImplementation.code.length == 0)
+        if (_collectiveImplementation.code.length == 0)
             revert ImplementationRequired();
 
         admin = _admin;
@@ -124,7 +125,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
         // Owned by this factory from the start, exactly as `SlotFactory` does
         // it — the factory must be the beacon's owner for `upgradeBeacon` to
         // work at all.
-        beacon = new UpgradeableBeacon(_managerImplementation, address(this));
+        beacon = new UpgradeableBeacon(_collectiveImplementation, address(this));
     }
 
 
@@ -141,38 +142,38 @@ contract SlotCollectiveFactory is VersionedUUPS {
     // DEPLOYMENT
     // ═══════════════════════════════════════════════════════════
 
-    /// @notice Deploy a manager.
+    /// @notice Deploy a collective.
     ///
-    /// @dev Permissionless. A manager is only powerful over slots that have
-    ///      NAMED it — `Slot.manager` is set at creation and never moves — so
+    /// @dev Permissionless. A collective is only powerful over slots that have
+    ///      NAMED it as its `manager` — set at creation and never moved — so
     ///      minting one grants nothing by itself. Gating this would only stop
     ///      people from creating their own payout contracts.
     ///
-    ///      The split and roles are validated inside `initializeManager`, in the
-    ///      proxy's constructor, so a manager is never briefly live with an
+    ///      The split and roles are validated inside `initializeCollective`, in the
+    ///      proxy's constructor, so a collective is never briefly live with an
     ///      empty split or no admin.
     ///
     /// @param split Initial payout configuration. Must have recipients and a
     ///        non-zero total allocation.
     /// @param roles Initial role assignment. `roles.admin` is required.
-    /// @return manager The deployed manager's address.
-    function createManager(
+    /// @return collective The deployed collective's address.
+    function createCollective(
         SplitV2Lib.Split calldata split,
         SlotCollective.InitialRoles calldata roles
-    ) external returns (address manager) {
-        manager = _deployManager(split, roles);
+    ) external returns (address collective) {
+        collective = _deployCollective(split, roles);
     }
 
-    /// @notice How many managers this factory has deployed.
-    function managerCount() external view returns (uint256) {
-        return managers.length;
+    /// @notice How many collectives this factory has deployed.
+    function collectiveCount() external view returns (uint256) {
+        return collectives.length;
     }
 
     // ═══════════════════════════════════════════════════════════
     // ADMIN
     // ═══════════════════════════════════════════════════════════
 
-    /// @notice Point every manager at new code.
+    /// @notice Point every collective at new code.
     /// @dev Read the beacon note at the top of this contract before using it.
     function upgradeBeacon(address newImplementation) external onlyAdmin {
         beacon.upgradeTo(newImplementation);
@@ -191,19 +192,19 @@ contract SlotCollectiveFactory is VersionedUUPS {
     // INTERNAL
     // ═══════════════════════════════════════════════════════════
 
-    function _deployManager(
+    function _deployCollective(
         SplitV2Lib.Split calldata split,
         SlotCollective.InitialRoles calldata roles
-    ) internal returns (address manager) {
+    ) internal returns (address collective) {
         bytes memory initData = abi.encodeCall(
-            SlotCollective.initializeManager,
+            SlotCollective.initializeCollective,
             (split, roles)
         );
-        manager = address(new BeaconProxy(address(beacon), initData));
+        collective = address(new BeaconProxy(address(beacon), initData));
 
-        isSlotCollective[manager] = true;
-        managers.push(manager);
+        isSlotCollective[collective] = true;
+        collectives.push(collective);
 
-        emit SlotCollectiveDeployed(manager, roles.admin, msg.sender);
+        emit SlotCollectiveDeployed(collective, roles.admin, msg.sender);
     }
 }

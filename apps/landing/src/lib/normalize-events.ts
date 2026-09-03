@@ -45,7 +45,7 @@ function rows(field: any): any[] {
  *     `termsProposedEvent`, split back apart on its `changeTax`/`changeHook`
  *     flags. They stay two rows because they are two decisions with different
  *     consequences, and a manager may propose either alone.
- *   * `Update Cancelled` reads `proposalCancelledEvent`, and `Terms Applied`
+ *   * `Update Cancelled` reads `termsCancelledEvent`, and `Terms Applied`
  *     `termsAppliedEvent` — the latter had no row at all before, so an applied
  *     change appeared in the feed as a proposal that silently came true.
  *   * `Credit` and `Claim` are new and worth their space: a credit means a
@@ -261,7 +261,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
         type: "Tax Proposed",
         slot: getSlot(e),
         actor: e.manager,
-        detail: `→ ${(Number(e.taxPercentage) / 100).toFixed(1)}%/mo`,
+        detail: `→ ${(Number(e.taxBps) / 100).toFixed(1)}%/mo`,
         timestamp: Number(e.timestamp),
         tx: e.tx,
       });
@@ -286,7 +286,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     const changes: string[] = [];
     if (e.taxChanged)
       changes.push(
-        `tax ${(Number(e.previousTaxPercentage) / 100).toFixed(1)}% → ${(Number(e.taxPercentage) / 100).toFixed(1)}%/mo`,
+        `tax ${(Number(e.previousTaxPercentage) / 100).toFixed(1)}% → ${(Number(e.taxBps) / 100).toFixed(1)}%/mo`,
       );
     if (e.hookChanged)
       changes.push(

@@ -16,7 +16,7 @@ import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 contract SilentHook is ISlotHook {
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
@@ -62,7 +62,7 @@ contract DescribedHookTest is Test {
             manager: address(this),
             hook: hook,
             hookData: data,
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 hours,
             mutableTax: true,
             mutableHook: true
@@ -190,7 +190,7 @@ contract DescribedHookTest is Test {
         vm.deal(buyer, 10 ether);
         uint256 need = s.minDepositForBuy(0.01 ether);
         vm.prank(buyer);
-        s.buy{value: s.quoteBuy(address(this), need)}(buyer, need, 0.01 ether, 0);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, 0.01 ether, need, 0);
 
         assertEq(s.occupant(), buyer, "execution is unaffected by discovery");
         assertEq(s.hook(), address(liar));
@@ -212,7 +212,7 @@ contract DescribedHookTest is Test {
         vm.deal(buyer, 10 ether);
         uint256 need = s.minDepositForBuy(0.01 ether);
         vm.prank(buyer);
-        s.buy{value: s.quoteBuy(address(this), need)}(buyer, need, 0.01 ether, 0);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, 0.01 ether, need, 0);
         assertEq(s.occupant(), buyer);
     }
 

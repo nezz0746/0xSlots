@@ -26,7 +26,7 @@ contract FlipHook is ISlotHook {
     function flip() external { broken = true; }
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external view returns (HookFlags memory f) {
+    function subscriptions() external view returns (HookFlags memory f) {
         if (broken) revert("gone");
         f.beforeBuy = true;
     }
@@ -40,7 +40,7 @@ contract FlipHook is ISlotHook {
     function afterSettle(SlotContext calldata) external {}
 }
 
-/// @dev Honest until flipped, then answers `hooks()` with returndata too short
+/// @dev Honest until flipped, then answers `subscriptions()` with returndata too short
 ///      to decode.
 ///
 ///      Not a revert — a SUCCESS the compiler's decoder then rejects. The
@@ -51,7 +51,7 @@ contract ShortAnswerHook is ISlotHook {
     function flip() external { broken = true; }
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external view returns (HookFlags memory f) {
+    function subscriptions() external view returns (HookFlags memory f) {
         if (broken) assembly { mstore(0, 1) return(0, 32) } // 1 word, 256 wanted
         f.beforeBuy = true;
     }
@@ -72,7 +72,7 @@ contract DirtyBoolHook is ISlotHook {
     function flip() external { broken = true; }
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external view returns (HookFlags memory f) {
+    function subscriptions() external view returns (HookFlags memory f) {
         if (broken) {
             assembly {
                 for { let i := 0 } lt(i, 8) { i := add(i, 1) } {
@@ -103,7 +103,7 @@ contract RejectingHook is ISlotHook {
     function validateHookData(bytes32) external view {
         if (broken) revert No();
     }
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
@@ -120,7 +120,7 @@ contract RejectingHook is ISlotHook {
 contract Counter is ISlotHook {
     uint256 public buys;
     function validateHookData(bytes32) external pure {}
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view {}
@@ -177,7 +177,7 @@ contract AuditRegressionsTest is Test {
             manager: address(this),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: TAX,
+            taxBps: TAX,
             minDepositSeconds: minDep,
             mutableTax: true,
             mutableHook: true
@@ -190,7 +190,7 @@ contract AuditRegressionsTest is Test {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 5_000, PRICE, 0);
+        s.buy(occ, PRICE, 5_000, 0);
         vm.stopPrank();
 
         // Time is tracked in a local rather than re-read from
@@ -224,7 +224,7 @@ contract AuditRegressionsTest is Test {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 100, PRICE, 0);
+        s.buy(occ, PRICE, 100, 0);
         vm.stopPrank();
 
         FlipHook h = new FlipHook();
@@ -247,7 +247,7 @@ contract AuditRegressionsTest is Test {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 100, PRICE, 0);
+        s.buy(occ, PRICE, 100, 0);
         vm.stopPrank();
 
         // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
@@ -325,7 +325,7 @@ contract AuditRegressionsTest is Test {
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 100, PRICE, 0); // the transition that applies the hook
+        s.buy(occ, PRICE, 100, 0); // the transition that applies the hook
         vm.stopPrank();
         assertEq(s.hook(), address(root), "the tree is attached");
         // The transition that attaches a hook also notifies it, so count from
@@ -334,7 +334,7 @@ contract AuditRegressionsTest is Test {
 
         vm.startPrank(grinder);
         token.approve(address(s), type(uint256).max);
-        s.buy(grinder, 100, PRICE, type(uint256).max);
+        s.buy(grinder, PRICE, 100, type(uint256).max);
         vm.stopPrank();
 
         assertEq(
@@ -352,7 +352,7 @@ contract AuditRegressionsTest is Test {
             manager: address(this),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: TAX,
+            taxBps: TAX,
             minDepositSeconds: 0,
             mutableTax: true,
             mutableHook: true
@@ -360,7 +360,7 @@ contract AuditRegressionsTest is Test {
         w.mint(occ, 1_000_000);
         vm.startPrank(occ);
         w.approve(address(s), type(uint256).max);
-        s.buy(occ, 100, PRICE, 0);
+        s.buy(occ, PRICE, 100, 0);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 3650 days);
@@ -375,7 +375,7 @@ contract AuditRegressionsTest is Test {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 1_000, 100, 0); // price x tax well under MONTH*BASIS_POINTS
+        s.buy(occ, 100, 1_000, 0); // price x tax well under MONTH*BASIS_POINTS
         vm.stopPrank();
 
         uint256 runway = s.secondsUntilLiquidation();
@@ -392,14 +392,14 @@ contract AuditRegressionsTest is Test {
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 5_000, PRICE, 0);
+        s.buy(occ, PRICE, 5_000, 0);
         vm.stopPrank();
 
-        assertEq(s.taxPercentage(), TAX, "not applied before it ripened");
-        assertFalse(s.pendingApplies());
+        assertEq(s.taxBps(), TAX, "not applied before it ripened");
+        assertFalse(s.hasRipeTerms());
 
         vm.warp(block.timestamp + 1 days + 1);
-        assertTrue(s.pendingApplies(), "and it does apply once it has");
+        assertTrue(s.hasRipeTerms(), "and it does apply once it has");
     }
 
     // ── 5. composite children ──────────────────────────────────────────────
@@ -431,7 +431,7 @@ contract AuditRegressionsTest is Test {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 5_000, PRICE, 0);
+        s.buy(occ, PRICE, 5_000, 0);
         vm.stopPrank();
 
         OfferBook book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));
@@ -457,7 +457,7 @@ contract AuditRegressionsTest is Test {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
-        s.buy(occ, 5_000, PRICE, 0);
+        s.buy(occ, PRICE, 5_000, 0);
         vm.stopPrank();
 
         OfferBook book = OfferBook(address(new ERC1967Proxy(address(new OfferBook()), abi.encodeCall(OfferBook.initialize, (address(this))))));

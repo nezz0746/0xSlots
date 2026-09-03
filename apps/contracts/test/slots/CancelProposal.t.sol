@@ -29,7 +29,7 @@ contract CancelProposalTest is Test {
             manager: address(this),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 hours,
             mutableTax: true,
             mutableHook: true
@@ -50,7 +50,7 @@ contract CancelProposalTest is Test {
         slot.proposeTerms(750, address(0), bytes32(0), true, false);
         slot.proposeTerms(0, hookA, bytes32(uint256(7 days)), false, true);
 
-        slot.cancelProposal(false, true);
+        slot.cancelTerms(false, true);
 
         (uint256 tax, address hook, bool hasTax, bool hasHook) = _pending();
         assertTrue(hasTax, "the tax manager's work must survive");
@@ -63,7 +63,7 @@ contract CancelProposalTest is Test {
         slot.proposeTerms(750, address(0), bytes32(0), true, false);
         slot.proposeTerms(0, hookA, bytes32(uint256(7 days)), false, true);
 
-        slot.cancelProposal(true, false);
+        slot.cancelTerms(true, false);
 
         (uint256 tax, address hook, bool hasTax, bool hasHook) = _pending();
         assertFalse(hasTax);
@@ -74,7 +74,7 @@ contract CancelProposalTest is Test {
 
     function test_CancellingBothClearsEverything() public {
         slot.proposeTerms(750, hookA, bytes32(uint256(7 days)), true, true);
-        slot.cancelProposal(true, true);
+        slot.cancelTerms(true, true);
 
         (, , bool hasTax, bool hasHook) = _pending();
         assertFalse(hasTax);
@@ -88,10 +88,10 @@ contract CancelProposalTest is Test {
         slot.proposeTerms(750, address(0), bytes32(0), true, false);
 
         vm.expectRevert();
-        slot.cancelProposal(false, true);
+        slot.cancelTerms(false, true);
 
         vm.expectRevert();
-        slot.cancelProposal(false, false);
+        slot.cancelTerms(false, false);
 
         (, , bool hasTax, ) = _pending();
         assertTrue(hasTax, "a rejected cancel must not have touched anything");
@@ -102,30 +102,30 @@ contract CancelProposalTest is Test {
         slot.proposeTerms(750, address(0), bytes32(0), true, false);
         vm.prank(address(0xBAD));
         vm.expectRevert();
-        slot.cancelProposal(true, false);
+        slot.cancelTerms(true, false);
     }
 
     /// @notice A surviving proposal must still actually land.
     function test_TheSurvivingProposalStillApplies() public {
         slot.proposeTerms(750, address(0), bytes32(0), true, false);
         slot.proposeTerms(0, hookA, bytes32(uint256(7 days)), false, true);
-        slot.cancelProposal(false, true);
+        slot.cancelTerms(false, true);
 
         // Terms are queued, ripen, then land at a transition.
         vm.warp(block.timestamp + 1 days + 1);
 
         address buyer = address(0xB0B);
         vm.deal(buyer, 10 ether);
-        // Sized from the contract, not from taxPercentage(): the queued 750
+        // Sized from the contract, not from taxBps(): the queued 750
         // lands on this very buy, so a deposit computed at the visible 500
         // would be refused.
         uint256 price = 0.01 ether;
         uint256 need = slot.minDepositForBuy(price);
         uint256 dep = slot.quoteBuy(buyer, need);
         vm.prank(buyer);
-        slot.buy{value: dep}(buyer, need, price, 0);
+        slot.buy{value: dep}(buyer, price, need, 0);
 
-        assertEq(slot.taxPercentage(), 750, "the tax change landed");
+        assertEq(slot.taxBps(), 750, "the tax change landed");
         assertEq(slot.hook(), address(0), "the cancelled hook did not");
     }
 
@@ -144,17 +144,17 @@ contract CancelProposalTest is Test {
         uint256 atPendingTax = slot.minDepositForBuy(price);
 
         assertGt(atPendingTax, atCurrentTax, "the queued rise must be priced in");
-        assertEq(slot.taxPercentage(), 500, "and it has not applied yet");
+        assertEq(slot.taxBps(), 500, "and it has not applied yet");
 
         // The naive number — sized from the visible rate — is refused.
         address buyer = address(0xB0B);
         vm.deal(buyer, 10 ether);
         vm.prank(buyer);
         vm.expectRevert();
-        slot.buy{value: atCurrentTax}(buyer, atCurrentTax, price, 0);
+        slot.buy{value: atCurrentTax}(buyer, price, atCurrentTax, 0);
 
         vm.prank(buyer);
-        slot.buy{value: atPendingTax}(buyer, atPendingTax, price, 0);
+        slot.buy{value: atPendingTax}(buyer, price, atPendingTax, 0);
         assertEq(slot.occupant(), buyer);
     }
 }

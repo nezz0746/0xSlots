@@ -77,7 +77,7 @@ contract SlotCollectiveLayoutTest is Test {
                     new ERC1967Proxy(
                         address(impl),
                         abi.encodeCall(
-                            SlotCollective.initializeManager, (split, roles)
+                            SlotCollective.initializeCollective, (split, roles)
                         )
                     )
                 )

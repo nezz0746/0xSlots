@@ -27,7 +27,7 @@ struct SlotContext {
     /// When the current occupancy began. Zero when vacant.
     uint256 occupiedSince;
     /// Basis points per 30 days.
-    uint256 taxPercentage;
+    uint256 taxBps;
     uint256 currentPrice;
     /// The price being proposed (`before`) or just set (`after`).
     uint256 newPrice;
@@ -108,7 +108,7 @@ struct HookFlags {
 interface ISlotHook {
     /// @dev `view`, not `pure`: a composite answers this from storage, and
     ///      that is a legitimate hook rather than an edge case.
-    function hooks() external view returns (HookFlags memory);
+    function subscriptions() external view returns (HookFlags memory);
 
     /**
      * @notice Revert if `data` is not a configuration this hook accepts.

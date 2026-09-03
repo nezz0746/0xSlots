@@ -1,7 +1,6 @@
 "use client";
 
 import { SplitsProvider } from "@0xsplits/splits-sdk-react";
-import { createQueryClient } from "@/lib/query-client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { type ReactNode, useEffect, useState } from "react";
@@ -11,6 +10,7 @@ import { miniAppConfig } from "@/config/wagmi-miniapp";
 import { ChainProvider } from "@/context/chain";
 import { FarcasterProvider, useFarcaster } from "@/context/farcaster";
 import { NavigationProvider } from "@/context/navigation";
+import { createQueryClient } from "@/lib/query-client";
 import { SplitsClientSync } from "./splits-client-sync";
 
 /** Lazy-load the web provider tree (includes RainbowKit) only when needed. */

@@ -49,7 +49,7 @@ contract CollectiveGovernsRealSlotTest is Test {
                 (admin, address(new SlotCollective(address(warehouse))))
             )
         )));
-        collective = SlotCollective(payable(cf.createManager(_split(), _roles())));
+        collective = SlotCollective(payable(cf.createCollective(_split(), _roles())));
 
         slotFactory = SlotFactory(address(new ERC1967Proxy(
             address(new SlotFactory()),
@@ -63,7 +63,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             manager: address(collective),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
             mutableHook: true
@@ -115,7 +115,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         uint256 cost = slot.quoteBuy(who, need);
         vm.deal(who, cost + 1 ether);
         vm.prank(who);
-        slot.buy{value: cost}(who, need, PRICE, 0);
+        slot.buy{value: cost}(who, PRICE, need, 0);
     }
 
     function _pending()
@@ -134,11 +134,11 @@ contract CollectiveGovernsRealSlotTest is Test {
         (uint256 tax, , bool hasTax, ) = _pending();
         assertTrue(hasTax);
         assertEq(tax, 750);
-        assertEq(slot.taxPercentage(), 500, "deferred, not immediate");
+        assertEq(slot.taxBps(), 500, "deferred, not immediate");
 
         _ripen();
         _seat(buyer);
-        assertEq(slot.taxPercentage(), 750, "landed on the occupancy change");
+        assertEq(slot.taxBps(), 750, "landed on the occupancy change");
     }
 
     /// @notice The hook manager's lever reaches a real slot, and the real slot
@@ -156,7 +156,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             "flags were snapshotted from the real hook"
         );
 
-        // A hook that cannot answer `hooks()` is refused at the slot, not here.
+        // A hook that cannot answer `subscriptions()` is refused at the slot, not here.
         vm.prank(hookMgr);
         vm.expectRevert();
         collective.proposeHook(IManagedSlot(address(slot)), address(warehouse), bytes32(0));
@@ -182,7 +182,7 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         _ripen();
         _seat(buyer);
-        assertEq(slot.taxPercentage(), 750);
+        assertEq(slot.taxBps(), 750);
         assertEq(slot.hook(), address(0), "the cancelled hook did not land");
     }
 
@@ -210,7 +210,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             manager: address(0xA11CE),
             hook: address(0),
             hookData: bytes32(0),
-            taxPercentage: 500,
+            taxBps: 500,
             minDepositSeconds: 1 days,
             mutableTax: true,
             mutableHook: true

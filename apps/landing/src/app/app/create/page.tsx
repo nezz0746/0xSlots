@@ -17,12 +17,7 @@ import {
   toHex,
   zeroAddress,
 } from "viem";
-import {
-  useAccount,
-  usePublicClient,
-  useSwitchChain,
-  useWalletClient,
-} from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { PageHeader } from "@/components/page-header";
 import { Form } from "@/components/ui/form";
 import { useChain } from "@/context/chain";
@@ -63,11 +58,6 @@ export default function CreatePage() {
   const { address, isConnected, chainId: walletChainId, chain } = useAccount();
   const { switchChain } = useSwitchChain();
   const { chainId: selectedChainId } = useChain();
-  // For the tenure-hook get-or-deploy, which needs both halves before the slot
-  // itself can be created.
-  const publicClient = usePublicClient({ chainId: selectedChainId });
-  const { data: walletClient } = useWalletClient({ chainId: selectedChainId });
-
   const factory = useSlotsFactory();
   const actions = useSlotsAction();
   const splitClient = useSplitClient();
@@ -90,7 +80,7 @@ export default function CreatePage() {
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxPercentage = form.watch("taxPercentage");
+  const taxBps = form.watch("taxBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const hookMode = form.watch("hookMode");
@@ -162,7 +152,7 @@ export default function CreatePage() {
       currency: resolvedCurrency,
       manager: resolvedManager,
       hook: resolvedHook,
-      taxPercentage: percentToBps(taxPercentage),
+      taxBps: percentToBps(taxBps),
       minDepositSeconds: toSeconds(minDepositValue, minDepositUnit),
       mutableTax,
       mutableHook,
@@ -173,7 +163,7 @@ export default function CreatePage() {
     resolvedManager,
     resolvedHook,
     needsManager,
-    taxPercentage,
+    taxBps,
     minDepositValue,
     minDepositUnit,
     mutableTax,
@@ -360,7 +350,7 @@ export default function CreatePage() {
           : getAddress(managerAddress),
       hook: hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
       hookData,
-      taxPercentage: percentToBps(data.taxPercentage),
+      taxBps: percentToBps(data.taxBps),
       minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
       mutableTax: data.mutableTax,
       mutableHook: data.mutableHook,

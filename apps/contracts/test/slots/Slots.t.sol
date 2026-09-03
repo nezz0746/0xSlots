@@ -29,7 +29,7 @@ contract Recorder is ISlotHook {
 
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
         f.afterSell = true;
         f.afterRelease = true;
@@ -55,7 +55,7 @@ contract DenyBuys is ISlotHook {
     error Denied();
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.beforeBuy = true;
     }
     function beforeBuy(SlotContext calldata) external view { revert Denied(); }
@@ -72,7 +72,7 @@ contract DenyBuys is ISlotHook {
 contract Hostile is ISlotHook {
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
@@ -93,7 +93,7 @@ contract GasBurner is ISlotHook {
     uint256 public sink;
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external pure returns (HookFlags memory f) {
+    function subscriptions() external pure returns (HookFlags memory f) {
         f.afterLiquidate = true;
         f.afterSettle = true;
     }
@@ -160,7 +160,7 @@ contract SlotsTest is Test {
                 manager: manager,
                 hook: hook,
                 hookData: bytes32(0),
-                taxPercentage: 1000, // 10% / month
+                taxBps: 1000, // 10% / month
                 minDepositSeconds: minDep,
                 mutableTax: true,
                 mutableHook: true
@@ -174,7 +174,7 @@ contract SlotsTest is Test {
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
         vm.startPrank(who);
         token.approve(address(s), type(uint256).max);
-        s.buy(who, dep, price, 0);
+        s.buy(who, price, dep, 0);
         vm.stopPrank();
     }
 
@@ -223,10 +223,10 @@ contract SlotsTest is Test {
         s.proposeTerms(2000, address(0), bytes32(0), true, false);
 
         vm.warp(block.timestamp + 10 days);
-        assertEq(s.taxPercentage(), 1000, "alice's rate is untouched mid-tenure");
+        assertEq(s.taxBps(), 1000, "alice's rate is untouched mid-tenure");
 
         _take(s, bob, 100 ether, 200 ether); // the transition
-        assertEq(s.taxPercentage(), 2000, "and lands when the seat turns over");
+        assertEq(s.taxBps(), 2000, "and lands when the seat turns over");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -242,7 +242,7 @@ contract SlotsTest is Test {
         // The hook's own error surfaces, not a generic "call failed" — a vetoed
         // buy should say which rule refused it.
         vm.expectRevert(DenyBuys.Denied.selector);
-        s.buy(alice, 1 ether, 100 ether, 0);
+        s.buy(alice, 100 ether, 1 ether, 0);
         vm.stopPrank();
     }
 
@@ -275,7 +275,7 @@ contract SlotsTest is Test {
         assertTrue(f.afterBuy, "declared");
     }
 
-    /// @notice A hook that answers `hooks()` with nothing is refused outright.
+    /// @notice A hook that answers `subscriptions()` with nothing is refused outright.
     /// @dev The one place a bad hook is NOT tolerated. It happens once, while
     ///      attaching, in a call the manager sent on purpose — attaching a hook
     ///      that can never fire is a silent, permanent mistake.
@@ -407,7 +407,7 @@ contract SlotsTest is Test {
         Slot s = _slot(address(0));
         vm.prank(alice);
         vm.expectRevert(InvalidPrice.selector);
-        s.buy(alice, 0, type(uint256).max, 0);
+        s.buy(alice, type(uint256).max, 0, 0);
         assertTrue(s.isVacant(), "and the slot is untouched");
     }
 
@@ -466,7 +466,7 @@ contract SlotsTest is Test {
 contract Nothing is ISlotHook {
     function validateHookData(bytes32) external pure {}
 
-    function hooks() external pure returns (HookFlags memory f) { return f; }
+    function subscriptions() external pure returns (HookFlags memory f) { return f; }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSell(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}

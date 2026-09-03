@@ -524,7 +524,7 @@ describe("manager terms", () => {
   it("proposeTerms flags only the dimensions given", async () => {
     const { client, writeContract } = harness({});
 
-    await client.proposeTerms(SLOT, { taxPercentage: 250n });
+    await client.proposeTerms(SLOT, { taxBps: 250n });
 
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       250n,
@@ -551,7 +551,7 @@ describe("manager terms", () => {
 
   it("proposeTerms sends both when both are given", async () => {
     const { client, writeContract } = harness({});
-    await client.proposeTerms(SLOT, { taxPercentage: 100n, hook: HOOK });
+    await client.proposeTerms(SLOT, { taxBps: 100n, hook: HOOK });
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       100n,
       HOOK,
@@ -575,7 +575,7 @@ describe("creation", () => {
     currency: ERC20,
     manager: ZERO,
     hook: ZERO,
-    taxPercentage: 500n,
+    taxBps: 500n,
     minDepositSeconds: 86_400n,
     mutableTax: false,
     mutableHook: false,
@@ -609,11 +609,9 @@ describe("creation", () => {
   });
 
   it("a zero tax is refused — nobody could ever be liquidated off it", () => {
-    expect(() => assertSlotInit({ ...base, taxPercentage: 0n })).toThrow(
-      /taxPercentage/i,
-    );
-    expect(() => assertSlotInit({ ...base, taxPercentage: 10_001n })).toThrow(
-      /taxPercentage/i,
+    expect(() => assertSlotInit({ ...base, taxBps: 0n })).toThrow(/taxBps/i);
+    expect(() => assertSlotInit({ ...base, taxBps: 10_001n })).toThrow(
+      /taxBps/i,
     );
   });
 });
@@ -622,7 +620,7 @@ describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
       pending: [0n, ZERO, false, false, 0n],
-      pendingApplies: false,
+      hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
     expect(pending.isEmpty).toBe(true);
@@ -635,11 +633,11 @@ describe("reads", () => {
   it("pending unpacks a queued hook change", async () => {
     const { client } = harness({
       pending: [0n, HOOK, false, true, 1234n],
-      pendingApplies: false,
+      hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
     expect(pending).toEqual({
-      taxPercentage: 0n,
+      taxBps: 0n,
       hook: HOOK,
       hasTax: false,
       hasHook: true,
@@ -658,14 +656,14 @@ describe("reads", () => {
     // clock `_applyPending` reads.
     const { client, readContract } = harness({
       pending: [500n, ZERO, true, false, 1234n],
-      pendingApplies: true,
+      hasRipeTerms: true,
     });
 
     const pending = await client.pending(SLOT);
     expect(pending.applies).toBe(true);
     expect(
       readContract.mock.calls.map((c: any[]) => c[0].functionName),
-    ).toContain("pendingApplies");
+    ).toContain("hasRipeTerms");
   });
 
   it("arrearsOf is asked per account", async () => {
@@ -843,7 +841,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
       isInsolvent: false,
       secondsUntilLiquidation: 10n,
       currency: ERC20,
-      taxPercentage: 250n,
+      taxBps: 250n,
       minDepositSeconds: 0n,
       recipient: ACCOUNT,
       manager: ZERO,
@@ -859,7 +857,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         afterSettle: false,
       },
       pending: [0n, ZERO, false, false, 0n],
-      pendingApplies: false,
+      hasRipeTerms: false,
       mutableTax: false,
       mutableHook: false,
       occupiedSince: 1700000000n,
@@ -940,27 +938,27 @@ describe("manageTerms batches a reprice with a deposit move", () => {
 });
 
 /**
- * Cancelling is PER-DIMENSION on chain — `cancelProposal(bool,bool)`. The SDK
+ * Cancelling is PER-DIMENSION on chain — `cancelTerms(bool,bool)`. The SDK
  * used to send no arguments at all, which cannot even encode. Pinned because
  * the two dimensions may belong to different people and a blanket cancel would
  * let one manager destroy the other's queued change silently.
  */
-describe("cancelProposal is per-dimension", () => {
+describe("cancelTerms is per-dimension", () => {
   it("sends both flags by default", async () => {
     const { client, writeContract } = harness({});
-    await client.cancelProposal(SLOT);
+    await client.cancelTerms(SLOT);
     expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([true, true]);
   });
 
   it("cancels the tax alone without touching the hook", async () => {
     const { client, writeContract } = harness({});
-    await client.cancelProposal(SLOT, true, false);
+    await client.cancelTerms(SLOT, true, false);
     expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([true, false]);
   });
 
   it("refuses to cancel nothing", async () => {
     const { client } = harness({});
-    await expect(client.cancelProposal(SLOT, false, false)).rejects.toThrow(
+    await expect(client.cancelTerms(SLOT, false, false)).rejects.toThrow(
       /nothing to cancel/,
     );
   });

@@ -35,10 +35,10 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
 /**
  * How long queued terms must sit before a transition may apply them.
  *
- * `pending.proposedAt + TERMS_DELAY` is the instant `pendingApplies()` starts
+ * `pending.proposedAt + TERMS_DELAY` is the instant `hasRipeTerms()` starts
  * answering true. Mirrored here so a UI can say WHEN a queued change becomes
  * ripe without a second round trip — but whether it IS ripe should still come
- * from {@link SlotsClient.pendingApplies}, which asks the chain's clock rather
+ * from {@link SlotsClient.hasRipeTerms}, which asks the chain's clock rather
  * than the browser's.
  */
 export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
@@ -66,7 +66,7 @@ export const ZERO_HOOK_DATA =
  *   somebody's restraint — so a manager on an all-immutable slot reverts rather
  *   than sitting there looking authoritative. {@link assertSlotInit} checks this
  *   before you spend gas finding out.
- * - `taxPercentage` may not be zero. A zero-tax slot would accrue nothing, so
+ * - `taxBps` may not be zero. A zero-tax slot would accrue nothing, so
  *   nobody could ever be liquidated off it.
  */
 export interface SlotInit {
@@ -91,7 +91,7 @@ export interface SlotInit {
    */
   hookData?: Hex;
   /** Basis points per 30 days. 1..10000. */
-  taxPercentage: bigint;
+  taxBps: bigint;
   /** Minimum runway, in seconds, a buyer must fund. Zero means no minimum. */
   minDepositSeconds: bigint;
   mutableTax: boolean;
@@ -115,7 +115,7 @@ function encodeSlotInit(init: SlotInit) {
     manager: init.manager,
     hook: init.hook,
     hookData: init.hookData ?? ZERO_HOOK_DATA,
-    taxPercentage: init.taxPercentage,
+    taxBps: init.taxBps,
     minDepositSeconds: init.minDepositSeconds,
     mutableTax: init.mutableTax,
     mutableHook: init.mutableHook,
@@ -129,10 +129,10 @@ export function assertSlotInit(init: SlotInit): void {
       "createSlot",
       "recipient must not be the zero address",
     );
-  if (init.taxPercentage <= 0n || init.taxPercentage > MAX_TAX_BPS)
+  if (init.taxBps <= 0n || init.taxBps > MAX_TAX_BPS)
     throw new SlotsError(
       "createSlot",
-      `taxPercentage must be 1..${MAX_TAX_BPS} basis points per 30 days`,
+      `taxBps must be 1..${MAX_TAX_BPS} basis points per 30 days`,
     );
 
   const mutable = init.mutableTax || init.mutableHook;
@@ -184,7 +184,7 @@ export interface HookFlags {
 
 /** Terms the manager has queued, landing at the next occupancy transition. */
 export interface PendingTerms {
-  taxPercentage: bigint;
+  taxBps: bigint;
   hook: Address;
   /** The queued hook's configuration. Travels with `hook`, never apart. */
   hookData: Hex;
@@ -200,7 +200,7 @@ export interface PendingTerms {
    */
   appliesAt: bigint;
   /**
-   * `pendingApplies()` — whether the next occupancy transition will actually
+   * `hasRipeTerms()` — whether the next occupancy transition will actually
    * land these terms.
    *
    * FALSE IS THE INTERESTING CASE and it is new. A proposal used to bind the
@@ -223,7 +223,7 @@ export interface PendingTerms {
  */
 export interface ProposeTermsParams {
   /** Basis points per 30 days. Omit to leave the tax alone. */
-  taxPercentage?: bigint;
+  taxBps?: bigint;
   /** The new hook, or {@link zeroAddress} to detach. Omit to leave it alone. */
   hook?: Address;
   /**
@@ -324,7 +324,7 @@ export interface SlotState {
   /** `2^256 - 1` when the occupant can never run dry, or the slot is vacant. */
   secondsUntilLiquidation: bigint;
   currency: Address;
-  taxPercentage: bigint;
+  taxBps: bigint;
   minDepositSeconds: bigint;
   recipient: Address;
   manager: Address;
@@ -366,7 +366,7 @@ export interface SlotState {
    *
    * Exposed because `taxOwed` is a pure function of it and the block timestamp:
    *
-   *   price * taxPercentage * (now - lastSettled) / (MONTH * BASIS_POINTS)
+   *   price * taxBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
    *
    * so a client holding this can reproduce the figure for any instant without
    * asking the chain again. That is what lets a runway actually count down
@@ -601,8 +601,8 @@ export class SlotsClient {
    *
    * False when nothing at all is queued.
    */
-  pendingApplies(slot: Address): Promise<boolean> {
-    return this.read<boolean>(slot, "pendingApplies");
+  hasRipeTerms(slot: Address): Promise<boolean> {
+    return this.read<boolean>(slot, "hasRipeTerms");
   }
 
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
@@ -625,25 +625,23 @@ export class SlotsClient {
    * Terms the manager has queued for the next occupancy transition.
    *
    * Two reads, not one, and the second is the whole reason: the struct says
-   * WHAT is queued and `pendingApplies()` says whether the next transition will
+   * WHAT is queued and `hasRipeTerms()` says whether the next transition will
    * take it. Those were the same fact until `TERMS_DELAY` was wired up, and a
    * caller left to infer the second from `proposedAt` and its own clock is
    * inferring it against the wrong clock.
    */
   async pending(slot: Address): Promise<PendingTerms> {
-    const [
-      [taxPercentage, hook, hasTax, hasHook, proposedAt, hookData],
-      applies,
-    ] = await Promise.all([
-      this.read<readonly [bigint, Address, boolean, boolean, bigint, Hex]>(
-        slot,
-        "pending",
-      ),
-      this.pendingApplies(slot),
-    ]);
+    const [[taxBps, hook, hasTax, hasHook, proposedAt, hookData], applies] =
+      await Promise.all([
+        this.read<readonly [bigint, Address, boolean, boolean, bigint, Hex]>(
+          slot,
+          "pending",
+        ),
+        this.hasRipeTerms(slot),
+      ]);
     const isEmpty = !hasTax && !hasHook;
     return {
-      taxPercentage,
+      taxBps,
       hook,
       hookData,
       hasTax,
@@ -661,8 +659,8 @@ export class SlotsClient {
   }
 
   /** Basis points per 30 days. */
-  taxPercentage(slot: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "taxPercentage");
+  taxBps(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "taxBps");
   }
 
   /** Owed to an address a push payment could not reach. Take it with {@link claim}. */
@@ -709,7 +707,7 @@ export class SlotsClient {
       isInsolvent,
       secondsUntilLiquidation,
       currency,
-      taxPercentage,
+      taxBps,
       minDepositSeconds,
       recipient,
       manager,
@@ -732,7 +730,7 @@ export class SlotsClient {
       this.isInsolvent(slot),
       this.secondsUntilLiquidation(slot),
       this.currency(slot),
-      this.taxPercentage(slot),
+      this.taxBps(slot),
       this.read<bigint>(slot, "minDepositSeconds"),
       this.read<Address>(slot, "recipient"),
       this.read<Address>(slot, "manager"),
@@ -757,7 +755,7 @@ export class SlotsClient {
       isInsolvent,
       secondsUntilLiquidation,
       currency,
-      taxPercentage,
+      taxBps,
       minDepositSeconds,
       recipient,
       manager,
@@ -788,7 +786,7 @@ export class SlotsClient {
    * Prefer this over {@link minDepositFor} anywhere a BUY is being sized.
    * Entry is an occupancy transition, so `_applyPending` runs before the
    * funding check — a buyer funds the terms they are buying INTO, not the ones
-   * currently on display. Sizing from `taxPercentage()` underquotes through
+   * currently on display. Sizing from `taxBps()` underquotes through
    * exactly the window where a tax rise is queued, and the buy then reverts
    * `InvalidDeposit` for reasons nothing on screen explains.
    *
@@ -802,11 +800,11 @@ export class SlotsClient {
 
   minDepositFor(
     price: bigint,
-    taxPercentage: bigint,
+    taxBps: bigint,
     minDepositSeconds: bigint,
   ): bigint {
     if (minDepositSeconds === 0n) return 0n;
-    const numerator = price * taxPercentage * minDepositSeconds;
+    const numerator = price * taxBps * minDepositSeconds;
     const denominator = MONTH_SECONDS * BASIS_POINTS;
     return (numerator + denominator - 1n) / denominator;
   }
@@ -892,10 +890,14 @@ export class SlotsClient {
 
     return this.withPayment(params.slot, amount, {
       functionName: "buy",
+      // Price before deposit, matching `Slot.buy`. The two are adjacent
+      // `bigint`s and swapping them does not throw — it buys at the deposit and
+      // escrows the price — so this array is the one place the order is
+      // asserted for every caller of this SDK.
       args: [
         params.account,
-        params.depositAmount,
         params.selfAssessedPrice,
+        params.depositAmount,
         params.maxPayment ?? amount,
       ],
     });
@@ -968,8 +970,8 @@ export class SlotsClient {
       functionName: "buy",
       args: [
         params.account,
-        params.depositAmount,
         params.selfAssessedPrice,
+        params.depositAmount,
         maxPayment,
       ],
       account: this.account,
@@ -1129,19 +1131,19 @@ export class SlotsClient {
    * hook, which is why presence rather than truthiness decides.
    */
   async proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
-    const changeTax = params.taxPercentage !== undefined;
+    const changeTax = params.taxBps !== undefined;
     const changeHook = params.hook !== undefined;
     if (!changeTax && !changeHook)
       throw new SlotsError(
         "proposeTerms",
-        "nothing to propose — pass taxPercentage, hook, or both",
+        "nothing to propose — pass taxBps, hook, or both",
       );
     if (changeTax) {
-      const tax = params.taxPercentage as bigint;
+      const tax = params.taxBps as bigint;
       if (tax <= 0n || tax > MAX_TAX_BPS)
         throw new SlotsError(
           "proposeTerms",
-          `taxPercentage must be 1..${MAX_TAX_BPS} basis points per 30 days`,
+          `taxBps must be 1..${MAX_TAX_BPS} basis points per 30 days`,
         );
     }
     if (!changeHook && params.hookData !== undefined)
@@ -1150,7 +1152,7 @@ export class SlotsClient {
         "hookData travels with hook — name the hook it configures",
       );
     return this.write(slot, "proposeTerms", [
-      params.taxPercentage ?? 0n,
+      params.taxBps ?? 0n,
       params.hook ?? zeroAddress,
       params.hookData ?? ZERO_HOOK_DATA,
       changeTax,
@@ -1171,17 +1173,17 @@ export class SlotsClient {
    * Defaults to both, which is the right answer for the single-manager case
    * and matches what a caller passing nothing plainly means.
    */
-  async cancelProposal(
+  async cancelTerms(
     slot: Address,
     cancelTax = true,
     cancelHook = true,
   ): Promise<Hash> {
     if (!cancelTax && !cancelHook)
       throw new SlotsError(
-        "cancelProposal",
+        "cancelTerms",
         "nothing to cancel — pass cancelTax, cancelHook, or both",
       );
-    return this.write(slot, "cancelProposal", [cancelTax, cancelHook]);
+    return this.write(slot, "cancelTerms", [cancelTax, cancelHook]);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

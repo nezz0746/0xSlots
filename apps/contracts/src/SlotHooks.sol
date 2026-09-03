@@ -75,13 +75,13 @@ abstract contract SlotHooks is SlotStorage {
      *          `extcodesize` guard and emits it BEFORE the call. A pending hook
      *          with no code — a 7702-delegated EOA whose delegation was
      *          revoked — reverted straight through the `catch`.
-     *        - `hooks()` returns a struct, so solc decodes AFTER the call.
+     *        - `subscriptions()` returns a struct, so solc decodes AFTER the call.
      *          Returndata under 256 bytes, or a bool word that is not 0 or 1,
      *          reverted in the decoder, also outside the `catch`.
      *
      *      Either one reverts `_applyPending`, which runs inside `_liquidate`
      *      — and `buy`, `sell` and `release` call it too, so the slot was not
-     *      merely un-evictable but frozen, with `cancelProposal` the only exit
+     *      merely un-evictable but frozen, with `cancelTerms` the only exit
      *      and the manager who chose the hook the only one who could reach it.
      *      That is rule 1 broken, by the one function written to uphold it.
      *
@@ -128,7 +128,7 @@ abstract contract SlotHooks is SlotStorage {
         }
         if (!answered) return (false, 0);
 
-        cd = abi.encodeCall(ISlotHook.hooks, ());
+        cd = abi.encodeCall(ISlotHook.subscriptions, ());
         // Eight bools, ABI-encoded one per word.
         bytes memory ret = new bytes(256);
         uint256 got;
@@ -165,7 +165,7 @@ abstract contract SlotHooks is SlotStorage {
      *      Deliberately NOT fail-open. Everywhere else a misbehaving hook is
      *      tolerated, but this read happens once, while attaching, in a call
      *      the manager sent on purpose — and getting it wrong is silent and
-     *      permanent. A hook whose `hooks()` reverts is a hook that will not
+     *      permanent. A hook whose `subscriptions()` reverts is a hook that will not
      *      work; better to refuse it now than to attach it with no
      *      subscriptions and leave someone wondering why nothing fires.
      *
@@ -185,7 +185,7 @@ abstract contract SlotHooks is SlotStorage {
         // the other is a path that attaches something nobody validated.
         ISlotHook(h).validateHookData(data);
 
-        HookFlags memory f = ISlotHook(h).hooks();
+        HookFlags memory f = ISlotHook(h).subscriptions();
         if (f.beforeBuy) packed |= F_BEFORE_BUY;
         if (f.beforeSell) packed |= F_BEFORE_SELL;
         if (f.beforeSelfAssess) packed |= F_BEFORE_SELF_ASSESS;
@@ -212,7 +212,7 @@ abstract contract SlotHooks is SlotStorage {
                 newPrice,
                 depositAmount,
                 hookData,
-                taxPercentage
+                taxBps
             );
     }
 
@@ -220,7 +220,7 @@ abstract contract SlotHooks is SlotStorage {
     ///
     ///      The counterpart to `_afterOn`, and needed for the same reason: a
     ///      transition that swaps hooks has already overwritten `hookData` and
-    ///      `taxPercentage` by the time the end-of-tenure callback goes out, so
+    ///      `taxBps` by the time the end-of-tenure callback goes out, so
     ///      a context built from storage would hand the outgoing hook its
     ///      successor's terms — a rate it never charged and a configuration it
     ///      never granted, on a tenure it did govern.
@@ -244,7 +244,7 @@ abstract contract SlotHooks is SlotStorage {
                 account: account,
                 occupant: _occupant,
                 occupiedSince: occupiedSince,
-                taxPercentage: tax,
+                taxBps: tax,
                 currentPrice: _price,
                 newPrice: newPrice,
                 depositAmount: depositAmount,

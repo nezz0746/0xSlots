@@ -138,7 +138,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     ///      so on a proxy it resolves to whoever deployed the IMPLEMENTATION,
     ///      not the collective's own factory. That would matter if this contract
     ///      used the inherited `initialize(split, owner)`, which is gated on
-    ///      `msg.sender == FACTORY`. It does not — `initializeManager` below
+    ///      `msg.sender == FACTORY`. It does not — `initializeCollective` below
     ///      does the same work itself, exactly as the old constructor did, so
     ///      nothing depends on `FACTORY` and nothing breaks when the beacon
     ///      points at an implementation someone else deployed.
@@ -163,7 +163,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     ///
     /// @param split Initial payout configuration.
     /// @param roles Initial role assignment.
-    function initializeManager(
+    function initializeCollective(
         SplitV2Lib.Split memory split,
         InitialRoles memory roles
     ) external initializer {

@@ -95,7 +95,7 @@ const FIELD_SECTION: Record<string, SectionId> = {
   currencyMode: "currency",
   presetCurrency: "currency",
   customCurrency: "currency",
-  taxPercentage: "economics",
+  taxBps: "economics",
   minDepositValue: "economics",
   minDepositUnit: "economics",
   hookMode: "hook",

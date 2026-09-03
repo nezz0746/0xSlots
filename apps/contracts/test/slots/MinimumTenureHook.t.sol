@@ -54,7 +54,7 @@ contract MinimumTenureHookTest is Test {
             manager: address(0),
             hook: address(hook),
             hookData: hookData,
-            taxPercentage: TAX,
+            taxBps: TAX,
             minDepositSeconds: 0,
             mutableTax: false,
             mutableHook: false
@@ -64,7 +64,7 @@ contract MinimumTenureHookTest is Test {
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
         vm.startPrank(who);
         token.approve(address(s), type(uint256).max);
-        s.buy(who, dep, price, 0);
+        s.buy(who, price, dep, 0);
         vm.stopPrank();
     }
 
@@ -80,9 +80,9 @@ contract MinimumTenureHookTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(MinimumTenureHook.TenureUnderfunded.selector, need)
         );
-        s.buy(alice, need - 1, 100 ether, 0);
+        s.buy(alice, 100 ether, need - 1, 0);
 
-        s.buy(alice, need, 100 ether, 0); // exactly enough
+        s.buy(alice, 100 ether, need, 0); // exactly enough
         vm.stopPrank();
         assertEq(s.occupant(), alice);
     }
@@ -136,7 +136,7 @@ contract MinimumTenureHookTest is Test {
                 block.timestamp + TENURE
             )
         );
-        s.buy(bob, 100 ether, 200 ether, 0);
+        s.buy(bob, 200 ether, 100 ether, 0);
         vm.stopPrank();
     }
 
@@ -225,13 +225,13 @@ contract MinimumTenureHookTest is Test {
 
         vm.prank(alice);
         vm.expectRevert();
-        s.buy(alice, dep, 100 ether, 0);
+        s.buy(alice, 100 ether, dep, 0);
 
         // Somebody else may take it immediately — only the leaver is barred.
         vm.prank(bob);
         token.approve(address(s), type(uint256).max);
         vm.prank(bob);
-        s.buy(bob, dep, 100 ether, 0);
+        s.buy(bob, 100 ether, dep, 0);
         assertEq(s.occupant(), bob);
     }
 
@@ -293,7 +293,7 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(long_), type(uint256).max);
 
         uint256 need = hook.requiredDeposit(100 ether, TAX, 30 days) + 10 ether;
-        short_.buy(bob, need, 100 ether, type(uint256).max);
+        short_.buy(bob, 100 ether, need, type(uint256).max);
         assertEq(short_.occupant(), bob, "one day elapsed six days ago");
 
         vm.expectRevert(
@@ -302,7 +302,7 @@ contract MinimumTenureHookTest is Test {
                 long_.occupiedSince() + 30 days
             )
         );
-        long_.buy(bob, need, 100 ether, type(uint256).max);
+        long_.buy(bob, 100 ether, need, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -321,8 +321,8 @@ contract MinimumTenureHookTest is Test {
                 MinimumTenureHook.TenureUnderfunded.selector, cheap
             )
         );
-        short_.buy(alice, cheap - 1, 100 ether, 0);
-        short_.buy(alice, cheap, 100 ether, 0);
+        short_.buy(alice, 100 ether, cheap - 1, 0);
+        short_.buy(alice, 100 ether, cheap, 0);
         vm.stopPrank();
     }
 

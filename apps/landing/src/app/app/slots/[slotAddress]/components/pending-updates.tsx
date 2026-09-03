@@ -20,7 +20,7 @@ type Actions = ReturnType<typeof useSlotsAction>;
  * The previous protocol had three — tax, utility, occupancy policy. Utilities
  * and policies both collapsed into the single `hook` address, so there are two,
  * and they are still independent: `proposeTerms` takes a flag per dimension and
- * `cancelProposal` takes one per dimension too.
+ * `cancelTerms` takes one per dimension too.
  */
 export type PendingDimension = "tax" | "hook";
 
@@ -101,8 +101,8 @@ export function pendingChanges(
     changes.push({
       dimension: "tax",
       label: "Tax rate",
-      current: `${formatBps(Number(state.taxPercentage))}/mo`,
-      next: `${formatBps(Number(pending.taxPercentage))}/mo`,
+      current: `${formatBps(Number(state.taxBps))}/mo`,
+      next: `${formatBps(Number(pending.taxBps))}/mo`,
     });
   }
   if (pending.hasHook) {
@@ -122,7 +122,7 @@ export function pendingChanges(
  *
  * `TERMS_DELAY` is new and it broke the sentence this panel used to say. A
  * proposal is not binding the moment it is made: `_applyPending` asks
- * `pendingApplies()` first, and refuses anything younger than a day. So "buying
+ * `hasRipeTerms()` first, and refuses anything younger than a day. So "buying
  * now applies these to you" — which was true, and was the whole reason the
  * buyer-facing copy existed — is now FALSE for the first day of every proposal,
  * and false in the direction that costs the buyer: they brace for terms that
@@ -216,7 +216,7 @@ export function PendingUpdatesPanel({
   const ago = queuedAgo(state.pending.proposedAt, chainNow);
   const canCancel = viewer === "manager" && !!actions;
   /**
-   * Straight from `pendingApplies()`, not inferred from `proposedAt` and this
+   * Straight from `hasRipeTerms()`, not inferred from `proposedAt` and this
    * browser's clock. The contract decides against ITS clock, and the two are
    * not the same clock — a warped local chain is hours or days out.
    */
@@ -288,7 +288,7 @@ export function PendingUpdatesPanel({
                     // across separate roles — so an all-or-nothing cancel would
                     // let one retraction destroy the other's queued change with
                     // nothing to signal it happened.
-                    actions.cancelProposal(
+                    actions.cancelTerms(
                       slot,
                       change.dimension === "tax",
                       change.dimension === "hook",

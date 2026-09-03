@@ -13,8 +13,8 @@ interface ISlotAd {
     function price() external view returns (uint256);
     function buy(
         address account,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment
     ) external payable;
 }

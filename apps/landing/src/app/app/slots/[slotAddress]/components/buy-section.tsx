@@ -168,9 +168,7 @@ export function BuySection({
    * for them either way.
    */
   const effectiveTax =
-    !isOccupant && state.pending.hasTax
-      ? state.pending.taxPercentage
-      : state.taxPercentage;
+    !isOccupant && state.pending.hasTax ? state.pending.taxBps : state.taxBps;
 
   /**
    * The contract's own minimum at this price — the unit every option is a
@@ -447,7 +445,7 @@ export function BuySection({
         note={
           state.pending.hasTax && state.pending.applies
             ? `Sized at the queued ${formatBps(
-                Number(state.pending.taxPercentage),
+                Number(state.pending.taxBps),
               )}/mo, which takes effect on this buy`
             : state.pending.hasTax
               ? // Queued but not yet ripe. `_applyPending` refuses it, so this
@@ -455,7 +453,7 @@ export function BuySection({
                 // otherwise would size the deposit against a rate the
                 // transition will not use.
                 `Sized at the current ${formatBps(
-                  Number(state.taxPercentage),
+                  Number(state.taxBps),
                 )}/mo — the queued rate is not binding yet`
               : noMinimum
                 ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."

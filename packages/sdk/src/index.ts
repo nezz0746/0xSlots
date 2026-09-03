@@ -9,26 +9,23 @@
 // against an old indexer, where the live one has 48 that talk to contracts.
 //
 // Importing the wrong one type-checked. The root now IS the live protocol.
-export * from "./slots";
 
 // Chain and endpoint identity. Not protocol-specific.
 export {
   API_URLS,
+  apiUrlFor,
   DEFAULT_API_URL,
   LOCAL_API_URL,
   SlotsChain,
-  apiUrlFor,
   type SlotsEnvironment,
 } from "./chains";
-
 export { SlotsError } from "./errors";
-
+export { isNativeCurrency, NATIVE_CURRENCY_ADDRESS } from "./native";
+export * from "./slots";
 export {
   CHAIN_TOKENS,
   getChainTokens,
   getFaucetToken,
+  NATIVE_CURRENCY,
   type TokenInfo,
 } from "./tokens";
-
-export { NATIVE_CURRENCY_ADDRESS, isNativeCurrency } from "./native";
-export { NATIVE_CURRENCY } from "./tokens";

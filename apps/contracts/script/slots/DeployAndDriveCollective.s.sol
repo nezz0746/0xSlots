@@ -49,13 +49,13 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
  *        1. deploy a warehouse, a collective implementation and a factory
  *        2. mint a collective with TWO payees          → split membership
  *        3. create a slot naming it manager AND recipient
- *        4. proposeTax(750)          [tax manager]     → UpdateRelayed(Tax)
- *        5. proposeHook(minTenure)   [hook manager]    → UpdateRelayed(Hook)
+ *        4. proposeTax(750)          [tax manager]     → TermsRelayed(Tax)
+ *        5. proposeHook(minTenure)   [hook manager]    → TermsRelayed(Hook)
  *        6. cancelHookProposal       [hook manager]    → the port's whole point:
  *           the tax manager's queued 750 must SURVIVE a hook cancel
  *        7. a real buy                                 → TermsApplied lands 750
  *        8. proposeTax(900)          [tax manager]
- *        9. cancelAllProposals       [admin]           → PendingUpdatesCancelled
+ *        9. cancelAllProposals       [admin]           → AllTermsCancelled
  *       10. setSplit down to ONE payee [split manager] → the shrink path, which
  *           is the only thing that exercises the recipient tail delete
  *       11. fund + distribute                          → SplitDistributed
@@ -100,7 +100,7 @@ contract DeployAndDriveCollective is Script {
     /**
      * @param slotFactoryAddr The already-deployed `SlotFactory` — printed by
      *        `DeployProtocol`, and in `deployments/31337/SlotFactory.json`.
-     * @param hookAddr A hook that answers `hooks()`. The slot validates it at
+     * @param hookAddr A hook that answers `subscriptions()`. The slot validates it at
      *        propose time, so a contract that cannot answer is refused there
      *        rather than here.
      */
@@ -129,7 +129,7 @@ contract DeployAndDriveCollective is Script {
 
         // ── 2. a collective with two payees and one holder per role ─────────
         collective = SlotCollective(
-            payable(collectiveFactory.createManager(_twoPayees(), _roles()))
+            payable(collectiveFactory.createCollective(_twoPayees(), _roles()))
         );
 
         // ── 3. a slot that names it BOTH manager and recipient ─────────────
@@ -142,7 +142,7 @@ contract DeployAndDriveCollective is Script {
                         manager: address(collective),
                         hook: address(0),
                         hookData: bytes32(0),
-                        taxPercentage: TAX_AT_BIRTH,
+                        taxBps: TAX_AT_BIRTH,
                         minDepositSeconds: 1 days,
                         mutableTax: true,
                         mutableHook: true
@@ -182,9 +182,9 @@ contract DeployAndDriveCollective is Script {
         uint256 need = slot.minDepositForBuy(PRICE);
         uint256 cost = slot.quoteBuy(address(this), need);
         vm.broadcast(PK_BUYER);
-        slot.buy{value: cost}(buyer, need, PRICE, 0);
+        slot.buy{value: cost}(buyer, PRICE, need, 0);
         require(
-            slot.taxPercentage() == TAX_PROPOSED,
+            slot.taxBps() == TAX_PROPOSED,
             "TermsApplied did not land the surviving tax"
         );
 

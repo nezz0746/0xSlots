@@ -168,7 +168,7 @@ export function SlotDetails({
         <DetailRow
           label="Tax"
           badge={<MutabilityChip mutable={state.mutableTax} what="tax rate" />}
-          value={`${formatBps(Number(state.taxPercentage))} / 30 days`}
+          value={`${formatBps(Number(state.taxBps))} / 30 days`}
           weight="primary"
         />
         <DetailRow

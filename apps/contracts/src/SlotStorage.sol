@@ -68,7 +68,7 @@ abstract contract SlotStorage is
     bool public mutableHook;
     IERC20 public currency;
     address public manager;
-    uint256 public taxPercentage;
+    uint256 public taxBps;
     uint256 public minDepositSeconds;
 
     uint256[50] private __gapTerms;
@@ -115,7 +115,7 @@ abstract contract SlotStorage is
     // their whole tenure. `hook` and `hookData` travel together.
 
     struct Pending {
-        uint256 taxPercentage;
+        uint256 taxBps;
         address hook;
         bool hasTax;
         bool hasHook;
