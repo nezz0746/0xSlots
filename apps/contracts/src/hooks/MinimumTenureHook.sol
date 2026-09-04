@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotMath} from "../SlotMath.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
 
 /**
  * @title MinimumTenureHook
- * @notice An occupant cannot be bought out for `tenureSeconds` after acquiring.
+ * @notice For `tenureSeconds` after acquiring, an occupant can only be bought
+ *         out at a large multiple of the price they declared.
  *
  * @dev ── One deployment, every duration ─────────────────────────────────
  *
@@ -74,6 +76,7 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
     error PriceCutDuringTenure();
     error TenureNotConfigured();
     error TenureTooLong(uint256 max);
+    error BuyoutBelowPremium(uint256 required);
 
     bytes32 public constant FAMILY = keccak256("slots.hook.minimum-tenure");
     uint32 public constant DESCRIPTOR_VERSION = 2;
@@ -94,6 +97,66 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
      *      naming the limit.
      */
     uint256 public constant MAX_TENURE = 3650 days;
+
+    /**
+     * @notice What a buyer must DECLARE to take a slot inside its window,
+     *         as bps of the price the occupant declared. 100_000 = 10x.
+     *
+     * @dev The window is a veto on being outbid, not a veto on being bought.
+     *      Absolute, it made the slot unbuyable at ANY price — and since a slot
+     *      priced at dust accrues no tax, its occupant could hold it for ever
+     *      for the cost of gas, renewing the window by releasing and rebuying
+     *      through a second address in one transaction. Nothing could evict
+     *      them: liquidation never armed, and no buy was ever permitted.
+     *
+     *      Bounded, the protection scales with what the occupant is actually
+     *      paying for. Declare 100 ether and a buyer must declare 1000 to take
+     *      you early — a real premium, on a price they then owe tax on and can
+     *      themselves be taken at. Declare 1 wei and a buyer needs 10 wei. You
+     *      are protected exactly as much as you have chosen to be exposed,
+     *      which is the trade this protocol is made of.
+     *
+     *      Ten times, because it has to be a price nobody pays casually and
+     *      everybody can pay deliberately. It is a constant rather than a
+     *      `hookData` field because the word is fully spent on the window; if a
+     *      slot ever needs its own premium, pack them — `uint64` of seconds
+     *      leaves 192 bits free — and bump {DESCRIPTOR_VERSION}.
+     */
+    uint256 public constant BUYOUT_PREMIUM_BPS = 100_000;
+
+    /**
+     * ── Known shape of this curve, and where it could go next ───────────────
+     *
+     * A flat multiple gives protection three regimes, and only the first is
+     * designed:
+     *
+     *   - at dust, worthless — which is the point, and what closed the lockout;
+     *   - at ordinary prices, proportionate;
+     *   - at high prices, near-absolute. Ten times a large number is a number
+     *     nobody reaches.
+     *
+     * The top end is self-limiting rather than free: a buyer escaping at 10x is
+     * BOUND by that declaration. They owe tax on it, they are takeable at it,
+     * and {beforeSelfAssess} forbids them cutting it for the whole of their own
+     * fresh window. Buying a large shield costs in proportion to its size,
+     * which is the trade this protocol is made of.
+     *
+     * What is NOT designed is the ratchet. Each escape both multiplies the
+     * price and re-arms the clock, so escapes compound: 100 -> 1_000 -> 10_000,
+     * each with a full window behind it. Tax terminates the sequence quickly,
+     * but two in a row put a valuable slot somewhere nobody follows.
+     *
+     * The evolution worth trying is not a smaller multiple — it is a different
+     * curve. DECAY the premium across the window: 10x on the first block,
+     * sliding to 1x at expiry. Protection is then strongest when it is most
+     * deserved (the occupant has just paid, just published) and fades as the
+     * claim ages, instead of ending at a cliff. It also kills the ratchet,
+     * because escaping late costs almost nothing and so never overshoots.
+     *
+     * That is a few lines here, not a core change — and it is the shape of
+     * hook worth writing as its own contract rather than a flag on this one, so
+     * a slot picks the curve it wants by picking its hook.
+     */
 
     /// @notice When an account that just vacated may take a given slot again.
     /// @dev A window protects an occupant FROM the market. Letting the same
@@ -181,8 +244,16 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         // Vacant slots are otherwise always claimable — no tenure to protect.
         if (ctx.occupant == address(0)) return;
 
-        uint256 availableAt = ctx.occupiedSince + window;
-        if (block.timestamp < availableAt) revert TenureNotElapsed(availableAt);
+        // Out of the window: an ordinary buy, at any price.
+        if (block.timestamp >= ctx.occupiedSince + window) return;
+
+        // Inside it: only at the premium. `mulDiv` rather than `*`, so a price
+        // near the top of the range cannot overflow the requirement into a
+        // revert that reads as protection.
+        uint256 required = Math.mulDiv(
+            ctx.currentPrice, BUYOUT_PREMIUM_BPS, 10_000
+        );
+        if (ctx.newPrice < required) revert BuyoutBelowPremium(required);
     }
 
     // `beforeSell` used to live here, refusing a sale that cut the price or

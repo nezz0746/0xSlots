@@ -803,6 +803,13 @@ export const minimumTenureHookAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'BUYOUT_PREMIUM_BPS',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'DESCRIPTOR_VERSION',
     outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
     stateMutability: 'view',
@@ -1057,6 +1064,11 @@ export const minimumTenureHookAbi = [
     name: 'validateHookData',
     outputs: [],
     stateMutability: 'pure',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'required', internalType: 'uint256', type: 'uint256' }],
+    name: 'BuyoutBelowPremium',
   },
   { type: 'error', inputs: [], name: 'PriceCutDuringTenure' },
   { type: 'error', inputs: [], name: 'TenureNotConfigured' },

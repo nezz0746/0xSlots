@@ -123,7 +123,8 @@ contract MinimumTenureHookTest is Test {
 
     // ─── the protection itself ──────────────────────────────────────────────
 
-    function test_NobodyCanBuyInsideTheWindow() public {
+    /// @notice Inside the window an ordinary bid is refused — even a doubling.
+    function test_NobodyCanBuyInsideTheWindowBelowThePremium() public {
         Slot s = _slot();
         _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
 
@@ -131,11 +132,55 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(s), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.TenureNotElapsed.selector,
-                block.timestamp + TENURE
+                MinimumTenureHook.BuyoutBelowPremium.selector,
+                1000 ether // 10x of alice's 100
             )
         );
         s.buy(bob, 200 ether, 100 ether, 0);
+        vm.stopPrank();
+    }
+
+    /// @notice But the premium is a real door, not a painted one.
+    ///
+    /// @dev The window is a veto on being OUTBID, not on being bought. Alice
+    ///      still gets her 100 ether — buying pays the outgoing occupant their
+    ///      declared price — and bob now carries a 1000 ether valuation he owes
+    ///      tax on and can himself be taken at. That is what makes it a premium
+    ///      rather than a fee.
+    function test_ABuyerDeclaringThePremiumTakesItInsideTheWindow() public {
+        Slot s = _slot();
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        uint256 aliceBefore = token.balanceOf(alice);
+
+        uint256 dep = hook.requiredDeposit(1000 ether, TAX, TENURE) + 100 ether;
+        vm.startPrank(bob);
+        token.approve(address(s), type(uint256).max);
+        s.buy(bob, 1000 ether, dep, 0);
+        vm.stopPrank();
+
+        assertEq(s.occupant(), bob, "10x carries it, mid-window");
+        assertEq(s.price(), 1000 ether, "and bob is now exposed at that number");
+        assertEq(
+            token.balanceOf(alice) - aliceBefore,
+            100 ether + hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether,
+            "alice is paid her price and refunded her escrow"
+        );
+    }
+
+    /// @notice One wei under the premium is still refused. The edge is exact.
+    function test_ThePremiumBoundaryIsExact() public {
+        Slot s = _slot();
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+
+        uint256 dep = hook.requiredDeposit(1000 ether, TAX, TENURE) + 100 ether;
+        vm.startPrank(bob);
+        token.approve(address(s), type(uint256).max);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MinimumTenureHook.BuyoutBelowPremium.selector, 1000 ether
+            )
+        );
+        s.buy(bob, 1000 ether - 1, dep, 0);
         vm.stopPrank();
     }
 
@@ -224,8 +269,8 @@ contract MinimumTenureHookTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.TenureNotElapsed.selector,
-                long_.occupiedSince() + 30 days
+                MinimumTenureHook.BuyoutBelowPremium.selector,
+                1000 ether
             )
         );
         long_.buy(bob, 100 ether, need, type(uint256).max);
