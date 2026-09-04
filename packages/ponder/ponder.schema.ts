@@ -21,8 +21,7 @@ import {
 //   1. `hook` is a first-class entity, not a column. It is shared across slots
 //      (MinimumTenureHook is a stateless singleton — ONE deploy, every
 //      duration, since the window is the slot's `hookData`),
-//      it carries a declared flag set, and the factory has an opinion about it
-//      (`attestedHooks`). All three want a row.
+//      and it carries a declared flag set. It wants a row of its own.
 //
 //   2. A slot stores a SNAPSHOT of the hook's flags taken when it was
 //      attached, and the hook's own `hooks()` can drift from it afterwards —
@@ -109,7 +108,7 @@ export const currency = onchainTable("currency", (t) => ({
 /**
  * The factory, which is also the protocol's event hub and its admin surface.
  *
- * `admin`, `implementation` and `attested hooks` all live on this one contract,
+ * `admin` and `implementation` both live on this one contract,
  * and each of its four events writes here — so the row answers "who can upgrade
  * every slot on this chain right now", which is the single most consequential
  * fact in the protocol and previously had no home in the schema at all.
@@ -120,7 +119,7 @@ export const factory = onchainTable(
     id: t.hex().primaryKey(),
     chainId: t.integer().notNull(),
     slotCount: t.bigint().notNull(),
-    /// May upgrade the beacon, upgrade the factory, and attest hooks.
+    /// May upgrade the beacon and upgrade the factory.
     admin: t.hex(),
     /// Current beacon implementation. Every slot delegates to it.
     implementation: t.hex(),
@@ -136,9 +135,8 @@ export const factory = onchainTable(
  *
  * Chain-scoped by primary key, unlike `account` and `currency`. A hook is code
  * rather than an identity: the same address on two chains is two deployments
- * that may differ in code or in constructor arguments, and `attested` is an
- * opinion one chain's factory admin expressed about one of them. Merging the
- * two rows would merge those facts.
+ * that may differ in code or in constructor arguments, each with its own
+ * declaration and its own slots. Merging the two rows would merge those facts.
  *
  * The `declared*` flags are read from the hook's own `hooks()` the first time
  * it is seen. They are NOT what any particular slot obeys: a slot obeys the
@@ -161,10 +159,6 @@ export const hook = onchainTable(
     declaredAfterRelease: t.boolean().notNull(),
     declaredAfterLiquidate: t.boolean().notNull(),
     declaredAfterSettle: t.boolean().notNull(),
-    /// The factory admin's advisory opinion. Not a permission — any hook with
-    /// code may be attached to any slot regardless of what this says.
-    attested: t.boolean().notNull(),
-    attestedAt: t.bigint(),
     /// Slots pointing at this hook right now.
     slotCount: t.integer().notNull(),
     /// `after` callbacks that reverted and were swallowed. A hook accumulating
@@ -176,7 +170,6 @@ export const hook = onchainTable(
   (table) => ({
     pk: primaryKey({ columns: [table.id, table.chainId] }),
     chainIdx: index().on(table.chainId),
-    attestedIdx: index().on(table.attested),
   }),
 );
 
@@ -466,24 +459,6 @@ export const slotCreatedEvent = onchainTable(
     chainIdx: index().on(table.chainId),
     slotIdx: index().on(table.slot),
     creatorIdx: index().on(table.creator),
-  }),
-);
-
-export const hookAttestedEvent = onchainTable(
-  "hook_attested_event",
-  (t) => ({
-    id: t.text().primaryKey(),
-    chainId: t.integer().notNull(),
-    factory: t.hex().notNull(),
-    hook: t.hex().notNull(),
-    attested: t.boolean().notNull(),
-    timestamp: t.bigint().notNull(),
-    blockNumber: t.bigint().notNull(),
-    tx: t.hex().notNull(),
-  }),
-  (table) => ({
-    chainIdx: index().on(table.chainId),
-    hookIdx: index().on(table.hook),
   }),
 );
 
@@ -965,7 +940,6 @@ export const accountSlotRelations = relations(accountSlot, ({ one }) => ({
 
 export const factoryRelations = relations(factory, ({ many }) => ({
   slots: many(slot),
-  attestations: many(hookAttestedEvent),
   adminTransfers: many(adminTransferredEvent),
   upgrades: many(beaconUpgradedEvent),
 }));
@@ -973,7 +947,6 @@ export const factoryRelations = relations(factory, ({ many }) => ({
 export const hookRelations = relations(hook, ({ many }) => ({
   slots: many(slot),
   failures: many(hookCallFailedEvent),
-  attestations: many(hookAttestedEvent),
 }));
 
 export const slotOperatorRelations = relations(slotOperator, ({ one }) => ({
@@ -1002,20 +975,6 @@ export const slotCreatedEventRelations = relations(
     factoryRef: one(factory, {
       fields: [slotCreatedEvent.factory],
       references: [factory.id],
-    }),
-  }),
-);
-
-export const hookAttestedEventRelations = relations(
-  hookAttestedEvent,
-  ({ one }) => ({
-    factoryRef: one(factory, {
-      fields: [hookAttestedEvent.factory],
-      references: [factory.id],
-    }),
-    hookRef: one(hook, {
-      fields: [hookAttestedEvent.hook, hookAttestedEvent.chainId],
-      references: [hook.id, hook.chainId],
     }),
   }),
 );

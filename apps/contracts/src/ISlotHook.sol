@@ -75,6 +75,25 @@ struct HookFlags {
     bool afterRelease;
     bool afterLiquidate;
     bool afterSettle;
+    /**
+     * @notice Run this hook's `after` callbacks uncapped, and let them revert.
+     *
+     * @dev The stipend exists so a hook cannot block an eviction. A hook that
+     *      declares this gives that up on the slots that attach it: its `after`
+     *      calls get all the gas the caller left and their revert propagates,
+     *      so work that MUST land — a mint, a transfer, an announcement — can
+     *      no longer be starved by a caller calibrating gas, and no longer
+     *      fails silently.
+     *
+     *      The cost is real and belongs to whoever attaches it: such a slot is
+     *      only as evictable as this hook. Declare it only when a swallowed
+     *      write would be worse than a stuck slot.
+     *
+     *      It grants less new power than it looks. `beforeBuy` is already
+     *      uncapped and already propagates, so a hook could always refuse every
+     *      purchase for ever. What this adds is the ability to refuse an EXIT.
+     */
+    bool strict;
 }
 
 /**
@@ -91,7 +110,8 @@ struct HookFlags {
  *        That is what makes it safe to call without a gas cap.
  *      - `after` is gas-capped and its revert is swallowed, so it cannot block
  *        a buy — and above all cannot block a liquidation, which this protocol
- *        treats as unconditional.
+ *        treats as unconditional for every hook that does not declare `strict`.
+ *        One that does trades that guarantee for delivery; see {HookFlags}.
  *
  *      A hook that wants to record something about a decision does it in the
  *      matching `after`. There is deliberately no way to write during `before`.

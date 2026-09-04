@@ -510,6 +510,7 @@ describe("reads", () => {
       afterRelease: false,
       afterLiquidate: false,
       afterSettle: false,
+      strict: false,
     };
     const { client } = harness({ hookFlags: flags });
     expect(await client.hookFlags(SLOT)).toEqual(flags);
@@ -655,6 +656,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         afterRelease: false,
         afterLiquidate: false,
         afterSettle: false,
+      strict: false,
       },
       pending: [0n, ZERO, false, false, 0n],
       hasRipeTerms: false,

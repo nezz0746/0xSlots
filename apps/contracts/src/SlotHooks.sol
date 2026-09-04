@@ -17,9 +17,15 @@ import "./SlotErrors.sol";
  *      that is the veto, and it is the point.
  *
  *      `_after*` is a CALL with a fixed stipend and its failure is swallowed.
- *      It runs inside `buy`, `sell`, `release` and `liquidate`. A hook that
- *      could revert there would be able to block an eviction, and unconditional
- *      liquidation is the first thing this protocol promises.
+ *      It runs inside `buy`, `release` and `liquidate`. A hook that could revert
+ *      there would be able to block an eviction, and unconditional liquidation
+ *      is the first thing this protocol promises.
+ *
+ *      Unless the hook declared `strict`, which drops the stipend and lets the
+ *      revert through. That is one more bit in the same snapshotted byte, so a
+ *      slot's exposure is fixed when it attaches and legible from
+ *      `SlotInfo.hookFlags` — and the promise above still holds for every hook
+ *      that did not ask.
  *
  *      Both are skipped entirely unless the hook declared them, read from the
  *      snapshot taken when it was attached.
@@ -32,10 +38,12 @@ abstract contract SlotHooks is SlotStorage {
     uint8 internal constant F_AFTER_RELEASE = 1 << 3;
     uint8 internal constant F_AFTER_LIQUIDATE = 1 << 4;
     uint8 internal constant F_AFTER_SETTLE = 1 << 5;
+    /// Not a callback: a mode. See {HookFlags-strict}.
+    uint8 internal constant F_STRICT = 1 << 6;
 
     /// @dev How many bools `subscriptions()` returns, and therefore how many
     ///      ABI words a well-formed answer is. Six since `sell` left the core.
-    uint256 internal constant FLAG_COUNT = 6;
+    uint256 internal constant FLAG_COUNT = 7;
 
     /// @notice A hook callback reverted and was ignored.
     /// @dev Only ever emitted for the `after` side. A failing `before` reverts
@@ -45,6 +53,7 @@ abstract contract SlotHooks is SlotStorage {
     /// @notice The hook's snapshotted subscriptions, unpacked.
     function hookFlags() public view returns (HookFlags memory f) {
         uint8 b = _hookFlags;
+        f.strict = b & F_STRICT != 0;
         f.beforeBuy = b & F_BEFORE_BUY != 0;
         f.beforeSelfAssess = b & F_BEFORE_SELF_ASSESS != 0;
         f.afterBuy = b & F_AFTER_BUY != 0;
@@ -186,6 +195,7 @@ abstract contract SlotHooks is SlotStorage {
         ISlotHook(h).validateHookData(data);
 
         HookFlags memory f = ISlotHook(h).subscriptions();
+        if (f.strict) packed |= F_STRICT;
         if (f.beforeBuy) packed |= F_BEFORE_BUY;
         if (f.beforeSelfAssess) packed |= F_BEFORE_SELF_ASSESS;
         if (f.afterBuy) packed |= F_AFTER_BUY;
@@ -295,6 +305,23 @@ abstract contract SlotHooks is SlotStorage {
         bytes memory call
     ) internal {
         if (h == address(0) || flags & flag == 0) return;
+
+        // Strict: uncapped, and the revert propagates. Declared by the hook
+        // and snapshotted with every other flag, so it is fixed for the slot
+        // the moment it attaches and readable from `SlotInfo.hookFlags`.
+        //
+        // A hook that asked for this can do work that MUST land, and cannot be
+        // starved by a caller calibrating gas. It can also fail the slot,
+        // eviction included. That is the trade, and choosing this hook's
+        // address is where it was made.
+        if (flags & F_STRICT != 0) {
+            (bool strictOk, bytes memory err) = h.call(call);
+            if (strictOk) return;
+            assembly ("memory-safe") {
+                revert(add(err, 0x20), mload(err))
+            }
+        }
+
         (bool ok, ) = h.call{gas: HOOK_GAS}(call);
         if (!ok) emit HookCallFailed(h, bytes4(call));
     }

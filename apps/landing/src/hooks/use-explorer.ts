@@ -109,7 +109,6 @@ interface CurrencyRef {
  */
 export interface HookRow {
   id: Address;
-  attested: boolean;
   declaredKnown: boolean;
   slotCount: number;
   failedCallCount: number;
@@ -176,7 +175,6 @@ const SLOT_FIELDS = /* GraphQL */ `
   hook
   hookRef {
     id
-    attested
     declaredKnown
     slotCount
     failedCallCount
@@ -299,8 +297,7 @@ const HOOKS_QUERY = /* GraphQL */ `
     ) {
       items {
         id
-        attested
-        declaredKnown
+            declaredKnown
         slotCount
         failedCallCount
       }

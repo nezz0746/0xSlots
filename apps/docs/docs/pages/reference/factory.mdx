@@ -52,43 +52,9 @@ takes a typed `SlotInit`, so a missing or misnamed field is a compile error
 before it can become a zero.
 </Callout>
 
-## Attestation
-
-The admin can vouch for a hook. It is a display signal only — an un-attested
-hook works identically; it simply carries no endorsement.
-
-```solidity
-mapping(address => bool) public attestedHooks;
-
-function attestHook(address hook, bool attested) external;  // admin only
-event HookAttested(address indexed hook, bool attested);
-```
-
-<Callout type="info">
-A slot creator may point at **any** hook, attested or not. The honest thing for
-a UI is "this hook says it is a 7-day tenure" from its self-reported
-[descriptor](/reference/hooks#idescribedhook), upgraded to "and we vouch for it"
-when `attestedHooks[hook]` is true. Authority never comes from the label — only
-from the hook's snapshotted flags.
-</Callout>
-
-## Events
-
-```solidity
-event SlotCreated(
-    address indexed slot,
-    address indexed recipient,
-    address indexed currency,
-    address hook
-);
-event BeaconUpgraded(address indexed implementation);
-event AdminTransferred(address indexed from, address indexed to);
-```
-
 ## Admin
 
 ```solidity
-function attestHook(address hook, bool attested) external;   // vouch for a hook
 function transferAdmin(address next) external;               // hand over the role
 function upgradeBeacon(address implementation) external;     // move every slot at once
 function implementation() external view returns (address);

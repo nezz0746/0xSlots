@@ -1,6 +1,5 @@
 "use client";
 
-import { slotFactoryAbi } from "@0xslots/contracts/slots";
 import { type Abi, type Address, getAddress, isAddress } from "viem";
 import { useBytecode, useReadContracts } from "wagmi";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
@@ -27,15 +26,15 @@ import { useSlotsFactory } from "@/hooks/slots/use-slots";
  *                  outright rather than attaching a hook that can never fire,
  *                  so it is a hard error here too, not a warning.
  *
- * Attestation is reported alongside and never gates anything: the factory's
- * `attestedHooks` is advisory, exactly like the `knownHooks` list this app
- * ships. A slot may point at any address with code.
+ * Whether anyone vouches for a hook is not asked here and never gates anything:
+ * a slot may point at any address with code. The `knownHooks` list this app
+ * ships is the only opinion in the product, and it is a label, not a gate.
  */
 
 const hookProbeAbi = [
   {
     type: "function",
-    name: "hooks",
+    name: "subscriptions",
     stateMutability: "view",
     inputs: [],
     outputs: [
@@ -43,13 +42,12 @@ const hookProbeAbi = [
         type: "tuple",
         components: [
           { name: "beforeBuy", type: "bool" },
-          { name: "beforeSell", type: "bool" },
           { name: "beforeSelfAssess", type: "bool" },
           { name: "afterBuy", type: "bool" },
-          { name: "afterSell", type: "bool" },
           { name: "afterRelease", type: "bool" },
           { name: "afterLiquidate", type: "bool" },
           { name: "afterSettle", type: "bool" },
+          { name: "strict", type: "bool" },
         ],
       },
     ],
@@ -61,8 +59,8 @@ export type HookCheckStatus = "ok" | "inert" | "not-a-hook" | "no-code";
 export interface HookCheckData {
   address: Address;
   status: HookCheckStatus;
-  /** Whether the factory's operator has vouched for this hook. Advisory. */
-  attested: boolean;
+  /** Declared `strict`: its `after` calls are uncapped and may revert. */
+  strict: boolean;
   /** The callbacks it declared, in the order `HookFlags` declares them. */
   subscriptions: string[];
   /**
@@ -81,10 +79,8 @@ export interface HookCheckData {
 /** Just the verb — the `before`/`after` half is carried by which list it is in. */
 const VERB_LABELS: Record<string, string> = {
   beforeBuy: "buy",
-  beforeSell: "sell",
   beforeSelfAssess: "reprice",
   afterBuy: "buy",
-  afterSell: "sell",
   afterRelease: "release",
   afterLiquidate: "liquidate",
   afterSettle: "settle",
@@ -92,14 +88,17 @@ const VERB_LABELS: Record<string, string> = {
 
 const FLAG_LABELS: Record<string, string> = {
   beforeBuy: "before buy",
-  beforeSell: "before sell",
   beforeSelfAssess: "before reprice",
   afterBuy: "after buy",
-  afterSell: "after sell",
   afterRelease: "after release",
   afterLiquidate: "after liquidate",
   afterSettle: "after settle",
 };
+
+/// Not a callback. Called out on its own because it is the one flag that
+/// changes what the SLOT promises rather than what the hook hears about.
+export const STRICT_LABEL =
+  "Runs uncapped and may revert. This hook can block a liquidation, so a slot attaching it is only as evictable as the hook itself.";
 
 export function useHookCheck(rawAddress: string, chainId?: number) {
   const factory = useSlotsFactory();
@@ -129,14 +128,7 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
             {
               address: checksummed,
               abi: hookProbeAbi,
-              functionName: "hooks",
-              chainId,
-            } as const,
-            {
-              address: factory,
-              abi: slotFactoryAbi,
-              functionName: "attestedHooks",
-              args: [checksummed],
+              functionName: "subscriptions",
               chainId,
             } as const,
           ]
@@ -150,17 +142,15 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
 
   const result: HookCheckData | null = (() => {
     if (!checksummed) return null;
-    if (bytecode.isLoading || !data || data.length < 2) return null;
+    if (bytecode.isLoading || !data || data.length < 1) return null;
 
     const hasCode = !!bytecode.data && bytecode.data !== "0x";
-    const attested =
-      data[1]?.status === "success" ? Boolean(data[1].result) : false;
 
     if (!hasCode)
       return {
         address: checksummed,
         status: "no-code",
-        attested,
+        strict: false,
         subscriptions: [],
         mayRefuse: [],
         notifiedOn: [],
@@ -171,7 +161,7 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
       return {
         address: checksummed,
         status: "not-a-hook",
-        attested,
+        strict: false,
         subscriptions: [],
         mayRefuse: [],
         notifiedOn: [],
@@ -183,7 +173,7 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
     return {
       address: checksummed,
       status: on.length === 0 ? "inert" : "ok",
-      attested,
+      strict: Boolean(flags?.strict),
       subscriptions: on.map((k) => FLAG_LABELS[k] as string),
       mayRefuse: on
         .filter((k) => k.startsWith("before"))

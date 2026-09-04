@@ -47,8 +47,7 @@ interface ISlotEvents {
         uint64 indexed tenureId
     );
     /// @dev `hook` is indexed because "which slots proposed hook X" is the
-    ///      query anyone actually runs; `SlotFactory.HookAttested` already
-    ///      indexes the same thing.
+    ///      query anyone actually runs.
     ///
     ///      The flags were `tax` and `hook_` — the trailing underscore existed
     ///      only to dodge the collision with `hook`, and landed in generated

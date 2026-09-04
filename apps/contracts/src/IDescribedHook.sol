@@ -37,8 +37,8 @@ struct HookDescriptor {
  *      It follows that a hook may lie. That is acceptable precisely because
  *      nothing safety-relevant hangs off it: authority comes from `HookFlags`,
  *      which the slot snapshots and enforces. The honest thing for a UI to say
- *      is "this hook says it is a 7-day minimum tenure", with the factory's
- *      `attestedHooks` as the upgrade to "and we vouch for that".
+ *      is "this hook says it is a 7-day minimum tenure", with whatever list
+ *      that interface keeps as the upgrade to "and we vouch for that".
  *
  *      Implementing this is optional. A client staticcalls `descriptors()` and
  *      treats a revert, an unknown family, an unknown version, or `data` that

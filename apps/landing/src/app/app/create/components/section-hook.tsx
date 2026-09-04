@@ -12,7 +12,6 @@ import {
   Loader2,
   Plug,
   ShieldAlert,
-  ShieldCheck,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useFormContext } from "react-hook-form";
@@ -33,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { useChain } from "@/context/chain";
 import { AddressInput } from "../address-input";
-import { useHookCheck } from "../hooks/use-hook-check";
+import { STRICT_LABEL, useHookCheck } from "../hooks/use-hook-check";
 import type { CreateSlotFormValues } from "../schema";
 import { timeUnits } from "../sections";
 
@@ -241,17 +240,14 @@ export function SectionHook() {
                       <Check className="size-3" />
                       Subscribes to {check.data.subscriptions.join(", ")}
                     </p>
-                    {check.data.attested ? (
-                      <p className="flex items-center gap-1.5 text-[10px] text-green-600">
-                        <ShieldCheck className="size-3" />
-                        Attested by the factory operator
-                      </p>
-                    ) : (
+                    {/* The one declaration that changes what the SLOT
+                        promises rather than what the hook is told about, so it
+                        gets a warning of its own rather than a place in the
+                        subscription list. */}
+                    {check.data.strict && (
                       <p className="flex items-start gap-1.5 text-[10px] text-amber-600">
                         <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                        Not attested. The factory accepts it anyway —
-                        attestation records what someone vouched for, not what
-                        is permitted — so read the code before you attach it.
+                        {STRICT_LABEL}
                       </p>
                     )}
                   </>

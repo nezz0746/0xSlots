@@ -177,6 +177,15 @@ export interface HookFlags {
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
+  /**
+   * Not a callback — a mode. The hook's `after` calls run uncapped and their
+   * revert propagates, so its writes cannot be silently dropped.
+   *
+   * A slot whose hook declares this is only as evictable as that hook: a
+   * failing `afterLiquidate` blocks the eviction rather than being swallowed.
+   * Surface it wherever a user commits funds to a slot.
+   */
+  strict: boolean;
 }
 
 /** Terms the manager has queued, landing at the next occupancy transition. */

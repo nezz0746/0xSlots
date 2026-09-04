@@ -39,7 +39,6 @@ contract AdLandTest is Test {
         ERC1967Proxy aProxy = new ERC1967Proxy(address(adImpl), aInit);
         adland = AdLand(address(aProxy));
 
-        factory.attestHook(address(adland), true);
 
         slot = Slot(payable(factory.createSlot(SlotInit({
             recipient: address(this),

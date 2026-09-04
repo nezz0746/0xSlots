@@ -338,9 +338,6 @@ export function SlotsTable() {
                 onCheckedChange={() => toggleHook(h.id)}
               >
                 <span className="truncate">{hookLabel(h.id)}</span>
-                {h.attested && (
-                  <span className="ml-auto text-[10px] text-green-600">✓</span>
-                )}
               </DropdownMenuCheckboxItem>
             ))}
             {(!hooks || hooks.length === 0) && (

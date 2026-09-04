@@ -161,9 +161,9 @@ tenure", not `tenureSeconds: 604800`).
 Discovery is **client-only** and untrusted. The slot never reads a descriptor —
 it is self-reported and unbounded, and the moment the protocol trusted it, a
 label would become an attack surface on the path liquidation depends on. A UI
-says "this hook *claims* to be a 7-day tenure"; the factory's attestation is the
-upgrade to "and we vouch for it." Authority is always the snapshotted flags,
-never the label.
+says "this hook *claims* to be a 7-day tenure"; whatever list that interface
+keeps is the upgrade to "and we vouch for it." Authority is always the
+snapshotted flags, never the label.
 </Callout>
 
 ## Verifying a hook

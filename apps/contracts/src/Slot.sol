@@ -35,6 +35,12 @@ struct SlotInit {
  *         currency — may prevent it. Every capped call and swallowed revert in
  *         this codebase exists for that sentence.
  *
+ *         The ONE exception is a hook that declared `strict`, whose `after`
+ *         callbacks are uncapped and fatal so it can do work that must land.
+ *         A slot attaching one is only as evictable as that hook. The flag is
+ *         snapshotted at attach and readable from {SlotInfo}'s `hookFlags`, so
+ *         which kind of slot this is can be told before committing to it.
+ *
  *      2. Terms do not move under an occupant. Tax and hook changes are
  *         proposed by the manager and land at the next occupancy transition, so
  *         what you bought into holds for as long as you hold the slot.

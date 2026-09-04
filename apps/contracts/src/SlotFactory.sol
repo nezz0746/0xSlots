@@ -38,18 +38,11 @@ contract SlotFactory is VersionedUUPS {
     /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
     UpgradeableBeacon public beacon;
 
-    /// @notice May upgrade the beacon, upgrade this factory, and attest hooks.
+    /// @notice May upgrade the beacon and upgrade this factory.
     address public admin;
 
     /// @notice Slots this factory created. The event hub's guest list.
     mapping(address => bool) public isSlot;
-
-    /// @notice Hooks the admin has attested.
-    /// @dev Advisory, and deliberately so. A slot creator may point at any hook
-    ///      with code; this records an opinion for clients to surface, not a
-    ///      permission. Enforcing it would make the admin a gatekeeper on what
-    ///      anyone may build, which is the opposite of the point.
-    mapping(address => bool) public attestedHooks;
 
     uint256 public slotCount;
 
@@ -60,7 +53,6 @@ contract SlotFactory is VersionedUUPS {
         address currency,
         address hook
     );
-    event HookAttested(address indexed hook, bool attested);
     event AdminTransferred(address indexed from, address indexed to);
     event BeaconUpgraded(address indexed implementation);
 
@@ -103,11 +95,6 @@ contract SlotFactory is VersionedUUPS {
             address(init.currency),
             init.hook
         );
-    }
-
-    function attestHook(address hook, bool attested) external onlyAdmin {
-        attestedHooks[hook] = attested;
-        emit HookAttested(hook, attested);
     }
 
     function transferAdmin(address next) external onlyAdmin {

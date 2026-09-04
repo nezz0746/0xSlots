@@ -5,7 +5,6 @@ import {
   beaconUpgradedEvent,
   factory,
   hook,
-  hookAttestedEvent,
   slot,
   slotCreatedEvent,
 } from "ponder:schema";
@@ -172,39 +171,6 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     mutableHook: terms.mutableHook,
     manager: terms.manager,
     deployer: lower(event.transaction.from),
-    timestamp: event.block.timestamp,
-    blockNumber: event.block.number,
-    tx: event.transaction.hash,
-  });
-});
-
-/**
- * The admin's opinion about a hook.
- *
- * Advisory and nothing more — any hook with code may be attached to any slot
- * whether or not it appears here. Indexed so a client can surface the opinion,
- * and so an attestation being REVOKED on a hook that slots already point at is
- * visible; nothing on chain detaches it.
- */
-ponder.on("SlotFactory:HookAttested", async ({ event, context }) => {
-  const chainId = context.chain.id;
-  const factoryId = lower(event.log.address);
-  const hookAddr = lower(event.args.hook);
-
-  await touchFactory(context, factoryId, {});
-  await getOrCreateHook(context, hookAddr, event.block.timestamp);
-  await context.db.update(hook, { id: hookAddr, chainId }).set({
-    attested: event.args.attested,
-    attestedAt: event.args.attested ? event.block.timestamp : null,
-    updatedAt: event.block.timestamp,
-  });
-
-  await context.db.insert(hookAttestedEvent).values({
-    id: evtId(event.transaction.hash, event.log.logIndex),
-    chainId,
-    factory: factoryId,
-    hook: hookAddr,
-    attested: event.args.attested,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,

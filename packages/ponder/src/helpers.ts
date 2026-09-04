@@ -351,7 +351,7 @@ async function readMany(
  * `null` when `hooks()` does not answer. That is not a hypothetical: a hook
  * whose `hooks()` reverts is REFUSED at attach time — `_readHookFlags` is
  * deliberately fail-closed — so seeing null here means either a hook that was
- * attested but never attached, or one that has since been upgraded into
+ * seen but never attached, or one that has since been upgraded into
  * something that no longer answers.
  */
 export async function readHookFlags(
@@ -445,8 +445,6 @@ export async function getOrCreateHook(
     declaredAfterRelease: f.afterRelease,
     declaredAfterLiquidate: f.afterLiquidate,
     declaredAfterSettle: f.afterSettle,
-    attested: false,
-    attestedAt: null,
     slotCount: 0,
     failedCallCount: 0,
     firstSeenAt: timestamp,

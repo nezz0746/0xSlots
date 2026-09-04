@@ -132,13 +132,6 @@ export function SlotRow({
         {slot.hook ? (
           <span className="inline-flex items-center gap-1">
             {knownHook?.name ?? truncateAddress(slot.hook)}
-            {/* The factory admin's advisory opinion, not a permission: any
-                hook with code may be attached to any slot regardless. */}
-            {slot.hookRef?.attested && (
-              <span className="text-green-600" title="Attested by the factory">
-                ✓
-              </span>
-            )}
             {/* `after` callbacks that reverted and were swallowed. Nothing on
                 chain will ever tell this hook's users that it is broken. */}
             {(slot.hookRef?.failedCallCount ?? 0) > 0 && (
