@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { TriangleAlert } from "lucide-react";
 import type { Address } from "viem";
 import { AccountTypeIcon } from "@/components/account-type-icon";
+import { MutabilityChip } from "@/components/detail-group";
 import { EnsAddress } from "@/components/ens-address";
 import { SlotStatusBadge } from "@/components/slot-status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -130,7 +131,15 @@ export function SlotRow({
           it reads as a dash, not as a gap. */}
       <TableCell className="text-xs text-muted-foreground">
         {slot.hook ? (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1 text-foreground">
+            {/* A filled dot, not a word: the column is scanned down, and
+                "attached" repeated forty times is noise where a mark is a
+                pattern. Colour carries nothing on its own — the name beside it
+                is the reading. */}
+            <span
+              aria-hidden
+              className="size-1.5 shrink-0 rounded-full bg-foreground/60"
+            />
             {knownHook?.name ?? truncateAddress(slot.hook)}
             {/* `after` callbacks that reverted and were swallowed. Nothing on
                 chain will ever tell this hook's users that it is broken. */}
@@ -151,22 +160,20 @@ export function SlotRow({
         )}
       </TableCell>
 
+      {/* The same padlocks the slot detail uses, and for the same reason: a
+          closed lock is a GUARANTEE, so both states are always drawn. The old
+          badges appeared only when mutable, which made "fixed forever" and
+          "this table did not check" render identically — as nothing. */}
       <TableCell>
-        <div className="flex flex-wrap items-center gap-1">
-          {slot.mutableTax && (
-            <Badge variant="outline" className="text-[9px]">
-              TAX
-            </Badge>
-          )}
-          {/* Its own badge. TAX says what it costs to hold the slot may be
-              changed; HOOK says the rule deciding whether the holder can be
-              forced to sell, and on what terms, may be changed. A reader must
-              not have to infer the second from the first. */}
-          {slot.mutableHook && (
-            <Badge variant="outline" className="text-[9px]">
-              HOOK
-            </Badge>
-          )}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+            Tax
+            <MutabilityChip mutable={slot.mutableTax} what="tax rate" />
+          </span>
+          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+            Hook
+            <MutabilityChip mutable={slot.mutableHook} what="hook" />
+          </span>
           {/* A queued change, already proposed and waiting out its delay. The
               loudest flag here, because it is the one with a deadline. */}
           {pending && (

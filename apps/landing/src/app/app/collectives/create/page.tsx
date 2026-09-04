@@ -50,7 +50,7 @@ const ROLE_FIELDS = [
   {
     key: "taxManagers",
     label: "Tax",
-    hint: "May change the tax rate.",
+    hint: "The tax rate.",
   },
   {
     // One role, because the protocol merged the two things it used to split. A

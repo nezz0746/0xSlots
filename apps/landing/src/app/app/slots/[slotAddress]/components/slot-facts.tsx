@@ -6,6 +6,7 @@ import { AlertTriangle, Clock, ShieldCheck } from "lucide-react";
 import { zeroAddress } from "viem";
 import { MutabilityChip } from "@/components/detail-group";
 import { EnsIdentity } from "@/components/ens-identity";
+import { HookFlagRow } from "@/components/hook-flags";
 import { TenureMeter } from "@/components/occupancy-timeline";
 import { Badge } from "@/components/ui/badge";
 import { useChain } from "@/context/chain";
@@ -326,12 +327,20 @@ export function SlotDetails({
           )}
         </Term>
 
-        {/* A hook this app cannot name is the only case where what it may do to
-            a buy is not already visible from its name. */}
-        {attached && !known && (
-          <p className="w-full text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-            Unrecognised hook — read its code before buying.
-          </p>
+        {/* What the hook may DO, in the same words the create form uses when
+            you attach one. Naming it was never enough: "MinimumTenureHook" does
+            not say whether it can refuse your buy, and that is the only
+            question a buyer has. Read from the slot's snapshot, so it describes
+            what this slot obeys rather than what the hook currently claims. */}
+        {attached && (
+          <div className="w-full space-y-1">
+            <HookFlagRow flags={state.hookFlags} />
+            {!known && (
+              <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
+                Unrecognised hook — read its code before buying.
+              </p>
+            )}
+          </div>
         )}
 
         {tenureSeconds && !state.isVacant ? (

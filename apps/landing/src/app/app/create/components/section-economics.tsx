@@ -109,10 +109,6 @@ export function SectionEconomics() {
                 )}
               />
             </div>
-            <FormDescription>
-              How far ahead a buyer must fund, and the floor a withdrawal may
-              not go below. Zero means no minimum.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}

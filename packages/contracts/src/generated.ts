@@ -787,7 +787,7 @@ export const adLandAbi = [
  *
  */
 export const adLandAddress = {
-  31337: '0xc5ee1d668B8Ca9579B2086Da45175dFd9F7f458c',
+  31337: '0xA1225b07424740183Fd6927079A27b9b41d1b3C3',
 } as const
 
 /**
@@ -1097,7 +1097,7 @@ export const minimumTenureHookAbi = [
  *
  */
 export const minimumTenureHookAddress = {
-  31337: '0x582921D7C1c1AF750eF24f9c4F840be7738f9913',
+  31337: '0xC704B84bd3FaF71a0323A3B49DF46C4467DA1CDb',
 } as const
 
 /**
@@ -2353,7 +2353,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x28898d2eb31C5e8DaCA45DEC9dC3Cc2aB317A158',
+  31337: '0x1925041e560247D85077251F3a064D2f34059922',
 } as const
 
 /**
@@ -3671,7 +3671,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0x8F7d16a1EC17966cd3915a081e1647fa71daFcf0',
+  31337: '0x444A7B2E204DEc0811F6C59Ffa406F0a136AB511',
 } as const
 
 /**

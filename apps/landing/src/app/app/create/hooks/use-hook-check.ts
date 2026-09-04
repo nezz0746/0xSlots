@@ -3,6 +3,7 @@
 import { type Abi, type Address, getAddress, isAddress } from "viem";
 import { useBytecode, useReadContracts } from "wagmi";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
+import { describeFlags, type HookFlagSet } from "@/lib/hook-flags";
 
 /**
  * The successor to the old `useModuleCheck`.
@@ -59,6 +60,8 @@ export type HookCheckStatus = "ok" | "inert" | "not-a-hook" | "no-code";
 export interface HookCheckData {
   address: Address;
   status: HookCheckStatus;
+  /** The raw declared set, for rendering. */
+  flags: HookFlagSet;
   /** Declared `strict`: its `after` calls are uncapped and may revert. */
   strict: boolean;
   /** The callbacks it declared, in the order `HookFlags` declares them. */
@@ -75,30 +78,6 @@ export interface HookCheckData {
   mayRefuse: string[];
   notifiedOn: string[];
 }
-
-/** Just the verb — the `before`/`after` half is carried by which list it is in. */
-const VERB_LABELS: Record<string, string> = {
-  beforeBuy: "buy",
-  beforeSelfAssess: "reprice",
-  afterBuy: "buy",
-  afterRelease: "release",
-  afterLiquidate: "liquidate",
-  afterSettle: "settle",
-};
-
-const FLAG_LABELS: Record<string, string> = {
-  beforeBuy: "before buy",
-  beforeSelfAssess: "before reprice",
-  afterBuy: "after buy",
-  afterRelease: "after release",
-  afterLiquidate: "after liquidate",
-  afterSettle: "after settle",
-};
-
-/// Not a callback. Called out on its own because it is the one flag that
-/// changes what the SLOT promises rather than what the hook hears about.
-export const STRICT_LABEL =
-  "Runs uncapped and may revert. This hook can block a liquidation, so a slot attaching it is only as evictable as the hook itself.";
 
 export function useHookCheck(rawAddress: string, chainId?: number) {
   const factory = useSlotsFactory();
@@ -150,10 +129,7 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
       return {
         address: checksummed,
         status: "no-code",
-        strict: false,
-        subscriptions: [],
-        mayRefuse: [],
-        notifiedOn: [],
+        ...describeFlags(null),
       };
 
     const flagsRes = data[0];
@@ -161,26 +137,17 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
       return {
         address: checksummed,
         status: "not-a-hook",
-        strict: false,
-        subscriptions: [],
-        mayRefuse: [],
-        notifiedOn: [],
+        ...describeFlags(null),
       };
 
-    const flags = flagsRes.result as unknown as Record<string, boolean>;
-    const on = Object.keys(FLAG_LABELS).filter((key) => flags?.[key]);
+    const described = describeFlags(
+      flagsRes.result as unknown as Record<string, boolean>,
+    );
 
     return {
       address: checksummed,
-      status: on.length === 0 ? "inert" : "ok",
-      strict: Boolean(flags?.strict),
-      subscriptions: on.map((k) => FLAG_LABELS[k] as string),
-      mayRefuse: on
-        .filter((k) => k.startsWith("before"))
-        .map((k) => VERB_LABELS[k] as string),
-      notifiedOn: on
-        .filter((k) => k.startsWith("after"))
-        .map((k) => VERB_LABELS[k] as string),
+      status: described.subscriptions.length === 0 ? "inert" : "ok",
+      ...described,
     };
   })();
 

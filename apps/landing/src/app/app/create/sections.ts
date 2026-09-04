@@ -59,15 +59,14 @@ export const SECTIONS: SectionMeta[] = [
   {
     id: "hook",
     title: "Hook",
-    description:
-      "The single extension point. It may refuse a buy, a sell or a reprice.",
+    description: "The single extension point. What it does, and when.",
     icon: Plug,
     tint: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   },
   {
     id: "permissions",
     title: "Permissions",
-    description: "What can change after creation, and who may change it.",
+    description: "What stays fixed after creation, and who holds the rest.",
     icon: KeyRound,
     tint: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
   },

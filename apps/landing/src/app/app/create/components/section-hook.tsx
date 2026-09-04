@@ -16,6 +16,7 @@ import {
 import { useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import type { Address } from "viem";
+import { HookFlagRow } from "@/components/hook-flags";
 import {
   FormField,
   FormItem,
@@ -32,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { useChain } from "@/context/chain";
 import { AddressInput } from "../address-input";
-import { STRICT_LABEL, useHookCheck } from "../hooks/use-hook-check";
+import { useHookCheck } from "../hooks/use-hook-check";
 import type { CreateSlotFormValues } from "../schema";
 import { timeUnits } from "../sections";
 
@@ -57,7 +58,13 @@ export function SectionHook() {
   const hookMode = form.watch("hookMode");
   const hook = form.watch("hook");
 
-  const available = knownHooks[chainId] ?? [];
+  // Minus the tenure hook: it gets its own entry below, because picking it is
+  // picking a NUMBER, and listing it here as well showed it twice.
+  const available = (knownHooks[chainId] ?? []).filter(
+    (h) =>
+      h.address.toLowerCase() !==
+      minimumTenureHookAddress[chainId]?.toLowerCase(),
+  );
   const chosenKnown = findKnownHook(chainId, hook as Address);
   // Every mode, not just `custom`. The permissions below are read from the
   // hook itself, so a hook picked by name deserves the same scrutiny as one
@@ -148,8 +155,13 @@ export function SectionHook() {
               </SelectContent>
             </Select>
 
-            {/* A known hook is offered by name, so it owes the reader one line
-                on what attaching it will do to them. */}
+            {/* Every mode, not just `custom`: a hook picked by name gets the
+                same row as one pasted in, and it is the same row the slot page
+                draws once it is attached. */}
+            {check.data?.status === "ok" && (
+              <HookFlagRow flags={check.data.flags} className="mt-2" />
+            )}
+
             {chosenKnown && (
               <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
                 <Plug className="mt-0.5 size-3 shrink-0" />
@@ -191,28 +203,14 @@ export function SectionHook() {
                   </select>
                 </div>
 
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  Nobody may buy this slot out from under its occupant for that
-                  long, and the occupant funds the whole window up front.
-                  Liquidation is untouched — an occupant who runs dry can still
-                  be evicted at any moment.
-                </p>
-
                 {/* The address, stated rather than derived. Worth showing even
                     though the creator did not choose it: it is what the slot
                     will point at, and it is the same one for every duration —
                     which is the fact that replaced "expect two transactions". */}
                 {tenureHook && (
-                  <div className="space-y-1 border bg-muted/40 p-2">
-                    <p className="text-[10px] break-all text-muted-foreground">
-                      {tenureHook}
-                    </p>
-                    <p className="flex items-center gap-1.5 text-[10px] text-green-600">
-                      <Check className="size-3" />
-                      One hook serves every duration — creating this slot is one
-                      transaction.
-                    </p>
-                  </div>
+                  <p className="text-[10px] break-all text-muted-foreground">
+                    {tenureHook}
+                  </p>
                 )}
               </div>
             )}
@@ -234,38 +232,17 @@ export function SectionHook() {
                   </p>
                 )}
 
-                {check.data?.status === "ok" && (
-                  <>
-                    <p className="flex items-center gap-1.5 text-[10px] text-green-600">
-                      <Check className="size-3" />
-                      Subscribes to {check.data.subscriptions.join(", ")}
-                    </p>
-                    {/* The one declaration that changes what the SLOT
-                        promises rather than what the hook is told about, so it
-                        gets a warning of its own rather than a place in the
-                        subscription list. */}
-                    {check.data.strict && (
-                      <p className="flex items-start gap-1.5 text-[10px] text-amber-600">
-                        <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                        {STRICT_LABEL}
-                      </p>
-                    )}
-                  </>
-                )}
-
                 {check.data?.status === "inert" && (
                   <p className="flex items-start gap-1.5 text-[10px] text-destructive">
                     <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                    Subscribes to nothing, so the slot will refuse it. A hook
-                    that wants no callbacks can never run.
+                    Subscribes to nothing — the slot will refuse it.
                   </p>
                 )}
 
                 {check.data?.status === "not-a-hook" && (
                   <p className="flex items-start gap-1.5 text-[10px] text-destructive">
                     <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                    There is a contract here, but it does not answer{" "}
-                    <code>hooks()</code> — so it is not a hook.
+                    Not a hook — no <code>subscriptions()</code>.
                   </p>
                 )}
 
@@ -279,97 +256,10 @@ export function SectionHook() {
               </div>
             )}
 
-            {/* What this hook can actually do, read from the hook. Replaces
-                three paragraphs that said the same thing about every hook —
-                including a tenure warning shown for hooks that were not tenure
-                hooks at all. */}
-            {hookMode !== "none" && check.data?.status === "ok" ? (
-              <HookPermissions
-                mayRefuse={check.data.mayRefuse}
-                notifiedOn={check.data.notifiedOn}
-              />
-            ) : null}
-
             <FormMessage />
           </FormItem>
         );
       }}
     />
-  );
-}
-
-/**
- * What a hook may do to you, and what it merely watches.
- *
- * The split is the whole point. A `before` callback is a VETO — it can refuse
- * your buy, your sale or your reprice, and it runs uncapped because it is
- * `view` and cannot reenter. An `after` callback is a notification: gas-capped,
- * its revert swallowed, structurally unable to change the outcome.
- *
- * Two guarantees hold whatever a hook declares, and they are worth stating
- * once, here, rather than in a paragraph above every option: it can never block
- * a liquidation, and it can never stop an occupant leaving. The core forbids
- * both.
- */
-function HookPermissions({
-  mayRefuse,
-  notifiedOn,
-}: {
-  mayRefuse: string[];
-  notifiedOn: string[];
-}) {
-  return (
-    <div className="mt-2 space-y-1.5 rounded-md border bg-muted/30 px-3 py-2">
-      <Row
-        icon={
-          <ShieldAlert className="size-3 shrink-0 text-amber-600 dark:text-amber-500" />
-        }
-        label="May refuse"
-        items={mayRefuse}
-        empty="nothing — it cannot veto any action"
-      />
-      <Row
-        icon={<Eye className="size-3 shrink-0 text-muted-foreground" />}
-        label="Notified on"
-        items={notifiedOn}
-        empty="nothing"
-      />
-      <p className="text-[10px] leading-snug text-muted-foreground/70 pt-0.5">
-        It can never block a liquidation, and never stop you leaving.
-      </p>
-    </div>
-  );
-}
-
-function Row({
-  icon,
-  label,
-  items,
-  empty,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  items: string[];
-  empty: string;
-}) {
-  return (
-    <div className="flex items-start gap-1.5 text-[11px] leading-snug">
-      {icon}
-      <span className="text-muted-foreground w-20 shrink-0">{label}</span>
-      {items.length ? (
-        <span className="flex flex-wrap gap-1">
-          {items.map((v) => (
-            <code
-              key={v}
-              className="rounded bg-background border px-1 py-px text-[10px]"
-            >
-              {v}
-            </code>
-          ))}
-        </span>
-      ) : (
-        <span className="text-muted-foreground/60">{empty}</span>
-      )}
-    </div>
   );
 }

@@ -96,6 +96,12 @@ const catalogue: readonly {
     description:
       "The occupant publishes an image or URI that renders in the slot, and it retires the moment the slot changes hands. Buying and publishing can be done in one transaction.",
   },
+  {
+    addresses: minimumTenureHookAddress,
+    name: "Minimum tenure",
+    description:
+      "Gives a new occupant a window they choose. Inside it, taking the slot costs a large premium on their price, and they cannot cut it.",
+  },
 ];
 
 export const knownHooks: Partial<Record<number, readonly KnownHook[]>> =

@@ -408,7 +408,9 @@ export function SlotsTable() {
                   </span>
                 </TableHead>
                 <TableHead>Hook</TableHead>
-                <TableHead>Flags</TableHead>
+                {/* Was "Flags", which named the mechanism rather than the fact.
+    These are the slot's TERMS and whether they are still open. */}
+                <TableHead>Config</TableHead>
                 <TableHead
                   className={`text-right cursor-pointer select-none hover:text-foreground ${
                     sort?.orderBy === "createdAt"

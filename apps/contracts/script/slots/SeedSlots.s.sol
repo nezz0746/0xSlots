@@ -106,6 +106,24 @@ contract SeedSlots is Script {
         uint256 depG = _minDeposit(0.01 ether, 2_000, 1 hours);
         g.buy{value: depG}(me, 0.01 ether, depG, 0);
 
+        // 8. ERC-20, tenure hook, THIRTY-day window. The same hook CONTRACT as
+        //    slot 3 — the window is the slot's `hookData`, not a second
+        //    deployment — so the explorer has two slots sharing one hook and
+        //    enforcing different terms, which is the whole point of hookData.
+        Slot h = _create(
+            me, address(token), hook, bytes32(uint256(30 days)), 400, 30 days, true, true
+        );
+        uint256 depH = _minDeposit(500e18, 400, 30 days) + 1e18;
+        IERC20(address(token)).approve(address(h), depH);
+        h.buy(me, 500e18, depH, 0);
+
+        // 9. Tenure hook on a VACANT slot: a rule with nobody to protect yet.
+        //    The hook column has something to show on an empty slot, and the
+        //    buy form has to price a window before anyone is inside one.
+        Slot i = _create(
+            me, address(0), hook, bytes32(uint256(1 days)), 600, 1 days, true, true
+        );
+
         vm.stopBroadcast();
 
         console2.log("");
@@ -116,6 +134,8 @@ contract SeedSlots is Script {
         console2.log("5 native/immutable terms ", address(e));
         console2.log("6 native/pending terms   ", address(f));
         console2.log("7 native/liquidatable+1h ", address(g));
+        console2.log("8 erc20/tenure-30d       ", address(h));
+        console2.log("9 native/tenure/VACANT   ", address(i));
     }
 
     function _create(

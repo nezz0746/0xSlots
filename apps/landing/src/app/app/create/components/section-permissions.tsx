@@ -12,7 +12,7 @@ import { AddressInput } from "../address-input";
 import type { CreateSlotFormValues } from "../schema";
 
 /**
- * What can change after creation, and who may change it.
+ * What stays fixed after creation, and who holds the rest.
  *
  * The old form had three flags — tax, module, occupancy — kept deliberately
  * apart, because a holder who accepted a swappable ad module had not thereby
@@ -45,13 +45,7 @@ export function SectionPermissions() {
                 className="mt-0.5"
               />
               <div className="min-w-0">
-                <FormLabel className="cursor-pointer mt-0!">
-                  The tax rate may change
-                </FormLabel>
-                <FormDescription className="text-[10px]">
-                  A manager may propose a new rate. It lands at the next
-                  occupancy transition, never on a sitting occupant.
-                </FormDescription>
+                <FormLabel className="cursor-pointer mt-0!">Tax rate</FormLabel>
               </div>
             </FormItem>
           )}
@@ -68,14 +62,7 @@ export function SectionPermissions() {
                 className="mt-0.5"
               />
               <div className="min-w-0">
-                <FormLabel className="cursor-pointer mt-0!">
-                  The hook may change
-                </FormLabel>
-                <FormDescription className="text-[10px]">
-                  A manager may attach, replace or detach the hook — again, at
-                  the next transition. This covers the slot&apos;s occupancy
-                  terms as well as its behaviour: they are the same address now.
-                </FormDescription>
+                <FormLabel className="cursor-pointer mt-0!">Hook</FormLabel>
               </div>
             </FormItem>
           )}
