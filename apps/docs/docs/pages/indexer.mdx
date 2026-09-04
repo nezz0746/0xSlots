@@ -47,15 +47,22 @@ Every chain-scoped row carries `chainId`.
 | Entity | Key fields |
 |---|---|
 | `slot` | `id`, `chainId`, `recipient`, `currency`, `occupant`, `isOccupied`, `price`, `deposit`, `taxBps`, `collectedTax`, `taxPaidTotal`, `totalCollected`, `hook`, `hookData`, `tenureId`, `createdAt` |
-| `hook` | `id`, `chainId`, the `declared*` flag snapshot, `slotCount`, `failedCallCount` |
+| `hook` | `id`, `chainId`, the `declared*` flags (including `declaredStrict`), `slotCount`, `failedCallCount` |
 | `account` | `id`, `type` (EOA/CONTRACT/DELEGATED/SPLIT), `slotCount`, `occupiedCount`, `totalHoldTime` |
 | `accountChain` | `account`, `chainId`, `slotCount`, `occupiedCount`, `occupiedAsRecipient` |
 | `currency` | `id`, `name`, `symbol`, `decimals` |
 
-A slot points at **one** `hook` (or none). The joined `hookRef` row carries the
-snapshot of the hook's declared callback flags taken at attachment, and
-`failedCallCount`, the count of `after` calls that reverted and were swallowed.
-A hook accumulating those is quietly broken.
+A slot points at **one** `hook` (or none). Flags are stored on **both** rows and
+they answer different questions: `slot.hook*` is the snapshot taken when the hook
+attached — what that slot obeys — while `hook.declared*` is what the hook says
+now. They diverge when an upgradeable hook changes its declaration after slots
+have committed to it, and comparing them is how you find that.
+
+`slot.hookStrict` is the one worth surfacing: a strict hook's `after` calls run
+uncapped and can fail the slot, eviction included.
+
+`hook.failedCallCount` counts `after` calls that reverted and were swallowed. A
+hook accumulating those is quietly broken.
 
 `slot` also carries its pending terms, so "what is queued right now" no longer
 needs an RPC call per slot: `pendingHasTax` / `pendingTaxBps`,

@@ -266,6 +266,7 @@ export type HookFlagSet = {
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
+  strict: boolean;
 };
 
 /** What a slot with no hook obeys: nothing. */
@@ -276,6 +277,7 @@ export const NO_HOOK_FLAGS: HookFlagSet = {
   afterRelease: false,
   afterLiquidate: false,
   afterSettle: false,
+  strict: false,
 };
 
 function asFlags(value: unknown): HookFlagSet | null {
@@ -362,7 +364,7 @@ export async function readHookFlags(
     ctx,
     getAddress(lower(hookAddr)),
     SlotHookAbi as unknown as Abi,
-    ["hooks"],
+    ["subscriptions"],
   );
   return asFlags(raw);
 }
@@ -445,6 +447,7 @@ export async function getOrCreateHook(
     declaredAfterRelease: f.afterRelease,
     declaredAfterLiquidate: f.afterLiquidate,
     declaredAfterSettle: f.afterSettle,
+    declaredStrict: f.strict,
     slotCount: 0,
     failedCallCount: 0,
     firstSeenAt: timestamp,
@@ -476,4 +479,5 @@ export const hookFlagColumns = (f: HookFlagSet) => ({
   hookAfterRelease: f.afterRelease,
   hookAfterLiquidate: f.afterLiquidate,
   hookAfterSettle: f.afterSettle,
+  hookStrict: f.strict,
 });

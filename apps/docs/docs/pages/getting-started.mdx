@@ -75,10 +75,15 @@ await client.liquidate("0xSlot");     // permissionless — no bounty, the slot 
 ## React Integration
 
 ```tsx
-import { useSlotsClient, useSlotAction, useSlotOnChain } from "@0xslots/sdk/react";
+import { useQuery } from "@tanstack/react-query";
+import { useSlotsClient, useSlotAction } from "@0xslots/sdk/react";
 
 function SlotView({ address }: { address: string }) {
-  const { data: slot, isLoading } = useSlotOnChain(address, 8453);
+  const client = useSlotsClient();
+  const { data: slot, isLoading } = useQuery({
+    queryKey: ["slot", address],
+    queryFn: () => client.slotState(address as `0x${string}`),
+  });
   const { buy, busy } = useSlotAction({
     onSuccess: (label, hash) => console.log(`${label}: ${hash}`),
   });

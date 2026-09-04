@@ -61,25 +61,26 @@ mutable terms, tax and hook, and they move through the same pair of functions.
 
 ---
 
-## `useSlotOnChain`
+## Reading a slot
 
-Fetches a single slot's state from on-chain via RPC. Auto-invalidates on new blocks.
-
-```tsx
-import { useSlotOnChain } from "@0xslots/sdk/react";
-
-const { data: slot, isLoading, refetch } = useSlotOnChain(address, 8453);
-// slot: { occupant, price, deposit, taxBps, insolvent, currencySymbol, ... }
-```
-
----
-
-## `useSlotsOnChain`
-
-Fetches multiple slots via multicall. Deduplicates currency metadata requests.
+There is no read hook. `@0xslots/sdk/react` ships exactly two — `useSlotsClient`
+and `useSlotAction` — and reads go through the client, which returns plain
+promises you can hand to whatever query library the app already uses.
 
 ```tsx
-import { useSlotsOnChain } from "@0xslots/sdk/react";
+import { useQuery } from "@tanstack/react-query";
+import { useSlotsClient } from "@0xslots/sdk/react";
 
-const { data: slots, isLoading } = useSlotsOnChain(addresses, 8453);
+function useSlot(address: `0x${string}`) {
+  const client = useSlotsClient();
+  return useQuery({
+    queryKey: ["slot", address],
+    queryFn: () => client.slotState(address),
+  });
+}
 ```
+
+`slotState` returns occupancy, price, deposit, tax owed, the terms, and
+`hookFlags` — the hook declaration this slot snapshotted — in one call. For many
+slots, call it per address and let the query client dedupe; the client batches
+the underlying reads.

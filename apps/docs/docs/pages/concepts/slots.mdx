@@ -27,7 +27,6 @@ flowchart LR
     Buyer -->|"buy at declared price"| Slot
     Slot -->|"tax, continuously"| Recipient
     Slot -.->|"may this proceed? — then, this happened"| Hook
-    Hook -.->|"optional fee, from the tax"| Recipient
 
     classDef core fill:#000,stroke:#000,color:#fff
     classDef opt fill:#fff,stroke:#999,stroke-dasharray:4 3,color:#333
@@ -84,8 +83,13 @@ taker's own deposit, so whoever actually wants it can evict and buy it in one
 transaction. Nobody's deposit is touched, and no accrued tax is spent on keepers.
 
 <Callout type="warning">
-No hook can prevent liquidation, and none can stop an occupant leaving.
-`liquidate()` and `release()` never consult one.
+No hook can prevent liquidation, and none can stop an occupant leaving. Both
+paths tell the hook what happened, on a fixed gas budget, and ignore it if it
+fails.
+
+The one exception is a hook that declares `strict`, which runs uncapped and can
+fail the transaction. Whether a slot's hook did that is fixed when it attaches
+and readable before you buy.
 </Callout>
 
 ## Roles
@@ -117,12 +121,16 @@ someone else to set the price — which is the problem the whole design avoids.
 
 ### Why tax and hook are separate promises
 
-You might want a swappable ad hook on tenure terms that never change.
-Conflating them would make that inexpressible — and would let a slot advertising
-"the hook may change" quietly also reserve the right to change who is allowed to
-take it.
+Two flags rather than one, because the two guarantees are different sizes. A
+slot can fix its tax rate forever and still let its manager swap the hook — an ad
+space whose owner changes what renders in it, at a rate the occupant can count
+on for as long as they hold it.
+
+A single "mutable" flag could not say that. Worse, a slot advertising that its
+hook may change would also be reserving the right to reprice its occupant, which
+is the larger of the two powers by far.
 
 ## Next
 
-- [Hooks](/concepts/hooks) — how a slot gets a purpose, and why it might refuse a sale
+- [Hooks](/concepts/hooks) — how a slot gets a purpose, and when it can refuse a buy
 - [Slot reference](/reference/slot) — the full contract API

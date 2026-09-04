@@ -31,6 +31,11 @@ Every other property of a hook falls out of that one line:
   can never block a buy, and above all can never block a **liquidation**, which
   the protocol treats as unconditional. This is the "what holding does" half:
   clear the ad, mint a receipt, update a ledger.
+- **Unless the hook declares `strict`.** Then its `after*` callbacks run uncapped
+  and their revert propagates, so work that must land cannot be silently dropped
+  — and the hook can fail the slot, eviction included. The declaration is
+  snapshotted when the hook attaches and published in `SlotInfo.hookFlags`, so
+  it is a fact about the slot rather than a surprise inside it.
 
 There is deliberately no way to write during `before`. A hook that wants to
 record something about a decision does it in the matching `after`.
@@ -125,12 +130,6 @@ move the price and under-declaring becomes profitable, which inverts the whole
 mechanism. The tax stops being a truth serum and becomes a fee you dodge.
 </Callout>
 
-## Fees
-
-A hook can take a cut of the tax through `feeBps` / `feeRecipient`, skimmed at
-collection; the rest goes to the recipient. That is how a hook author gets paid
-for building something on slots they do not own — declared up front and visible
-before anyone commits.
 
 ## Many behaviours: one hook
 

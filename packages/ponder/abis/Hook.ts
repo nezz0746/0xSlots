@@ -26,6 +26,7 @@ export const SlotHookAbi = [
           { name: "afterRelease", type: "bool" },
           { name: "afterLiquidate", type: "bool" },
           { name: "afterSettle", type: "bool" },
+          { name: "strict", type: "bool" },
         ],
       },
     ],

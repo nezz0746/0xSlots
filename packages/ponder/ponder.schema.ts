@@ -159,6 +159,9 @@ export const hook = onchainTable(
     declaredAfterRelease: t.boolean().notNull(),
     declaredAfterLiquidate: t.boolean().notNull(),
     declaredAfterSettle: t.boolean().notNull(),
+    /// Not a callback — a mode. `after` calls run uncapped and their revert
+    /// propagates, so a slot attaching this hook is only as evictable as it is.
+    declaredStrict: t.boolean().notNull(),
     /// Slots pointing at this hook right now.
     slotCount: t.integer().notNull(),
     /// `after` callbacks that reverted and were swallowed. A hook accumulating
@@ -225,6 +228,10 @@ export const slot = onchainTable(
     hookAfterRelease: t.boolean().notNull(),
     hookAfterLiquidate: t.boolean().notNull(),
     hookAfterSettle: t.boolean().notNull(),
+    /// The one flag that changes what the SLOT promises rather than what the
+    /// hook hears about. Snapshotted like the rest: a hook cannot become strict
+    /// under a sitting occupant.
+    hookStrict: t.boolean().notNull(),
 
     // ── occupancy ─────────────────────────────────────────────────────────
     occupant: t.hex(),

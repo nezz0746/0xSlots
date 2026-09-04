@@ -19,7 +19,7 @@ interface ISlotHook {
     function beforeBuy(SlotContext calldata ctx) external view;
     function beforeSelfAssess(SlotContext calldata ctx) external view;
 
-    // effects — gas-capped, revert swallowed, cannot change the outcome
+    // effects — gas-capped and revert swallowed, unless `strict` is declared
     function afterBuy(SlotContext calldata ctx) external;
     function afterRelease(SlotContext calldata ctx) external;
     function afterLiquidate(SlotContext calldata ctx) external;
@@ -93,8 +93,18 @@ struct HookFlags {
     bool afterRelease;
     bool afterLiquidate;
     bool afterSettle;
+    bool strict;          // not a callback — a mode
 }
 ```
+
+`strict` is the odd one out. The other six say which callbacks the hook wants;
+this one changes how they run. Declared, it drops the stipend on every `after`
+call and lets the revert through, so work that must land cannot be silently
+dropped — and the hook can fail the slot, eviction included.
+
+It is snapshotted with the rest, so a hook cannot become strict under a sitting
+occupant, and it appears in `SlotInfo.hookFlags` for anyone deciding whether to
+buy. Leave it false unless a swallowed write would be worse than a stuck slot.
 
 <Callout type="warning">
 The `before` flags are not optional to get right. A `before` hook is
@@ -125,9 +135,58 @@ interface IDescribedHook {
 `descriptors()` is an `eth_call` for clients only and may lie. Treat a revert,
 an unknown `family`, an unknown `version`, or `data` that fails to decode as
 "unknown" and fall back to the flags — which still say whether the hook can
-refuse a buy. A hook that answers family X version 1 and meets version 2 should
+refuse a buy, and whether it is `strict`. A hook that answers family X version 1 and meets version 2 should
 ignore v2 rather than decode its bytes with v1's layout.
 </Callout>
+
+## `MinimumTenureHook`
+
+The one hook the protocol ships as a policy. One deployment per chain; the
+window a slot enforces is its own `hookData`, 32 bytes of big-endian seconds.
+
+```solidity
+function tenureOf(bytes32 data) external pure returns (uint256);
+function requiredDeposit(uint256 price, uint256 taxBps, uint256 window)
+    external pure returns (uint256);
+
+uint256 public constant MAX_TENURE = 3650 days;
+uint256 public constant BUYOUT_PREMIUM_BPS = 100_000;   // 10x
+```
+
+Inside the window it enforces three things:
+
+| | |
+|---|---|
+| **Entry is funded** | a buy must post enough deposit to cover the whole window at its own declared price |
+| **No price cut** | the occupant cannot lower their price while protected |
+| **Buyouts cost a premium** | a buyer must declare at least `BUYOUT_PREMIUM_BPS` of the occupant's price — 10x — to take the slot early |
+
+<Callout type="warning">
+The premium is what makes the window safe to have. An absolute veto meant a slot
+declared at dust accrued no tax, so its escrow never emptied and liquidation
+never armed, while the window refused every buyer — and the occupant could re-arm
+it indefinitely by releasing and rebuying through a second address. The slot left
+forced sale permanently, for the cost of gas.
+
+Bounded, protection scales with what the occupant declared. At 100 ether a buyer
+must declare 1000; at 1 wei they must declare 10. Buying a large shield means
+paying tax on a large number and being takeable at it, so a dust price buys dust
+protection.
+</Callout>
+
+An occupant that leaves is barred from retaking that slot for one window, so the
+window cannot be renewed for free. The bar is per slot and per account.
+
+### Errors
+
+| Error | Meaning |
+|---|---|
+| `TenureNotConfigured` | `hookData` is zero — a window was never set |
+| `TenureTooLong(max)` | above `MAX_TENURE` |
+| `TenureUnderfunded(required)` | the deposit does not cover the window |
+| `PriceCutDuringTenure` | a `selfAssess` lowering the price inside the window |
+| `TenureNotElapsed(availableAt)` | the leaver's re-entry bar has not expired |
+| `BuyoutBelowPremium(required)` | a mid-window buy declaring less than 10x |
 
 ## Identifying a hook
 
@@ -143,13 +202,3 @@ and then the slot's own `hookData` for the terms. `descriptors()` may
 still lie; the flags, which the slot snapshotted, are what say whether a hook can
 refuse a buy.
 
-## Fees
-
-```solidity
-function feeBps() external view returns (uint256);        // e.g. 500 = 5%
-function feeRecipient() external view returns (address);
-```
-
-A hook may skim a fraction of collected tax to its own recipient; the remainder
-goes to the slot's recipient. Declared on the hook and visible before anyone
-attaches it.
