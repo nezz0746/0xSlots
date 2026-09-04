@@ -34,7 +34,6 @@ const INCLUDE = [
   "SlotCollective",
   "SlotCollectiveFactory",
   "AdLand",
-  "CompositeHook",
   "MinimumTenureHook",
   // Local only, and deployed by `SeedSlots` rather than `DeployProtocol`. It is
   // here for its ADDRESS: plain CREATE means it moves whenever the seed changes

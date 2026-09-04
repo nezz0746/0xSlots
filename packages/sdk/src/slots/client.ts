@@ -1,5 +1,4 @@
 import {
-  compositeHookAbi,
   minimumTenureHookAbi,
   slotAbi,
   slotFactoryAbi,
@@ -366,7 +365,6 @@ export interface SlotsClientConfig {
 const SIMULATION_ABI = [
   ...slotAbi,
   ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
-  ...compositeHookAbi.filter((entry) => entry.type === "error"),
 ] as const;
 
 /**

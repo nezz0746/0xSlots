@@ -6,7 +6,7 @@
  * the interface is a callback the slot makes, never something we ask about.
  *
  * Hand-written rather than copied from a concrete hook's ABI, because there is
- * no canonical hook contract — MinimumTenureHook and CompositeHook are two
+ * no canonical hook contract — MinimumTenureHook and AdLand are two
  * implementations among however many people write, and the interface is the
  * only thing all of them share.
  */

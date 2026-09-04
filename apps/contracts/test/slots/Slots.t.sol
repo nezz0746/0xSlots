@@ -9,7 +9,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
-import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 import "../../src/SlotErrors.sol";
 
 contract Tok is ERC20 {
@@ -313,47 +312,6 @@ contract SlotsTest is Test {
         assertGt(token.balanceOf(recipient), 0, "recipient was paid");
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Composite
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /// @notice Several behaviours behind one address — and the fan-out loop
-    ///         lives here, not in the slot's eviction path.
-    function test_ACompositeFansOutToItsChildren() public {
-        Recorder a = new Recorder();
-        Recorder b = new Recorder();
-        address[] memory kids = new address[](2);
-        kids[0] = address(a);
-        kids[1] = address(b);
-
-        HookFlags memory f;
-        f.afterBuy = true;
-        CompositeHook c = new CompositeHook(address(this), kids, f, "");
-
-        Slot s = _slot(address(c));
-        _take(s, alice, 1 ether, 100 ether);
-
-        assertEq(a.buys(), 1, "both children saw it");
-        assertEq(b.buys(), 1);
-    }
-
-    /// @notice One broken child does not silence the others.
-    function test_ABrokenChildDoesNotSilenceTheRest() public {
-        Hostile bad = new Hostile();
-        Recorder good = new Recorder();
-        address[] memory kids = new address[](2);
-        kids[0] = address(bad);
-        kids[1] = address(good);
-
-        HookFlags memory f;
-        f.afterBuy = true;
-        CompositeHook c = new CompositeHook(address(this), kids, f, "");
-
-        Slot s = _slot(address(c));
-        _take(s, alice, 1 ether, 100 ether);
-
-        assertEq(good.buys(), 1, "the working child still ran");
-    }
 }
 
 /// @dev Declares no subscriptions at all.

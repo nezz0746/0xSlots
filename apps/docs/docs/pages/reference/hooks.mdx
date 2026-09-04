@@ -27,7 +27,7 @@ interface ISlotHook {
 }
 ```
 
-`subscriptions()` is `view`, not `pure`: a composite answers it from storage. It is read
+`subscriptions()` is `view`, not `pure`: a hook may answer it from storage. It is read
 **once** at attach and snapshotted, so a hook cannot widen its reach mid-tenure.
 
 <Callout type="info">
@@ -138,8 +138,8 @@ are no longer part of an address. A `MinimumTenureHook` is one deployment per
 chain and every duration is a slot's `hookData`.
 
 What a client checks now is the `family` a hook claims in its `descriptors()`,
-which a `CompositeHook` fanning out to that behaviour answers just as well as a
-bare one — and then the slot's own `hookData` for the terms. `descriptors()` may
+which somebody else's implementation of that behaviour answers just as well —
+and then the slot's own `hookData` for the terms. `descriptors()` may
 still lie; the flags, which the slot snapshotted, are what say whether a hook can
 refuse a buy.
 

@@ -296,4 +296,22 @@ contract MinimumTenureHookTest is Test {
         hook.validateHookData(bytes32(TENURE)); // no revert
         assertEq(hook.tenureOf(bytes32(TENURE)), TENURE);
     }
+
+
+
+
+
+    function _slotWith(address h) internal returns (Slot) {
+        return Slot(payable(factory.createSlot(SlotInit({
+            recipient: recipient,
+            currency: IERC20(address(token)),
+            manager: address(0),
+            hook: h,
+            hookData: bytes32(TENURE),
+            taxBps: TAX,
+            minDepositSeconds: 0,
+            mutableTax: false,
+            mutableHook: false
+        }))));
+    }
 }

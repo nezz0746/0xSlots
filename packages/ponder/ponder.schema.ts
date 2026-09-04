@@ -13,8 +13,8 @@ import {
 // because there are no policies and no modules — the three extension surfaces
 // the previous protocol had (occupancy policy, utility head, module gallery)
 // collapsed into a single address with one interface. A slot wanting several
-// behaviours points at a CompositeHook that fans out in userland, and the
-// indexer sees exactly one address either way.
+// behaviours points at one hook that implements all of them, so the indexer
+// sees exactly one address and there is no tree to reconstruct.
 //
 // Two things follow from that and shape everything below:
 //

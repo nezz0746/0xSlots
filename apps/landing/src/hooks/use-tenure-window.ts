@@ -1,6 +1,6 @@
 "use client";
 
-import { compositeHookAbi } from "@0xslots/contracts/slots";
+import { minimumTenureHookAbi } from "@0xslots/contracts/slots";
 import { useQuery } from "@tanstack/react-query";
 import { type Address, type Hex, zeroAddress } from "viem";
 import { usePublicClient } from "wagmi";
@@ -24,8 +24,11 @@ const TENURE_FAMILY =
  * What still takes a round trip is WHETHER the number means a tenure at all.
  * `hookData` is opaque — a different hook's configuration is 32 bytes too — so
  * the hook is asked by DESCRIPTOR whether it claims the minimum-tenure family.
- * By family rather than by address, so a CompositeHook fanning out to a tenure
- * rule answers as well as a bare one.
+ * By family rather than by address, so somebody else's implementation of the
+ * same rule reads correctly without this file learning its address.
+ *
+ * The ABI is borrowed purely for the `descriptors()` fragment; any hook may
+ * answer it, and one that does not is handled by the catch below.
  *
  * A hook with no descriptors, an unknown family, or zero data all mean "no
  * window" — an ordinary answer, not an error. Most slots have no hook at all.
@@ -49,7 +52,7 @@ export function useTenureWindow(
       try {
         const descriptors = (await publicClient!.readContract({
           address: hook!,
-          abi: compositeHookAbi,
+          abi: minimumTenureHookAbi,
           functionName: "descriptors",
         })) as readonly { family: `0x${string}` }[];
         return descriptors.some(

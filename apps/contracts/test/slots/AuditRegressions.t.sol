@@ -8,7 +8,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
-import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
 interface IFlippable { function flip() external; }
@@ -284,55 +283,6 @@ contract AuditRegressionsTest is Test {
         _evictWithPendingHook(address(new RejectingHook()), false);
     }
 
-    /**
-     * @notice A composite inside a composite still delivers `after` callbacks.
-     *
-     * @dev The stipend was the constant `CHILD_GAS = HOOK_GAS / MAX_CHILDREN`,
-     *      so an inner composite — entered with one child's share rather than
-     *      the slot's full stipend — met `gasleft() < CHILD_GAS + GAS_FLOOR` on
-     *      its first iteration and returned. Arithmetic, not a margin: its
-     *      whole subtree got nothing, on every transition, and because the
-     *      inner call SUCCEEDED nothing emitted `HookCallFailed`.
-     *
-     *      Mutation-checked: restoring the constant fails this.
-     */
-    function test_ANestedCompositeStillReachesItsChildren() public {
-        Counter leaf = new Counter();
-        HookFlags memory f;
-        f.afterBuy = true;
-
-        address[] memory inner = new address[](1);
-        inner[0] = address(leaf);
-        CompositeHook mid = new CompositeHook(address(this), inner, f, "");
-
-        address[] memory outer = new address[](1);
-        outer[0] = address(mid);
-        CompositeHook root = new CompositeHook(address(this), outer, f, "");
-
-        Slot s = _slot(address(token), 0);
-        s.proposeTerms(0, address(root), bytes32(0), false, true);
-        vm.warp(block.timestamp + 2 days);
-
-        vm.startPrank(occ);
-        token.approve(address(s), type(uint256).max);
-        s.buy(occ, PRICE, 100, 0); // the transition that applies the hook
-        vm.stopPrank();
-        assertEq(s.hook(), address(root), "the tree is attached");
-        // The transition that attaches a hook also notifies it, so count from
-        // here rather than from zero.
-        uint256 before = leaf.buys();
-
-        vm.startPrank(grinder);
-        token.approve(address(s), type(uint256).max);
-        s.buy(grinder, PRICE, 100, type(uint256).max);
-        vm.stopPrank();
-
-        assertEq(
-            leaf.buys(),
-            before + 1,
-            "two composites deep, and the leaf still ran"
-        );
-    }
 
     function test_AWeirdTokenReturnCannotBlockLiquidation() public {
         WeirdTok w = new WeirdTok(recipient);
@@ -392,28 +342,7 @@ contract AuditRegressionsTest is Test {
         assertTrue(s.hasRipeTerms(), "and it does apply once it has");
     }
 
-    // ── 5. composite children ──────────────────────────────────────────────
 
-    function test_ACodelessChildIsRefused() public {
-        address[] memory kids = new address[](1);
-        kids[0] = address(0xDEAD00); // never deployed
-        HookFlags memory f;
-        f.beforeBuy = true;
-        vm.expectRevert(CompositeHook.ChildHasNoCode.selector);
-        new CompositeHook(address(this), kids, f, "");
-    }
-
-    function test_TheChildStipendFitsTheBudget() public {
-        address[] memory none = new address[](0);
-        HookFlags memory f;
-        f.afterBuy = true;
-        CompositeHook c = new CompositeHook(address(this), none, f, "");
-        assertLe(
-            c.CHILD_GAS() * c.MAX_CHILDREN(),
-            500_000,
-            "a full board must fit the stipend the slot forwards"
-        );
-    }
 
     // ── 6. the offer book must survive a hostile posting ───────────────────
 

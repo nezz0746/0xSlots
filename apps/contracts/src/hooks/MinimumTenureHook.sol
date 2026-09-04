@@ -207,13 +207,21 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
     ///      the swallowed revert would silently skip the bar. A slot that
     ///      attached this hook has already passed both checks, so in practice
     ///      this cannot revert at all.
+    ///
+    ///      `ctx.slot`, NOT `msg.sender`, even though the core is the only
+    ///      caller and the two therefore hold the same address. This wrote
+    ///      `msg.sender` while {beforeBuy} read `ctx.slot`, and a fan-out hook
+    ///      that forwarded the context — which the protocol shipped and has
+    ///      since removed — made them diverge: the bar landed under the
+    ///      forwarder and the read found nothing. Keyed off the context on both
+    ///      sides, no caller can put them out of step again.
     function afterRelease(SlotContext calldata ctx) external {
-        reentryAllowedAt[msg.sender][ctx.account] =
+        reentryAllowedAt[ctx.slot][ctx.account] =
             block.timestamp + tenureOf(ctx.hookData);
     }
 
     function afterLiquidate(SlotContext calldata ctx) external {
-        reentryAllowedAt[msg.sender][ctx.account] =
+        reentryAllowedAt[ctx.slot][ctx.account] =
             block.timestamp + tenureOf(ctx.hookData);
     }
 

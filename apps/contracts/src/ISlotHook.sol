@@ -98,10 +98,15 @@ struct HookFlags {
  *
  *      ── One hook per slot ───────────────────────────────────────────────
  *
- *      A slot that wants several behaviours points at a `CompositeHook` that
- *      fans out. Keeping the fan-out in userland is not tidiness: it means the
- *      core makes ONE capped call, and that single cap bounds the whole subtree
- *      beneath it. A badly built composite harms only the slot that chose it.
+ *      Exactly one, and the core makes exactly one capped call per callback —
+ *      so the cap bounds the whole of what a slot's hook may cost, with no
+ *      subtree hiding behind it.
+ *
+ *      A slot that wants several behaviours composes them in ONE hook, written
+ *      as one contract. Fanning out to a list of children in userland was tried
+ *      and removed: it split the stipend between callees, made `msg.sender`
+ *      stop being the slot (which two hooks had silently keyed storage on), and
+ *      bought nothing the author of a purpose-built hook cannot do directly.
  */
 interface ISlotHook {
     // `beforeSell` and `afterSell` used to sit beside these. `Slot.sell` was
@@ -110,8 +115,11 @@ interface ISlotHook {
     // any other seating. Leaving the two callbacks declared would have left a
     // hook able to subscribe to something that can never fire.
 
-    /// @dev `view`, not `pure`: a composite answers this from storage, and
-    ///      that is a legitimate hook rather than an edge case.
+    /// @dev `view`, not `pure`: a hook may answer from storage — an upgradeable
+    ///      one, or one whose owner can retire a behaviour — and that is a
+    ///      legitimate hook rather than an edge case. The slot snapshots the
+    ///      answer at attach time either way, so a later change of mind does
+    ///      not move a live slot's terms.
     function subscriptions() external view returns (HookFlags memory);
 
     /**

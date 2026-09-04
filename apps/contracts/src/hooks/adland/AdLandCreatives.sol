@@ -125,9 +125,9 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
 
     /// @dev Reentrant by construction and safe by inspection: `Slot.buy` calls
     ///      `afterBuy` back into this contract mid-frame. That callback only
-    ///      deletes `_creative[msg.sender]`, where `msg.sender` is the slot —
-    ///      and the publish that follows runs after it, which is the order
-    ///      wanted.
+    ///      deletes `_creative[ctx.slot]` — the slot being bought, and only if
+    ///      the stamp on it has already been retired — and the publish that
+    ///      follows runs after it, which is the order wanted.
     function _buy(
         address slot,
         uint256 selfAssessedPrice,
@@ -204,39 +204,65 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
     }
 
     /// @dev AdLand takes no configuration: what it needs it reads from the
-    ///      slot itself. Indifferent rather than unimplemented, so it can sit
-    ///      in a composite beside a hook that does take one.
+    ///      slot itself. Indifferent rather than unimplemented — the slot still
+    ///      asks, and refusing would fail an attach over a word this hook has
+    ///      no opinion about.
     function validateHookData(bytes32) external view {}
 
     function beforeBuy(SlotContext calldata) external view {}
 
     function beforeSelfAssess(SlotContext calldata) external view {}
 
-    function afterBuy(SlotContext calldata) external {
-        _clear();
+    function afterBuy(SlotContext calldata ctx) external {
+        _clear(ctx.slot);
     }
 
-        function afterRelease(SlotContext calldata) external {
-        _clear();
+    function afterRelease(SlotContext calldata ctx) external {
+        _clear(ctx.slot);
     }
 
-    function afterLiquidate(SlotContext calldata) external {
-        _clear();
+    function afterLiquidate(SlotContext calldata ctx) external {
+        _clear(ctx.slot);
     }
 
     function afterSettle(SlotContext calldata) external {}
 
-    /// @dev Keyed on `msg.sender`, never on `ctx.slot`. They hold the same value
-    ///      when the core calls, but this registry is shared and every entry
-    ///      point is world-callable — trusting the argument would let anyone
-    ///      clear anyone else's creative by calling `afterBuy` with a forged
-    ///      context.
-    function _clear() internal {
-        Creative storage c = _creative[msg.sender];
+    /// @dev Keyed on `ctx.slot`, and the argument is not trusted to say so.
+    ///
+    ///      It used to key on `msg.sender`, because every entry point here is
+    ///      world-callable and believing the argument would have let anyone
+    ///      clear anyone else's creative with a forged context.
+    ///
+    ///      The caller is not authenticated; the STATE is. This refuses any
+    ///      entry the lens would still serve — see {AdLandLens-ad}, whose test
+    ///      this mirrors exactly. A forged call can therefore only retire a row
+    ///      that is already invisible, which is the whole of what an honest one
+    ///      does. There is nothing left to steal, so there is nothing left to
+    ///      authenticate — and the wipe no longer depends on who is calling,
+    ///      which is what broke it when a fan-out hook forwarded the context.
+    ///
+    ///      That the honest path passes the test is ordering, not luck:
+    ///      `afterBuy` fires after `++tenureId`, and `afterRelease` and
+    ///      `afterLiquidate` both fire after `_vacate` has zeroed the occupant.
+    ///      By the time any of them arrive the old creative is already retired
+    ///      by the stamp, and this only makes it official.
+    ///
+    ///      The other half of the trade: a wipe that WAS swallowed is now
+    ///      anyone's to land late. It changes no answer — the stamp retired the
+    ///      row when the tenure ended — but it emits {Cleared}, which is the
+    ///      only way an indexer learns a creative ended without reconstructing
+    ///      the slot's tenure counter for itself.
+    function _clear(address slot) internal {
+        Creative storage c = _creative[slot];
         if (bytes(c.uri).length == 0) return;
 
+        // Non-empty means `publish` once succeeded for this address, which
+        // means it answered `occupant()` — so there is code here to call.
+        uint64 live = ISlotAd(slot).tenureId();
+        if (ISlotAd(slot).occupant() != address(0) && c.tenureId == live) return;
+
         uint64 from = c.tenureId;
-        delete _creative[msg.sender];
-        emit Cleared(msg.sender, from, ISlotAd(msg.sender).tenureId());
+        delete _creative[slot];
+        emit Cleared(slot, from, live);
     }
 }

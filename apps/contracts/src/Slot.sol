@@ -41,9 +41,10 @@ struct SlotInit {
  *
  *      ── Extension ───────────────────────────────────────────────────────
  *
- *      One `hook`. `before` decides and may refuse; `after` records and cannot.
- *      A slot wanting several behaviours points at a composite that fans out,
- *      which keeps the loop in userland and out of the eviction path.
+ *      One `hook`, and one capped call into it per callback. `before` decides
+ *      and may refuse; `after` records and cannot. A slot wanting several
+ *      behaviours points at a hook that implements all of them, so there is no
+ *      loop anywhere near the eviction path.
  */
 contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
     /// @inheritdoc Versioned

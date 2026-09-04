@@ -81,8 +81,8 @@ There is exactly ONE `MinimumTenureHook` per chain. It used to be one per
 duration, minted by a factory at a CREATE2 address; the window a slot enforces is
 now the slot's own `hookData`, so a single deployment serves every duration and
 there is nothing to predict or verify. What a client checks instead is what the
-hook CLAIMS — its `descriptors()` family id — which a `CompositeHook` fanning out
-to a tenure rule answers just as well.
+hook CLAIMS — its `descriptors()` family id — so somebody else's implementation
+of the same rule reads correctly without the client learning its address.
 
 ## ABIs
 
@@ -93,7 +93,6 @@ import {
   offerBookAbi,
   minimumTenureHookAbi,
   minimumTenureHookFactoryAbi,
-  compositeHookAbi,
   adLandAbi,
 } from "@0xslots/contracts";
 ```

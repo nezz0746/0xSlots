@@ -9,7 +9,6 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
 import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../../src/IDescribedHook.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
-import {CompositeHook} from "../../src/hooks/CompositeHook.sol";
 
 /// @dev A hook that works but describes nothing — the case a client must
 ///      degrade on rather than fail on.
@@ -91,13 +90,6 @@ contract DescribedHookTest is Test {
     ///         a rename cannot silently repoint every client that matches it.
     function test_TheFamilyIdsArePinned() public {
         assertEq(tenure.FAMILY(), 0x0d7513dbf4adcafafb5452802cd9f31f7756b1fea3b6105f694902aa59312b8b);
-
-        address[] memory none = new address[](0);
-        HookFlags memory f;
-        assertEq(
-            new CompositeHook(address(this), none, f, "").FAMILY(),
-            0x30bc90144852326f874d76845bb88e420cc26b298e3d6879b68e2947d22f4af1
-        );
     }
 
     /// @notice Two deployments of this hook are indistinguishable, which is
@@ -117,60 +109,7 @@ contract DescribedHookTest is Test {
         assertEq(tenure.tenureOf(bytes32(TENURE)), TENURE);
     }
 
-    // ── composition ──────────────────────────────────────────────────────────
 
-    function test_TheCompositeDescribesItselfAndNamesItsChildren() public {
-        address[] memory kids = new address[](2);
-        kids[0] = address(tenure);
-        kids[1] = address(new SilentHook());
-        HookFlags memory f;
-        f.beforeBuy = true;
-
-        CompositeHook c = new CompositeHook(address(this), kids, f, "ipfs://bafyComposite");
-
-        HookDescriptor[] memory d = c.descriptors();
-        assertEq(d.length, 1, "its own descriptor only");
-        assertEq(d[0].family, keccak256("slots.hook.composite"));
-
-        address[] memory named = abi.decode(d[0].data, (address[]));
-        assertEq(named.length, 2);
-        assertEq(named[0], address(tenure));
-        assertEq(named[1], kids[1]);
-    }
-
-    /// @notice The consumer's walk: read the composite, then each child. This
-    ///         is what recursion buys — the tree survives, so a UI can tell a
-    ///         composite of two from a slot wearing two.
-    function test_AConsumerRecoversTheTreeByWalkingChildren() public {
-        address[] memory inner = new address[](1);
-        inner[0] = address(tenure);
-        HookFlags memory f;
-        f.beforeBuy = true;
-        CompositeHook leaf = new CompositeHook(address(this), inner, f, "");
-
-        address[] memory outerKids = new address[](1);
-        outerKids[0] = address(leaf);
-        CompositeHook root = new CompositeHook(address(this), outerKids, f, "");
-
-        // depth 0
-        assertEq(root.descriptors()[0].family, keccak256("slots.hook.composite"));
-        address[] memory l1 = abi.decode(root.descriptors()[0].data, (address[]));
-        // depth 1 — still a composite
-        assertEq(
-            CompositeHook(l1[0]).descriptors()[0].family,
-            keccak256("slots.hook.composite")
-        );
-        address[] memory l2 = abi.decode(
-            CompositeHook(l1[0]).descriptors()[0].data, (address[])
-        );
-        // depth 2 — the leaf. What it enforces is not asked of it here: the
-        // window belongs to whichever slot attaches this tree, so the walk
-        // recovers the SHAPE and the slot supplies the terms.
-        assertEq(
-            MinimumTenureHook(l2[0]).descriptors()[0].family,
-            keccak256("slots.hook.minimum-tenure")
-        );
-    }
 
     // ── the rule that keeps it safe ──────────────────────────────────────────
 

@@ -236,9 +236,9 @@ await client.proposeTerms(slot, {
 });
 ```
 
-A slot wanting more than one behaviour points at a `CompositeHook`, which
-forwards the same `hookData` to every child — so at most one child may take
-configuration, and the rest must be indifferent to it.
+A slot wanting more than one behaviour points at one hook that implements all of
+them. That hook owns the whole 32 bytes and may pack several fields into a
+single word — the layout is its own, and `validateHookData` is where it says so.
 
 ### Multicall
 

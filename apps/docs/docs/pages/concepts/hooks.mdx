@@ -132,21 +132,22 @@ collection; the rest goes to the recipient. That is how a hook author gets paid
 for building something on slots they do not own — declared up front and visible
 before anyone commits.
 
-## Many behaviours: compose
+## Many behaviours: one hook
 
-A slot points at **exactly one** hook. To want several — a minimum tenure *and* a
-feed *and* a fee — you point at a **`CompositeHook`** that fans out to children.
+A slot points at **exactly one** hook, and the core makes **one** capped call
+into it per callback. To want several behaviours — a minimum tenure *and* a feed
+*and* a fee — you write one hook that does all three.
 
-Keeping the fan-out in userland is not tidiness. The core makes **one** capped
-call, and that single cap bounds the whole subtree beneath it, so a badly built
-composite harms only the slot that chose it.
+One contract, one stipend, one `msg.sender`: every callback costs a known
+maximum, and the slot is always the caller. A hook that needs configuration owns
+the slot's whole `hookData` word and decides for itself what the bytes mean.
 
 ```mermaid
 flowchart LR
-    Slot -->|one capped call| C["CompositeHook"]
-    C --> H1["Minimum tenure"]
-    C --> H2["Feed post"]
-    C --> H3["Fee split"]
+    Slot -->|one capped call| H["Your hook"]
+    H --> B1["Minimum tenure"]
+    H --> B2["Feed post"]
+    H --> B3["Fee split"]
 ```
 
 ## Naming what a hook is
