@@ -106,11 +106,10 @@ abstract contract SlotHooks is SlotStorage {
      *      subscriptions set, and `before` is fail-closed — so the reward for
      *      answering nonsense would be a veto over every buy.
      */
-    function _tryReadHookFlags(address h, bytes32 data)
-        internal
-        view
-        returns (bool ok, uint8 packed)
-    {
+    function _tryReadHookFlags(
+        address h,
+        bytes32 data
+    ) internal view returns (bool ok, uint8 packed) {
         if (h == address(0)) return (false, 0);
 
         // HALF each, so the PAIR costs what the single call used to. The
@@ -126,14 +125,7 @@ abstract contract SlotHooks is SlotStorage {
         bytes memory cd = abi.encodeCall(ISlotHook.validateHookData, (data));
         bool answered;
         assembly ("memory-safe") {
-            answered := staticcall(
-                stipend,
-                h,
-                add(cd, 0x20),
-                mload(cd),
-                0,
-                0
-            )
+            answered := staticcall(stipend, h, add(cd, 0x20), mload(cd), 0, 0)
         }
         if (!answered) return (false, 0);
 
@@ -182,11 +174,10 @@ abstract contract SlotHooks is SlotStorage {
      *      same argument. The slot cannot judge an opaque word, so it asks the
      *      only party that can, once, while it is still fixable.
      */
-    function _readHookFlags(address h, bytes32 data)
-        internal
-        view
-        returns (uint8 packed)
-    {
+    function _readHookFlags(
+        address h,
+        bytes32 data
+    ) internal view returns (uint8 packed) {
         if (h == address(0)) return 0;
 
         // Together, always. The flags and the configuration are the two halves
@@ -214,14 +205,7 @@ abstract contract SlotHooks is SlotStorage {
         uint256 depositAmount
     ) internal view returns (SlotContext memory) {
         return
-            _ctxFor(
-                caller,
-                account,
-                newPrice,
-                depositAmount,
-                hookData,
-                taxBps
-            );
+            _ctxFor(caller, account, newPrice, depositAmount, hookData, taxBps);
     }
 
     /// @dev `_ctx` with the outgoing terms named rather than read.
