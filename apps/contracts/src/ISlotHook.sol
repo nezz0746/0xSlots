@@ -14,8 +14,12 @@ pragma solidity ^0.8.24;
  *      `newPrice` is a proposal rather than a fact.
  */
 struct SlotContext {
-    /// The slot itself. Always `msg.sender`, passed explicitly so a hook
-    /// serving many slots does not have to trust its own call frame.
+    /// The slot itself — `msg.sender` WHEN THE SLOT IS CALLING, and passed
+    /// explicitly so a hook serving many slots can key on it.
+    ///
+    /// It is not proof of anything on its own. A hook's `after` functions are
+    /// external, so anyone may call one with a context they invented; only the
+    /// slot fills this in honestly. See the note on `after` below.
     address slot;
     /// Who called the slot. NOT necessarily the occupant — `buy` lets one
     /// address pay and another be seated.
@@ -115,6 +119,23 @@ struct HookFlags {
  *
  *      A hook that wants to record something about a decision does it in the
  *      matching `after`. There is deliberately no way to write during `before`.
+ *
+ *      ── `after` callbacks are world-callable ────────────────────────────
+ *
+ *      They are `external` and state-changing, so a hook must assume `ctx` is
+ *      whatever the caller wrote. When the SLOT calls, every field is built
+ *      from its own storage and is true; when anybody else does, none of it is.
+ *
+ *      Two ways to be safe, and the choice is the hook author's:
+ *
+ *        - `require(msg.sender == ctx.slot)` — cheap, and authenticates the
+ *          whole context at once. Fine for a lenient hook.
+ *        - read the slot instead of the argument — `occupant()`, `hookData()`
+ *          — which costs a staticcall and is indifferent to who is calling.
+ *          Preferable for a `strict` hook, where a revert is a stuck slot.
+ *
+ *      What is NOT safe is keying storage on `ctx` without either. Two shipped
+ *      hooks did exactly that, and both were bugs.
  *
  *      ── One hook per slot ───────────────────────────────────────────────
  *

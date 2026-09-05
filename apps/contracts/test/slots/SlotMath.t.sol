@@ -101,4 +101,5 @@ contract SlotMathTest is Test {
         assertGt(SlotMath.depositFor(price, taxBps, window), 0, "mulDiv does not");
         assertGt(SlotMath.taxFor(price, taxBps, window), 0);
     }
+
 }
