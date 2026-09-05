@@ -1,0 +1,20 @@
+[
+  {
+    "label": "_creative",
+    "slot": "0",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "slotOf",
+    "slot": "1",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "pendingOf",
+    "slot": "2",
+    "offset": 0,
+    "bytes": 32
+  }
+]
