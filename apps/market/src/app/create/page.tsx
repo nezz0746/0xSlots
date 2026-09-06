@@ -95,7 +95,7 @@ export default function CreatePage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 pb-28 pt-14 sm:px-8 sm:pt-20">
-      <h1 className="font-display text-4xl leading-none sm:text-5xl">
+      <h1 className="text-4xl font-semibold leading-none tracking-[-0.035em] sm:text-5xl">
         Open a collection
       </h1>
       <p className="mt-5 max-w-[48ch] text-[15px] leading-relaxed text-dim">

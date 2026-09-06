@@ -28,10 +28,7 @@ export function Header() {
   return (
     <header className="border-b border-border">
       <div className="mx-auto flex w-full max-w-6xl items-center gap-6 px-5 py-4 sm:px-8">
-        <Link
-          href="/"
-          className="expanded text-[15px] font-extrabold uppercase tracking-[0.08em]"
-        >
+        <Link href="/" className="text-[15px] font-semibold tracking-[-0.02em]">
           Slotmarket
         </Link>
 

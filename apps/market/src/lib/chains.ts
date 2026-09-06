@@ -1,6 +1,6 @@
 import { slotBoundNftFactoryAddress } from "@0xslots/contracts/slots";
 import { apiUrlFor, LOCAL_API_URL, type SlotsEnvironment } from "@0xslots/sdk";
-import type { Address } from "viem";
+import type { Address, Chain } from "viem";
 import { anvil, base, baseSepolia } from "viem/chains";
 
 /**
@@ -14,12 +14,23 @@ import { anvil, base, baseSepolia } from "viem/chains";
  * Anvil is included in development only. It is where the protocol currently
  * runs, so a build with no testnet deployment still has somewhere to point.
  */
-export const CHAINS = [baseSepolia, base, anvil] as const;
+const isDev = process.env.NODE_ENV === "development";
 
-export type SupportedChainId = (typeof CHAINS)[number]["id"];
+/**
+ * Anvil leads in development, and that ordering is load-bearing.
+ *
+ * wagmi's `mock` connector — the click-to-send local accounts — answers
+ * `chains[0]` for its own chain id wherever it is not told otherwise, and that
+ * answer is what viem checks a transaction against. With a testnet first,
+ * connecting a local account produced "the current chain of the wallet does
+ * not match the target chain" on every write, and no override of the
+ * connector's own methods reaches the state that decides it.
+ */
+export const CHAINS = (
+  isDev ? [anvil, baseSepolia, base] : [baseSepolia, base]
+) as [Chain, ...Chain[]];
 
-export const DEFAULT_CHAIN_ID: SupportedChainId =
-  process.env.NODE_ENV === "production" ? baseSepolia.id : anvil.id;
+export const DEFAULT_CHAIN_ID: number = isDev ? anvil.id : baseSepolia.id;
 
 /**
  * The collection factory on a chain, or `undefined` where it is not deployed.

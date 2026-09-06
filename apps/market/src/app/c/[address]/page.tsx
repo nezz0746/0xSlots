@@ -5,6 +5,7 @@ import type { Address } from "viem";
 import { useAccount } from "wagmi";
 
 import { BuyPanel } from "@/components/buy-panel";
+import { HoldPanel } from "@/components/hold-panel";
 import { MintPanel } from "@/components/mint-panel";
 import { TokenGrid } from "@/components/token-grid";
 import { useActiveChain } from "@/hooks/use-active-chain";
@@ -22,12 +23,20 @@ export default function CollectionPage({
   const collection = address as Address;
 
   const { chainId } = useActiveChain();
+  // Named apart from the route's `address`, which is the collection. The two
+  // are both addresses and both in scope, and comparing a token's owner
+  // against the wrong one is a mistake nothing would report.
+  const { address: wallet } = useAccount();
 
   const { data: c, isLoading } = useCollection(chainId, collection);
   const { data: tokens } = useTokens(chainId, collection);
 
   const [selected, setSelected] = useState<string | null>(null);
   const token = tokens?.find((t) => t.tokenId === selected) ?? null;
+  // Holding a work and wanting one are different panels, because they are
+  // different sets of actions — not one panel with the buttons greyed out.
+  const mine =
+    !!token && !!wallet && token.owner.toLowerCase() === wallet.toLowerCase();
 
   if (isLoading)
     return (
@@ -49,7 +58,7 @@ export default function CollectionPage({
   return (
     <div className="mx-auto w-full max-w-6xl px-5 pb-28 sm:px-8">
       <header className="border-b border-line pb-8 pt-14 sm:pt-20">
-        <h1 className="font-display text-4xl leading-none sm:text-5xl">
+        <h1 className="text-4xl font-semibold leading-none tracking-[-0.035em] sm:text-5xl">
           {c.name || "Untitled"}
         </h1>
         <p className="mt-3 text-[12px] uppercase tracking-[0.16em] text-dim">
@@ -86,7 +95,14 @@ export default function CollectionPage({
         {/* Beside the hang on a laptop, under it on a phone — in the flow of
             the page either way. Nothing slides up over the work. */}
         <aside className="order-first lg:order-none lg:sticky lg:top-8 lg:self-start">
-          {token ? (
+          {token && mine ? (
+            <HoldPanel
+              chainId={chainId}
+              tokenId={token.tokenId}
+              slot={token.slot}
+              currency={c.currency}
+            />
+          ) : token ? (
             <BuyPanel
               chainId={chainId}
               tokenId={token.tokenId}

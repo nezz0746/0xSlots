@@ -9,12 +9,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { createConfig, http, WagmiProvider } from "wagmi";
 import { anvil, base, baseSepolia } from "wagmi/chains";
-
 import { ChainProvider } from "@/hooks/use-active-chain";
+import { anvilConnectors } from "@/lib/anvil-connectors";
+import { CHAINS } from "@/lib/chains";
 
 const config = createConfig({
-  chains: [baseSepolia, base, anvil],
-  connectors: [],
+  // The same list the pages offer, so the picker can never name a chain
+  // wagmi was not configured for.
+  chains: CHAINS,
+  connectors: anvilConnectors,
   storage: walletStorage("0xslots.market"),
   transports: {
     [baseSepolia.id]: http(),

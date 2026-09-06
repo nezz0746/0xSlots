@@ -18,25 +18,29 @@
   time running out — so the recurring device is a rule that depletes, under a
   collection's supply and under a holder's runway.
 
-  Light, and committed to it. Both the works and the generated plates below sit
-  on one clay ground at every hour; a second palette would be a second design.
+  Light, and committed to it. Both the works and the generated plates sit on
+  one cool near-white ground at every hour; a second palette would be a second
+  design.
 */
 @theme {
-  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  /* Names of things only: the market, a collection, a work. */
-  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
 
-  --color-clay: #e4e1da;
-  --color-lift: #eeebe4;
-  --color-ink: #2a1b2e;
-  --color-dim: #6b6068;
-  --color-line: #cfc9bf;
+  /* Cold, near-white, and deliberately not paper-coloured. The works supply
+     every warm hue on the page; the chrome supplies none, so a plate's ochre
+     or madder is the only thing in its row with a temperature. */
+  --color-paper: #fbfbfc;
+  --color-lift: #f2f3f5;
+  --color-ink: #0e1116;
+  --color-dim: #6b7280;
+  --color-line: #e3e5e8;
   /* Live figures — a price, a valuation, anything standing. */
-  --color-standing: #2c3e9e;
+  --color-standing: #2b4acb;
   /* Time-critical only. Never decoration. */
-  --color-ebbing: #8c2f39;
+  --color-ebbing: #b42318;
   /* Short, not gone. The step between them is the whole warning. */
-  --color-waning: #9a5a12;
+  --color-waning: #b54708;
+  /* Funded, and staying that way. Only ever paired with a word. */
+  --color-live: #067647;
 
   --animate-deplete: deplete 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
 
@@ -53,14 +57,14 @@
 :root {
   color-scheme: light;
 
-  --background: var(--color-clay);
+  --background: var(--color-paper);
   --foreground: var(--color-ink);
   --card: var(--color-lift);
   --card-foreground: var(--color-ink);
-  --popover: var(--color-clay);
+  --popover: var(--color-paper);
   --popover-foreground: var(--color-ink);
   --primary: var(--color-ink);
-  --primary-foreground: var(--color-clay);
+  --primary-foreground: var(--color-paper);
   --secondary: var(--color-lift);
   --secondary-foreground: var(--color-ink);
   --muted: var(--color-lift);
@@ -102,7 +106,8 @@
 }
 
 body {
-  background: var(--color-clay);
+  background: var(--color-paper);
+  letter-spacing: -0.011em;
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
 }
@@ -113,15 +118,9 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Archivo carries a width axis. The masthead and the one statement on the home
-   page are the only places wide enough to want it. */
-.expanded {
-  font-stretch: 125%;
-}
-
 ::selection {
   background: var(--color-ink);
-  color: var(--color-clay);
+  color: var(--color-paper);
 }
 
 :focus-visible {

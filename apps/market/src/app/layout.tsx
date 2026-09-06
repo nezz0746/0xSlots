@@ -1,26 +1,22 @@
 import type { Metadata } from "next";
-import { Archivo, Fraunces } from "next/font/google";
+import { Inter_Tight } from "next/font/google";
 
 import { Header } from "@/components/header";
 import { Providers } from "@/components/providers";
 import { WalletOverlay } from "@/components/wallet-overlay";
 import "./globals.css";
 
-// One grotesque doing the whole interface, from the 11px figures to the
-// masthead — the width axis is what lets the two ends look like different
-// typefaces without being any.
-const archivo = Archivo({
+// One family for the whole interface, from the 10px labels to the masthead.
+// Tight by construction rather than by tracking, which is what keeps a 48px
+// headline and an 11px figure looking like the same voice at both ends.
+//
+// A second, warmer display face used to name collections and works. It went
+// when the ground did: against a cool near-white the contrast read as two
+// designs rather than one, and the plates already supply all the personality
+// this page needs. Weight and size carry the hierarchy now.
+const interTight = Inter_Tight({
   subsets: ["latin"],
-  axes: ["wdth"],
-  variable: "--font-archivo",
-});
-
-// Names of things. Its optical-size axis is why a collection title at 40px and
-// the same title at 14px in a list both read as the same voice.
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  axes: ["opsz", "WONK"],
-  variable: "--font-fraunces",
+  variable: "--font-inter-tight",
 });
 
 export const metadata: Metadata = {
@@ -37,7 +33,7 @@ export default function RootLayout({
   return (
     // Font variables belong on <html>: Tailwind's @theme emits --font-sans into
     // :root, and a source variable one level down resolves to nothing.
-    <html lang="en" className={`${archivo.variable} ${fraunces.variable}`}>
+    <html lang="en" className={interTight.variable}>
       <body className="font-sans">
         <Providers>
           <Header />

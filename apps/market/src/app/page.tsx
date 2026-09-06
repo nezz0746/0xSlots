@@ -25,11 +25,15 @@ export default function CollectionsPage() {
 
   return (
     <>
-      <section className="mx-auto w-full max-w-6xl px-5 pb-14 pt-16 sm:px-8 sm:pb-20 sm:pt-24">
-        <h1 className="expanded max-w-[19ch] text-[2.6rem] font-extrabold leading-[0.95] tracking-[-0.02em] sm:text-6xl">
+      {/* A header, not a hero. It was set as a 60px statement across two
+          lines, which gave the page's one sentence more room than the works
+          it introduces — and on arrival you scrolled past a manifesto to
+          reach the market. It says the same thing at reading size. */}
+      <section className="mx-auto w-full max-w-6xl px-5 pb-8 pt-10 sm:px-8">
+        <h1 className="text-[17px] font-semibold leading-none tracking-[-0.02em]">
           Nothing here is off the market.
         </h1>
-        <p className="mt-6 max-w-[58ch] text-[16px] leading-relaxed text-dim">
+        <p className="mt-2 max-w-[62ch] text-[13px] leading-relaxed text-dim">
           Every work is held at a price its holder named, and pays rent on that
           number for as long as they keep it. Name a higher one and it is yours.
         </p>
@@ -97,7 +101,7 @@ function Band({
             ))}
           </div>
 
-          <h2 className="font-display text-2xl leading-none">
+          <h2 className="text-2xl font-semibold leading-none tracking-[-0.03em]">
             {collection.name || "Untitled"}
             <span className="ml-3 font-sans text-[12px] uppercase tracking-[0.14em] text-dim">
               {collection.symbol}

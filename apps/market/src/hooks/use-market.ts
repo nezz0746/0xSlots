@@ -76,6 +76,8 @@ export function useCollection(chainId: number, address?: Address) {
   return useQuery({
     queryKey: ["collection", chainId, address],
     enabled: !!address,
+    // Supply moves whenever anyone mints, not only when this tab does.
+    refetchInterval: 10_000,
     queryFn: async () => {
       const d = await query<{ collection: IndexedCollection | null }>(
         chainId,

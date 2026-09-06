@@ -17,7 +17,9 @@
  */
 
 /* Printing inks rather than a hue wheel. A generated hue lands wherever the
-   address does, including on the two colours this app reserves for meaning. */
+   address does, including on the colours this app reserves for meaning.
+   These are also the only warm colour on the page now that the chrome is
+   cool near-white, which is the point: the works carry the temperature. */
 const INKS = [
   "#2c3e9e", // ultramarine
   "#8c2f39", // oxblood
@@ -83,7 +85,7 @@ export function Plate({
       preserveAspectRatio="xMidYMid slice"
     >
       <title>{label}</title>
-      <rect width="100" height="100" fill="#eeebe4" />
+      <rect width="100" height="100" fill="#f2f3f5" />
       <g style={{ mixBlendMode: "multiply" }}>
         {composition(at(2) % 4, { at, unit, ink, over })}
       </g>

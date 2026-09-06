@@ -4,8 +4,9 @@ import type { Address } from "viem";
 import { useAccount } from "wagmi";
 
 import { Plate } from "@/components/plate";
+import { useCurrency } from "@/hooks/use-currency";
 import { useTokenArt, useTokenSlot } from "@/hooks/use-market";
-import { amount, isNative, truncate } from "@/lib/format";
+import { amount, truncate } from "@/lib/format";
 import type { IndexedToken } from "@/lib/indexer";
 
 /**
@@ -74,9 +75,9 @@ function Work({
   // the slot knows what it currently costs, and that is what is being clicked.
   const { data: slot } = useTokenSlot(chainId, token.slot);
   const { data: art } = useTokenArt(baseURI, token.tokenId);
+  const { symbol, decimals } = useCurrency(chainId, currency);
 
   const mine = address?.toLowerCase() === token.owner.toLowerCase();
-  const symbol = isNative(currency) ? "ETH" : "";
 
   return (
     <li>
@@ -105,7 +106,7 @@ function Work({
           {mine && <span className="text-[11px] text-standing">yours</span>}
         </div>
         <div className="mt-1 tabular text-[15px]">
-          {slot ? amount(slot.price, 18, symbol) : "—"}
+          {slot ? amount(slot.price, decimals, symbol) : "—"}
         </div>
         <div className="mt-0.5 truncate text-[11px] text-dim">
           {slot?.isVacant ? "unheld" : truncate(token.owner)}

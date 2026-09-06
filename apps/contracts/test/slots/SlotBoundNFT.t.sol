@@ -594,6 +594,18 @@ contract SlotBoundNFTTest is Test {
         SlotInfo memory i = nft.getSlotInfoOf(tokenId);
         assertEq((i.price * i.taxBps) / 10_000, _rent(200 ether), "doubled");
     }
+
+    /// @notice `quoteMint` prices zero as free, which is the trap.
+    /// @dev A caller that consults only the quote sees a mint costing nothing
+    ///      and offers it; the seating then reverts `InvalidPrice` — see
+    ///      {test_AZeroPriceMintIsRefusedByTheCore}. Pinned so the two are read
+    ///      together: a zero quote is not a mintable one.
+    function test_AZeroMintQuotesAsFree() public view {
+        (uint256 total, uint256 price, uint256 deposit) = nft.quoteMint(0);
+        assertEq(total, 0);
+        assertEq(price, 0);
+        assertEq(deposit, 0);
+    }
 }
 
 /// @dev Takes 1% on every transfer, like a reflection token.

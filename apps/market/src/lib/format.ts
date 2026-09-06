@@ -1,14 +1,22 @@
 import { NATIVE_CURRENCY_ADDRESS } from "@0xslots/sdk/slots";
 import { formatUnits } from "viem";
 
-/** A price, with enough precision to be useful and not enough to be noise. */
+/**
+ * A price, with enough precision to be useful and not enough to be noise.
+ *
+ * Anything below the fourth decimal is rendered as a threshold rather than in
+ * exponential notation. Tax accrued over a few seconds is a real figure and it
+ * genuinely is that small, but "6.94e-8 ETH" in a column beside "0.01 ETH" is
+ * a number nobody can rank, and it made the strip look broken. What the reader
+ * needs from that cell is "not nothing, but nothing yet".
+ */
 export function amount(value: bigint, decimals = 18, symbol = ""): string {
   const n = Number(formatUnits(value, decimals));
   const text =
     n === 0
       ? "0"
       : n < 0.0001
-        ? n.toExponential(2)
+        ? "<0.0001"
         : n.toLocaleString(undefined, { maximumFractionDigits: 4 });
   return symbol ? `${text} ${symbol}` : text;
 }

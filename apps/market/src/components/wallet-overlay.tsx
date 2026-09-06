@@ -50,7 +50,7 @@ export function WalletOverlay() {
   return (
     <dialog
       ref={ref}
-      className="m-auto w-[calc(100%-2rem)] max-w-sm border border-line bg-clay p-6 text-ink backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]"
+      className="m-auto w-[calc(100%-2rem)] max-w-sm border border-line bg-paper p-6 text-ink backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]"
     >
       {/* A closed <dialog> still renders its children, so the panels are
           mounted only while one is open — no picker subscribed to connectors,
@@ -100,7 +100,7 @@ function ConnectPanel() {
         {pairing.link && (
           <a
             href={pairing.link}
-            className="mt-5 block border border-ink bg-ink px-3 py-2.5 text-center text-[13px] text-clay"
+            className="mt-5 block border border-ink bg-ink px-3 py-2.5 text-center text-[13px] text-paper"
           >
             Open {pairing.wallet.name}
           </a>
@@ -272,7 +272,9 @@ function Head({
   return (
     <div className="flex items-start gap-4">
       <div className="flex-1">
-        <h2 className="font-display text-lg leading-tight">{title}</h2>
+        <h2 className="text-lg font-semibold leading-tight tracking-[-0.02em]">
+          {title}
+        </h2>
         <p className="mt-1 text-[12px] leading-snug text-dim">{note}</p>
       </div>
       <button
