@@ -78,6 +78,8 @@ export default function CollectionPage({
               chainId={chainId}
               collection={collection}
               baseURI={c.baseURI}
+              totalMinted={minted}
+              collectionName={c.name ?? undefined}
             />
           )}
         </div>

@@ -6,8 +6,9 @@ import { useWalletModal } from "@0xslots/wallet";
 import { useRouter } from "next/navigation";
 import { cloneElement, isValidElement, useId, useState } from "react";
 import { type Address, isAddress, zeroAddress } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 
+import { ArtChoice } from "@/components/art-choice";
 import { CurrencyChoice } from "@/components/currency-choice";
 import { Plate } from "@/components/plate";
 import { TermsPreview } from "@/components/terms-preview";
@@ -22,8 +23,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useActiveChain } from "@/hooks/use-active-chain";
+import { useIpfsUpload } from "@/hooks/use-ipfs-upload";
 import { useClients } from "@/hooks/use-market";
 import { chainName, factoryFor } from "@/lib/chains";
+import { createdCollection } from "@/lib/created-collection";
+import { confirm } from "@/lib/tx";
 
 /** Windows a collection realistically wants, rather than a seconds field. */
 const WINDOWS = [
@@ -50,8 +54,11 @@ export default function CreatePage() {
   const [recipient, setRecipient] = useState("");
   const [manager, setManager] = useState("");
 
-  const [busy, setBusy] = useState(false);
+  const [art, setArt] = useState<File[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const publicClient = usePublicClient({ chainId });
+  const { phase, upload } = useIpfsUpload();
 
   const factory = factoryFor(chainId);
   const taxBps = BigInt(Math.round(Number(taxPct || "0") * 100));
@@ -62,6 +69,19 @@ export default function CreatePage() {
   // the easiest way to deploy one that pays nobody.
   const recipientAddr = (recipient || address || "") as string;
 
+  /**
+   * Deploy, upload, point at the art — in that order, and only that order.
+   *
+   * The folder is named after the collection's address, which does not exist
+   * until the first transaction is mined, so the art cannot go up first. That
+   * is also why this is one submission rather than three buttons: a creator
+   * who deployed and then closed the tab would have a collection whose works
+   * show nothing, and no obvious way back to finishing the job.
+   *
+   * Each phase is survivable on its own. A failed upload leaves a deployed
+   * collection with no art, which the Metadata dialog on its page can still
+   * fix — so the error says that rather than implying the whole thing is lost.
+   */
   async function create() {
     setError(null);
     try {
@@ -89,13 +109,38 @@ export default function CreatePage() {
       // The SDK refuses what the factory would refuse, before spending gas.
       assertCollectionInit(init);
 
-      setBusy(true);
-      await collections.createCollection(init);
-      router.push("/");
+      setBusy("Opening the collection…");
+      const hash = await collections.createCollection(init);
+      setBusy("Confirming…");
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash });
+      if (!receipt || receipt.status !== "success")
+        throw new Error("The collection was not created.");
+
+      const created = createdCollection(receipt);
+      if (!created)
+        throw new Error(
+          "The collection was created but its address could not be read.",
+        );
+
+      if (art.length > 0) {
+        // Progress for this phase is the uploader's own; `busy` only names it.
+        setBusy("Uploading the art…");
+        const root = await upload(created, art, 1, name.trim());
+        if (!root)
+          throw new Error(
+            "The collection is deployed, but the art did not upload. Open it and try again from Metadata.",
+          );
+
+        setBusy("Pointing it at the art…");
+        const set = await collections.setBaseURI(created, `ipfs://${root}/`);
+        await confirm(publicClient, set);
+      }
+
+      router.push(`/c/${created}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -139,6 +184,15 @@ export default function CreatePage() {
                 placeholder="BND"
               />
             </Field>
+            <div className="sm:col-span-3">
+              <ArtChoice
+                files={art}
+                onChange={setArt}
+                maxSupply={Number(maxSupply || "0")}
+                phase={phase}
+                disabled={!!busy}
+              />
+            </div>
             <Field label="Max supply">
               <Input
                 value={maxSupply}
@@ -196,10 +250,13 @@ export default function CreatePage() {
             <Button
               type="submit"
               size="lg"
-              disabled={!factory || busy}
+              disabled={!factory || !!busy}
               className="w-full sm:w-auto"
             >
-              {busy ? "Opening…" : "Open collection"}
+              {/* The phase, not a spinner. This submission is three steps and
+                  two of them ask the wallet, so "Opening…" for the whole run
+                  would leave the second prompt looking like a duplicate. */}
+              {busy ?? "Open collection"}
             </Button>
           ) : (
             <Button

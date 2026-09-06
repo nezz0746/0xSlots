@@ -164,19 +164,45 @@ export function useTokenArt(
     retry: false,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const res = await fetch(gateway(`${baseURI}${tokenId}`));
+      const url = gateway(`${baseURI}${tokenId}`);
+      const res = await fetch(url);
       if (!res.ok) return null;
-      const meta = (await res.json()) as { image?: string; name?: string };
-      return meta.image
-        ? { image: gateway(meta.image), name: meta.name }
-        : null;
+
+      // Two conventions, because both exist and one of them was ours. ERC-721
+      // says `tokenURI` names a JSON document with an `image` field, which is
+      // what an upload through this app now writes. But pointing a base
+      // straight at images is the obvious thing to do by hand, and reading
+      // that as JSON threw — which surfaced as the generated plate,
+      // indistinguishable from having no art at all.
+      const type = res.headers.get("content-type") ?? "";
+      if (type.startsWith("image/") || type.startsWith("video/"))
+        return { image: url, name: undefined };
+
+      try {
+        const meta = (await res.json()) as { image?: string; name?: string };
+        return meta.image
+          ? { image: gateway(meta.image), name: meta.name }
+          : null;
+      } catch {
+        return null;
+      }
     },
   });
 }
 
-/** ipfs:// is not a scheme a browser fetches. */
+/**
+ * ipfs:// is not a scheme a browser fetches, and a public gateway is not a
+ * host it can fetch FROM.
+ *
+ * Reading metadata means `fetch`, which is cross-origin against a gateway and
+ * fails without CORS — the same URL that returns 200 from a terminal throws
+ * "Failed to fetch" in the page. So reads go through this app's own route,
+ * which fetches server-side. That also lets a deployment point at Économe's
+ * own node, which holds the pins and serves a fresh upload immediately rather
+ * than after the DHT has caught up.
+ */
 function gateway(uri: string): string {
   return uri.startsWith("ipfs://")
-    ? `https://ipfs.io/ipfs/${uri.slice("ipfs://".length)}`
+    ? `/api/ipfs/${uri.slice("ipfs://".length)}`
     : uri;
 }

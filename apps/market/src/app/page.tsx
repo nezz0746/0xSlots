@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { Plate } from "@/components/plate";
+import { CollectionStrip } from "@/components/collection-strip";
 import { useActiveChain } from "@/hooks/use-active-chain";
 import { useCollections } from "@/hooks/use-market";
 import { chainName, factoryFor } from "@/lib/chains";
@@ -88,16 +88,13 @@ function Band({
         className="group block px-1 py-6 transition-colors hover:bg-lift"
       >
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-3">
-          {/* The collection's own mark, cut from its address. Four plates
-              rather than one: a collection is a set, and a lone square reads as
-              a logo. Sized, not proportioned — the row is baseline-aligned, so
-              an aspect ratio here has no height to take a ratio of. */}
-          <div className="flex shrink-0 gap-1 self-center" aria-hidden>
-            {[0, 1, 2, 3].map((n) => (
-              <div key={n} className="size-9 overflow-hidden">
-                <Plate seed={`${collection.id}0${n}`} />
-              </div>
-            ))}
+          {/* The collection's first four works, or its own mark cut from its
+              address until they exist. Four rather than one: a collection is a
+              set, and a lone square reads as a logo. Sized, not proportioned —
+              the row is baseline-aligned, so an aspect ratio here has no
+              height to take a ratio of. */}
+          <div className="shrink-0 self-center">
+            <CollectionStrip collection={collection} />
           </div>
 
           <h2 className="text-2xl font-semibold leading-none tracking-[-0.03em]">

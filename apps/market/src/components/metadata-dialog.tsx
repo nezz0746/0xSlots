@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UploadArt } from "@/components/upload-art";
 import { useClients } from "@/hooks/use-market";
 import { confirm } from "@/lib/tx";
 
@@ -39,11 +40,18 @@ export function MetadataDialog({
   chainId,
   collection,
   baseURI,
+  totalMinted,
+  collectionName,
 }: {
   chainId: number;
   collection: Address;
   /** What the collection currently points at, from the indexer. */
   baseURI: string | null;
+  /** How many works exist, so an upload continues the run rather than
+   *  overwriting it. */
+  totalMinted: number;
+  /** Names the metadata documents an upload writes. */
+  collectionName?: string;
 }) {
   const { collections, canWrite } = useClients(chainId);
   const queryClient = useQueryClient();
@@ -100,6 +108,18 @@ export function MetadataDialog({
             Each token resolves to this followed by its number.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Uploading is the ordinary path and typing a base is the escape
+            hatch, so it goes first. Filling the field rather than saving on
+            the creator's behalf: the upload and the on-chain change are
+            separate commitments, and only one of them costs gas. */}
+        <UploadArt
+          collection={collection}
+          startAt={totalMinted + 1}
+          collectionName={collectionName}
+          onUploaded={setDraft}
+          disabled={!!busy}
+        />
 
         <div className="grid gap-1.5">
           <Label htmlFor="base-uri">Base</Label>
