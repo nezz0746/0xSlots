@@ -225,84 +225,82 @@ export function BuyPanel({
         </div>
       )}
 
-      <>
-        <div className="mt-5">
-          <ValuationInput
-            id="buy-valuation"
-            label="Your valuation"
-            value={valuation}
-            onChange={setValuation}
+      <div className="mt-5">
+        <ValuationInput
+          id="buy-valuation"
+          label="Your valuation"
+          value={valuation}
+          onChange={setValuation}
+          decimals={decimals}
+          taxBps={taxBps}
+          symbol={symbol}
+          disabled={!!busy}
+          below={<BalanceLine balance={balance} total={payable} at={at} />}
+        />
+      </div>
+
+      {window > 0n && (
+        <div className="mt-3">
+          <RunwayChoice
+            base={window}
+            mult={mult}
+            onPick={setMult}
+            amountFor={escrowFor}
             decimals={decimals}
-            taxBps={taxBps}
             symbol={symbol}
-            disabled={!!busy}
-            below={<BalanceLine balance={balance} total={payable} at={at} />}
+            disabled={!!busy || valuation <= 0n}
           />
         </div>
+      )}
 
-        {window > 0n && (
-          <div className="mt-3">
-            <RunwayChoice
-              base={window}
-              mult={mult}
-              onPick={setMult}
-              amountFor={escrowFor}
-              decimals={decimals}
-              symbol={symbol}
-              disabled={!!busy || valuation <= 0n}
-            />
-          </div>
-        )}
-
-        {/* No second strip of the same three. The escrow control above
+      {/* No second strip of the same three. The escrow control above
               already names the runway, the rate has not moved, and the button
               names the total — so all that is left to say is how the total
               splits, which is the one thing neither of them shows. */}
-        {valuation > 0n && (
-          <p className="mt-3 text-[11px] leading-snug text-dim">
-            <span className={short ? "text-ebbing" : "text-standing"}>
-              {at(payable)}
-            </span>{" "}
-            in total:{" "}
-            {priceOut > 0n
-              ? `${at(priceOut)} to the holder, ${at(escrow)} escrow you get back`
-              : `${at(escrow)} escrow, and nobody to pay — this one is unheld`}
-            {arrears > 0n && `, ${at(arrears)} tax you still owe this work`}.
-          </p>
-        )}
+      {valuation > 0n && (
+        <p className="mt-3 text-[11px] leading-snug text-dim">
+          <span className={short ? "text-ebbing" : "text-standing"}>
+            {at(payable)}
+          </span>{" "}
+          in total:{" "}
+          {priceOut > 0n
+            ? `${at(priceOut)} to the holder, ${at(escrow)} escrow you get back`
+            : `${at(escrow)} escrow, and nobody to pay — this one is unheld`}
+          {arrears > 0n && `, ${at(arrears)} tax you still owe this work`}.
+        </p>
+      )}
 
-        {premium !== undefined && premium > 0n && (
-          <p className="mt-3 text-[11px] leading-snug text-waning">
-            Inside its window this work cannot be taken below {at(premium)}, ten
-            times the holder&apos;s own price.
-          </p>
-        )}
+      {premium !== undefined && premium > 0n && (
+        <p className="mt-3 text-[11px] leading-snug text-waning">
+          Inside its window this work cannot be taken below {at(premium)}, ten
+          times the holder&apos;s own price.
+        </p>
+      )}
 
-        {canWrite ? (
-          <Button
-            type="button"
-            size="block"
-            className="mt-4"
-            disabled={!!busy || valuation <= 0n || short}
-            onClick={buy}
-          >
-            {busy ??
-              (valuation > 0n
-                ? `Take it for ${at(payable)}`
-                : "Name a valuation")}
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            size="block"
-            variant="outline"
-            className="mt-4"
-            onClick={openConnect}
-          >
-            Connect a wallet
-          </Button>
-        )}
-      </>
+      {canWrite ? (
+        <Button
+          type="button"
+          size="block"
+          className="mt-4"
+          disabled={!!busy || valuation <= 0n || short}
+          onClick={buy}
+        >
+          {busy ??
+            (valuation > 0n
+              ? `Take it for ${at(payable)}`
+              : "Name a valuation")}
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          size="block"
+          variant="outline"
+          className="mt-4"
+          onClick={openConnect}
+        >
+          Connect a wallet
+        </Button>
+      )}
 
       {error && (
         <p

@@ -103,6 +103,18 @@ describe("minting", () => {
     await expect(client.approveMint(COLLECTION, 1n)).rejects.toThrow(/native/);
   });
 
+  it("setBaseURI writes to the collection itself, verbatim", async () => {
+    const { client, writeContract } = harness({});
+
+    await client.setBaseURI(COLLECTION, "https://art.example/meta/");
+
+    const call = sent(writeContract, "setBaseURI");
+    expect(call.address).toBe(COLLECTION);
+    // Verbatim, trailing slash included: `tokenURI` is this plus the id, so
+    // normalising it here would silently change what every token resolves to.
+    expect(call.args).toEqual(["https://art.example/meta/"]);
+  });
+
   it("a zero valuation is refused before it reaches the chain", async () => {
     const { client, writeContract } = harness({});
     await expect(client.mint(COLLECTION, 0n)).rejects.toThrow(/> 0/);

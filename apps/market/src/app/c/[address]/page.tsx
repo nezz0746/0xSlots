@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 
 import { BuyPanel } from "@/components/buy-panel";
 import { HoldPanel } from "@/components/hold-panel";
+import { MetadataDialog } from "@/components/metadata-dialog";
 import { MintPanel } from "@/components/mint-panel";
 import { TokenGrid } from "@/components/token-grid";
 import { useActiveChain } from "@/hooks/use-active-chain";
@@ -37,6 +38,10 @@ export default function CollectionPage({
   // different sets of actions — not one panel with the buttons greyed out.
   const mine =
     !!token && !!wallet && token.owner.toLowerCase() === wallet.toLowerCase();
+  // The collection's owner, which is a different thing from holding one of its
+  // works: metadata only, and only for them.
+  const owns =
+    !!wallet && !!c?.owner && c.owner.toLowerCase() === wallet.toLowerCase();
 
   if (isLoading)
     return (
@@ -58,12 +63,24 @@ export default function CollectionPage({
   return (
     <div className="mx-auto w-full max-w-6xl px-5 pb-28 sm:px-8">
       <header className="border-b border-line pb-8 pt-14 sm:pt-20">
-        <h1 className="text-4xl font-semibold leading-none tracking-[-0.035em] sm:text-5xl">
-          {c.name || "Untitled"}
-        </h1>
-        <p className="mt-3 text-[12px] uppercase tracking-[0.16em] text-dim">
-          {c.symbol}
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-semibold leading-none tracking-[-0.035em] sm:text-5xl">
+              {c.name || "Untitled"}
+            </h1>
+            <p className="mt-3 text-[12px] uppercase tracking-[0.16em] text-dim">
+              {c.symbol}
+            </p>
+          </div>
+          {/* Only the owner has anything to set, so only they see the way in. */}
+          {owns && (
+            <MetadataDialog
+              chainId={chainId}
+              collection={collection}
+              baseURI={c.baseURI}
+            />
+          )}
+        </div>
 
         <dl className="mt-9 grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
           <Fact label="Held">

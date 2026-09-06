@@ -211,6 +211,16 @@ export class CollectionsClient {
     return this.read(collection, "getSlotInfoOf", [tokenId]);
   }
 
+  /** Where `tokenURI` is built from. Empty until the owner sets one. */
+  baseURI(collection: Address): Promise<string> {
+    return this.read<string>(collection, "baseURI");
+  }
+
+  /** The address that may set the baseURI, and may do nothing else. */
+  owner(collection: Address): Promise<Address> {
+    return this.read<Address>(collection, "owner");
+  }
+
   isCollection(address: Address): Promise<boolean> {
     return this.publicClient.readContract({
       address: this.factory,
@@ -269,6 +279,25 @@ export class CollectionsClient {
       chain: this.chain,
       ...(isNativeCurrency(terms.currency) ? { value: total } : {}),
     } as never);
+  }
+
+  /**
+   * Point the collection's metadata somewhere. Owner only.
+   *
+   * The whole of what ownership is for here — it confers no power over the
+   * terms, the slots, or anybody's tokens. `tokenURI` is this plus the id, so
+   * a trailing slash is almost always wanted and its absence is the usual
+   * reason a collection renders nothing.
+   */
+  setBaseURI(collection: Address, newBaseURI: string): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: collection,
+      abi: slotBoundNftAbi,
+      functionName: "setBaseURI",
+      args: [newBaseURI],
+      account: this.account,
+      chain: this.chain,
+    } as never) as Promise<Hash>;
   }
 
   /**

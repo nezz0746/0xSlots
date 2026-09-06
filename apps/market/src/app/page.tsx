@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useAccount } from "wagmi";
 
 import { Plate } from "@/components/plate";
 import { useActiveChain } from "@/hooks/use-active-chain";

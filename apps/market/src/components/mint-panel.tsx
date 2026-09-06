@@ -34,6 +34,9 @@ export function MintPanel({
   const balance = useCurrencyBalance(chainId, currency);
 
   const [valuation, setValuation] = useState(0n);
+  // A valuation of zero is the STARTING state as well as an invalid one, so
+  // the explanation below only earns its place once somebody has typed.
+  const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,7 +106,10 @@ export function MintPanel({
           id="mint-valuation"
           label="Valuation"
           value={valuation}
-          onChange={setValuation}
+          onChange={(v) => {
+            setTouched(true);
+            setValuation(v);
+          }}
           decimals={decimals}
           taxBps={taxBps}
           symbol={symbol}
@@ -170,7 +176,7 @@ export function MintPanel({
           no explanation. A price of zero owes zero rent for ever, so nothing
           would ever accrue and nothing could ever be liquidated — the core
           refuses it on every seating, not just on a mint. */}
-      {valuation <= 0n && (
+      {touched && valuation <= 0n && (
         <p className="mt-3 text-[11px] leading-snug text-dim">
           A work cannot be held at nothing. Rent is a share of the price, so a
           price of zero would never come due and the work could never change
