@@ -104,6 +104,7 @@ export default function CollectionPage({
             chainId={chainId}
             currency={c.currency}
             baseURI={c.baseURI}
+            maxSupply={max}
             selected={selected}
             onSelect={setSelected}
           />

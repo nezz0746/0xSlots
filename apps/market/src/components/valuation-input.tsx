@@ -77,6 +77,15 @@ export function ValuationInput({
   const [display, setDisplay] = useState(asNumber);
   const [raw, setRaw] = useState<string | null>(null);
   const [flash, setFlash] = useState<"gain" | "loss" | null>(null);
+  /**
+   * Focus, tracked in React rather than left to `focus-within`.
+   *
+   * The wrapper is what shows focus here — the field inside it suppresses its
+   * own ring, so if the wrapper does not light up there is no indicator at
+   * all. Both class names are written as literals below so the compiler emits
+   * them; a conditional built from fragments is a class Tailwind never sees.
+   */
+  const [focused, setFocused] = useState(false);
 
   const displayRef = useRef(asNumber);
   const prevValue = useRef(value);
@@ -185,7 +194,11 @@ export function ValuationInput({
 
   return (
     <div>
-      <div className="border border-line bg-paper transition-colors focus-within:border-ink">
+      <div
+        className={`border bg-paper transition-colors ${
+          focused ? "border-ink" : "border-line"
+        }`}
+      >
         <div className="flex items-baseline justify-between gap-2 px-2.5 pt-2">
           <label htmlFor={id} className="text-[10px] leading-none text-dim">
             {label}
@@ -206,11 +219,20 @@ export function ValuationInput({
         <div className="flex items-baseline gap-1.5 px-2.5 pb-2">
           <input
             id={id}
+            // The box around this whole control takes the focus ring, so the
+            // field inside it must not take a second one.
+            data-focus-ring="wrapper"
             inputMode="decimal"
             disabled={disabled}
             value={raw ?? format(display)}
-            onFocus={() => setRaw(formatUnits(value, decimals))}
-            onBlur={() => setRaw(null)}
+            onFocus={() => {
+              setFocused(true);
+              setRaw(formatUnits(value, decimals));
+            }}
+            onBlur={() => {
+              setFocused(false);
+              setRaw(null);
+            }}
             onChange={(e) => {
               setRaw(e.target.value);
               const parsed = tryParse(e.target.value, decimals);

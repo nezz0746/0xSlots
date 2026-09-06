@@ -1,5 +1,6 @@
 "use client";
 
+import { NATIVE_CURRENCY_ADDRESS } from "@0xslots/sdk";
 import { assertCollectionInit } from "@0xslots/sdk/slots";
 import { useWalletModal } from "@0xslots/wallet";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,8 @@ import { cloneElement, isValidElement, useId, useState } from "react";
 import { type Address, isAddress, zeroAddress } from "viem";
 import { useAccount } from "wagmi";
 
+import { CurrencyChoice } from "@/components/currency-choice";
+import { Plate } from "@/components/plate";
 import { TermsPreview } from "@/components/terms-preview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +44,9 @@ export default function CreatePage() {
   const [maxSupply, setMaxSupply] = useState("100");
   const [taxPct, setTaxPct] = useState("10");
   const [window, setWindow] = useState<bigint>(604_800n);
-  const [currency, setCurrency] = useState("");
+  // Defaults to the chain's own first token, the same one the explorer picks.
+  const [currency, setCurrency] = useState<string>(NATIVE_CURRENCY_ADDRESS);
+  const [customCurrency, setCustomCurrency] = useState("");
   const [recipient, setRecipient] = useState("");
   const [manager, setManager] = useState("");
 
@@ -50,6 +55,7 @@ export default function CreatePage() {
 
   const factory = factoryFor(chainId);
   const taxBps = BigInt(Math.round(Number(taxPct || "0") * 100));
+  const chosenCurrency = currency === "custom" ? customCurrency : currency;
 
   // Defaulted to the connected wallet rather than left empty. Both are
   // permanent on every slot this collection ever mints, and an empty field is
@@ -66,14 +72,14 @@ export default function CreatePage() {
         throw new Error("Recipient is not an address");
       if (manager && !isAddress(manager))
         throw new Error("Manager is not an address");
-      if (currency && !isAddress(currency))
-        throw new Error("Currency is not an address");
+      if (!isAddress(chosenCurrency))
+        throw new Error("Pick a currency, or give a valid token address");
 
       const init = {
         name: name.trim(),
         symbol: symbol.trim(),
         maxSupply: BigInt(maxSupply || "0"),
-        currency: (currency || zeroAddress) as Address,
+        currency: chosenCurrency as Address,
         taxBps,
         minDepositSeconds: window,
         recipient: recipientAddr as Address,
@@ -155,13 +161,15 @@ export default function CreatePage() {
             <Field label="Funded window" hint="what a mint's escrow buys">
               <WindowSelect value={window} onChange={setWindow} />
             </Field>
-            <Field label="Currency" hint="blank for native ETH">
-              <Input
+            <div className="sm:col-span-3">
+              <CurrencyChoice
+                chainId={chainId}
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                placeholder="0x… or blank"
+                onChange={setCurrency}
+                custom={customCurrency}
+                onCustom={setCustomCurrency}
               />
-            </Field>
+            </div>
           </Section>
 
           <Section title="Who holds what">
@@ -212,11 +220,45 @@ export default function CreatePage() {
           )}
         </form>
 
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+        <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+          {/* What the collection will look like on the shelf.
+              
+              Seeded from the name and symbol rather than the address, which
+              does not exist yet — so the plates move as they are typed. It is
+              the one part of this form that answers "what am I making" rather
+              than "what are the terms", and without it the page is a settings
+              screen for a thing you cannot see. */}
+          <div>
+            <p className="mb-2 text-[11px] text-dim">On the shelf</p>
+            <div className="border border-line bg-lift p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="w-9">
+                      <Plate seed={`${name}${symbol}${i}`} />
+                    </div>
+                  ))}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold leading-none tracking-[-0.02em]">
+                    {name.trim() || "Untitled"}
+                  </p>
+                  <p className="mt-1.5 text-[10px] uppercase tracking-[0.16em] text-dim">
+                    {symbol.trim() || "———"}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[10px] text-dim">Held</p>
+                  <p className="text-[13px] tabular">0 / {maxSupply || "0"}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <TermsPreview
             taxBps={taxBps}
             minDepositSeconds={window}
-            symbol={currency ? "" : "ETH"}
+            symbol={chosenCurrency === NATIVE_CURRENCY_ADDRESS ? "ETH" : ""}
           />
 
           {/* The two that cannot be undone. Said once, next to the button that

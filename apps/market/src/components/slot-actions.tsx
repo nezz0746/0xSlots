@@ -1,8 +1,15 @@
 "use client";
 
 import { MoreHorizontal } from "lucide-react";
-import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 /**
  * The actions that are not the point of the panel.
@@ -40,54 +47,52 @@ export function SlotActions({
   if (actions.length === 0) return null;
 
   return (
-    <DropdownMenu.Root onOpenChange={(open) => !open && setArmed(null)}>
-      <DropdownMenu.Trigger
-        disabled={disabled}
-        aria-label="More actions"
-        className="-mr-1 -mt-1 grid size-7 shrink-0 place-items-center border border-transparent text-dim transition-colors hover:border-line hover:text-ink disabled:opacity-40"
-      >
-        <MoreHorizontal className="size-4" />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={4}
-          className="z-200 w-64 border border-line bg-paper p-1 text-ink shadow-lg"
+    <DropdownMenu onOpenChange={(open) => !open && setArmed(null)}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={disabled}
+          aria-label="More actions"
+          className="-mr-1 -mt-1 shrink-0 text-muted-foreground"
         >
-          {actions.map((action) => {
-            const asking = armed === action.key;
-            return (
-              <DropdownMenu.Item
-                key={action.key}
-                // Kept open on the first press of a destructive item, so the
-                // confirmation is on the thing being confirmed.
-                onSelect={(e) => {
-                  if (action.destructive && !asking) {
-                    e.preventDefault();
-                    setArmed(action.key);
-                    return;
-                  }
-                  void action.run();
-                }}
-                className={`cursor-default select-none px-2.5 py-2 outline-none transition-colors focus:bg-lift ${
-                  asking ? "bg-ebbing/10" : ""
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        {actions.map((action) => {
+          const asking = armed === action.key;
+          return (
+            <DropdownMenuItem
+              key={action.key}
+              // Kept open on the first press of a destructive item, so the
+              // confirmation is on the thing being confirmed.
+              onSelect={(e) => {
+                if (action.destructive && !asking) {
+                  e.preventDefault();
+                  setArmed(action.key);
+                  return;
+                }
+                void action.run();
+              }}
+              className={`flex-col items-start gap-1 ${
+                asking ? "bg-ebbing/10" : ""
+              }`}
+            >
+              <div
+                className={`text-[13px] leading-none ${
+                  action.destructive ? "text-ebbing" : ""
                 }`}
               >
-                <div
-                  className={`text-[13px] leading-none ${
-                    action.destructive ? "text-ebbing" : ""
-                  }`}
-                >
-                  {asking ? `${action.label} — press again` : action.label}
-                </div>
-                <p className="mt-1 text-[11px] leading-snug text-dim">
-                  {action.note}
-                </p>
-              </DropdownMenu.Item>
-            );
-          })}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+                {asking ? `${action.label} — press again` : action.label}
+              </div>
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                {action.note}
+              </p>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

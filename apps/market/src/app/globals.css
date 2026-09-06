@@ -123,9 +123,33 @@ body {
   color: var(--color-paper);
 }
 
+/*
+  The default focus ring, for anything that does not draw its own — a link, a
+  percentage stepper, a work in the hang.
+*/
 :focus-visible {
   outline: 2px solid var(--color-standing);
   outline-offset: 3px;
+}
+
+/*
+  Controls that already draw one, and the composed ones whose wrapper does.
+
+  This rule has to live here rather than as `outline-none` on the component:
+  the block above is UNLAYERED, and unlayered CSS beats everything in a
+  `@layer` — including every Tailwind utility. So a shadcn input carrying
+  `focus-visible:ring-[3px]` got its own ring AND this outline, and the
+  valuation field got an outline floating inside the box its own wrapper was
+  already outlining. Two rings, three pixels apart.
+
+  Named explicitly rather than as a blanket `[data-slot]`, so a primitive that
+  draws no ring of its own cannot silently lose the only one it had.
+*/
+[data-slot="input"]:focus-visible,
+[data-slot="button"]:focus-visible,
+[data-slot="select-trigger"]:focus-visible,
+[data-focus-ring="wrapper"]:focus-visible {
+  outline: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

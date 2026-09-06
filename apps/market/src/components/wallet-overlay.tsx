@@ -6,58 +6,41 @@ import {
   useWalletModal,
   useWalletPicker,
 } from "@0xslots/wallet";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useState } from "react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const QrCode = lazy(() => import("@0xslots/wallet/qr"));
 
 /**
  * The wallet, in the middle of the market.
  *
- * A `<dialog>` rather than a portal library: the market has no component kit,
- * and the element already does the modal — top layer, backdrop, focus trap,
- * Escape. Centred at every width, including a phone: a sheet sliding up from
- * the bottom is a convention this app follows nowhere else.
+ * Centred at every width, including a phone: a sheet sliding up from the
+ * bottom is a convention this app follows nowhere else. The package supplies
+ * the wallet list and the connection state and nothing visual, so the shell
+ * is the app's own — here, the same dialog every other overlay uses.
  */
 export function WalletOverlay() {
   const { panel, close } = useWalletModal();
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (panel && !el.open) el.showModal();
-    if (!panel && el.open) el.close();
-  }, [panel]);
-
-  // Dismissal is wired natively rather than as JSX handlers: Escape is the
-  // element's own, and the backdrop is part of the dialog's box, so a click
-  // that lands on the element itself rather than on its content is a click
-  // outside it.
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const outside = (e: MouseEvent) => {
-      if (e.target === el) close();
-    };
-    el.addEventListener("click", outside);
-    el.addEventListener("close", close);
-    return () => {
-      el.removeEventListener("click", outside);
-      el.removeEventListener("close", close);
-    };
-  }, [close]);
 
   return (
-    <dialog
-      ref={ref}
-      className="m-auto w-[calc(100%-2rem)] max-w-sm border border-line bg-paper p-6 text-ink backdrop:bg-ink/40 backdrop:backdrop-blur-[2px]"
-    >
-      {/* A closed <dialog> still renders its children, so the panels are
-          mounted only while one is open — no picker subscribed to connectors,
-          and no stale panel in the accessibility tree. */}
-      {panel === "connect" && <ConnectPanel />}
-      {panel === "account" && <AccountPanel />}
-    </dialog>
+    <Dialog open={panel !== null} onOpenChange={(next) => !next && close()}>
+      {/* Mounted only while a panel is open, so nothing subscribes to
+          connectors in the background and no stale panel sits in the
+          accessibility tree. */}
+      {panel !== null && (
+        <DialogContent className="max-w-sm">
+          {panel === "connect" && <ConnectPanel />}
+          {panel === "account" && <AccountPanel />}
+        </DialogContent>
+      )}
+    </Dialog>
   );
 }
 
@@ -85,7 +68,6 @@ function ConnectPanel() {
               ? "Approve the connection in your wallet."
               : "Scan this with the wallet on your phone."
           }
-          onClose={close}
         />
         <div className="mx-auto mt-5 w-full max-w-[15rem] bg-white p-2">
           {pairing.uri ? (
@@ -133,7 +115,6 @@ function ConnectPanel() {
       <Head
         title="Connect a wallet"
         note="Your wallet holds the works you take, and pays their rent."
-        onClose={close}
       />
       <div className="mt-5 grid gap-1.5">
         {wallets.map(({ wallet, choose }) => (
@@ -197,11 +178,7 @@ function AccountPanel() {
 
   return (
     <>
-      <Head
-        title="Your wallet"
-        note={walletName ?? "Connected"}
-        onClose={close}
-      />
+      <Head title="Your wallet" note={walletName ?? "Connected"} />
 
       <button
         type="button"
@@ -260,32 +237,20 @@ function AccountPanel() {
   );
 }
 
-function Head({
-  title,
-  note,
-  onClose,
-}: {
-  title: string;
-  note: string;
-  onClose: () => void;
-}) {
+/**
+ * A panel's heading, as the dialog's own title.
+ *
+ * `DialogTitle` rather than an `h2`: Radix announces it as the dialog's label,
+ * and a modal without one is unlabelled to a screen reader. The close button
+ * went with it — `DialogContent` renders one, and two in the same corner was
+ * the shadcn move showing through the hand-rolled version underneath.
+ */
+function Head({ title, note }: { title: string; note: string }) {
   return (
-    <div className="flex items-start gap-4">
-      <div className="flex-1">
-        <h2 className="text-lg font-semibold leading-tight tracking-[-0.02em]">
-          {title}
-        </h2>
-        <p className="mt-1 text-[12px] leading-snug text-dim">{note}</p>
-      </div>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close"
-        className="-mr-1 -mt-1 px-2 py-1 text-dim transition-colors hover:text-ink"
-      >
-        ×
-      </button>
-    </div>
+    <DialogHeader>
+      <DialogTitle>{title}</DialogTitle>
+      <DialogDescription>{note}</DialogDescription>
+    </DialogHeader>
   );
 }
 
