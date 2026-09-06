@@ -30,3 +30,15 @@ export {
   TERMS_DELAY_SECONDS,
   ZERO_HOOK_DATA,
 } from "./client";
+
+export {
+  assertCollectionInit,
+  type CollectionInit,
+  type CollectionSummary,
+  type CollectionTerms,
+  CollectionsClient,
+  type CollectionsClientConfig,
+  createCollectionsClient,
+  depositFor,
+  type MintQuote,
+} from "./collections";

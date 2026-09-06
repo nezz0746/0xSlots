@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["@0xslots/wallet"],
   images: {
     remotePatterns: [
       {

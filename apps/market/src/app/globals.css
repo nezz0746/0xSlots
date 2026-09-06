@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/*
+  The shadcn semantic layer, mapped onto this market's palette.
+
+  Its primitives are written against `background`/`border`/`ring`/`muted-
+  foreground`, so naming those in terms of clay, line and ink is what lets an
+  unmodified Input or Select arrive already wearing the design. Nothing here is
+  a second palette — every value below is one of the six defined in @theme.
+*/
+
+/*
+  Slotmarket.
+
+  A marketplace where nothing is ever off the market: every work is bound to a
+  slot, so its holder owns it only while they keep paying rent on a price they
+  named themselves. The design has one job the white cube never had — showing
+  time running out — so the recurring device is a rule that depletes, under a
+  collection's supply and under a holder's runway.
+
+  Light, and committed to it. Both the works and the generated plates below sit
+  on one clay ground at every hour; a second palette would be a second design.
+*/
+@theme {
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  /* Names of things only: the market, a collection, a work. */
+  --font-display: var(--font-fraunces), Georgia, serif;
+
+  --color-clay: #e4e1da;
+  --color-lift: #eeebe4;
+  --color-ink: #2a1b2e;
+  --color-dim: #6b6068;
+  --color-line: #cfc9bf;
+  /* Live figures — a price, a valuation, anything standing. */
+  --color-standing: #2c3e9e;
+  /* Time-critical only. Never decoration. */
+  --color-ebbing: #8c2f39;
+  /* Short, not gone. The step between them is the whole warning. */
+  --color-waning: #9a5a12;
+
+  --animate-deplete: deplete 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes deplete {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+
+  --background: var(--color-clay);
+  --foreground: var(--color-ink);
+  --card: var(--color-lift);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-clay);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-ink);
+  --primary-foreground: var(--color-clay);
+  --secondary: var(--color-lift);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-lift);
+  --muted-foreground: var(--color-dim);
+  --accent: var(--color-lift);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-ebbing);
+  --border: var(--color-line);
+  --input: var(--color-line);
+  --ring: var(--color-standing);
+}
+
+/* Square throughout. Each step is pinned rather than derived, so nothing is
+   left rounded by a calc against a base that no longer exists. */
+@theme inline {
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+body {
+  background: var(--color-clay);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Prices, ids and runways are read down columns, so figures line up
+   everywhere rather than per component. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Archivo carries a width axis. The masthead and the one statement on the home
+   page are the only places wide enough to want it. */
+.expanded {
+  font-stretch: 125%;
+}
+
+::selection {
+  background: var(--color-ink);
+  color: var(--color-clay);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-standing);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

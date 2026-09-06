@@ -1,9 +1,9 @@
 "use client";
 
-import "@rainbow-me/rainbowkit/styles.css";
+import { WalletProvider } from "@0xslots/wallet";
+import { DEFAULT_WALLETCONNECT_PROJECT_ID } from "@0xslots/wallet/config";
 
 import { SplitsProvider } from "@0xsplits/splits-sdk-react";
-import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { WagmiProvider } from "wagmi";
@@ -13,6 +13,7 @@ import { ChainProvider } from "@/context/chain";
 import { NavigationProvider } from "@/context/navigation";
 import { createQueryClient } from "@/lib/query-client";
 import { SplitsClientSync } from "./splits-client-sync";
+import { WalletOverlay } from "./wallet/wallet-overlay";
 
 export function WebProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => createQueryClient());
@@ -20,7 +21,13 @@ export function WebProviders({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>
+        <WalletProvider
+          appName="0xSlots"
+          walletConnectProjectId={
+            process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ??
+            DEFAULT_WALLETCONNECT_PROJECT_ID
+          }
+        >
           <ChainProvider>
             <SplitsProvider>
               <SplitsClientSync />
@@ -29,7 +36,8 @@ export function WebProviders({ children }: { children: ReactNode }) {
               </TooltipProvider>
             </SplitsProvider>
           </ChainProvider>
-        </RainbowKitProvider>
+          <WalletOverlay />
+        </WalletProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );

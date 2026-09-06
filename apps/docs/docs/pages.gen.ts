@@ -12,6 +12,7 @@ type Page =
   | { path: '/'; render: 'static' }
   | { path: '/indexer'; render: 'static' }
   | { path: '/overview'; render: 'static' }
+  | { path: '/reference/book'; render: 'static' }
   | { path: '/reference/factory'; render: 'static' }
   | { path: '/reference/hooks'; render: 'static' }
   | { path: '/reference/slot'; render: 'static' }

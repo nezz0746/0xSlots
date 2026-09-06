@@ -1,5 +1,6 @@
 "use client";
 
+import { WalletProvider } from "@0xslots/wallet";
 import { SplitsProvider } from "@0xsplits/splits-sdk-react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
@@ -12,8 +13,9 @@ import { FarcasterProvider, useFarcaster } from "@/context/farcaster";
 import { NavigationProvider } from "@/context/navigation";
 import { createQueryClient } from "@/lib/query-client";
 import { SplitsClientSync } from "./splits-client-sync";
+import { WalletOverlay } from "./wallet/wallet-overlay";
 
-/** Lazy-load the web provider tree (includes RainbowKit) only when needed. */
+/** Lazy-load the web provider tree (includes the wallet picker) only when needed. */
 const WebProviders = dynamic(
   () => import("./web-providers").then((m) => ({ default: m.WebProviders })),
   { ssr: false },
@@ -34,7 +36,7 @@ function FarcasterAutoConnect() {
 }
 
 /**
- * Miniapp provider tree — plain wagmi, no RainbowKit.
+ * Miniapp provider tree — retains the host wallet and shared account controls.
  */
 function MiniAppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => createQueryClient());
@@ -43,14 +45,17 @@ function MiniAppProviders({ children }: { children: ReactNode }) {
     <WagmiProvider config={miniAppConfig}>
       <QueryClientProvider client={queryClient}>
         <FarcasterAutoConnect />
-        <ChainProvider>
-          <SplitsProvider>
-            <SplitsClientSync />
-            <TooltipProvider>
-              <NavigationProvider>{children}</NavigationProvider>
-            </TooltipProvider>
-          </SplitsProvider>
-        </ChainProvider>
+        <WalletProvider appName="0xSlots">
+          <ChainProvider>
+            <SplitsProvider>
+              <SplitsClientSync />
+              <TooltipProvider>
+                <NavigationProvider>{children}</NavigationProvider>
+              </TooltipProvider>
+            </SplitsProvider>
+          </ChainProvider>
+          <WalletOverlay />
+        </WalletProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
@@ -58,7 +63,7 @@ function MiniAppProviders({ children }: { children: ReactNode }) {
 
 /**
  * Detects miniapp environment first via FarcasterProvider, then renders
- * either lightweight miniapp providers or full web providers with RainbowKit.
+ * either lightweight miniapp providers or full web providers with the wallet picker.
  */
 function InnerProviders({ children }: { children: ReactNode }) {
   const { isMiniApp, isReady } = useFarcaster();

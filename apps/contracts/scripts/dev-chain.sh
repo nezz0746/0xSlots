@@ -89,7 +89,7 @@ forge script script/protocol/DeployProtocol.s.sol:DeployProtocol \
 addr() { python3 -c "import json;print(json.load(open('$DEPLOYMENTS/$1.json'))['address'])"; }
 FACTORY=$(addr SlotFactory)
 
-grep -E "^  (SlotFactory|OfferBook|SlotCollectiveFactory)" /tmp/deploy-local.log \
+grep -E "^  (SlotFactory|OfferBook|SlotCollectiveFactory|SlotBoundNFTFactory)" /tmp/deploy-local.log \
   | sed 's/^/  /' || true
 
 # The app pins these addresses (packages/contracts/src/slots.ts). If CREATE2
@@ -135,7 +135,12 @@ cat <<EOF
   chain ready — anvil on $RPC (chainId 31337)
   factory:  $FACTORY
   book:     $(addr OfferBook)
+  nft:      $(addr SlotBoundNFTFactory)
   accounts: anvil default mnemonic, indices 0-4
+
+  explorer:    http://localhost:3300/app?chain=31337
+  marketplace: http://localhost:3400
+  indexer:     http://localhost:42069
   time warp:
     cast rpc evm_increaseTime 604800 --rpc-url $RPC
     cast rpc evm_mine --rpc-url $RPC
