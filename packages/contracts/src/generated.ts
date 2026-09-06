@@ -3114,7 +3114,8 @@ export const slotBoundNftAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- *
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x960438BAEb1586Ac2B3fCfdC3fBa196F1226b45a)
  */
 export const slotBoundNftFactoryAbi = [
   {
@@ -3337,14 +3338,17 @@ export const slotBoundNftFactoryAbi = [
 ] as const
 
 /**
- *
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x960438BAEb1586Ac2B3fCfdC3fBa196F1226b45a)
  */
 export const slotBoundNftFactoryAddress = {
   31337: '0xC7354c33DC392AE9915f5AE78199C1B88C04cFB2',
+  84532: '0x960438BAEb1586Ac2B3fCfdC3fBa196F1226b45a',
 } as const
 
 /**
- *
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x960438BAEb1586Ac2B3fCfdC3fBa196F1226b45a)
  */
 export const slotBoundNftFactoryConfig = {
   address: slotBoundNftFactoryAddress,
