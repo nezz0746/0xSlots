@@ -113,6 +113,26 @@ abstract contract SlotAccounting is SlotHooks {
                 _price,
                 taxBps
             );
+
+            // A charge must always advance the clock, or the same second is
+            // chargeable for ever.
+            //
+            // Both roundings floor, in opposite directions: `taxFor` floors
+            // the amount DOWN, so a fractional per-second rate charges one
+            // wei for one second, and `secondsFor` then floors that one wei
+            // back DOWN to zero seconds. Money moved, `lastSettled` did not,
+            // and the guard at the top of this function never engaged — so
+            // `topUp(0)`, which is free and permissionless, charged the same
+            // second again on every call. Any slot whose per-second tax is
+            // not a whole number of wei could have its escrow emptied at a
+            // single timestamp and its occupant evicted fully funded.
+            //
+            // Only when something was actually taken. `paid == 0` must still
+            // leave the clock alone: that is the window too short to price one
+            // unit, and advancing it is the grind this conversion exists to
+            // prevent.
+            if (paid > 0 && secondsPaid == 0) secondsPaid = 1;
+
             uint256 elapsed = upTo - lastSettled;
             if (secondsPaid >= elapsed) lastSettled = uint64(upTo);
             else lastSettled += uint64(secondsPaid);
@@ -158,6 +178,29 @@ abstract contract SlotAccounting is SlotHooks {
      *      only when the seat does.
      */
     function _applyPending() internal {
+        _applyPending(false);
+    }
+
+    /**
+     * @param mustApply Revert rather than defer when the hook cannot be read.
+     *
+     *      TRUE only from `buy`. The early return below protects a manager's
+     *      proposal from being erased by a starved read, and it was written
+     *      with a griefer in mind — someone spending gas to destroy a change
+     *      that constrains SOMEBODY ELSE. It does not hold when the caller is
+     *      the party the new terms were meant to constrain.
+     *
+     *      `_applyPending` runs before `_before` in `buy`, so a buyer who
+     *      would be vetoed by an incoming hook could pick a gas limit under
+     *      the threshold, skip the application, and be seated under the old
+     *      terms with the new hook never asked. Ripe terms became opt-in for
+     *      the one person they were aimed at.
+     *
+     *      Refusing the buy is safe; the buyer retries with more gas. Refusing
+     *      an eviction is not, which is why `release` and `liquidate` keep the
+     *      early return — rule 1 says nothing may block a liquidation.
+     */
+    function _applyPending(bool mustApply) internal {
         if (!hasRipeTerms()) return;
 
         // Refuse to answer for a hook we cannot afford to ask.
@@ -180,7 +223,10 @@ abstract contract SlotAccounting is SlotHooks {
         if (
             pending.hasHook &&
             gasleft() < (HOOK_GAS * 64) / 63 + HOOK_READ_FLOOR
-        ) return;
+        ) {
+            if (mustApply) revert InsufficientGasForTerms();
+            return;
+        }
 
         if (pending.hasTax) taxBps = pending.taxBps;
         if (pending.hasHook) {

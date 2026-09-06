@@ -67,7 +67,7 @@ abstract contract SlotOccupancy is SlotViews {
         // hook sizing a requirement from `ctx.taxBps` under-charged by
         // the full ratio of the two rates. Asking a policy to judge terms the
         // same transaction is about to discard is not a policy check.
-        _applyPending();
+        _applyPending(true);
         _requireFunded(depositAmount, selfAssessedPrice);
 
         _before(

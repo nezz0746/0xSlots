@@ -33,3 +33,8 @@ error NoPendingTerms();
 error NothingProposed();
 
 error PaymentAboveMax();
+
+/// @dev A buy arrived with too little gas to apply the terms it would be
+///      seated under. Deferring them is how a buyer used to dodge a hook meant
+///      to gate them, so the buy is refused instead. Retry with more gas.
+error InsufficientGasForTerms();
