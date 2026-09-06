@@ -10,6 +10,8 @@ import { useState } from "react";
 import { createConfig, http, WagmiProvider } from "wagmi";
 import { anvil, base, baseSepolia } from "wagmi/chains";
 
+import { ChainProvider } from "@/hooks/use-active-chain";
+
 const config = createConfig({
   chains: [baseSepolia, base, anvil],
   connectors: [],
@@ -42,7 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             DEFAULT_WALLETCONNECT_PROJECT_ID
           }
         >
-          {children}
+          <ChainProvider>{children}</ChainProvider>
         </WalletProvider>
       </QueryClientProvider>
     </WagmiProvider>

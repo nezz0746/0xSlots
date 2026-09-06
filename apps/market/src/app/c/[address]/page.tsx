@@ -7,8 +7,8 @@ import { useAccount } from "wagmi";
 import { BuyPanel } from "@/components/buy-panel";
 import { MintPanel } from "@/components/mint-panel";
 import { TokenGrid } from "@/components/token-grid";
+import { useActiveChain } from "@/hooks/use-active-chain";
 import { useCollection, useTokens } from "@/hooks/use-market";
-import { DEFAULT_CHAIN_ID } from "@/lib/chains";
 import { rate, truncate } from "@/lib/format";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -21,8 +21,7 @@ export default function CollectionPage({
   const { address } = use(params);
   const collection = address as Address;
 
-  const { chainId: connected } = useAccount();
-  const chainId = connected ?? DEFAULT_CHAIN_ID;
+  const { chainId } = useActiveChain();
 
   const { data: c, isLoading } = useCollection(chainId, collection);
   const { data: tokens } = useTokens(chainId, collection);

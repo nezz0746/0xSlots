@@ -2,7 +2,7 @@
 
 import { useWalletModal } from "@0xslots/wallet";
 import Link from "next/link";
-import { useAccount, useSwitchChain } from "wagmi";
+import { useAccount } from "wagmi";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,16 +12,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CHAINS, chainName, DEFAULT_CHAIN_ID } from "@/lib/chains";
+import { useActiveChain } from "@/hooks/use-active-chain";
+import { CHAINS, chainName } from "@/lib/chains";
 import { truncate } from "@/lib/format";
 
 export function Header() {
-  const { address, chain, chainId } = useAccount();
+  const { address, chain } = useAccount();
   const { openConnect, openAccount } = useWalletModal();
-  // Disconnected, wagmi reports no chain — but the pages still read one, so the
-  // header must name the same one they are querying.
-  const active = chainId ?? DEFAULT_CHAIN_ID;
-  const { switchChain } = useSwitchChain();
+  // The chain the PAGES are reading, which is the browsing choice until a
+  // wallet connects and takes over. Never wagmi's directly: disconnected, that
+  // is undefined, and the header would name a different chain from the one
+  // being queried.
+  const { chainId: active, setChain } = useActiveChain();
 
   return (
     <header className="border-b border-border">
@@ -54,14 +56,12 @@ export function Header() {
               phone reaches everything else about their wallet. */}
           <Select
             value={String(active)}
-            disabled={!address}
-            onValueChange={(v) => switchChain({ chainId: Number(v) as never })}
+            onValueChange={(v) => setChain(Number(v))}
           >
             <SelectTrigger
               size="sm"
               aria-label="Network"
               className="hidden w-auto min-w-[8.5rem] sm:flex"
-              title={address ? undefined : "Connect a wallet to switch network"}
             >
               <SelectValue>{chainName(active)}</SelectValue>
             </SelectTrigger>

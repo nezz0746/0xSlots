@@ -18,8 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useActiveChain } from "@/hooks/use-active-chain";
 import { useClients } from "@/hooks/use-market";
-import { chainName, DEFAULT_CHAIN_ID, factoryFor } from "@/lib/chains";
+import { chainName, factoryFor } from "@/lib/chains";
 
 /** Windows a collection realistically wants, rather than a seconds field. */
 const WINDOWS = [
@@ -30,8 +31,8 @@ const WINDOWS = [
 
 export default function CreatePage() {
   const router = useRouter();
-  const { address, chainId: connected } = useAccount();
-  const chainId = connected ?? DEFAULT_CHAIN_ID;
+  const { address } = useAccount();
+  const { chainId } = useActiveChain();
   const { collections, canWrite } = useClients(chainId);
   const { openConnect } = useWalletModal();
 

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 
 import { Plate } from "@/components/plate";
+import { useActiveChain } from "@/hooks/use-active-chain";
 import { useCollections } from "@/hooks/use-market";
-import { chainName, DEFAULT_CHAIN_ID, factoryFor } from "@/lib/chains";
+import { chainName, factoryFor } from "@/lib/chains";
 import { rate } from "@/lib/format";
 import type { IndexedCollection } from "@/lib/indexer";
 
@@ -18,8 +19,7 @@ import type { IndexedCollection } from "@/lib/indexer";
  * under each band IS that figure; the numbers beside it are its caption.
  */
 export default function CollectionsPage() {
-  const { chainId: connected } = useAccount();
-  const chainId = connected ?? DEFAULT_CHAIN_ID;
+  const { chainId } = useActiveChain();
   const { data, isLoading, error } = useCollections(chainId);
   const deployed = !!factoryFor(chainId);
 
