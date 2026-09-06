@@ -177,6 +177,81 @@ export const hook = onchainTable(
 );
 
 /**
+ * A slot-bound NFT collection.
+ *
+ * Chain-scoped, and a plain contract rather than a proxy: an upgrade to the
+ * factory changes what the NEXT collection is, so two collections on one chain
+ * can be running different code. `factory` records which one made this.
+ *
+ * The terms are the collection's, fixed at deployment and shared by every slot
+ * it mints — which is why they live here rather than being repeated per token.
+ */
+export const collection = onchainTable(
+  "collection",
+  (t) => ({
+    id: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    factory: t.hex().notNull(),
+    creator: t.hex().notNull(),
+
+    name: t.text(),
+    symbol: t.text(),
+    maxSupply: t.bigint().notNull(),
+    totalMinted: t.integer().notNull(),
+
+    /// The terms every slot this collection mints is created with.
+    currency: t.hex().notNull(),
+    recipient: t.hex().notNull(),
+    taxBps: t.bigint(),
+    minDepositSeconds: t.bigint(),
+    /// Zero when the rent is fixed forever.
+    manager: t.hex(),
+    /// Holds the metadata, and nothing else.
+    owner: t.hex(),
+    baseURI: t.text(),
+
+    createdAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.id, table.chainId] }),
+    chainIdx: index().on(table.chainId),
+    factoryIdx: index().on(table.factory),
+    creatorIdx: index().on(table.creator),
+  }),
+);
+
+/**
+ * One token, and the slot it follows.
+ *
+ * `owner` is mirrored from the slot rather than derived at read time: the token
+ * IS the occupancy, so a query for "what does this account hold" would
+ * otherwise have to join every slot in the collection.
+ */
+export const collectionToken = onchainTable(
+  "collection_token",
+  (t) => ({
+    id: t.text().primaryKey(), // `${chainId}:${collection}:${tokenId}`
+    chainId: t.integer().notNull(),
+    collection: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    /// The slot whose occupancy this token follows. One per token, for ever.
+    slot: t.hex().notNull(),
+    /// Whoever occupies that slot. The collection itself while vacant.
+    owner: t.hex().notNull(),
+    minter: t.hex().notNull(),
+    mintedAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    collectionIdx: index().on(table.collection),
+    ownerIdx: index().on(table.owner),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
+/**
  * One Harberger-taxed slot.
  *
  * Most of this row cannot be read from `SlotCreated`, which carries only

@@ -8,6 +8,7 @@ import {ProtocolConfig} from "./ProtocolConfig.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
+import {SlotBoundNFTFactory} from "../../src/hooks/nft/SlotBoundNFTFactory.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
@@ -114,6 +115,11 @@ contract DeployProtocol is ProtocolConfig {
             v.collectiveFactory,
             type(SlotCollectiveFactory).creationCode
         );
+        address nftFactoryImpl = _deploy2(
+            "SlotBoundNFTFactoryImpl",
+            v.nftFactory,
+            type(SlotBoundNFTFactory).creationCode
+        );
 
         // ── proxies ───────────────────────────────────────────────────────
         address factory = _proxy(
@@ -133,6 +139,23 @@ contract DeployProtocol is ProtocolConfig {
             abi.encodeCall(
                 SlotCollectiveFactory.initialize,
                 (cfg.admin, collectiveImpl)
+            )
+        );
+
+        // Deployed AFTER the slot factory, which it takes as an initializer
+        // argument: a collection creates its slots through it, and the address
+        // is fixed for this proxy's life.
+        //
+        // Upgradeable, unlike the collections it deploys. An upgrade here
+        // changes what the NEXT collection is; an existing one is a plain
+        // contract with no key over it, so nobody can rewrite what `ownerOf`
+        // means for tokens people already hold.
+        address nftFactory = _proxy(
+            "SlotBoundNFTFactory",
+            nftFactoryImpl,
+            abi.encodeCall(
+                SlotBoundNFTFactory.initialize,
+                (cfg.admin, SlotFactory(factory))
             )
         );
 
@@ -187,6 +210,11 @@ contract DeployProtocol is ProtocolConfig {
         );
         record("AdLand", adLand, AdLand(adLand).version());
         record("MinimumTenureHook", tenureHook, TENURE_HOOK_VERSION);
+        record(
+            "SlotBoundNFTFactory",
+            nftFactory,
+            SlotBoundNFTFactory(nftFactory).version()
+        );
 
         console2.log("");
         console2.log("SlotFactory          ", factory);
@@ -194,6 +222,7 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("SlotCollectiveFactory", collectiveFactory);
         console2.log("AdLand               ", adLand);
         console2.log("MinimumTenureHook    ", tenureHook);
+        console2.log("SlotBoundNFTFactory  ", nftFactory);
     }
 
     struct Versions {
@@ -203,6 +232,7 @@ contract DeployProtocol is ProtocolConfig {
         uint64 collective;
         uint64 collectiveFactory;
         uint64 adLand;
+        uint64 nftFactory;
     }
 
     /**
@@ -236,6 +266,7 @@ contract DeployProtocol is ProtocolConfig {
         v.collective = new SlotCollective(probeWarehouse).version();
         v.collectiveFactory = new SlotCollectiveFactory().version();
         v.adLand = new AdLand().version();
+        v.nftFactory = new SlotBoundNFTFactory().version();
     }
 
     /// @dev `MinimumTenureHook` has no `version()` of its own — it is not

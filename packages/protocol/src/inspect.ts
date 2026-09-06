@@ -33,6 +33,11 @@ export interface Upgradeable {
  * so an upgradeable book would mean every one of them had granted that power to
  * whatever its admin deployed next. It ships immutable, and a new version is a
  * new deployment that competes with the old one.
+ *
+ * `MinimumTenureHook` is absent for the same reason, and so is every
+ * SlotBoundNFT COLLECTION — the factory that deploys them is upgradeable, the
+ * collections themselves are plain contracts with no key over them. An upgrade
+ * there changes the next collection, never one people already hold tokens in.
  */
 export const PROXIES: Record<string, Upgradeable> = {
   SlotFactory: { target: "src/SlotFactory.sol:SlotFactory", kind: "uups" },
@@ -41,6 +46,10 @@ export const PROXIES: Record<string, Upgradeable> = {
     kind: "uups",
   },
   AdLand: { target: "src/hooks/adland/AdLand.sol:AdLand", kind: "uups" },
+  SlotBoundNFTFactory: {
+    target: "src/hooks/nft/SlotBoundNFTFactory.sol:SlotBoundNFTFactory",
+    kind: "uups",
+  },
   Slot: {
     target: "src/Slot.sol:Slot",
     kind: "beacon",

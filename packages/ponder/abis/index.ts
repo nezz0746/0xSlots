@@ -6,6 +6,8 @@
 // `@0xslots/contracts`, so there is no reason for a second copy to exist.
 export {
   slotAbi as SlotAbi,
+  slotBoundNftAbi as SlotBoundNftAbi,
+  slotBoundNftFactoryAbi as SlotBoundNftFactoryAbi,
   slotCollectiveAbi as SlotCollectiveAbi,
   slotCollectiveFactoryAbi as SlotCollectiveFactoryAbi,
   slotFactoryAbi as SlotFactoryAbi,

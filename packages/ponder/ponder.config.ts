@@ -5,6 +5,8 @@ import { parseAbiItem } from "viem";
 import {
   SlotAbi,
   SlotCollectiveAbi,
+  SlotBoundNftAbi,
+  SlotBoundNftFactoryAbi,
   SlotCollectiveFactoryAbi,
   SlotFactoryAbi,
 } from "./abis";
@@ -116,6 +118,28 @@ function anvilCollectiveFactory(): Deployment {
       "[local] no collective factory: set SLOTS_COLLECTIVE_FACTORY_ANVIL, or " +
         "run script/slots/DeployAndDriveCollective.s.sol",
     );
+    return { address: UNDEPLOYED, startBlock: 0 };
+  }
+}
+
+/** The same, for the collection factory. See {anvilCollectiveFactory}. */
+function anvilNftFactory(): Deployment {
+  const fromEnv = process.env.SLOTS_NFT_FACTORY_ANVIL as
+    | `0x${string}`
+    | undefined;
+  if (fromEnv) {
+    const block = Number(process.env.SLOTS_NFT_START_BLOCK_ANVIL ?? 0);
+    return { address: fromEnv, startBlock: block };
+  }
+  try {
+    const raw = readFileSync(
+      "../../apps/contracts/deployments/31337/SlotBoundNFTFactory.json",
+      "utf8",
+    );
+    const { address, startBlock } = JSON.parse(raw) as Deployment;
+    console.log(`[local] nft factory ${address} from block ${startBlock}`);
+    return { address, startBlock };
+  } catch {
     return { address: UNDEPLOYED, startBlock: 0 };
   }
 }
@@ -254,6 +278,19 @@ const BASE_COLLECTIVE_FACTORY = remoteFactory(
   "SlotCollectiveFactory",
 );
 
+const BASE_SEPOLIA_NFT_FACTORY = remoteFactory(
+  "NFT_FACTORY_BASE_SEPOLIA",
+  "NFT_START_BLOCK_BASE_SEPOLIA",
+  84532,
+  "SlotBoundNFTFactory",
+);
+const BASE_NFT_FACTORY = remoteFactory(
+  "NFT_FACTORY_BASE",
+  "NFT_START_BLOCK_BASE",
+  8453,
+  "SlotBoundNFTFactory",
+);
+
 // ──────────────────────────────────────────
 // Event signatures used to derive child addresses via factory()
 // ──────────────────────────────────────────
@@ -264,6 +301,10 @@ const SLOT_CREATED_EVENT = parseAbiItem(
 
 const COLLECTIVE_DEPLOYED_EVENT = parseAbiItem(
   "event SlotCollectiveDeployed(address indexed manager, address indexed admin, address indexed deployer)",
+);
+
+const COLLECTION_CREATED_EVENT = parseAbiItem(
+  "event CollectionCreated(address indexed collection, address indexed creator, address indexed recipient, address currency, uint256 maxSupply)",
 );
 
 // ──────────────────────────────────────────
@@ -564,6 +605,37 @@ const remoteConfig = createConfig({
         base: BASE_COLLECTIVE_FACTORY,
       },
     },
+    SlotBoundNFTFactory: {
+      abi: SlotBoundNftFactoryAbi,
+      chain: {
+        baseSepolia: BASE_SEPOLIA_NFT_FACTORY,
+        base: BASE_NFT_FACTORY,
+      },
+    },
+    // Every collection the factory has made. Unlike `Slot` and `SlotCollective`
+    // these are plain contracts rather than proxies — but their addresses still
+    // exist only in the factory's log, so they are discovered the same way.
+    SlotBoundNFT: {
+      abi: SlotBoundNftAbi,
+      chain: {
+        baseSepolia: {
+          address: factory({
+            address: BASE_SEPOLIA_NFT_FACTORY.address,
+            event: COLLECTION_CREATED_EVENT,
+            parameter: "collection",
+          }),
+          startBlock: BASE_SEPOLIA_NFT_FACTORY.startBlock,
+        },
+        base: {
+          address: factory({
+            address: BASE_NFT_FACTORY.address,
+            event: COLLECTION_CREATED_EVENT,
+            parameter: "collection",
+          }),
+          startBlock: BASE_NFT_FACTORY.startBlock,
+        },
+      },
+    },
     // Every collective the factory has made. Same shape as `Slot` above and
     // for the same reason: collectives are BeaconProxies, so their addresses
     // exist only in the factory's own log.
@@ -605,6 +677,7 @@ function buildLocalConfig() {
   // imported, and a local run without collectives would stop type-checking the
   // handlers it is not running. One filter that matches nothing is cheaper.
   const collectiveAt = anvilCollectiveFactory();
+  const nftAt = anvilNftFactory();
 
   return createConfig({
     chains: {
@@ -646,6 +719,23 @@ function buildLocalConfig() {
               parameter: "manager",
             }),
             startBlock: collectiveAt.startBlock,
+          },
+        },
+      },
+      SlotBoundNFTFactory: {
+        abi: SlotBoundNftFactoryAbi,
+        chain: { anvil: nftAt },
+      },
+      SlotBoundNFT: {
+        abi: SlotBoundNftAbi,
+        chain: {
+          anvil: {
+            address: factory({
+              address: nftAt.address,
+              event: COLLECTION_CREATED_EVENT,
+              parameter: "collection",
+            }),
+            startBlock: nftAt.startBlock,
           },
         },
       },
