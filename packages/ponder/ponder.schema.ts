@@ -391,6 +391,12 @@ export const accountSlot = onchainTable(
     holdTime: t.bigint().notNull(),
     /// When the current tenure began, or null when not occupying.
     lastOccupiedAt: t.bigint(),
+    /// How many creatives this account has published into this slot.
+    ///
+    /// A count and not a join, because it is asked for in a leaderboard beside
+    /// `taxPaid` — one row per advertiser, ordered — and counting publishes at
+    /// read time would mean scanning the history once per row.
+    publishCount: t.integer().notNull(),
     firstInteractedAt: t.bigint().notNull(),
     lastInteractedAt: t.bigint().notNull(),
   }),
@@ -509,6 +515,119 @@ export const cancelledOrder = onchainTable(
 // from them, and keeping both means a screen can show "what is true now"
 // without paying for a replay, and "how it got there" without a second source.
 // ──────────────────────────────────────────
+
+/**
+ * What a slot is showing right now.
+ *
+ * ── Why this is a table and not a column on `slot` ──────────────────────────
+ *
+ * Because the creative belongs to the HOOK, not to the slot. A slot's row is
+ * assembled from the core protocol's own events, and every column on it is
+ * something `Slot` emits; a creative is one hook's idea of what a slot is for,
+ * and AdLand is one hook among however many people write. Putting `uri` on
+ * `slot` would make the core schema carry a field that is null for every slot
+ * running any other hook — and would have to grow another for the next hook
+ * that stores something.
+ *
+ * ── Why `tenureId` is stored beside the URI ─────────────────────────────────
+ *
+ * The contract keys a creative by the tenure it was published in and treats a
+ * stale one as absent, so `AdLand.creativeOf` returns "" once the slot changes
+ * hands even though the string is still in storage. Storing the tenure here
+ * lets a reader make the same judgement, and makes the case visible rather than
+ * silently blank: a row whose `tenureId` is behind the slot's is a creative
+ * that HAS been cleared, which is different from one that was never set.
+ */
+export const creative = onchainTable(
+  "creative",
+  (t) => ({
+    slot: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    /// The hook holding it. A slot may be repointed, and then this is the
+    /// contract that answered when it was last published to.
+    hook: t.hex().notNull(),
+    /// Empty after a clear. Not deleted — see `clearedAt`.
+    uri: t.text().notNull(),
+    /// The tenure this creative was published in.
+    tenureId: t.bigint().notNull(),
+    /// The occupant at the moment of publishing, as this indexer had it.
+    publisher: t.hex(),
+    /// Null while a creative is showing; set when a buy or release clears it.
+    clearedAt: t.bigint(),
+    publishCount: t.integer().notNull(),
+    firstPublishedAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    // Keyed on the slot alone, matching `slot.id` and every other slot-keyed
+    // table here. A slot address is treated as globally unique in this schema
+    // — one row per deployed proxy, whatever chain it is on — and a creative
+    // keyed differently could not join to it.
+    pk: primaryKey({ columns: [table.slot] }),
+    chainIdx: index().on(table.chainId),
+    hookIdx: index().on(table.hook),
+    publisherIdx: index().on(table.publisher),
+  }),
+);
+
+/**
+ * Every creative ever published, which is the history a publisher asks for.
+ *
+ * `uri` is stored whole rather than hashed or resolved. AdLand's creatives are
+ * a few hundred bytes and travel inline as `data:` URIs precisely so no gateway
+ * sits on the render path; storing the string means the history needs no
+ * gateway either, and a creative whose IPFS pin has lapsed is still readable
+ * here as what was published.
+ */
+export const publishedEvent = onchainTable(
+  "published_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    hook: t.hex().notNull(),
+    uri: t.text().notNull(),
+    tenureId: t.bigint().notNull(),
+    /// The occupant at the moment of publishing. Null when this indexer has no
+    /// row for the slot — a slot created before its factory's start block.
+    publisher: t.hex(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    publisherIdx: index().on(table.publisher),
+  }),
+);
+
+/**
+ * A creative going blank because the slot changed hands.
+ *
+ * Emitted by the hook's `afterBuy`, `afterRelease` and `afterLiquidate`, and
+ * worth its own table rather than being inferred from `boughtEvent`: whether a
+ * buy actually cleared anything depends on whether a creative was showing, and
+ * that is the hook's answer, not something to recompute from the core's events.
+ */
+export const clearedEvent = onchainTable(
+  "cleared_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    hook: t.hex().notNull(),
+    fromTenure: t.bigint().notNull(),
+    toTenure: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
 
 export const slotCreatedEvent = onchainTable(
   "slot_created_event",
@@ -1045,6 +1164,20 @@ export const slotCreditRelations = relations(slotCredit, ({ one }) => ({
 
 export const cancelledOrderRelations = relations(cancelledOrder, ({ one }) => ({
   slotRef: one(slot, { fields: [cancelledOrder.slot], references: [slot.id] }),
+}));
+
+export const creativeRelations = relations(creative, ({ one }) => ({
+  slotRef: one(slot, {
+    fields: [creative.slot],
+    references: [slot.id],
+  }),
+}));
+
+export const publishedEventRelations = relations(publishedEvent, ({ one }) => ({
+  slotRef: one(slot, {
+    fields: [publishedEvent.slot],
+    references: [slot.id],
+  }),
 }));
 
 export const slotCreatedEventRelations = relations(

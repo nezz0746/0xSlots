@@ -1,0 +1,339 @@
+specVersion: 1.3.0
+# `ipfsOnEthereumContracts` is gone with the last `ipfs.cat` call. That feature
+# flag exists to declare that chain handlers block on IPFS — which made the
+# subgraph non-deterministic, since whether a fetch timed out depended on the
+# indexer. File data sources replace it and need no flag.
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: SlotFactory
+    network: "base"
+    source:
+      address: "0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e"
+      abi: SlotFactory
+      startBlock: 43581441
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Factory
+        - Slot
+        - Module
+        - IpfsContent
+      abis:
+        - name: SlotFactory
+          file: ./abis/SlotFactory.json
+        - name: Slot
+          file: ./abis/Slot.json
+        - name: ERC20
+          file: ./abis/ERC20.json
+        - name: SplitV2
+          file: ./abis/SplitV2.json
+      eventHandlers:
+        # Two signatures, both live. The first is the only record of the 252
+        # slots created before SlotConfig gained `mutablePolicy` and
+        # SlotInitParams gained `occupancyPolicy`; adding those fields changed
+        # the tuple types and therefore topic0, so a single handler would make
+        # one era or the other invisible. Both write the same entity.
+        - event: SlotDeployed(indexed address,indexed address,indexed address,(bool,bool,address),(uint256,address,uint256,uint256))
+          handler: handleSlotDeployedLegacy
+        - event: SlotDeployed(indexed address,indexed address,indexed address,(bool,bool,bool,address),(uint256,address,uint256,uint256,address))
+          handler: handleSlotDeployed
+        - event: ModuleVerified(indexed address,bool,string,string,uint256,string)
+          handler: handleModuleVerified
+        - event: AdminTransferred(indexed address,indexed address)
+          handler: handleAdminTransferred
+      file: ./src/factory.ts
+  - kind: ethereum
+    name: SlotFactory2
+    network: "base"
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: SlotFactory
+      startBlock: 99999999
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Factory
+        - Slot
+        - Module
+        - IpfsContent
+      abis:
+        - name: SlotFactory
+          file: ./abis/SlotFactory.json
+        - name: Slot
+          file: ./abis/Slot.json
+        - name: ERC20
+          file: ./abis/ERC20.json
+        - name: SplitV2
+          file: ./abis/SplitV2.json
+      eventHandlers:
+        # Two signatures, both live. The first is the only record of the 252
+        # slots created before SlotConfig gained `mutablePolicy` and
+        # SlotInitParams gained `occupancyPolicy`; adding those fields changed
+        # the tuple types and therefore topic0, so a single handler would make
+        # one era or the other invisible. Both write the same entity.
+        - event: SlotDeployed(indexed address,indexed address,indexed address,(bool,bool,address),(uint256,address,uint256,uint256))
+          handler: handleSlotDeployedLegacy
+        - event: SlotDeployed(indexed address,indexed address,indexed address,(bool,bool,bool,address),(uint256,address,uint256,uint256,address))
+          handler: handleSlotDeployed
+        - event: ModuleVerified(indexed address,bool,string,string,uint256,string)
+          handler: handleModuleVerified
+        - event: AdminTransferred(indexed address,indexed address)
+          handler: handleAdminTransferred
+      file: ./src/factory.ts
+  - kind: ethereum
+    name: ERC721SlotsFactory
+    network: "base"
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: ERC721SlotsFactory
+      startBlock: 99999999
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - NFTCollection
+      abis:
+        - name: ERC721SlotsFactory
+          file: ./abis/ERC721SlotsFactory.json
+        - name: ERC721Slots
+          file: ./abis/ERC721Slots.json
+      eventHandlers:
+        - event: CollectionDeployed(indexed address,indexed address,indexed address,string,string,address)
+          handler: handleCollectionDeployed
+      file: ./src/erc721slots-factory.ts
+  - kind: ethereum
+    name: FeedHub
+    network: "base"
+    source:
+      address: "0xC3bE9AB91A57Dc8eb640Eb27B40833A1a4dB5bf9"
+      abi: FeedHub
+      startBlock: 43581441
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FeedHub
+        - Feed
+        - FeedCreatedEvent
+      abis:
+        - name: FeedHub
+          file: ./abis/FeedHub.json
+        - name: Feed
+          file: ./abis/Feed.json
+      eventHandlers:
+        - event: FeedCreated(indexed uint256,indexed address,indexed address)
+          handler: handleFeedCreated
+      file: ./src/feedhub.ts
+templates:
+  - kind: ethereum
+    name: Slot
+    network: "base"
+    source:
+      abi: Slot
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Slot
+        - BoughtEvent
+        - ReleasedEvent
+        - LiquidatedEvent
+        - PriceUpdatedEvent
+        - DepositedEvent
+        - WithdrawnEvent
+        - SettledEvent
+        - TaxPaidEvent
+        - TaxCollectedEvent
+        - ModuleFeePaidEvent
+        - PendingUpdateEvent
+      abis:
+        - name: Slot
+          file: ./abis/Slot.json
+        - name: SplitV2
+          file: ./abis/SplitV2.json
+      eventHandlers:
+        - event: Bought(indexed address,indexed address,uint256,uint256,uint256)
+          handler: handleBought
+        - event: Released(indexed address,uint256)
+          handler: handleReleased
+        - event: Liquidated(indexed address,indexed address,uint256)
+          handler: handleLiquidated
+        - event: PriceUpdated(uint256,uint256)
+          handler: handlePriceUpdated
+        - event: Deposited(indexed address,uint256)
+          handler: handleDeposited
+        - event: Withdrawn(indexed address,uint256)
+          handler: handleWithdrawn
+        - event: Settled(uint256,uint256,uint256)
+          handler: handleSettled
+        # Emitted immediately after Settled and carries WHO paid, which Settled
+        # does not. Attribution below is the contract's own statement rather
+        # than an inference from occupancy ordering.
+        - event: TaxPaid(indexed address,uint256,uint256)
+          handler: handleTaxPaid
+        - event: TaxCollected(indexed address,uint256)
+          handler: handleTaxCollected
+        - event: TaxUpdateProposed(uint256)
+          handler: handleTaxUpdateProposed
+        - event: ModuleUpdateProposed(address)
+          handler: handleModuleUpdateProposed
+        - event: PendingUpdateApplied(uint256,address)
+          handler: handlePendingUpdateApplied
+        - event: LiquidationBountyUpdated(uint256)
+          handler: handleLiquidationBountyUpdated
+        - event: ModuleFeePaid(indexed address,uint256,uint256)
+          handler: handleModuleFeePaid
+        # ── v3 occupancy layer ──
+        - event: SlotConfiguredV3(uint64,address)
+          handler: handleSlotConfiguredV3
+        - event: TransferScheduled(indexed address,uint256,uint256,uint256)
+          handler: handleTransferScheduled
+        - event: OperatorSet(indexed address,indexed address,bool)
+          handler: handleOperatorSet
+        - event: PolicyUpdateProposed(address)
+          handler: handlePolicyUpdateProposed
+        - event: PolicyUpdateApplied(address)
+          handler: handlePolicyUpdateApplied
+        # Per-kind pending updates. These carry the dimension, so unlike the
+        # five events above them they can be reduced into "what is queued on
+        # this slot right now".
+        - event: UpdateProposed(indexed uint8,bytes32,uint64)
+          handler: handleUpdateProposed
+        - event: UpdateCancelled(indexed uint8)
+          handler: handleUpdateCancelled
+        - event: UpdateApplied(indexed uint8,bytes32)
+          handler: handleUpdateApplied
+        - event: RefundCredited(indexed address,uint256)
+          handler: handleRefundCredited
+        - event: RefundClaimed(indexed address,uint256)
+          handler: handleRefundClaimed
+      file: ./src/slot.ts
+  - kind: ethereum
+    name: MetadataModule
+    network: "base"
+    source:
+      abi: MetadataModule
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - MetadataSlot
+        - MetadataUpdatedEvent
+        - IpfsContent
+      abis:
+        - name: MetadataModule
+          file: ./abis/MetadataModule.json
+      eventHandlers:
+        - event: MetadataUpdated(indexed address,string)
+          handler: handleMetadataUpdated
+      file: ./src/metadata.ts
+  - kind: ethereum
+    name: FeedPostModule
+    network: "base"
+    source:
+      abi: FeedPostModule
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - MetadataSlot
+        - MetadataUpdatedEvent
+        - IpfsContent
+      abis:
+        - name: FeedPostModule
+          file: ./abis/FeedPostModule.json
+        - name: FeedPostModuleV2
+          file: ./abis/FeedPostModuleV2.json
+      eventHandlers:
+        - event: MetadataUpdated(indexed address,string)
+          handler: handleMetadataUpdated
+        - event: MetadataUpdated(indexed address,indexed address,string)
+          handler: handleMetadataUpdatedV2
+      file: ./src/metadata.ts
+  - kind: ethereum
+    name: ERC721Slots
+    network: "base"
+    source:
+      abi: ERC721Slots
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - NFTToken
+        - NFTCollection
+      abis:
+        - name: ERC721Slots
+          file: ./abis/ERC721Slots.json
+      eventHandlers:
+        - event: TokenMinted(indexed uint256,indexed address,string)
+          handler: handleTokenMinted
+      file: ./src/erc721slots.ts
+  - kind: ethereum
+    name: Feed
+    network: "base"
+    source:
+      abi: Feed
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Feed
+        - Slot
+        - IpfsContent
+        - FeedNameUpdatedEvent
+        - FeedMetadataURIUpdatedEvent
+        - FeedRecipientUpdatedEvent
+        - FeedSlotAddedEvent
+        - FeedSlotRemovedEvent
+      abis:
+        - name: Feed
+          file: ./abis/Feed.json
+      eventHandlers:
+        - event: NameUpdated(string)
+          handler: handleNameUpdated
+        - event: MetadataURIUpdated(string)
+          handler: handleMetadataURIUpdated
+        - event: RecipientUpdated(indexed address)
+          handler: handleRecipientUpdated
+        - event: SlotAdded(indexed address)
+          handler: handleSlotAdded
+        - event: SlotRemoved(indexed address)
+          handler: handleSlotRemoved
+      file: ./src/feed.ts
+  # ── File data source: IPFS metadata ──────────────────────────────────────
+  #
+  # Spawned by name from the chain handlers above (`IpfsContent.create(cid)`),
+  # once per CID. Graph Node fetches the file out of band and retries until it
+  # succeeds, then calls the handler — so an unreachable CID no longer records
+  # itself as "no metadata" the way a timed-out `ipfs.cat` did.
+  #
+  # `abis` is required by graph-cli even though a file data source cannot call
+  # a contract. Any ABI satisfies it; this is the smallest one in the repo.
+  - kind: file/ipfs
+    name: IpfsContent
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - IpfsContent
+      abis:
+        - name: ERC20
+          file: ./abis/ERC20.json
+      handler: handleIpfsContent
+      file: ./src/ipfs-content.ts

@@ -5,6 +5,7 @@
 // neither. Ponder is in the same workspace and already depends on
 // `@0xslots/contracts`, so there is no reason for a second copy to exist.
 export {
+  adLandAbi as AdLandAbi,
   slotAbi as SlotAbi,
   slotBoundNftAbi as SlotBoundNftAbi,
   slotBoundNftFactoryAbi as SlotBoundNftFactoryAbi,

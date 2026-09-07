@@ -142,6 +142,7 @@ export async function getOrCreateAccountSlot(
     taxPaid: 0n,
     holdTime: 0n,
     lastOccupiedAt: null,
+    publishCount: 0,
     firstInteractedAt: timestamp,
     lastInteractedAt: timestamp,
   });
