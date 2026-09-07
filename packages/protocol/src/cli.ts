@@ -17,6 +17,7 @@ import {
   rpcOrigin,
 } from "./chains.js";
 import {
+  IMMUTABLES,
   PROXIES,
   beaconImplementation,
   cast,
@@ -27,6 +28,7 @@ import {
   layoutPath,
   reachable,
   recordedAddress,
+  scriptVersion,
 } from "./inspect.js";
 import { loadContractsEnv } from "./env.js";
 import { CONTRACTS, FORGE_ENV, REPO } from "./paths.js";
@@ -61,6 +63,9 @@ const interactive = () => process.stdin.isTTY === true;
 
 /** Visible width — colour codes are bytes, not columns, and break padding. */
 const stripped = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
+
+/** An address, short enough to sit in a table and long enough to compare. */
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 async function pickMode(): Promise<Mode> {
   return ok(
@@ -293,6 +298,67 @@ async function run(mode: Mode | undefined, opts: Options) {
     );
   }
   p.note(rows.join("\n"), mode === "deploy" ? "to deploy" : "what would change");
+
+  // ── the contracts that are never upgraded ─────────────────────────────────
+  //
+  // Reported separately, and NOT merged into the table above, because the word
+  // "upgrade" means something different here. A proxy moves; these do not. A
+  // change stands up a new contract beside the old one, and the old one keeps
+  // serving whoever is already pointed at it — so the interesting column is the
+  // ADDRESS, not the version.
+  const standalone: string[] = [];
+  const movedStandalone: string[] = [];
+  for (const [name, spec] of Object.entries(IMMUTABLES)) {
+    const was = recordedAddress(recordDir, name);
+    const act = plan.actions.get(name);
+    const code = spec.versionConstant
+      ? scriptVersion(spec.versionConstant)
+      : codeVersion(spec.target);
+
+    // No line from the simulation means the script never reached this contract
+    // — a script that stopped early, or one this entry has drifted out of sync
+    // with. Said out loud rather than rendered as "unchanged", which is the one
+    // reading that would be wrong.
+    if (!act) {
+      standalone.push(
+        `${c.bold(name.padEnd(22))} ${c.yellow("not in plan".padEnd(14))} ` +
+          `${c.dim("the deploy script reported nothing for it")}`,
+      );
+      continue;
+    }
+
+    // The address it USED to be, when the plan moves it — null when it did not.
+    // A nullable rather than a boolean beside `was`, so the address below is
+    // narrowed by the same test that decided there was one.
+    const previous =
+      was && was.toLowerCase() !== act.address.toLowerCase() ? was : null;
+    const moved = previous !== null;
+    if (!was || moved) changing++;
+
+    const verdict = !was
+      ? c.cyan("new".padEnd(14))
+      : moved
+        ? c.yellow("NEW ADDRESS".padEnd(14))
+        : c.dim("unchanged".padEnd(14));
+
+    const detail = previous
+      ? `${short(act.address)}  ${c.dim(`was ${short(previous)}`)}`
+      : `${short(act.address)}${code ? c.dim(`  v${code}`) : ""}`;
+
+    standalone.push(`${c.bold(name.padEnd(22))} ${verdict} ${detail}`);
+    if (moved) movedStandalone.push(name);
+  }
+  if (standalone.length) {
+    // The consequence, once, under the table rather than repeated per row —
+    // it is the same sentence every time and it does not fit on one.
+    if (movedStandalone.length)
+      standalone.push(
+        "",
+        c.dim("The old address keeps running. Slots already attached to it"),
+        c.dim("stay on it; only new ones can point at the new address."),
+      );
+    p.note(standalone.join("\n"), "standalone — a change deploys a new one");
+  }
 
   if (blocked.length) {
     for (const b of blocked)

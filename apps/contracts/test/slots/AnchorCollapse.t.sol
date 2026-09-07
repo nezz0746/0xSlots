@@ -7,6 +7,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
+import {MinimumTenure} from "../../src/hooks/MinimumTenure.sol";
 
 contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,uint256 a) external {_mint(t,a);} }
 
@@ -35,7 +36,7 @@ contract AnchorCollapseTest is Test {
         token.approve(address(s), type(uint256).max);
         s.buy(alice, 100 ether, hook.requiredDeposit(100 ether,TAX,TENURE)+10 ether, 0);
         // Cutting is forbidden inside the window...
-        vm.expectRevert(MinimumTenureHook.PriceCutDuringTenure.selector);
+        vm.expectRevert(MinimumTenure.PriceCutDuringTenure.selector);
         s.selfAssess(1);
         // ...but release + rebuy through a sybil does it for 1 wei.
         s.release();

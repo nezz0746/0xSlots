@@ -9,6 +9,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
+import {MinimumTenure} from "../../src/hooks/MinimumTenure.sol";
 import "../../src/SlotErrors.sol";
 
 contract T is ERC20 {
@@ -77,7 +78,7 @@ contract MinimumTenureHookTest is Test {
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
         vm.expectRevert(
-            abi.encodeWithSelector(MinimumTenureHook.TenureUnderfunded.selector, need)
+            abi.encodeWithSelector(MinimumTenure.TenureUnderfunded.selector, need)
         );
         s.buy(alice, 100 ether, need - 1, 0);
 
@@ -102,7 +103,7 @@ contract MinimumTenureHookTest is Test {
         _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
 
         vm.prank(alice);
-        vm.expectRevert(MinimumTenureHook.PriceCutDuringTenure.selector);
+        vm.expectRevert(MinimumTenure.PriceCutDuringTenure.selector);
         s.selfAssess(1 ether);
 
         // Raising is always fine — it only costs the occupant more.
@@ -132,7 +133,7 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(s), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.BuyoutBelowPremium.selector,
+                MinimumTenure.BuyoutBelowPremium.selector,
                 1000 ether // 10x of alice's 100
             )
         );
@@ -177,7 +178,7 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(s), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.BuyoutBelowPremium.selector, 1000 ether
+                MinimumTenure.BuyoutBelowPremium.selector, 1000 ether
             )
         );
         s.buy(bob, 1000 ether - 1, dep, 0);
@@ -269,7 +270,7 @@ contract MinimumTenureHookTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.BuyoutBelowPremium.selector,
+                MinimumTenure.BuyoutBelowPremium.selector,
                 1000 ether
             )
         );
@@ -289,7 +290,7 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(short_), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.TenureUnderfunded.selector, cheap
+                MinimumTenure.TenureUnderfunded.selector, cheap
             )
         );
         short_.buy(alice, 100 ether, cheap - 1, 0);
@@ -307,7 +308,7 @@ contract MinimumTenureHookTest is Test {
     ///      and here, where `mutableHook` is false, one that could never be
     ///      repaired.
     function test_ASlotCannotAttachThisHookWithNoWindow() public {
-        vm.expectRevert(MinimumTenureHook.TenureNotConfigured.selector);
+        vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
         _slot(bytes32(0));
     }
 
@@ -321,7 +322,7 @@ contract MinimumTenureHookTest is Test {
     function test_ASlotCannotAttachAWordThatIsNotADuration() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                MinimumTenureHook.TenureTooLong.selector,
+                MinimumTenure.TenureTooLong.selector,
                 hook.MAX_TENURE()
             )
         );
@@ -335,7 +336,7 @@ contract MinimumTenureHookTest is Test {
     /// @notice And the hook says so itself, for anyone asking before they
     ///         commit.
     function test_TheHookRejectsTheEmptyConfigurationDirectly() public {
-        vm.expectRevert(MinimumTenureHook.TenureNotConfigured.selector);
+        vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
         hook.validateHookData(bytes32(0));
 
         hook.validateHookData(bytes32(TENURE)); // no revert

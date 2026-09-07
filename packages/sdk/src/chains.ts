@@ -10,6 +10,8 @@
 export enum SlotsChain {
   BASE = 8453,
   BASE_SEPOLIA = 84532,
+  /** Ethereum Sepolia. */
+  SEPOLIA = 11155111,
   /** Local anvil — see `pnpm dev:local` at the repo root. */
   ANVIL = 31337,
 }

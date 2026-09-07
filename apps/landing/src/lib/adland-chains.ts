@@ -15,7 +15,18 @@ import { SlotsChain } from "@0xslots/sdk";
  * package.
  *
  * `<Ad data=...>` is unaffected: the client is only built when `slot` is set.
+ *
+ * An allowlist rather than a denylist, which is the change Sepolia forced: the
+ * old `!== ANVIL` said "every chain but the local one", so every chain added
+ * afterwards was claimed as supported by default and the throw came from inside
+ * the library at render time. The library's own map is base and base-sepolia,
+ * so that is what this names.
  */
+const ADLAND_CHAINS: readonly number[] = [
+  SlotsChain.BASE,
+  SlotsChain.BASE_SEPOLIA,
+];
+
 export function adlandSupported(chainId: number): boolean {
-  return chainId !== SlotsChain.ANVIL;
+  return ADLAND_CHAINS.includes(chainId);
 }

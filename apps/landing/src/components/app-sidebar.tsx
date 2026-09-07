@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   FileCode2,
+  Plug,
   PlusIcon,
   User,
   Users,
@@ -123,6 +124,18 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              {/* Above "My Slots" because it is read BEFORE a slot exists:
+                  it is the catalogue you consult while deciding what to
+                  attach, not a view of anything you own. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/app/hooks")}
+                  onClick={() => push("/app/hooks")}
+                >
+                  <Plug className="size-4" />
+                  <span>Hooks</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === "/app/profile"}

@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
-import {IDescribedHook, HookDescriptor} from "../../src/IDescribedHook.sol";
+import {HookBounds, IDescribedHook, HookDescriptor} from "../../src/IDescribedHook.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 
 /// @dev A hook that works but describes nothing — the case a client must
@@ -75,15 +75,28 @@ contract DescribedHookTest is Test {
         assertEq(d[0].version, 2);
     }
 
-    /// @notice The descriptor cannot name a window, because this deployment
-    ///         does not have one — every slot brings its own.
+    /// @notice The descriptor names a window's SHAPE, never a window.
     ///
     /// @dev Version 1 encoded `tenureSeconds` here, when the address WAS the
-    ///      configuration. Reporting any number now would report one slot's
-    ///      terms to every other slot's reader.
-    function test_TheDescriptorNamesNoWindow() public view {
+    ///      configuration, and reporting any number now would report one
+    ///      slot's terms to every other slot's reader. `data` was emptied for
+    ///      that reason and then refilled for a different one: the bounds a
+    ///      client should validate against are not a setting, they are this
+    ///      contract's own limits, and publishing them from the same constant
+    ///      the check reads is what stops a form and a revert disagreeing.
+    ///
+    ///      So the assertion is not "empty" but "carries no value": a range
+    ///      whose top is {MAX_TENURE}, which is true of every deployment and
+    ///      of every slot pointing at one.
+    function test_TheDescriptorNamesAShapeNotAWindow() public view {
         HookDescriptor[] memory d = tenure.descriptors();
-        assertEq(d[0].data.length, 0);
+        assertEq(d[0].signature, "uint256 window", "a type, not a value");
+        HookBounds[] memory b = abi.decode(d[0].data, (HookBounds[]));
+
+        assertEq(b.length, 1);
+        assertEq(b[0].name, "window");
+        assertEq(b[0].max, tenure.MAX_TENURE(), "a limit, not a setting");
+        assertEq(b[0].min, 1, "and zero is unconfigured, not short");
     }
 
     /// @notice The family id is a published constant. Pinned to its literal so

@@ -1,19 +1,9 @@
 "use client";
 
-import {
-  findKnownHook,
-  knownHooks,
-  minimumTenureHookAddress,
-} from "@0xslots/contracts/slots";
-import {
-  AlertCircle,
-  Check,
-  Eye,
-  Loader2,
-  Plug,
-  ShieldAlert,
-} from "lucide-react";
-import { useEffect } from "react";
+import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
+import { AlertCircle, Loader2, Plug } from "lucide-react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
 import type { Address } from "viem";
 import { HookFlagRow } from "@/components/hook-flags";
@@ -23,7 +13,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -32,10 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChain } from "@/context/chain";
+import { useHookCheck } from "@/hooks/use-hook-check";
+import { useHookSchema } from "@/hooks/use-hook-schema";
 import { AddressInput } from "../address-input";
-import { useHookCheck } from "../hooks/use-hook-check";
 import type { CreateSlotFormValues } from "../schema";
-import { timeUnits } from "../sections";
+import { HookConfig } from "./hook-config";
 
 /**
  * The slot's one extension point — and, with it, its occupancy terms.
@@ -58,44 +48,12 @@ export function SectionHook() {
   const hookMode = form.watch("hookMode");
   const hook = form.watch("hook");
 
-  // Minus the tenure hook: it gets its own entry below, because picking it is
-  // picking a NUMBER, and listing it here as well showed it twice.
-  const available = (knownHooks[chainId] ?? []).filter(
-    (h) =>
-      h.address.toLowerCase() !==
-      minimumTenureHookAddress[chainId]?.toLowerCase(),
-  );
+  const available = knownHooks[chainId] ?? [];
   const chosenKnown = findKnownHook(chainId, hook as Address);
   // Every mode, not just `custom`. The permissions below are read from the
   // hook itself, so a hook picked by name deserves the same scrutiny as one
   // pasted in — arguably more, since nobody typed its address.
   const check = useHookCheck(hook, chainId);
-
-  // ── Minimum tenure ──────────────────────────────────────────────────────
-  //
-  // A duration, and nothing else. The address no longer moves with it: one hook
-  // per chain serves every window, and the number the creator picks becomes the
-  // slot's `hookData` rather than a second contract.
-  const tenureHook = minimumTenureHookAddress[chainId];
-  const tenureValue = form.watch("tenureValue");
-  const tenureUnit = form.watch("tenureUnit");
-
-  /**
-   * Keep `hook` pointed at this chain's tenure hook while that mode is chosen.
-   *
-   * The field the form submits is not something the user types — it is the
-   * answer to what they picked. Writing it back here rather than at submit time
-   * means the summary card and the validation both see the address the button
-   * will actually use.
-   *
-   * In an effect rather than during render: `setValue` triggers a re-render,
-   * and doing that from the render pass is the "update a component while
-   * rendering another" warning at best and a loop at worst.
-   */
-  useEffect(() => {
-    if (hookMode === "tenure" && tenureHook && hook !== tenureHook)
-      form.setValue("hook", tenureHook, { shouldValidate: true });
-  }, [hookMode, tenureHook, hook, form]);
 
   return (
     <FormField
@@ -105,11 +63,9 @@ export function SectionHook() {
         const selectValue =
           hookMode === "custom"
             ? "custom"
-            : hookMode === "tenure"
-              ? "tenure"
-              : hookMode === "none" || !field.value
-                ? "none"
-                : field.value;
+            : hookMode === "none" || !field.value
+              ? "none"
+              : field.value;
 
         return (
           <FormItem>
@@ -117,11 +73,15 @@ export function SectionHook() {
             <Select
               value={selectValue}
               onValueChange={(v) => {
+                // Open the configuration gate on every switch. The form that
+                // closed it belongs to the hook being left, and it unmounts
+                // without a word — so a refused value on one hook would
+                // otherwise keep the submit button disabled after moving to a
+                // hook, or to no hook at all, with nothing on screen to say
+                // why. Whatever comes next reports its own verdict.
+                form.setValue("hookDataOk", true, { shouldValidate: true });
                 if (v === "none") {
                   form.setValue("hookMode", "none", { shouldValidate: true });
-                  field.onChange("");
-                } else if (v === "tenure") {
-                  form.setValue("hookMode", "tenure", { shouldValidate: true });
                   field.onChange("");
                 } else if (v === "custom") {
                   form.setValue("hookMode", "custom", { shouldValidate: true });
@@ -137,15 +97,6 @@ export function SectionHook() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No hook — instant buy</SelectItem>
-                {/* A choice of NUMBER, not of address — the successor to the
-                    old occupancy-policy picker. The duration is stored on the
-                    slot and handed to the hook on every callback, so this one
-                    address serves every window. */}
-                {tenureHook && (
-                  <SelectItem value="tenure">
-                    Minimum tenure — choose a duration
-                  </SelectItem>
-                )}
                 {available.map((h) => (
                   <SelectItem key={h.address} value={h.address}>
                     {h.name}
@@ -164,55 +115,35 @@ export function SectionHook() {
 
             {chosenKnown && (
               <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
-                <Plug className="mt-0.5 size-3 shrink-0" />
-                {chosenKnown.description}
-              </p>
-            )}
-
-            {hookMode === "tenure" && (
-              <div className="mt-2 space-y-2">
-                <div className="flex gap-2">
-                  <Input
-                    value={tenureValue}
-                    inputMode="decimal"
-                    onChange={(e) =>
-                      form.setValue("tenureValue", e.target.value, {
-                        shouldValidate: true,
-                      })
-                    }
-                    className="w-24"
-                    aria-label="Minimum tenure"
+                {/* The same mark the hooks page shows, so a hook is
+                    recognisable in the place it is chosen as well as in the
+                    place it is listed. */}
+                {chosenKnown.logo ? (
+                  <Image
+                    src={chosenKnown.logo}
+                    alt=""
+                    width={12}
+                    height={12}
+                    className="mt-0.5 size-3 shrink-0 object-contain"
+                    unoptimized
                   />
-                  <select
-                    value={tenureUnit}
-                    onChange={(e) =>
-                      form.setValue(
-                        "tenureUnit",
-                        e.target.value as (typeof timeUnits)[number],
-                        { shouldValidate: true },
-                      )
-                    }
-                    className="border bg-background px-2 text-sm"
-                    aria-label="Tenure unit"
-                  >
-                    {timeUnits.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* The address, stated rather than derived. Worth showing even
-                    though the creator did not choose it: it is what the slot
-                    will point at, and it is the same one for every duration —
-                    which is the fact that replaced "expect two transactions". */}
-                {tenureHook && (
-                  <p className="text-[10px] break-all text-muted-foreground">
-                    {tenureHook}
-                  </p>
+                ) : (
+                  <Plug className="mt-0.5 size-3 shrink-0" />
                 )}
-              </div>
+                <span>
+                  {chosenKnown.description}{" "}
+                  {chosenKnown.url && (
+                    <a
+                      href={chosenKnown.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      {chosenKnown.by}
+                    </a>
+                  )}
+                </span>
+              </p>
             )}
 
             {hookMode === "custom" && (
@@ -256,10 +187,99 @@ export function SectionHook() {
               </div>
             )}
 
+            {/* Whatever this hook says it needs, as a form it described
+                itself — for a hook picked BY NAME as much as for one pasted
+                in. It only rendered under "Custom address" before, so choosing
+                AdLand from the list offered no window at all, and a hook that
+                REQUIRES a word would have been created with an empty one and
+                reverted at attach. Keyed on the address so a switch between
+                hooks resets the control rather than carrying a half-typed
+                value across. */}
+            {(hookMode === "known" || hookMode === "custom") && (
+              <HookDeclaredConfig key={field.value} hook={field.value} />
+            )}
+
             <FormMessage />
           </FormItem>
         );
       }}
     />
+  );
+}
+
+/**
+ * A hook's own configuration form, from its own declaration.
+ *
+ * Read from `descriptors()`: the type comes from a plain ABI signature, the
+ * label, unit and bounds from the hook's published constants, and the verdict
+ * from simulating `validateHookData` — the same function the slot will run.
+ *
+ * A hook that publishes nothing renders nothing, which is most of them and is
+ * why this is silent rather than empty. There is no second, hand-written form
+ * beside it: minimum tenure had one, and a rule with two forms is a rule with
+ * two answers.
+ */
+function HookDeclaredConfig({ hook }: { hook: string }) {
+  const { setValue } = useFormContext<CreateSlotFormValues>();
+  const { families } = useHookSchema(hook);
+  const [values, setValues] = useState<string[]>([]);
+
+  // A hook may answer for several families — AdLand does creatives AND
+  // tenure. Only the ones that take configuration are rendered, and they share
+  // the slot's one word, so the first is the one this writes.
+  const configurable = families.filter((f) => f.fields.length > 0);
+  const family = configurable[0];
+
+  /**
+   * Clear the word when the ADDRESS changes, so one meant for one hook is
+   * never submitted for another.
+   *
+   * Guarded by a ref rather than by the dependency array. `useFormContext`
+   * returns whatever was spread into the provider, which is a fresh object on
+   * every render — so an effect that depends on it runs on every render, and
+   * `setValues([])` is a new array every time, which re-renders, which runs it
+   * again. That is an infinite loop, and it took the page down the moment this
+   * mode was selected.
+   */
+  const lastHook = useRef(hook);
+  useEffect(() => {
+    if (lastHook.current === hook) return;
+    lastHook.current = hook;
+    setValues([]);
+    setValue("customHookData", "");
+  }, [hook, setValue]);
+
+  // A hook that asks for nothing cannot be misconfigured, so the gate opens —
+  // and it must open again when the form moves from a hook that asked to one
+  // that does not, or the button stays disabled with nothing on screen to say
+  // why.
+  useEffect(() => {
+    if (!family) setValue("hookDataOk", true, { shouldValidate: true });
+  }, [family, setValue]);
+
+  if (!family) return null;
+
+  return (
+    <div className="mt-2 border-l-2 border-muted pl-3">
+      <HookConfig
+        hookAddress={hook}
+        family={family}
+        value={values}
+        onChange={(next, encoded) => {
+          setValues(next);
+          setValue("customHookData", encoded ?? "", {
+            shouldValidate: true,
+          });
+        }}
+        onVerdict={(ok) => setValue("hookDataOk", ok, { shouldValidate: true })}
+      />
+      {configurable.length > 1 && (
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          This hook also describes {configurable.length - 1} other configurable
+          {configurable.length === 2 ? " family" : " families"}, which share the
+          same word.
+        </p>
+      )}
+    </div>
   );
 }

@@ -9,6 +9,35 @@ pragma solidity ^0.8.24;
  *      meets version 2 ignores it rather than decoding v2's bytes with v1's
  *      layout and rendering a confident wrong number.
  *
+ *      `signature` is an ABI type list — `"uint256 window"` — describing this
+ *      family's share of the slot's `hookData`. `data` is
+ *      `abi.encode(HookBounds[])`, annotating it field by field, in order.
+ *
+ *      The signature is its own field rather than a first member inside `data`
+ *      so that a client reads it straight off the call. It is the thing a form
+ *      needs first and the thing most likely to be read alone; burying it
+ *      behind a decode made every consumer unpack a struct to reach a string.
+ *      EAS keeps its schema string in the open for the same reason.
+ *
+ *      A SIGNATURE and not a bespoke struct, because that is the format the
+ *      ecosystem already reads: viem's `parseAbiParameters` takes it as-is,
+ *      and it is the same choice EAS made — its schema registry stores
+ *      `"uint256 eventId, uint8 voteIndex"` and leaves validation to a
+ *      separate resolver contract, which is exactly what `validateHookData`
+ *      is here.
+ *
+ *      Widths come from the types, so a hook that ever packs two values into
+ *      the word says so by writing `"uint64 window, uint32 premiumBps"`. Note
+ *      that a packed word is not what `decodeAbiParameters` reads — standard
+ *      encoding pads every value to 32 bytes, so anything with more than one
+ *      field is `encodePacked` and a client slices it by the widths the
+ *      signature gives.
+ *
+ *      Empty `data` means the family takes no per-slot configuration, which is
+ *      different from taking one it declines to describe: a client that finds
+ *      no signature renders no form, and one that finds a signature can render
+ *      a form for a hook nobody wrote a UI for.
+ *
  *      `metadataURI` is where the human half lives — label, units, copy, an
  *      icon. It is deliberately not on-chain: a UI needs "7-day minimum
  *      tenure", not `tenureSeconds: 604800`, and none of that is expressible
@@ -18,8 +47,35 @@ pragma solidity ^0.8.24;
 struct HookDescriptor {
     bytes32 family;
     uint32 version;
+    string signature;
     bytes data;
     string metadataURI;
+}
+
+/**
+ * @notice What a value MEANS, once a client has decoded it.
+ *
+ * @dev The signature says `uint256`; this says the number is seconds, that it
+ *      has to be between one and a year, and what to call it on a form. None
+ *      of that is expressible as a type, and all of it is needed to render a
+ *      control somebody can use.
+ *
+ *      `bounded` because a range is only meaningful for a number — an address
+ *      has no minimum. Rather than encode zeroes a client must know to ignore,
+ *      the field says whether the pair means anything.
+ *
+ *      The bounds are the CONTRACT'S OWN constants, encoded from the same
+ *      source the check reads. That is why they are here rather than at
+ *      `metadataURI`: a schema published off-chain drifts to saying thirty
+ *      days while the code still refuses anything over a year, and the form is
+ *      right up until the transaction reverts.
+ */
+struct HookBounds {
+    string name;
+    string unit;
+    bool bounded;
+    uint256 min;
+    uint256 max;
 }
 
 /**

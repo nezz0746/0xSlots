@@ -71,6 +71,18 @@ export interface KnownHook {
   name: string;
   /** One line, written for whoever is about to attach it to their slot. */
   description: string;
+  /** Who maintains it. "0xSlots" is stock; anything else is somebody else's. */
+  by: string;
+  /** Where the project behind the hook lives, when it has somewhere. */
+  url?: string;
+  /**
+   * Its mark, for a client that has room to show one.
+   *
+   * Absolute for a third party, and app-relative for a stock hook — which
+   * makes the shipping app's own logo the mark of the hooks it maintains,
+   * without this package having to know which app is rendering it.
+   */
+  logo?: string;
 }
 
 /**
@@ -89,18 +101,26 @@ const catalogue: readonly {
   addresses: Partial<Record<number, Address>>;
   name: string;
   description: string;
+  by: string;
+  url?: string;
+  logo?: string;
 }[] = [
   {
     addresses: adLandAddress,
-    name: "AdLand — publish a creative",
+    name: "AdLand",
     description:
-      "The occupant publishes an image or URI that renders in the slot, and it retires the moment the slot changes hands. Buying and publishing can be done in one transaction.",
+      "Taxed onchain standardized ad data, curated by adland.space and served by CDN on your website.",
+    by: "adland.space",
+    url: "https://adland.space/",
+    logo: "https://adland.space/logo.png",
   },
   {
     addresses: minimumTenureHookAddress,
     name: "Minimum tenure",
     description:
       "Gives a new occupant a window they choose. Inside it, taking the slot costs a large premium on their price, and they cannot cut it.",
+    by: "0xSlots",
+    logo: "/logo.png",
   },
 ];
 
@@ -113,6 +133,9 @@ export const knownHooks: Partial<Record<number, readonly KnownHook[]>> =
           address: address as Address,
           name: c.name,
           description: c.description,
+          by: c.by,
+          url: c.url,
+          logo: c.logo,
         });
       }
     return out;

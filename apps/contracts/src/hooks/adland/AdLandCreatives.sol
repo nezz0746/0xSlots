@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 
 import {ISlotHook, HookFlags, SlotContext} from "../../ISlotHook.sol";
+import {MinimumTenure} from "../MinimumTenure.sol";
 import {AdLandStorage} from "./AdLandStorage.sol";
 import {Creative, ISlotAd} from "./IAdLand.sol";
 
@@ -39,7 +40,7 @@ import {Creative, ISlotAd} from "./IAdLand.sol";
  *      comparison alone would keep showing the departed occupant's creative on
  *      an empty slot, which is the one state where a stale ad is worst.
  */
-abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
+abstract contract AdLandCreatives is AdLandStorage, MinimumTenure, ISlotHook {
     using SafeERC20 for IERC20;
 
     // ─── publishing ─────────────────────────────────────────────────────────
@@ -196,22 +197,54 @@ abstract contract AdLandCreatives is AdLandStorage, ISlotHook {
 
     function subscriptions() external pure returns (HookFlags memory f) {
         // Every path that ends a tenure. `afterSettle` is tax moving under a
-        // tenure that has not ended, and a `before` hook here would let AdLand
-        // veto a buy — which it has no business doing.
+        // tenure that has not ended.
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
+
+        // A slot takes ONE hook, so an advertising slot that also wants a
+        // minimum tenure cannot attach both. It used to say here that a
+        // `before` hook "has no business" vetoing a buy, and that was right
+        // while AdLand did only creatives — it is not right now that AdLand is
+        // the only hook such a slot can have. The rule itself is
+        // {MinimumTenure}'s, shared with {MinimumTenureHook} so there is one
+        // implementation rather than two that drift.
+        //
+        // Declared unconditionally because `subscriptions` is `pure` and
+        // cannot see a slot's data. Slots that configure no window pay one
+        // staticcall that returns immediately; the alternative is a flag the
+        // hook could not honestly answer.
+        f.beforeBuy = true;
+        f.beforeSelfAssess = true;
     }
 
-    /// @dev AdLand takes no configuration: what it needs it reads from the
-    ///      slot itself. Indifferent rather than unimplemented — the slot still
-    ///      asks, and refusing would fail an attach over a word this hook has
-    ///      no opinion about.
-    function validateHookData(bytes32) external view {}
+    /**
+     * @dev The word is the minimum-tenure window, in seconds, and ZERO means
+     *      no window at all.
+     *
+     *      Optional rather than required, and that is what keeps every AdLand
+     *      slot already on chain working: they were attached when this hook
+     *      took no configuration, so their data is zero, and zero has to go on
+     *      meaning "creatives only". {MinimumTenure.tenureOf} rejects zero as
+     *      an unconfigured window, which is right for a hook that exists ONLY
+     *      to enforce tenure and wrong here — so the check is made before it.
+     */
+    function validateHookData(bytes32 data) external pure {
+        if (data != bytes32(0)) tenureOf(data);
+    }
 
-    function beforeBuy(SlotContext calldata) external view {}
+    /// @notice Refuse a buy that lands inside a protected window, when this
+    ///         slot configured one.
+    function beforeBuy(SlotContext calldata ctx) external view {
+        if (ctx.hookData == bytes32(0)) return;
+        _enforceTenureOnBuy(ctx);
+    }
 
-    function beforeSelfAssess(SlotContext calldata) external view {}
+    /// @notice No cutting your price while nobody is allowed to take it.
+    function beforeSelfAssess(SlotContext calldata ctx) external view {
+        if (ctx.hookData == bytes32(0)) return;
+        _enforceTenureOnSelfAssess(ctx);
+    }
 
     function afterBuy(SlotContext calldata ctx) external {
         _clear(ctx.slot);

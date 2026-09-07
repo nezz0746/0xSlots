@@ -246,6 +246,11 @@ const BASE_SLOT_FACTORY = remoteFactory(
   "SLOTS_START_BLOCK_BASE",
   8453,
 );
+const SEPOLIA_SLOT_FACTORY = remoteFactory(
+  "SLOTS_FACTORY_SEPOLIA",
+  "SLOTS_START_BLOCK_SEPOLIA",
+  11155111,
+);
 
 // ──────────────────────────────────────────
 // Collective factories
@@ -277,6 +282,12 @@ const BASE_COLLECTIVE_FACTORY = remoteFactory(
   8453,
   "SlotCollectiveFactory",
 );
+const SEPOLIA_COLLECTIVE_FACTORY = remoteFactory(
+  "COLLECTIVE_FACTORY_SEPOLIA",
+  "COLLECTIVE_START_BLOCK_SEPOLIA",
+  11155111,
+  "SlotCollectiveFactory",
+);
 
 const BASE_SEPOLIA_NFT_FACTORY = remoteFactory(
   "NFT_FACTORY_BASE_SEPOLIA",
@@ -288,6 +299,12 @@ const BASE_NFT_FACTORY = remoteFactory(
   "NFT_FACTORY_BASE",
   "NFT_START_BLOCK_BASE",
   8453,
+  "SlotBoundNFTFactory",
+);
+const SEPOLIA_NFT_FACTORY = remoteFactory(
+  "NFT_FACTORY_SEPOLIA",
+  "NFT_START_BLOCK_SEPOLIA",
+  11155111,
   "SlotBoundNFTFactory",
 );
 
@@ -363,13 +380,25 @@ const ALCHEMY_KEY =
  */
 const COINBASE_KEY = process.env.COINBASE_API_KEY ?? "";
 
-/** Per-chain path segment for each paid provider. */
+/**
+ * Per-chain path segment for each paid provider.
+ *
+ * `coinbase` is OPTIONAL, and that is what adding Ethereum Sepolia forced.
+ * CDP is a Base-first product; a chain it does not serve has no path to put
+ * here, and inventing one would have built a URL that 404s for whoever had
+ * COINBASE_API_KEY set — a chain that syncs everywhere except on the machines
+ * with the better key. Absent means "fall through to Alchemy", which
+ * `rpcPool` does explicitly below.
+ */
+type PoolLabel = "base" | "base_sepolia" | "sepolia";
+
 const PAID_ENDPOINTS: Record<
-  "base" | "base_sepolia",
-  { alchemy: string; coinbase: string }
+  PoolLabel,
+  { alchemy: string; coinbase?: string }
 > = {
   base: { alchemy: "base-mainnet", coinbase: "base" },
   base_sepolia: { alchemy: "base-sepolia", coinbase: "base-sepolia" },
+  sepolia: { alchemy: "eth-sepolia" },
 };
 
 // ALCHEMY_RPS is gone with the `rateLimit()` wrapper it configured. Capping
@@ -461,6 +490,16 @@ const PUBLIC_RPCS: Record<string, string[]> = {
   // out on two of the three windows, which is a slow stall rather than a fast
   // error.
   base_sepolia: ["https://base-sepolia.gateway.tenderly.co"],
+  // Vetted with the recipe above on 2026-09-07, 50 addresses at the tip:
+  //
+  //   sepolia.gateway.tenderly.co        ok at 25 and 10,000 blocks
+  //   ethereum-sepolia-rpc.publicnode.com  -32602 "Request blocked", at BOTH
+  //                                        window sizes — the same address-list
+  //                                        ceiling it enforces on base
+  //   sepolia.drpc.org                     no response
+  //
+  // So the same single-member tier as base-sepolia, for the same reason.
+  sepolia: ["https://sepolia.gateway.tenderly.co"],
 };
 
 const USE_PUBLIC_RPCS = process.env.PONDER_PUBLIC_RPCS === "1";
@@ -512,10 +551,7 @@ const announce = (label: string, urls: string[]) => {
  * whatever endpoints are configured at that moment. Verify with
  * `select count(*) from ponder_sync.logs`.
  */
-function rpcPool(
-  label: "base" | "base_sepolia",
-  explicit: string | undefined,
-): string[] {
+function rpcPool(label: PoolLabel, explicit: string | undefined): string[] {
   const explicitUrls = (explicit ?? "")
     .split(",")
     .map((url) => url.trim())
@@ -533,7 +569,7 @@ function rpcPool(
   // an `if` and drop the `else`.
   const pool: string[] = [];
   const paid = PAID_ENDPOINTS[label];
-  if (COINBASE_KEY) {
+  if (COINBASE_KEY && paid.coinbase) {
     pool.push(
       `https://api.developer.coinbase.com/rpc/v1/${paid.coinbase}/${COINBASE_KEY}`,
     );
@@ -545,10 +581,16 @@ function rpcPool(
   }
 
   if (pool.length === 0) {
+    // Coinbase is named only where it can actually serve this chain. It was
+    // named unconditionally, which meant a chain CDP does not carry told you
+    // to set the key you had already set.
+    const keys = paid.coinbase
+      ? "COINBASE_API_KEY, or ALCHEMY_API_KEY"
+      : `ALCHEMY_API_KEY (CDP does not serve ${label})`;
     throw new Error(
       `No RPC endpoint for ${label}. Set PONDER_RPC_URL_${label.toUpperCase()} ` +
-        `to a URL (or a comma-separated list), or COINBASE_API_KEY, or ` +
-        `ALCHEMY_API_KEY (ALCHEMY_KEY is also accepted). ` +
+        `to a URL (or a comma-separated list), or ${keys} ` +
+        `(ALCHEMY_KEY is also accepted). ` +
         `PONDER_PUBLIC_RPCS=1 adds this chain's public tier, where it has one.`,
     );
   }
@@ -566,6 +608,10 @@ const remoteConfig = createConfig({
       id: 8453,
       rpc: rpcPool("base", process.env.PONDER_RPC_URL_BASE),
     },
+    sepolia: {
+      id: 11155111,
+      rpc: rpcPool("sepolia", process.env.PONDER_RPC_URL_SEPOLIA),
+    },
   },
   contracts: {
     SlotFactory: {
@@ -573,6 +619,7 @@ const remoteConfig = createConfig({
       chain: {
         baseSepolia: BASE_SEPOLIA_SLOT_FACTORY,
         base: BASE_SLOT_FACTORY,
+        sepolia: SEPOLIA_SLOT_FACTORY,
       },
     },
     // Every slot the factory has made, discovered from `SlotCreated`. One
@@ -596,6 +643,14 @@ const remoteConfig = createConfig({
           }),
           startBlock: BASE_SLOT_FACTORY.startBlock,
         },
+        sepolia: {
+          address: factory({
+            address: SEPOLIA_SLOT_FACTORY.address,
+            event: SLOT_CREATED_EVENT,
+            parameter: "slot",
+          }),
+          startBlock: SEPOLIA_SLOT_FACTORY.startBlock,
+        },
       },
     },
     SlotCollectiveFactory: {
@@ -603,6 +658,7 @@ const remoteConfig = createConfig({
       chain: {
         baseSepolia: BASE_SEPOLIA_COLLECTIVE_FACTORY,
         base: BASE_COLLECTIVE_FACTORY,
+        sepolia: SEPOLIA_COLLECTIVE_FACTORY,
       },
     },
     SlotBoundNFTFactory: {
@@ -610,6 +666,7 @@ const remoteConfig = createConfig({
       chain: {
         baseSepolia: BASE_SEPOLIA_NFT_FACTORY,
         base: BASE_NFT_FACTORY,
+        sepolia: SEPOLIA_NFT_FACTORY,
       },
     },
     // Every collection the factory has made. Unlike `Slot` and `SlotCollective`
@@ -634,6 +691,14 @@ const remoteConfig = createConfig({
           }),
           startBlock: BASE_NFT_FACTORY.startBlock,
         },
+        sepolia: {
+          address: factory({
+            address: SEPOLIA_NFT_FACTORY.address,
+            event: COLLECTION_CREATED_EVENT,
+            parameter: "collection",
+          }),
+          startBlock: SEPOLIA_NFT_FACTORY.startBlock,
+        },
       },
     },
     // Every collective the factory has made. Same shape as `Slot` above and
@@ -657,6 +722,14 @@ const remoteConfig = createConfig({
             parameter: "manager",
           }),
           startBlock: BASE_COLLECTIVE_FACTORY.startBlock,
+        },
+        sepolia: {
+          address: factory({
+            address: SEPOLIA_COLLECTIVE_FACTORY.address,
+            event: COLLECTIVE_DEPLOYED_EVENT,
+            parameter: "manager",
+          }),
+          startBlock: SEPOLIA_COLLECTIVE_FACTORY.startBlock,
         },
       },
     },

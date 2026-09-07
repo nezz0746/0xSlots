@@ -41,15 +41,46 @@ contract AdLand is AdLandCreatives, AdLandLens, AdLandRegistry, IDescribedHook {
         return 1;
     }
 
+    /**
+     * @notice Two families, because this hook now does two things.
+     *
+     * @dev A slot takes one hook, so an advertising slot that also wants a
+     *      minimum tenure attaches AdLand and nothing else. A consumer that
+     *      only read the first entry would see "creatives" and conclude the
+     *      slot is freely buyable, which is the opposite of true for a slot
+     *      inside its window. Both are declared, and a client matches whichever
+     *      families it understands.
+     *
+     *      `version: 1` on the adland entry describes THIS contract's creative
+     *      behaviour, unchanged. The tenure entry carries the rule's own
+     *      version, so a client that already knows {MinimumTenureHook} reads it
+     *      here without learning anything new.
+     *
+     *      Declared unconditionally, like `subscriptions`. This is `pure` and
+     *      cannot see a slot, so it says what the hook CAN enforce; whether a
+     *      given slot configured a window is `Slot.hookData`, and zero means
+     *      none.
+     */
     function descriptors() external pure returns (HookDescriptor[] memory d) {
-        d = new HookDescriptor[](1);
+        d = new HookDescriptor[](2);
         d[0] = HookDescriptor({
             family: FAMILY,
             version: 1,
-            // Nothing to configure: this hook behaves identically for every
-            // slot pointing at it, so there is no per-slot parameter for a
-            // client to decode.
+            // Creatives take no per-slot configuration.
+            signature: "",
+            // The creative side takes no configuration and behaves identically
+            // for every slot pointing here.
             data: "",
+            metadataURI: ""
+        });
+        d[1] = HookDescriptor({
+            family: TENURE_FAMILY,
+            version: TENURE_DESCRIPTOR_VERSION,
+            signature: tenureSignature(),
+            // The same schema {MinimumTenureHook} publishes, from the same
+            // base — so a client that can configure a tenure hook can
+            // configure an AdLand slot's window without knowing it is AdLand.
+            data: tenureBounds_(),
             metadataURI: ""
         });
     }

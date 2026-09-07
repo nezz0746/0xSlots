@@ -16,7 +16,7 @@
 // The V1 Solidity is still in `apps/contracts/src/v1` — it is deployed and it
 // is somebody's money. What is gone is the TypeScript that spoke to it.
 import type { Chain } from "viem";
-import { anvil, base, baseSepolia } from "viem/chains";
+import { anvil, base, baseSepolia, sepolia } from "viem/chains";
 import { slotFactoryAddress } from "./slots";
 
 /** Every ABI, address and helper for the live protocol. */
@@ -26,6 +26,7 @@ const CHAIN_MAP: Record<number, Chain> = {
   [anvil.id]: anvil,
   [base.id]: base,
   [baseSepolia.id]: baseSepolia,
+  [sepolia.id]: sepolia,
 };
 
 /**
@@ -51,8 +52,14 @@ const CHAIN_MAP: Record<number, Chain> = {
  * the protocol was deployed to Base, 8453 sorted ahead of 31337 and every local
  * run silently defaulted to mainnet. Nothing in the diff said so; the deployment
  * did it.
+ *
+ * The testnet tier reads `c.testnet` rather than naming base-sepolia. Naming it
+ * made every OTHER testnet rank as a mainnet, so the second one added would sort
+ * beside Base — and on a production build, where anvil is dropped, whichever
+ * landed first became the default. A testnet chosen by accident is harmless; a
+ * mainnet chosen by accident is not.
  */
-const rank = (c: Chain) => (c.id === anvil.id ? 0 : c.id === baseSepolia.id ? 1 : 2);
+const rank = (c: Chain) => (c.id === anvil.id ? 0 : c.testnet ? 1 : 2);
 
 export const CHAINS = Object.keys(slotFactoryAddress)
   .map((id) => CHAIN_MAP[Number(id)])

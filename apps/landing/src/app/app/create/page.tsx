@@ -14,7 +14,6 @@ import {
   getAddress,
   type Hex,
   isAddress,
-  toHex,
   zeroAddress,
 } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
@@ -321,13 +320,17 @@ export default function CreatePage() {
         : hookResolved.resolved || data.hook
     ) as Address;
 
-    // 32 bytes, big-endian seconds — the shape `MinimumTenureHook` decodes.
-    // Zero is not a short window but an unconfigured one, and the hook refuses
-    // it at creation rather than vetoing every buy afterwards.
-    const hookData: Hex =
-      data.hookMode === "tenure"
-        ? toHex(toSeconds(data.tenureValue, data.tenureUnit), { size: 32 })
-        : ZERO_HOOK_DATA;
+    /**
+     * The hook's own word, encoded by the form the hook described.
+     *
+     * One branch, for every hook. Minimum tenure used to have a second one
+     * here — its duration was a pair of form fields converted to seconds at
+     * submit — which meant the same `uint256 window` had two encoders and only
+     * the descriptor's was ever put to `validateHookData`. Empty is a legal
+     * answer and stays one: a hook that refuses it says so through the form,
+     * which is what disarms the button.
+     */
+    const hookData: Hex = (data.customHookData || ZERO_HOOK_DATA) as Hex;
 
     if (
       hookAddress !== zeroAddress &&

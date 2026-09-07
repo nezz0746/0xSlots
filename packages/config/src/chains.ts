@@ -1,5 +1,5 @@
 import type { Chain } from "viem";
-import { anvil, base, baseSepolia } from "viem/chains";
+import { anvil, base, baseSepolia, sepolia } from "viem/chains";
 
 /**
  * All chains for the app: DEFAULT_CHAIN first, then remaining protocol chains.
@@ -13,7 +13,6 @@ const isDev = process.env.NODE_ENV === "development";
  * `http()` and viem uses the chain's own default RPC — http://127.0.0.1:8545,
  * which is exactly where `pnpm dev:local` puts it.
  */
-export const appChains = (isDev ? [base, baseSepolia, anvil] : [base, baseSepolia]) as [
-  Chain,
-  ...Chain[],
-];
+export const appChains = (
+  isDev ? [base, baseSepolia, sepolia, anvil] : [base, baseSepolia, sepolia]
+) as [Chain, ...Chain[]];

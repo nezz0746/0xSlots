@@ -38,6 +38,8 @@ export interface Upgradeable {
  * SlotBoundNFT COLLECTION — the factory that deploys them is upgradeable, the
  * collections themselves are plain contracts with no key over them. An upgrade
  * there changes the next collection, never one people already hold tokens in.
+ *
+ * Absent from THIS table is not absent from the report — see {IMMUTABLES}.
  */
 export const PROXIES: Record<string, Upgradeable> = {
   SlotFactory: { target: "src/SlotFactory.sol:SlotFactory", kind: "uups" },
@@ -61,6 +63,62 @@ export const PROXIES: Record<string, Upgradeable> = {
     owner: "SlotCollectiveFactory",
   },
 };
+
+/**
+ * Deployed directly, and never upgraded — but still shipped by this script.
+ *
+ * They were reported nowhere, and silence was the wrong answer twice over.
+ *
+ * A change to one of these does not move a live contract; it stands up a
+ * SECOND one at a new address, because the CREATE2 salt covers the initcode and
+ * a changed contract predicts somewhere else. The old address keeps running and
+ * keeps serving every slot already attached to it. That is the safe behaviour —
+ * nobody's hook changes under them — and it is exactly the thing an operator has
+ * to be told, because "upgrade" reads like the old one moved.
+ *
+ * And with no row here, an upgrade whose ONLY change was one of these counted as
+ * zero changes: the CLI announced that everything was already running its
+ * current code and returned without broadcasting. The new hook could not be
+ * deployed through this tool at all.
+ *
+ * No storage gate on these, deliberately. A new address has fresh storage, so
+ * there is no layout to preserve — the whole class of bug the gate exists for
+ * cannot happen here.
+ */
+export interface Standalone {
+  target: string;
+  /**
+   * Where the deploy script keeps this contract's salt version, when the
+   * contract has no `version()` of its own. Read from the script rather than
+   * guessed at, because the salt is what decides the address.
+   */
+  versionConstant?: string;
+}
+
+export const IMMUTABLES: Record<string, Standalone> = {
+  OfferBook: { target: "src/periphery/book/OfferBook.sol:OfferBook" },
+  MinimumTenureHook: {
+    target: "src/hooks/MinimumTenureHook.sol:MinimumTenureHook",
+    versionConstant: "TENURE_HOOK_VERSION",
+  },
+};
+
+/**
+ * The salt version a constant in the deploy script carries.
+ *
+ * `MinimumTenureHook` has no `version()` — it is not a proxy and nothing calls
+ * one — so its version lives beside its deployment, as the constant that goes
+ * into the salt. Reading it here keeps one source rather than a copy in this
+ * package that could disagree with the script that actually deploys.
+ */
+export function scriptVersion(constant: string): string | null {
+  const file = join(CONTRACTS, "script/protocol/DeployProtocol.s.sol");
+  if (!existsSync(file)) return null;
+  const m = readFileSync(file, "utf8").match(
+    new RegExp(`${constant}\\s*=\\s*(\\d+)`),
+  );
+  return m?.[1] ?? null;
+}
 
 export interface StorageVar {
   label: string;

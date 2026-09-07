@@ -111,6 +111,38 @@ export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
     // produces the slot it always did.
     NATIVE_CURRENCY,
   ],
+  /**
+   * Ethereum Sepolia — native ETH first, and that is a decision rather than an
+   * oversight.
+   *
+   * Every other chain here leads with a stablecoin because it has one a new
+   * user can actually get: anvil and base-sepolia both default to a token with
+   * an unpermissioned `mint`. Sepolia has none. Circle's USDC is the real
+   * FiatToken, so leading with it would put a trip to faucet.circle.com and an
+   * ERC-20 approval between a new user and their first slot, while testnet ETH
+   * is one faucet away and needs no approval at all.
+   */
+  [SlotsChain.SEPOLIA]: [
+    NATIVE_CURRENCY,
+    {
+      // Circle's testnet USDC. Mintable only by configured minters — see
+      // `faucet` on TokenInfo — so it is offered, not defaulted to.
+      address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      name: "USD Coin",
+      symbol: "USDC",
+      decimals: 6,
+      logo: "usdc",
+    },
+    {
+      // Not the OP-stack predeploy: Ethereum has no such thing, and this is
+      // the canonical Sepolia WETH.
+      address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+      name: "Wrapped Ether",
+      symbol: "WETH",
+      decimals: 18,
+      logo: "weth",
+    },
+  ],
   [SlotsChain.BASE]: [
     {
       address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",

@@ -49,7 +49,7 @@ export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
  * than an entry in the known list because it asks a QUESTION: the known list is
  * addresses you attach as they are, and this one needs a number first.
  */
-export const hookModes = ["none", "known", "tenure", "custom"] as const;
+export const hookModes = ["none", "known", "custom"] as const;
 export type HookMode = (typeof hookModes)[number];
 
 export const createSlotSchema = z
@@ -94,20 +94,32 @@ export const createSlotSchema = z
       ),
     minDepositUnit: z.enum(timeUnits),
     hookMode: z.enum(hookModes),
-    /**
-     * Minimum-tenure duration, when `hookMode` is "tenure". Becomes the slot's
-     * `hookData`, not part of the hook's address.
-     */
-    tenureValue: z
-      .string()
-      .refine(
-        (v) => !Number.isNaN(Number(v)) && Number(v) > 0,
-        "Must be a positive number",
-      ),
-    tenureUnit: z.enum(timeUnits),
     hook: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
+    /**
+     * A CUSTOM hook's configuration, already encoded to its word.
+     *
+     * Written by the form the hook itself described, not typed. Empty when the
+     * hook publishes no schema or takes no configuration — which is most of
+     * them, and is why this is not required.
+     */
+    customHookData: z.string(),
+    /**
+     * Whether the hook has ACCEPTED the word above.
+     *
+     * Written by the configuration form from `validateHookData` on chain —
+     * the same function the slot runs at attach — and true when there is
+     * nothing to configure. A boolean rather than a rule, because the rule
+     * belongs to the hook and this schema cannot know it: what counts as a
+     * valid word is different for every hook, and for some of them an empty
+     * one is fine.
+     *
+     * It exists so a refusal reaches the SUBMIT BUTTON. Without it the form
+     * showed the hook's error beside the field and armed anyway, and the
+     * refusal arrived as a reverted transaction.
+     */
+    hookDataOk: z.boolean(),
     mutableTax: z.boolean(),
     mutableHook: z.boolean(),
     manager: z.string().refine(isValidAddressOrEns, {
@@ -145,14 +157,18 @@ export const createSlotSchema = z
   .refine(
     (d) => {
       if (d.hookMode === "none") return true;
-      // In tenure mode `hook` is written by the section, not typed, so the
-      // only thing this layer can insist on is the duration behind it. Zero is
-      // not a short window — the hook refuses it — so the floor is real.
-      if (d.hookMode === "tenure") return Number(d.tenureValue) > 0;
       return d.hook.trim().length > 0;
     },
     { message: "Choose a hook or switch to none", path: ["hook"] },
   )
+  // And a hook that was chosen must also be CONFIGURED — by its own rules,
+  // which only it can apply. `hookDataOk` carries its answer; the message is
+  // deliberately vague because the specific one is already on the field,
+  // straight from the revert.
+  .refine((d) => d.hookDataOk, {
+    message: "This hook has not accepted its configuration",
+    path: ["customHookData"],
+  })
   .refine(
     (d) => {
       if (d.recipientMode === "group") return d.splitRecipients.length >= 2;
@@ -230,9 +246,10 @@ export const defaultValues: CreateSlotFormValues = {
   // simplest thing the protocol can make, which is also the one whose rules a
   // reader can hold in their head.
   hookMode: "none",
+  customHookData: "",
+  // Nothing to configure is not a failure to configure.
+  hookDataOk: true,
   hook: "",
-  tenureValue: "7",
-  tenureUnit: "days",
   mutableTax: false,
   mutableHook: false,
   manager: "",

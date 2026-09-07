@@ -25,6 +25,11 @@ export const EXPLORER_SECTIONS: ExplorerSection[] = [
   // chosen at creation — so there is no gallery to browse. The hook a slot
   // points at is a column and a filter on the slots table instead.
   //
+  // `/app/hooks` is not that gallery coming back. It lists what can be
+  // ATTACHED and what each one asks for — a question asked before a slot
+  // exists — where a section here would be one more way to look at slots that
+  // already do.
+  //
   // Events are deliberately NOT a section. They are not a different thing to
   // explore, they are the same slots seen as a stream of what happened to them,
   // so they live as a tab inside Slots. See `explorer/slots-events.tsx`.

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {SlotMath} from "../SlotMath.sol";
 import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
 import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
+import {MinimumTenure} from "./MinimumTenure.sol";
 
 /**
  * @title MinimumTenureHook
@@ -70,16 +69,13 @@ import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
  *      cannot be used to seat someone underfunded or to restart protection at a
  *      price the tax rounds away.
  */
-contract MinimumTenureHook is ISlotHook, IDescribedHook {
-    error TenureNotElapsed(uint256 availableAt);
-    error TenureUnderfunded(uint256 required);
-    error PriceCutDuringTenure();
-    error TenureNotConfigured();
-    error TenureTooLong(uint256 max);
-    error BuyoutBelowPremium(uint256 required);
+contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
 
-    bytes32 public constant FAMILY = keccak256("slots.hook.minimum-tenure");
-    uint32 public constant DESCRIPTOR_VERSION = 2;
+    /// @dev Kept as this contract's own names for consumers that already read
+    ///      them; the values are the rule's, so a slot cannot tell the two
+    ///      hosts apart by family.
+    bytes32 public constant FAMILY = TENURE_FAMILY;
+    uint32 public constant DESCRIPTOR_VERSION = TENURE_DESCRIPTOR_VERSION;
 
     /**
      * @notice The longest window this hook will accept. Ten years.
@@ -96,34 +92,6 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
      *      nothing about why. The bound turns it into one revert, at creation,
      *      naming the limit.
      */
-    uint256 public constant MAX_TENURE = 3650 days;
-
-    /**
-     * @notice What a buyer must DECLARE to take a slot inside its window,
-     *         as bps of the price the occupant declared. 100_000 = 10x.
-     *
-     * @dev The window is a veto on being outbid, not a veto on being bought.
-     *      Absolute, it made the slot unbuyable at ANY price — and since a slot
-     *      priced at dust accrues no tax, its occupant could hold it for ever
-     *      for the cost of gas, renewing the window by releasing and rebuying
-     *      through a second address in one transaction. Nothing could evict
-     *      them: liquidation never armed, and no buy was ever permitted.
-     *
-     *      Bounded, the protection scales with what the occupant is actually
-     *      paying for. Declare 100 ether and a buyer must declare 1000 to take
-     *      you early — a real premium, on a price they then owe tax on and can
-     *      themselves be taken at. Declare 1 wei and a buyer needs 10 wei. You
-     *      are protected exactly as much as you have chosen to be exposed,
-     *      which is the trade this protocol is made of.
-     *
-     *      Ten times, because it has to be a price nobody pays casually and
-     *      everybody can pay deliberately. It is a constant rather than a
-     *      `hookData` field because the word is fully spent on the window; if a
-     *      slot ever needs its own premium, pack them — `uint64` of seconds
-     *      leaves 192 bits free — and bump {DESCRIPTOR_VERSION}.
-     */
-    uint256 public constant BUYOUT_PREMIUM_BPS = 100_000;
-
     /**
      * ── Known shape of this curve, and where it could go next ───────────────
      *
@@ -158,35 +126,6 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
      * a slot picks the curve it wants by picking its hook.
      */
 
-    /// @notice When an account that just vacated may take a given slot again.
-    /// @dev A window protects an occupant FROM the market. Letting the same
-    ///      account start a fresh one the instant it ends turns protection into
-    ///      tenure without end, which is the opposite of a forced-sale market.
-    ///      Keyed by (slot, account) because one deployment serves every slot.
-    ///
-    ///      This is the hook's ONLY storage, and it is a record of what
-    ///      happened rather than configuration. Nothing here decides a slot's
-    ///      rules; `ctx.hookData` does, and the slot owns that.
-    mapping(address => mapping(address => uint256)) public reentryAllowedAt;
-
-    /**
-     * @notice The window this slot configured, in seconds.
-     *
-     * @dev Zero is not a short window, it is an unconfigured one, and it is
-     *      rejected rather than treated as "no protection". A slot that meant
-     *      to have no minimum tenure attaches no hook; one that attached THIS
-     *      hook and left the data empty has a configuration mistake.
-     *
-     *      Both ends are refused, and both are the same kind of refusal: a word
-     *      that is not a duration. See {MAX_TENURE} for the upper one.
-     */
-    function tenureOf(bytes32 data) public pure returns (uint256) {
-        uint256 seconds_ = uint256(data);
-        if (seconds_ == 0) revert TenureNotConfigured();
-        if (seconds_ > MAX_TENURE) revert TenureTooLong(MAX_TENURE);
-        return seconds_;
-    }
-
     /// @inheritdoc ISlotHook
     /// @dev The whole of this hook's configuration is one number, so
     ///      validation is {tenureOf} run for its revert.
@@ -212,7 +151,11 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         result[0] = HookDescriptor({
             family: FAMILY,
             version: DESCRIPTOR_VERSION,
-            data: "",
+            signature: tenureSignature(),
+            // The window's layout and bounds, from the same constants the
+            // check enforces. A client renders the field and validates against
+            // `validateHookData` before anything is attached.
+            data: tenureBounds_(),
             metadataURI: ""
         });
     }
@@ -227,119 +170,35 @@ contract MinimumTenureHook is ISlotHook, IDescribedHook {
         f.afterLiquidate = true;
     }
 
+    // ─── the rule, which lives in {MinimumTenure} ───────────────────────────
+    //
+    // This contract is now the hook SURFACE and nothing else: the window, the
+    // premium, the re-entry bar and the funding check are the base's, so a
+    // hook that needs tenure alongside something else inherits the same code
+    // rather than a second contract standing behind a fan-out.
+
     /// @notice Refuse a buy that is underfunded, or that lands inside somebody
     ///         else's protection window.
     function beforeBuy(SlotContext calldata ctx) external view {
-        uint256 window = tenureOf(ctx.hookData);
-        _requireFunded(ctx, window);
-
-        // The account that just vacated cannot immediately retake it. This is
-        // what closes the renewal loop: release-and-rebuy in one transaction
-        // used to re-arm `occupiedSince` at no cost, and at a dust price the tax
-        // floors to zero so liquidation never armed either — the slot left
-        // forced sale permanently, for one wei.
-        uint256 barred = reentryAllowedAt[ctx.slot][ctx.account];
-        if (block.timestamp < barred) revert TenureNotElapsed(barred);
-
-        // Vacant slots are otherwise always claimable — no tenure to protect.
-        if (ctx.occupant == address(0)) return;
-
-        // Out of the window: an ordinary buy, at any price.
-        if (block.timestamp >= ctx.occupiedSince + window) return;
-
-        // Inside it: only at the premium. `mulDiv` rather than `*`, so a price
-        // near the top of the range cannot overflow the requirement into a
-        // revert that reads as protection.
-        uint256 required = Math.mulDiv(
-            ctx.currentPrice, BUYOUT_PREMIUM_BPS, 10_000
-        );
-        if (ctx.newPrice < required) revert BuyoutBelowPremium(required);
+        _enforceTenureOnBuy(ctx);
     }
-
-    // `beforeSell` used to live here, refusing a sale that cut the price or
-    // underfunded the window. `Slot.sell` is gone: a sale is now `selfAssess`
-    // then `buy`, so both of those are enforced by `beforeSelfAssess` and
-    // `beforeBuy` — the checks this hook already had, on the one path that
-    // remains. The channel that let an occupant restart their own window by
-    // selling to themselves at a dust price closed with it.
 
     /// @notice No cutting your price while nobody is allowed to take it.
     function beforeSelfAssess(SlotContext calldata ctx) external view {
-        _requireNoCutDuringTenure(ctx, tenureOf(ctx.hookData));
+        _enforceTenureOnSelfAssess(ctx);
     }
 
     /// @notice Record who left, so they cannot walk straight back in.
-    /// @dev The slot calls these gas-capped and swallows a revert, so this must
-    ///      stay cheap and must not assume it succeeded — a missed write only
-    ///      means one account is not barred, never that a slot breaks.
-    ///
-    ///      {tenureOf} rather than a raw cast, for the bound rather than the
-    ///      revert: an unchecked huge value would overflow this addition, and
-    ///      the swallowed revert would silently skip the bar. A slot that
-    ///      attached this hook has already passed both checks, so in practice
-    ///      this cannot revert at all.
-    ///
-    ///      `ctx.slot`, NOT `msg.sender`, even though the core is the only
-    ///      caller and the two therefore hold the same address. This wrote
-    ///      `msg.sender` while {beforeBuy} read `ctx.slot`, and a fan-out hook
-    ///      that forwarded the context — which the protocol shipped and has
-    ///      since removed — made them diverge: the bar landed under the
-    ///      forwarder and the read found nothing. Keyed off the context on both
-    ///      sides, no caller can put them out of step again.
     function afterRelease(SlotContext calldata ctx) external {
-        reentryAllowedAt[ctx.slot][ctx.account] =
-            block.timestamp + tenureOf(ctx.hookData);
+        _barReentry(ctx);
     }
 
     function afterLiquidate(SlotContext calldata ctx) external {
-        reentryAllowedAt[ctx.slot][ctx.account] =
-            block.timestamp + tenureOf(ctx.hookData);
+        _barReentry(ctx);
     }
 
     // Not subscribed — declared to satisfy the interface, never called.
     function afterBuy(SlotContext calldata) external {}
+
     function afterSettle(SlotContext calldata) external {}
-
-    /// @notice Tax due on `price` over a window of `tenureSeconds`.
-    /// @dev `ceilDiv`, not `/`. Rounding down let a short window on a low price
-    ///      round to zero, which made the funding requirement vanish and the
-    ///      slot claimable for nothing.
-    function requiredDeposit(
-        uint256 price,
-        uint256 taxBps,
-        uint256 tenureSeconds
-    ) public pure returns (uint256) {
-        // The slot's own formula, not a copy of it. A hook cannot inherit from
-        // the slot, and a hand-written duplicate that drifts seats an occupant
-        // this hook believed had funded the window.
-        return SlotMath.depositFor(price, taxBps, tenureSeconds);
-    }
-
-    /// @dev Sized against the HIGHER of the incoming and sitting price.
-    ///
-    ///      The funding requirement used to be computed from the taker's own
-    ///      declared price, so the party the window protects also set what the
-    ///      window cost: enter at 1 wei and `ceilDiv` returns 1 wei for a slot
-    ///      nobody may buy for the whole period. Anchoring to the price being
-    ///      displaced means undercutting the market no longer buys protection
-    ///      cheaply.
-    function _requireFunded(
-        SlotContext calldata ctx,
-        uint256 window
-    ) internal pure {
-        uint256 basis = ctx.newPrice > ctx.currentPrice
-            ? ctx.newPrice
-            : ctx.currentPrice;
-        uint256 required = requiredDeposit(basis, ctx.taxBps, window);
-        if (ctx.depositAmount < required) revert TenureUnderfunded(required);
-    }
-
-    function _requireNoCutDuringTenure(
-        SlotContext calldata ctx,
-        uint256 window
-    ) internal view {
-        if (ctx.occupiedSince == 0) return;
-        if (block.timestamp >= ctx.occupiedSince + window) return;
-        if (ctx.newPrice < ctx.currentPrice) revert PriceCutDuringTenure();
-    }
 }
