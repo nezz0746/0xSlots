@@ -26,7 +26,6 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 │   ├── contracts/       # Published ABIs & addresses (@0xslots/contracts)
 │   ├── sdk/             # Type-safe protocol SDK (@0xslots/sdk)
 │   ├── ponder/          # The indexer the SDK reads (@0xslots/ponder)
-│   ├── subgraph/        # Legacy The Graph indexing
 │   ├── config/          # Shared configuration
 │   └── mcp/             # MCP server
 ```
@@ -104,8 +103,9 @@ policies keep resolving — see [the deployments docs](apps/docs/docs/pages/depl
 
 Reads come from a [Ponder](https://ponder.sh) deployment — one instance serving
 every chain, which is why `chainId` is a query filter rather than an endpoint.
-See [packages/ponder](packages/ponder/README.md). `packages/subgraph` still
-exists but is no longer what the SDK queries.
+See [packages/ponder](packages/ponder/README.md). It indexes the core protocol
+and one hook: AdLand's creatives, because the ad a slot is showing lives nowhere
+else.
 
 ## Development
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createConfig, factory } from "ponder";
 import { parseAbiItem } from "viem";
 import {
+  AdLandAbi,
   SlotAbi,
   SlotCollectiveAbi,
   SlotBoundNftAbi,
@@ -164,6 +165,24 @@ function anvilNftFactory(): Deployment {
 
 const UNDEPLOYED = "0x0000000000000000000000000000000000000000" as const;
 
+/**
+ * Where the deployment records live, resolved without assuming a module format.
+ *
+ * `__dirname` exists when this config is loaded as CommonJS and is UNDEFINED
+ * under an ESM loader — and the read below is inside a `try` that treats any
+ * failure as "nothing deployed there". So under the wrong loader every chain
+ * resolves to the zero address, every filter matches nothing, and the indexer
+ * runs to completion having indexed an empty protocol. No error, no warning:
+ * exactly the silent-empty-index failure the notes above are written against.
+ *
+ * Ponder runs with the cwd at this package, so the two agree; the fallback is
+ * only reached where `__dirname` is not defined at all.
+ */
+const RECORDS =
+  typeof __dirname === "undefined"
+    ? join(process.cwd(), "../../apps/contracts/deployments")
+    : join(__dirname, "../../apps/contracts/deployments");
+
 type Deployment = {
   address: `0x${string}`;
   startBlock: number | "latest";
@@ -186,10 +205,7 @@ function remoteFactory(
   // Otherwise the record the deploy script wrote.
   try {
     const raw = readFileSync(
-      join(
-        __dirname,
-        `../../apps/contracts/deployments/${chainId}/${name}.json`,
-      ),
+      join(RECORDS, String(chainId), `${name}.json`),
       "utf8",
     );
     const rec = JSON.parse(raw) as Deployment & { version?: number };
@@ -306,6 +322,45 @@ const SEPOLIA_NFT_FACTORY = remoteFactory(
   "NFT_START_BLOCK_SEPOLIA",
   11155111,
   "SlotBoundNFTFactory",
+);
+
+// ──────────────────────────────────────────
+// AdLand
+//
+// A HOOK, and the first one this indexer watches. It is not discovered through
+// `factory()` like the sources above: there is one deployment per chain at a
+// known address, and the slots pointing at it are the slots that chose it.
+//
+// Watching a hook at all is a departure worth stating. Everything else here is
+// the core protocol, which every slot shares; a hook is one behaviour among
+// however many people write, and indexing one is a product decision rather than
+// a protocol one. AdLand earns it because the creative it stores is the whole
+// content of an ad space and lives nowhere else — no other event says what a
+// slot is showing.
+//
+// `remoteFactory` reads any record, not only factories, and the `version`
+// discriminator matters here too: `deployments/8453/AdLand.json` predates
+// nothing, but the function is the one place that knows how to tell a ported
+// record from a pre-port one.
+// ──────────────────────────────────────────
+
+const BASE_SEPOLIA_ADLAND = remoteFactory(
+  "ADLAND_BASE_SEPOLIA",
+  "ADLAND_START_BLOCK_BASE_SEPOLIA",
+  84532,
+  "AdLand",
+);
+const BASE_ADLAND = remoteFactory(
+  "ADLAND_BASE",
+  "ADLAND_START_BLOCK_BASE",
+  8453,
+  "AdLand",
+);
+const SEPOLIA_ADLAND = remoteFactory(
+  "ADLAND_SEPOLIA",
+  "ADLAND_START_BLOCK_SEPOLIA",
+  11155111,
+  "AdLand",
 );
 
 // ──────────────────────────────────────────
@@ -659,6 +714,14 @@ const remoteConfig = createConfig({
         baseSepolia: BASE_SEPOLIA_COLLECTIVE_FACTORY,
         base: BASE_COLLECTIVE_FACTORY,
         sepolia: SEPOLIA_COLLECTIVE_FACTORY,
+      },
+    },
+    AdLand: {
+      abi: AdLandAbi,
+      chain: {
+        baseSepolia: BASE_SEPOLIA_ADLAND,
+        base: BASE_ADLAND,
+        sepolia: SEPOLIA_ADLAND,
       },
     },
     SlotBoundNFTFactory: {
