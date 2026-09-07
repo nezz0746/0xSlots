@@ -32,12 +32,13 @@ Unified write executor with transaction lifecycle tracking.
 import { useSlotAction } from "@0xslots/sdk/react";
 
 const {
-  buy, selfAssess, topUp, withdraw, release, collect, liquidate,
-  createSlot, createSlots, createSlotWithTenure, createSlotWithPriceFloor,
-  proposeTaxUpdate, proposeUtilityUpdate, proposePolicyUpdate,
-  cancelPendingUpdate, cancelPendingUpdates, setLiquidationBounty,
-  updateMetadata,
+  createSlot,                                  // factory
+  buy, release, liquidate,                     // occupancy
+  selfAssess, topUp, withdraw, setOperator,    // holding
+  collect, claim,                              // money out
+  proposeTerms, cancelTerms, manageTerms,      // manager
   exec,          // generic executor
+  preflight,     // dry-run a call
   busy,          // isPending || isConfirming
   isPending,     // wallet interaction in progress
   isConfirming,  // waiting for on-chain confirmation
@@ -49,39 +50,37 @@ const {
 });
 ```
 
-`proposeModuleUpdate` is still returned, as a deprecated alias for
-`proposeUtilityUpdate`.
+`sell`, `makeSellOrder`, `signSellOrder` and `cancelSellOrder` are gone with
+`Slot.sell`. A consensual sale is `setOperator(book, true)` once per tenure, then
+`book.acceptOffer(slot, id)` — see [Selling into an offer](/sdk/client).
 
-`cancelPendingUpdate(slot, kind)` retracts one of a slot's three governable
-dimensions; `cancelPendingUpdates(slot)` retracts all of them.
-
-```tsx
-import { UpdateKind } from "@0xslots/sdk";  // Tax = 0, Utility = 1, Policy = 2
-
-await cancelPendingUpdate(slot, UpdateKind.Tax);
-```
+`proposeTerms(slot, { taxBps?, hook? })` queues the tax rate, the hook, or
+both; `cancelTerms(slot, cancelTax?, cancelHook?)` retracts them, one
+dimension or both. There is no separate call per dimension — a slot has two
+mutable terms, tax and hook, and they move through the same pair of functions.
 
 ---
 
-## `useSlotOnChain`
+## Reading a slot
 
-Fetches a single slot's state from on-chain via RPC. Auto-invalidates on new blocks.
-
-```tsx
-import { useSlotOnChain } from "@0xslots/sdk/react";
-
-const { data: slot, isLoading, refetch } = useSlotOnChain(address, 8453);
-// slot: { occupant, price, deposit, taxPercentage, insolvent, currencySymbol, ... }
-```
-
----
-
-## `useSlotsOnChain`
-
-Fetches multiple slots via multicall. Deduplicates currency metadata requests.
+There is no read hook. `@0xslots/sdk/react` ships exactly two — `useSlotsClient`
+and `useSlotAction` — and reads go through the client, which returns plain
+promises you can hand to whatever query library the app already uses.
 
 ```tsx
-import { useSlotsOnChain } from "@0xslots/sdk/react";
+import { useQuery } from "@tanstack/react-query";
+import { useSlotsClient } from "@0xslots/sdk/react";
 
-const { data: slots, isLoading } = useSlotsOnChain(addresses, 8453);
+function useSlot(address: `0x${string}`) {
+  const client = useSlotsClient();
+  return useQuery({
+    queryKey: ["slot", address],
+    queryFn: () => client.slotState(address),
+  });
+}
 ```
+
+`slotState` returns occupancy, price, deposit, tax owed, the terms, and
+`hookFlags` — the hook declaration this slot snapshotted — in one call. For many
+slots, call it per address and let the query client dedupe; the client batches
+the underlying reads.

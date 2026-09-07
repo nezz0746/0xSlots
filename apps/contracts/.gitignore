@@ -1,1 +1,13 @@
 broadcast
+# Local chain artifacts.
+#
+# `deployments/31337/*` is rewritten from scratch by every `pnpm dev:local` and
+# describes an anvil instance that stops existing when the process does. Tracked
+# copies do not merely go unused — they go WRONG, and quietly: the committed
+# SlotsTestToken record named an address with no code for as long as the seed
+# had been deploying it somewhere else, and the app kept offering that token
+# while every approval reverted.
+#
+# Scoped to 31337 on purpose. Real chains' records are the deployment ledger and
+# stay tracked; `contracts-upgrade.yml` commits them.
+deployments/31337/*.json

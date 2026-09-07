@@ -1,0 +1,20 @@
+{
+  "name": "@0xslots/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deploy and upgrade the Slots protocol, interactively.",
+  "type": "module",
+  "bin": { "protocol": "./src/cli.ts" },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@types/node": "^20.10.8",
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1",
+    "tsx": "^4.7.3",
+    "typescript": "^5.4.4"
+  }
+}

@@ -7,12 +7,13 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Slot} from "../src/Slot.sol";
-import "../src/interfaces/SlotErrors.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams, SlotInfo} from "../src/interfaces/ISlot.sol";
-import {IOccupancyPolicy, OccupancyContext} from "../src/interfaces/IOccupancyPolicy.sol";
-import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotModules} from "../src/v1/SlotModules.sol";
+import "../src/v1/interfaces/SlotErrors.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams, SlotInfo} from "../src/v1/interfaces/ISlot.sol";
+import {IOccupancyPolicy, OccupancyContext} from "../src/v1/interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "../src/v1/interfaces/IModuleMetadata.sol";
 
 contract FFMockERC20 is ERC20 {
     constructor() ERC20("Mock", "MCK") { _mint(msg.sender, 1_000_000 ether); }
@@ -203,8 +204,11 @@ contract FinalFixesTest is Test {
             _init()
         ));
 
-        // The module may move...
-        s.proposeUtilityUpdate(address(0));
+        // The modules may move — proven by `addModule` getting PAST the
+        // mutability gate and failing later, on verification, instead.
+        MockMod m = new MockMod();
+        vm.expectRevert(SlotModules.ModuleNotVerified.selector);
+        s.addModule(address(m));
 
         // ...but the occupancy terms may not.
         vm.expectRevert(PolicyNotMutable.selector);
@@ -221,8 +225,10 @@ contract FinalFixesTest is Test {
             _init()
         ));
 
+        // Stops at the mutability gate, before verification is ever consulted.
+        MockMod m = new MockMod();
         vm.expectRevert(ModuleNotMutable.selector);
-        s.proposeUtilityUpdate(address(0));
+        s.addModule(address(m));
     }
 
     /// @dev `getSlotInfo` must report a slot's whole current state. It used to
@@ -481,4 +487,9 @@ contract FinalFixesTest is Test {
         assertEq(s.occupant(), address(0), "occupant must be able to leave");
         assertGt(s.withdrawableOf(recipient), 0, "tax credited to the recipient");
     }
+}
+
+/// @dev Minimal verifiable module: the gallery only needs code at the address.
+contract MockMod {
+    fallback() external {}
 }

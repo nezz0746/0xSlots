@@ -151,7 +151,7 @@ export default async function PostPage({
       <main className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
         <Link
           href="/blog"
-          className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-destructive"
+          className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-destructive"
         >
           ← All writing
         </Link>
@@ -178,7 +178,7 @@ export default async function PostPage({
                 {post.excerpt}
               </p>
             )}
-            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               {date && (
                 <time dateTime={post.publishedAt ?? undefined}>{date}</time>
               )}
@@ -208,7 +208,7 @@ export default async function PostPage({
           </div>
 
           <footer className="mt-16 border-t-2 border-foreground pt-6">
-            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               Written at{" "}
               <a
                 href={studio.url}

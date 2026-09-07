@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  type SupportedChainId,
-  slotFactoryAbi,
-  slotFactoryAddress,
-} from "@0xslots/contracts";
+import { slotFactoryAbi, slotFactoryAddress } from "@0xslots/contracts/slots";
 import { useAccount, useReadContract } from "wagmi";
 import { useChain } from "@/context/chain";
 
@@ -18,14 +14,15 @@ import { useChain } from "@/context/chain";
  * the user cannot see. A wallet parked on the wrong chain is a separate problem
  * and wagmi already solves it at send time, by prompting to switch.
  *
- * There is no indexed `admin` to read instead — ponder's `factory` table tracks
- * only `slotCount` — and it is a single address that `transferAdmin` can move,
- * so the chain is both the cheapest and the only correct source.
+ * Read from the chain rather than the indexer. Ponder's `factory` table does
+ * carry an `admin` column now, but this is a single address that
+ * `transferAdmin` can move and the answer gates a control — so a read that is
+ * correct as of the last indexed block is the wrong kind of correct.
  */
 export function useFactoryAdmin() {
   const { chainId } = useChain();
   const { address } = useAccount();
-  const factory = slotFactoryAddress[chainId as SupportedChainId];
+  const factory = slotFactoryAddress[chainId];
 
   const { data: admin, isLoading } = useReadContract({
     address: factory,
@@ -34,17 +31,19 @@ export function useFactoryAdmin() {
     chainId,
     query: {
       enabled: !!factory,
-      // The admin changes about never; re-reading it on every table mount is
-      // pure noise. `usePostTxRefresh` invalidates `readContract` immediately
-      // after any transaction, so a `transferAdmin` still lands right away.
+      // The admin changes about never; re-reading it on every mount is pure
+      // noise. `useRefreshSlots` invalidates after any write, so a
+      // `transferAdmin` still lands right away.
       staleTime: 5 * 60_000,
     },
   });
 
   return {
-    admin,
+    admin: admin as `0x${string}` | undefined,
     isAdmin:
-      !!address && !!admin && address.toLowerCase() === admin.toLowerCase(),
+      !!address &&
+      !!admin &&
+      address.toLowerCase() === (admin as string).toLowerCase(),
     isLoading,
   };
 }

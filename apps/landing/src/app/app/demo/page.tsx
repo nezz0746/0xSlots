@@ -134,7 +134,7 @@ export default function DemoPage() {
               </p>
             </div>
             <div className="mt-1.5 flex items-center gap-2">
-              <span className="text-sm font-mono font-medium">
+              <span className="text-sm font-medium">
                 {truncateAddress(MOCK.recipient.address)}
               </span>
               <Badge variant="outline" className="text-[10px] ml-auto">
@@ -221,7 +221,7 @@ export default function DemoPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <User className="size-4" />
-                <span className="text-xs font-mono font-medium">
+                <span className="text-xs font-medium">
                   {truncateAddress(MOCK.occupant.address)}
                 </span>
               </div>
@@ -289,7 +289,7 @@ export default function DemoPage() {
                         className="flex items-center gap-2 border-t py-1.5 first:border-t-0 first:pt-0"
                       >
                         <EventTypeBadge type={h.exitType} />
-                        <span className="text-[11px] font-mono">
+                        <span className="text-[11px]">
                           {truncateAddress(h.address)}
                         </span>
                         <span className="ml-auto text-[10px] text-muted-foreground">

@@ -2,110 +2,63 @@ import { Callout } from 'vocs'
 
 # SlotFactory
 
-Deploys slots as BeaconProxies sharing one implementation. Addresses are
-assigned at deploy time, not derived from config — `createSlots` can deploy many
-slots with identical parameters, so a slot is identified by its address.
+Deploys slots as BeaconProxies sharing one implementation. A slot's address is
+assigned at deploy time, not derived from its config, so a slot is identified by
+its address.
 
 ```solidity
-function createSlot(
-    address recipient,
-    IERC20 currency,
-    SlotConfig memory config,
-    SlotInitParams memory initParams
-) external returns (address slot);
-
-function createSlots(
-    address recipient,
-    IERC20 currency,
-    SlotConfig memory config,
-    SlotInitParams memory initParams,
-    uint256 count
-) external returns (address[] memory slots);
+function createSlot(SlotInit calldata init) external returns (address slot);
 ```
 
-## SlotConfig
+One call, one struct. There is no batch variant and no separate
+`recipient` / `currency` / `config` argument list — everything a slot needs is
+in `SlotInit`.
 
-What, if anything, a manager may change later.
+## SlotInit
 
 ```solidity
-struct SlotConfig {
-    bool mutableTax;       // the tax rate
-    bool mutableUtility;   // the UTILITY — what the slot does
-    bool mutablePolicy;    // the OCCUPANCY policy — who may take it, and when
-    address manager;       // address(0) if every flag is false
+struct SlotInit {
+    address recipient;         // where tax goes; never zero
+    IERC20  currency;          // token for tax and price; address(0) = native ETH
+    address manager;           // may change what is mutable; zero on an immutable slot
+    address hook;              // the single extension point; zero for none
+    bytes32 hookData;          // that hook's configuration; must be 0 when hook is
+    uint256 taxBps;            // basis points per 30 days (100 = 1%), 1..10000
+    uint256 minDepositSeconds; // deposit a buy must fund; zero = no minimum
+    bool    mutableTax;
+    bool    mutableHook;
 }
 ```
 
-Three independent flags because they are three different promises. A slot can
-offer a swappable module on occupancy terms that never change — and a slot
-advertising "the module may change" cannot quietly also reserve the right to
-change who is allowed to take it.
+`hookData` is 32 bytes the slot stores and hands its hook on every callback — a
+minimum-tenure window, say. It is what lets one hook deployment serve every
+configuration, and it is refused unless there is a hook to interpret it. The hook
+validates it at creation, so a configuration it will reject fails there rather
+than vetoing every buy afterwards.
 
-## SlotInitParams
+Two mutability flags, not three. A slot has one hook, so it has one promise
+about that hook — separate from the promise about its tax rate. A slot can offer
+a swappable hook on a tax rate that never changes, or the reverse.
 
-```solidity
-struct SlotInitParams {
-    uint256 taxPercentage;        // basis points per 30 days (100 = 1%)
-    address utility;              // utility contract, address(0) for none
-    uint256 liquidationBountyBps; // share of collected tax paid to liquidators
-    uint256 minDepositSeconds;    // deposit must cover this much tax
-    address occupancyPolicy;      // IOccupancyPolicy, address(0) for instant buy
-}
-```
+`minDepositSeconds` guards against a buyer declaring a huge price with no means
+to pay: the deposit must cover that many seconds of tax at the declared price. It
+rounds **up** — a truncating client-side copy lands one unit short and reverts.
 
-`minDepositSeconds` is the guard against a buyer declaring a huge price with no
-means to pay for it: the deposit must cover that many seconds of tax at the
-declared price. It rounds **up** — "no deposit required" means
-`minDepositSeconds == 0` and nothing else, in every currency. Integrators
-computing a deposit client-side must round up the same way; a truncating copy
-lands one unit under and reverts.
-
-<Callout type="warning">
-`mutableModule` and `module` are the **old** component names. viem encodes a
-struct argument by component name, so an object still carrying them encodes
-nothing for those fields — a silent zero address rather than an error. The
-`@0xslots/sdk` helpers accept either spelling and normalise, so most consumers
-need no change; anything hand-building the tuple does.
+<Callout type="info">
+`SlotInit` is encoded **by component name**, and a field the encoder does not
+recognise is written as a silent **zero** rather than an error — a stray or
+misspelled key lands a zero address on-chain. The `@0xslots/sdk` `createSlot`
+takes a typed `SlotInit`, so a missing or misnamed field is a compile error
+before it can become a zero.
 </Callout>
 
-## Curation
+## Admin
 
 ```solidity
-function setUtilityVerified(address utility, bool verified) external;  // admin
-function isUtilityVerified(address utility) external view returns (bool);
-function setPolicyVerified(address policy, bool verified) external;    // admin
-mapping(address => bool) public verifiedPolicies;
+function transferAdmin(address next) external;               // hand over the role
+function upgradeBeacon(address implementation) external;     // move every slot at once
+function implementation() external view returns (address);
 ```
 
-A display signal only. Unverified utilities and policies work identically — they
-simply carry no endorsement, and the explorer says so.
-
-Both setters assert **two** ERC-165 ids: the behavioural interface (`IUtility` /
-`IOccupancyPolicy`) and `IModuleMetadata`. Checking one alone would verify a
-contract that cannot describe itself, and the events emitted read its name,
-version and `metadataURI` immediately. See
-[ERC-165 ids](/reference/modules#erc-165-ids).
-
-```solidity
-event ModuleVerified(
-    address indexed utility, bool verified,
-    string name, string version, uint256 feeBps, string metadataURI
-);
-event PolicyVerified(
-    address indexed policy, bool verified,
-    string name, string version, string metadataURI
-);
-```
-
-`setModuleVerified`, `isModuleVerified` and `verifiedModules` remain as
-deprecated aliases — the selectors deployed callers and old ABIs still hold.
-
-## Operations
-
-```solidity
-function collectAll(address[] calldata slots) external;  // batch tax collection
-function upgradeBeacon(address newImplementation) external;  // admin
-```
-
-`upgradeBeacon` moves every slot at once — they all share one implementation.
-Storage is strictly append-only for that reason.
+`upgradeBeacon` moves every slot to a new implementation in one call — they all
+share one beacon. Storage is strictly append-only for that reason.

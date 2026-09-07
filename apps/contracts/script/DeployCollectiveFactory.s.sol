@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import {BaseScript, console2} from "./Base.s.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 
 /**
  * @title DeployCollectiveFactory

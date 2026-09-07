@@ -1,5 +1,15 @@
 import { Button } from "@/components/ui/button";
 
+/**
+ * How many identical slots to make.
+ *
+ * The factory used to take a `count` and deploy them in one transaction. It no
+ * longer does — there is exactly one `createSlot(SlotInit)` entry point — so
+ * `n > 1` is now n sequential transactions and n wallet confirmations. The
+ * control survives because making a strip of identical slots is a real thing
+ * people do here; what changed is the cost, and the submit button says so
+ * ("Creating 2 of 5…") rather than letting the count look free.
+ */
 interface SlotCounterProps {
   value: number;
   onChange: (count: number) => void;

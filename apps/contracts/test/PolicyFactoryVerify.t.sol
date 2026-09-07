@@ -4,12 +4,12 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IPolicyFactory} from "../src/interfaces/IPolicyFactory.sol";
-import {IOccupancyPolicy} from "../src/interfaces/IOccupancyPolicy.sol";
-import {MinimumTenurePolicy} from "../src/policies/MinimumTenurePolicy.sol";
-import {MinimumTenurePolicyFactory} from "../src/policies/MinimumTenurePolicyFactory.sol";
-import {MinimumPricePolicy} from "../src/policies/MinimumPricePolicy.sol";
-import {MinimumPricePolicyFactory} from "../src/policies/MinimumPricePolicyFactory.sol";
+import {IPolicyFactory} from "../src/v1/interfaces/IPolicyFactory.sol";
+import {IOccupancyPolicy} from "../src/v1/interfaces/IOccupancyPolicy.sol";
+import {MinimumTenurePolicy} from "../src/v1/policies/MinimumTenurePolicy.sol";
+import {MinimumTenurePolicyFactory} from "../src/v1/policies/MinimumTenurePolicyFactory.sol";
+import {MinimumPricePolicy} from "../src/v1/policies/MinimumPricePolicy.sol";
+import {MinimumPricePolicyFactory} from "../src/v1/policies/MinimumPricePolicyFactory.sol";
 
 contract PFToken is ERC20 {
     constructor() ERC20("T", "T") {}

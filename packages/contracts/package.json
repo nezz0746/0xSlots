@@ -15,13 +15,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./abis": {
-      "types": "./dist/abis.d.ts",
-      "import": "./dist/abis.js"
-    },
-    "./addresses": {
-      "types": "./dist/addresses.d.ts",
-      "import": "./dist/addresses.js"
+    "./slots": {
+      "types": "./dist/slots.d.ts",
+      "import": "./dist/slots.js"
     }
   },
   "publishConfig": {
@@ -29,6 +25,8 @@
   },
   "scripts": {
     "build": "tsup",
+    "codegen": "wagmi generate",
+    "codegen:check": "wagmi generate && git diff --exit-code -- src/generated.ts",
     "clean": "rm -rf dist",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
@@ -36,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.8",
+    "@wagmi/cli": "^2.10.0",
     "tsup": "^8.0.0",
     "tsx": "^4.7.3",
     "typescript": "^5.4.4"

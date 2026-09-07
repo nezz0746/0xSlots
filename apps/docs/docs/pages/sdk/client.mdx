@@ -60,7 +60,6 @@ const { slot } = await client.getSlot({ id: "0x..." });
 const { slots } = await client.getSlotsByRecipient({ recipient: "0x..." });
 const { slots } = await client.getSlotsByOccupant({ occupant: "0x..." });
 const { factory } = await client.getFactory();
-const { modules } = await client.getModules({ limit: 10 });
 const activity = await client.getSlotActivity({ slot: "0x..." });
 const events = await client.getRecentEvents({ limit: 20 });
 ```
@@ -111,11 +110,14 @@ a `true` here.
 
 ```ts
 const info = await client.getSlotInfo("0x...");
-// recipient, currency, occupant, price, deposit, taxPercentage, taxOwed,
-// secondsUntilLiquidation, insolvent, occupancyPolicy, pending updates, and
-// taxProposedAt / utilityProposedAt / policyProposedAt
+// terms (recipient, currency, taxBps, mutableTax, mutableHook), the
+// attached hook and its snapshotted flags, live occupancy and financials
+// (occupant, price, deposit, taxOwed, secondsUntilLiquidation, isInsolvent),
+// and any queued terms (pendingTaxBps, pendingHook, hasRipeTerms).
 
 const infos = await client.getSlotsInfo(["0x...", "0x..."]);  // multicall
+const p = await client.pending("0x...");   // just the queued terms
+const s = await client.slotState("0x..."); // just the live occupancy
 ```
 
 ## Write methods
@@ -123,75 +125,120 @@ const infos = await client.getSlotsInfo(["0x...", "0x..."]);  // multicall
 All return `Promise<Hash>`. ERC-20 approval is handled automatically.
 
 ```ts
-// Factory
-await client.createSlot({ recipient, currency, config, initParams });
-await client.createSlots({ ...params, count: 5n });
-await client.collectAll([slotA, slotB]);
+// Create — one struct, no batch variant
+await client.createSlot({
+  recipient, currency, manager, hook,   // hook: a hook address, or ZERO for none
+  taxBps: 100n, minDepositSeconds: 0n,
+  mutableTax: true, mutableHook: false,
+});
 
-// Slot interactions
-await client.buy({ slot, account, depositAmount, selfAssessedPrice });
+// Occupant interactions
+await client.buy({ slot, account, selfAssessedPrice, depositAmount /*, maxPayment */ });
 await client.selfAssess(slot, newPrice);
 await client.topUp(slot, amount);
 await client.withdraw(slot, amount);
 await client.release(slot);
-await client.collect(slot);
-await client.liquidate(slot);
+await client.collect(slot);      // permissionless
+await client.liquidate(slot);    // permissionless — no bounty
+await client.claim(slot);        // pull a credited refund
 ```
 
 `buy` takes an `account` — who becomes occupant. It need not be the signer, so
-you can buy on someone's behalf.
+you can buy on someone's behalf. The SDK takes named params, but note the
+on-chain order is `(account, selfAssessedPrice, depositAmount, maxPayment)` —
+price before deposit, matching every other pair in the protocol. Pass `maxPayment` to cap what an ERC-20 buy can
+cost against the occupant raising the price between your quote and your inclusion.
 
-### Field names
+### SlotInit
 
-`SlotConfig` and `SlotInitParams` renamed `mutableModule` → `mutableUtility` and
-`module` → `utility` to match the contracts. **The SDK accepts either and
-normalises**, so most consumers need no change:
+The create tuple is a single `SlotInit`. viem encodes a struct **by component
+name**, so the SDK exposes a typed shape — a missing or stray field is a compile
+error rather than a silent zero address on-chain.
 
 ```ts
-const config = { mutableTax: true, mutableUtility: false, mutablePolicy: false, manager };
-const initParams = { taxPercentage: 100n, utility: ZERO_ADDRESS, /* ... */ };
+type SlotInit = {
+  recipient: Address; currency: Address;   // currency ZERO = native ETH
+  manager: Address; hook: Address;          // both ZERO for immutable, hookless
+  taxBps: bigint; minDepositSeconds: bigint;
+  mutableTax: boolean; mutableHook: boolean;
+};
 ```
-
-If you build the tuple yourself and pass it straight to viem, you must use the
-new spelling. viem encodes a struct argument **by component name**, so the old
-keys encode nothing at all — a silent zero address rather than an error.
 
 ### Manager operations
 
-A slot holds at most one pending update per kind — three in total — and each is
-proposed, inspected and cancelled independently.
+Tax and hook are the two mutable dimensions, proposed and cancelled
+independently. Proposed terms apply after a one-day delay.
 
 ```ts
-import { UpdateKind } from "@0xslots/sdk";  // Tax = 0, Utility = 1, Policy = 2
+await client.proposeTerms(slot, { taxBps: 200n });      // just the tax
+await client.proposeTerms(slot, { hook: newHook });            // just the hook
+await client.proposeTerms(slot, { taxBps: 200n, hook: newHook });
+await client.proposeTerms(slot, { hook: ZERO_ADDRESS });       // detach the hook
 
-await client.proposeTaxUpdate(slot, newPct);
-await client.proposeUtilityUpdate(slot, newUtility);
-await client.proposePolicyUpdate(slot, newPolicy);
-
-await client.cancelPendingUpdate(slot, UpdateKind.Policy);  // one dimension
-await client.cancelPendingUpdates(slot);                    // all three
-
-await client.setLiquidationBounty(slot, newBps);
+await client.cancelTerms(slot, true, false);   // just the tax
+await client.cancelTerms(slot);                 // both (cancelTax/cancelHook default true)
 ```
 
-`proposeModuleUpdate` still exists as a deprecated alias for
-`proposeUtilityUpdate`. The enum values mirror the Solidity enum and go on the
-wire — do not reorder them.
+### Selling into an offer
 
-### Policy helpers
-
-Policies are minted per set of terms at a CREATE2 address, so you can compute one
-before it exists:
+`client.sell`, `makeSellOrder` and `cancelSellOrder` are gone with `Slot.sell`.
+Nothing is signed off-chain any more: a bid is an on-chain row in the [OfferBook](/reference/book),
+and the book performs the sale itself.
 
 ```ts
-const policy = await client.predictTenurePolicy(7n * 24n * 3600n);
-if (!(await client.isTenurePolicyDeployed(7n * 24n * 3600n))) {
-  await client.deployTenurePolicy(7n * 24n * 3600n);
-}
+// as the bidder — one transaction, funds stay in your wallet
+await book.offer(slot, price, deposit, expiry);
 
-await client.predictPricePolicy(currency, minPrice);
-await client.deployPricePolicy(currency, minPrice);
+// as the occupant — grant once per tenure, then accept
+await client.setOperator(slot, book, true);
+await book.acceptOffer(slot, id);
 ```
+
+`acceptOffer` reprices the slot to the bid and seats the bidder in one
+transaction, which is why the book needs the operator grant. That grant is keyed
+by tenure on the slot's side, so it lapses when the slot changes hands and cannot
+be inherited by the next occupant.
+
+The bidder approves the **book** for `price + deposit`, not the slot: `buy`
+charges `msg.sender`, and on a fill that is the book.
+
+### Configuring a hook
+
+A hook's per-slot settings live on the SLOT, as `hookData` — 32 bytes the slot
+stores at creation and hands back on every callback. That is what lets one
+deployment serve every configuration: a seven-day minimum tenure and a thirty-day
+one point at the same contract.
+
+```ts
+import { minimumTenureHookAddress } from "@0xslots/contracts/slots";
+import { toHex } from "viem";
+
+await client.createSlot({
+  // …
+  hook: minimumTenureHookAddress[chainId],
+  hookData: toHex(7n * 24n * 3600n, { size: 32 }),   // the window, in seconds
+});
+```
+
+There used to be a `predictTenureHook` / `getOrDeployTenureHook` pair here,
+because a duration meant a whole contract at a derived address — an unusual
+number cost a second transaction. It costs nothing now, and those functions are
+gone.
+
+`hookData` travels with `hook` and only with it. Passing data alongside no hook
+is refused, and so is data the hook itself rejects — a `MinimumTenureHook` given
+a zero window says so at creation rather than vetoing every buy afterwards.
+
+```ts
+await client.proposeTerms(slot, {
+  hook: minimumTenureHookAddress[chainId],
+  hookData: toHex(30n * 24n * 3600n, { size: 32 }),
+});
+```
+
+A slot wanting more than one behaviour points at one hook that implements all of
+them. That hook owns the whole 32 bytes and may pack several fields into a
+single word — the layout is its own, and `validateHookData` is where it says so.
 
 ### Multicall
 
@@ -201,28 +248,3 @@ await client.multicall(slot, [
   { functionName: "topUp", args: [amount] },
 ]);
 ```
-
-## Modules
-
-```ts
-await client.modules.metadata.getSlots({ limit: 10 });
-await client.modules.metadata.getURI(moduleAddress, slotAddress);
-await client.modules.metadata.updateMetadata(moduleAddress, slotAddress, "ipfs://...");
-
-// FeedModuleClient — buy-and-post in one transaction, plus social-group writes
-await client.modules.feed.buyAndPost(/* ... */);
-await client.modules.feed.socialGroupPost(slot, "ipfs://...");
-```
-
-<Callout type="warning">
-`module.moduleURI` is now `module.metadataURI`, following the
-[`IModuleMetadata`](/reference/modules) rename on the contracts. The column moved
-in `GetModules` and in the `SlotFields` fragment — so `getSlots`,
-`getSlotsWithMetadata`, `getSlot` and everything built on it.
-
-There is no compatibility window in either direction: the indexer serves exactly
-one schema, and GraphQL rejects the whole document on an unknown field. An older
-SDK against the new indexer returns an **empty list**, not a missing field — a
-slots table that simply renders nothing. Upgrade the SDK and the indexer
-together.
-</Callout>

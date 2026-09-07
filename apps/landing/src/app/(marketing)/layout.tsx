@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
-import { title, description } from "@/constants";
+import { description, title } from "@/constants";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { LandPlot } from "lucide-react";
-import { useSlotCounts } from "@/hooks/use-v3";
+import { useSlotCounts } from "@/hooks/use-explorer";
 
 /**
  * Protocol totals for the active chain.

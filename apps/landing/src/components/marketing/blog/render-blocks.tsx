@@ -36,7 +36,7 @@ function Figure({
         unoptimized
       />
       {caption && (
-        <figcaption className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+        <figcaption className="mt-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
           {caption}
         </figcaption>
       )}
@@ -114,7 +114,7 @@ export function RenderBlocks({
                   {block.quote}
                 </blockquote>
                 {block.attribution && (
-                  <figcaption className="mt-3 pl-6 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  <figcaption className="mt-3 pl-6 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                     — {block.attribution}
                   </figcaption>
                 )}
@@ -156,9 +156,12 @@ export function RenderBlocks({
 
           case "code":
             return (
-              <div key={key} className="my-8 border-2 border-foreground bg-foreground">
+              <div
+                key={key}
+                className="my-8 border-2 border-foreground bg-foreground"
+              >
                 {block.language && (
-                  <p className="border-b border-muted-foreground/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  <p className="border-b border-muted-foreground/40 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                     {block.language}
                   </p>
                 )}
@@ -185,7 +188,7 @@ export function RenderBlocks({
                   />
                 </div>
                 {block.caption && (
-                  <figcaption className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <figcaption className="mt-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                     {block.caption}
                   </figcaption>
                 )}

@@ -1,4 +1,9 @@
-import { DEFAULT_API_URL, LOCAL_API_URL, SlotsChain } from "@0xslots/sdk";
+import {
+  apiUrlFor,
+  LOCAL_API_URL,
+  SlotsChain,
+  type SlotsEnvironment,
+} from "@0xslots/sdk";
 
 /**
  * Where to read indexed data from.
@@ -12,14 +17,53 @@ import { DEFAULT_API_URL, LOCAL_API_URL, SlotsChain } from "@0xslots/sdk";
  * Local dev is the one exception: `pnpm dev:local` runs an indexer against
  * anvil on 42069, and chain 31337 only ever exists there.
  */
+/**
+ * Which indexer instance this build reads.
+ *
+ * One word rather than a URL, so the two deployments cannot drift apart by
+ * someone updating one and forgetting the other — the endpoints live in the
+ * SDK, next to the code that knows what they serve.
+ *
+ * ── Why a non-production build defaults to development ──
+ *
+ * It used to default to production unconditionally, on the reasoning that a
+ * build which says nothing should get the stable instance. That reasoning was
+ * about DATA — development is rebuilt whenever a testnet is redeployed — and it
+ * ignored the schema.
+ *
+ * The production instance still serves the RETIRED protocol: no `hook`, no
+ * `hookRef`, no `tenureId`. So a developer running the app with nothing set got
+ * an explorer whose every query failed GraphQL validation, retried three times
+ * behind a spinner, and looked like a slow network rather than the wrong
+ * database. An explicit `NEXT_PUBLIC_SLOTS_ENV` still wins in both directions.
+ */
+const ENVIRONMENT: SlotsEnvironment =
+  process.env.NEXT_PUBLIC_SLOTS_ENV === "development"
+    ? "development"
+    : process.env.NEXT_PUBLIC_SLOTS_ENV === "production"
+      ? "production"
+      : process.env.NODE_ENV === "production"
+        ? "production"
+        : "development";
+
 export function indexerUrlFor(chainId: number): string {
   // 31337 only ever exists on the machine running `pnpm dev:local`.
   if (chainId === SlotsChain.ANVIL) return LOCAL_API_URL;
-  // The deployed indexer serves base and base-sepolia from one database; the
-  // env var is an escape hatch for pointing a branch at a different instance.
-  return process.env.NEXT_PUBLIC_PONDER_URL || DEFAULT_API_URL;
+  // One endpoint serves every chain; the environment picks which instance.
+  // `NEXT_PUBLIC_PONDER_URL` still wins, for pointing a branch at a one-off.
+  return process.env.NEXT_PUBLIC_PONDER_URL || apiUrlFor(ENVIRONMENT);
 }
 
 // There is deliberately no INDEXER_API_KEY here. Ponder serves the GraphQL API
 // unauthenticated, and a `NEXT_PUBLIC_` key is inlined into the client bundle —
 // so it was a credential handed to every visitor in exchange for nothing.
+
+/**
+ * How the indexer classifies an address.
+ *
+ * Mirrors `accountType` in `packages/ponder/ponder.schema.ts`. It used to come
+ * from the SDK's graphql-codegen output, which was generated against the
+ * RETIRED protocol's schema — the same file this app already avoids for slot
+ * types, for the same reason.
+ */
+export type AccountType = "EOA" | "CONTRACT" | "DELEGATED" | "SPLIT";

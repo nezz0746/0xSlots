@@ -2,6 +2,7 @@ import { getChainTokens } from "@0xslots/sdk";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useFormContext } from "react-hook-form";
+import { zeroAddress } from "viem";
 import { TokenLogo } from "@/components/token-logo";
 import { FormField, FormItem, FormLabel } from "@/components/ui/form";
 import {
@@ -22,6 +23,7 @@ export function SectionCurrency() {
   const { chainId } = useChain();
   const currencyMode = form.watch("currencyMode");
   const customCurrency = form.watch("customCurrency");
+  const presetCurrency = form.watch("presetCurrency");
   const chainTokens = getChainTokens(chainId);
   const erc20 = useErc20Check(currencyMode === "custom" ? customCurrency : "");
 
@@ -41,6 +43,9 @@ export function SectionCurrency() {
       form.setValue("presetCurrency", fallback, { shouldValidate: true });
     }
   }, [chainTokens, form]);
+
+  const isNativeSelected =
+    currencyMode === "preset" && presetCurrency === zeroAddress;
 
   return (
     <>
@@ -85,7 +90,7 @@ export function SectionCurrency() {
                         {currencyMode === "custom" ? (
                           <>
                             <TokenLogo />
-                            <span>Custom address</span>
+                            <span>Custom ERC-20</span>
                           </>
                         ) : selected ? (
                           <>
@@ -112,13 +117,15 @@ export function SectionCurrency() {
                             {token.name} ({token.symbol})
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {truncateAddress(token.address)}
+                            {token.address === zeroAddress
+                              ? "native"
+                              : truncateAddress(token.address)}
                           </span>
                         </SelectItem>
                       ))}
                       <SelectItem value="custom">
                         <TokenLogo />
-                        <span>Custom address</span>
+                        <span>Custom ERC-20</span>
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -145,7 +152,7 @@ export function SectionCurrency() {
               {erc20.isLoading && (
                 <p className="flex items-center gap-1.5 text-[10px] text-blue-500">
                   <Loader2 className="size-3 animate-spin" />
-                  Checking ERC-20 token...
+                  Checking ERC-20 token…
                 </p>
               )}
               {erc20.data && (
@@ -164,6 +171,14 @@ export function SectionCurrency() {
             </FormItem>
           )}
         />
+      )}
+
+      {isNativeSelected && (
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Native ETH. Buying pays by transaction value, and signed sell orders
+          are unavailable — filling one pulls an ERC-20 allowance, which native
+          ETH does not have.
+        </p>
       )}
     </>
   );

@@ -5,9 +5,7 @@ import { Button } from "@/components/ui/button";
 import { MARKETING_LINKS } from "@/lib/external-links";
 
 // Almost no nav. The home page is a hero and a footer, and the action that
-// matters is "Open explorer". The one on-site page worth a link is the public
-// leaderboard, so it sits as a quiet text link beside the button — not a second
-// button competing with the primary action.
+// matters is "Open explorer", so it is the only thing here beside the wordmark.
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur-sm">
@@ -21,12 +19,6 @@ export function SiteHeader() {
         </Link>
 
         <div className="flex items-center gap-4">
-          <Link
-            href="/leaderboard"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Leaderboard
-          </Link>
           <Button asChild size="sm">
             <Link href={MARKETING_LINKS.explorer}>Open explorer</Link>
           </Button>

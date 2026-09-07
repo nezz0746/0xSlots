@@ -11,10 +11,20 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { NavLink } from "@/context/navigation";
 import { normalizeDecimal, truncateAddress } from "@/utils";
 import { AddressInput } from "../address-input";
 import type { CreateSlotFormValues } from "../schema";
 
+/**
+ * Who collects the tax.
+ *
+ * The protocol only asks for one address and only insists it is not the zero
+ * address — so everything in here is above the protocol, not in it. "Group"
+ * deploys a 0xSplits split first and hands the slot that split's address; from
+ * the slot's point of view nothing distinguishes the two, which is exactly why
+ * the distinction has to be made legible here instead.
+ */
 export function SectionRecipient() {
   const { address } = useAccount();
   const form = useFormContext<CreateSlotFormValues>();
@@ -72,16 +82,16 @@ export function SectionRecipient() {
       />
 
       {recipientMode === "single" && (
-        <div className="mt-3">
+        <div className="mt-3 space-y-2">
           {!useCustomRecipient ? (
             <div className="rounded-lg border bg-muted/30 p-2 md:p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">My Account</p>
-                {address && (
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                    {truncateAddress(address)}
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {address
+                    ? truncateAddress(address)
+                    : "Connect a wallet first."}
+                </p>
               </div>
               <Button
                 type="button"
@@ -106,6 +116,7 @@ export function SectionRecipient() {
                         onChange={field.onChange}
                         onBlur={field.onBlur}
                         placeholder="0x… or vitalik.eth"
+                        hint="A wallet, a split, or a collective — the protocol only cares that it is not the zero address."
                         error={fieldState.error?.message}
                       />
                     </div>
@@ -126,6 +137,17 @@ export function SectionRecipient() {
               )}
             />
           )}
+
+          <p className="text-[10px] text-muted-foreground">
+            Want the tax governed by a group?{" "}
+            <NavLink
+              href="/app/collectives"
+              className="underline underline-offset-2"
+            >
+              <Users className="inline size-3" /> Create a collective
+            </NavLink>{" "}
+            first, then paste its address here.
+          </p>
         </div>
       )}
 
@@ -172,7 +194,7 @@ export function SectionRecipient() {
                         inputMode="decimal"
                         value={pctField.value}
                         onChange={(e) => {
-                          const v = parseFloat(
+                          const v = Number.parseFloat(
                             normalizeDecimal(e.target.value),
                           );
                           pctField.onChange(Number.isNaN(v) ? 0 : v);
@@ -230,7 +252,9 @@ export function SectionRecipient() {
                     inputMode="decimal"
                     value={feeField.value}
                     onChange={(e) => {
-                      const v = parseFloat(normalizeDecimal(e.target.value));
+                      const v = Number.parseFloat(
+                        normalizeDecimal(e.target.value),
+                      );
                       feeField.onChange(Number.isNaN(v) ? 0 : v);
                     }}
                     className="pr-6"

@@ -1,57 +1,71 @@
 "use client";
 
-import { getChainTokens } from "@0xslots/sdk";
+import {
+  assertSlotInit,
+  type SlotInit,
+  ZERO_HOOK_DATA,
+} from "@0xslots/sdk/slots";
 import { SplitV2Type } from "@0xsplits/splits-sdk/types";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { type Address, getAddress, isAddress, zeroAddress } from "viem";
+import {
+  type Address,
+  getAddress,
+  type Hex,
+  isAddress,
+  zeroAddress,
+} from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
 import { PageHeader } from "@/components/page-header";
 import { Form } from "@/components/ui/form";
 import { useChain } from "@/context/chain";
 import { useNavigation } from "@/context/navigation";
-import { useSlotAction } from "@/hooks/use-slot-action";
+import { useSlotsFactory } from "@/hooks/slots/use-slots";
+import { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { useSplitClient } from "@/hooks/use-split-client";
 import { resolveEnsAddress } from "@/lib/ens";
-import { toRawUnits } from "@/utils";
 import { useResolveAddress } from "./address-input";
 import { FormSection } from "./components/form-section";
 import { MobileBottomBar } from "./components/mobile-bottom-bar";
-import { OccupancySection } from "./components/occupancy-section";
 import { SectionCurrency } from "./components/section-currency";
 import { SectionEconomics } from "./components/section-economics";
-import { SectionModule } from "./components/section-module";
+import { SectionHook } from "./components/section-hook";
 import { SectionPermissions } from "./components/section-permissions";
 import { SectionRecipient } from "./components/section-recipient";
+import type { SubmitState } from "./components/submit-button";
 import { SummaryCard } from "./components/summary-card";
-import { useErc20Check } from "./hooks/use-erc20-check";
 import {
   type CreateSlotFormValues,
   createSlotSchema,
   defaultValues,
-  percentToBps,
-  toSeconds,
 } from "./schema";
-import { SECTION } from "./sections";
+import { percentToBps, SECTION, toSeconds } from "./sections";
 
+/**
+ * Create a slot.
+ *
+ * One scrolling form of titled sections, not a wizard: the eight values are
+ * independent, and forcing them into an order taught nobody anything while
+ * hiding from every reader how few decisions there actually are. What the
+ * wizard did give for free — you could not reach the end without passing the
+ * middle — is paid back by the summary card's error list, which names the
+ * sections still blocking the button and jumps to them.
+ */
 export default function CreatePage() {
   const { push } = useNavigation();
   const { address, isConnected, chainId: walletChainId, chain } = useAccount();
   const { switchChain } = useSwitchChain();
   const { chainId: selectedChainId } = useChain();
-  const {
-    createSlot: sdkCreateSlot,
-    createSlotWithTenure: sdkCreateSlotWithTenure,
-    createSlotWithPriceFloor: sdkCreateSlotWithPriceFloor,
-    createSlots: sdkCreateSlots,
-    isPending,
-    isConfirming,
-    isSuccess,
-  } = useSlotAction();
+  const factory = useSlotsFactory();
+  const actions = useSlotsAction();
   const splitClient = useSplitClient();
+
   const [slotCount, setSlotCount] = useState(1);
   const [creatingSplit, setCreatingSplit] = useState(false);
+  const [batchIndex, setBatchIndex] = useState(0);
+  const [allSubmitted, setAllSubmitted] = useState(false);
+  const createdAddress = useRef<Address | null>(null);
 
   const form = useForm<CreateSlotFormValues>({
     resolver: zodResolver(createSlotSchema),
@@ -59,47 +73,127 @@ export default function CreatePage() {
     mode: "onChange",
   });
 
-  // Only watch what the page itself needs for submission logic
-  const watchedRecipientMode = form.watch("recipientMode");
-  const watchedRecipient = form.watch("recipient");
-  const watchedCustomCurrency = form.watch("customCurrency");
-  const watchedModule = form.watch("module");
-  const watchedManager = form.watch("manager");
-  const watchedMutableTax = form.watch("mutableTax");
-  const watchedMutableModule = form.watch("mutableModule");
+  // Only watch what the page itself needs to build the init and submit it.
+  const recipientMode = form.watch("recipientMode");
+  const recipient = form.watch("recipient");
+  const currencyMode = form.watch("currencyMode");
+  const presetCurrency = form.watch("presetCurrency");
+  const customCurrency = form.watch("customCurrency");
+  const taxBps = form.watch("taxBps");
+  const minDepositValue = form.watch("minDepositValue");
+  const minDepositUnit = form.watch("minDepositUnit");
+  const hookMode = form.watch("hookMode");
+  const hook = form.watch("hook");
+  const manager = form.watch("manager");
+  const mutableTax = form.watch("mutableTax");
+  const mutableHook = form.watch("mutableHook");
 
-  const watchedMutablePolicy = form.watch("mutablePolicy");
+  // ENS resolution, for submission and for the preflight below.
+  const recipientResolved = useResolveAddress(recipient);
+  const currencyResolved = useResolveAddress(customCurrency);
+  const hookResolved = useResolveAddress(hook);
+  const managerResolved = useResolveAddress(manager);
 
-  const needsManager =
-    watchedMutableTax || watchedMutableModule || watchedMutablePolicy;
+  // ── The one invariant a form gets wrong by default ────────────────────────
+  //
+  // A manager is REQUIRED when something is mutable and FORBIDDEN when nothing
+  // is: `initialize` reverts both ways. So the manager field is not "optional"
+  // — it is a function of the two checkboxes above it, and a form that always
+  // sent the connected wallet would revert the moment someone unticked both.
+  //
+  // Enforced HERE, at the single point where the value is produced, rather than
+  // in the section that renders the field: the section can hide an input, but
+  // only this can decide what is sent.
+  const needsManager = mutableTax || mutableHook;
+  const resolvedManager = (
+    needsManager ? managerResolved.resolved : zeroAddress
+  ) as Address;
 
-  // A price floor is denominated in the slot's own currency, so converting it
-  // to raw units needs THAT token's decimals — 1 USDC is 1e6, 1 WETH is 1e18.
-  const watchedCurrencyMode = form.watch("currencyMode");
-  const watchedPresetCurrency = form.watch("presetCurrency");
-  const presetTokenInfo = getChainTokens(selectedChainId).find(
-    (t) => t.address === watchedPresetCurrency,
-  );
-  const customTokenInfo = useErc20Check(
-    watchedCurrencyMode === "custom" ? watchedCustomCurrency : "",
-  );
-  const currencyDecimals =
-    (watchedCurrencyMode === "preset"
-      ? presetTokenInfo?.decimals
-      : customTokenInfo.data?.decimals) ?? 18;
+  const resolvedCurrency = (
+    currencyMode === "preset" ? presetCurrency : currencyResolved.resolved
+  ) as Address;
 
-  // ENS resolution for submission
-  const recipientResolved = useResolveAddress(watchedRecipient);
-  const currencyResolved = useResolveAddress(watchedCustomCurrency);
-  const moduleResolved = useResolveAddress(watchedModule);
-  const managerResolved = useResolveAddress(watchedManager);
+  const resolvedHook = (
+    hookMode === "none" ? zeroAddress : hookResolved.resolved
+  ) as Address;
 
-  const wrongChain = walletChainId !== selectedChainId;
-  const busy = isPending || isConfirming || creatingSplit;
+  /**
+   * The recipient as far as the preflight can know it.
+   *
+   * In group mode the real recipient is a 0xSplits address that does not exist
+   * until submit, so there is nothing concrete to check. Everything else in
+   * `SlotInit` is known, and the only thing `assertSlotInit` asks of a
+   * recipient is that it is not the zero address — which every deployed split
+   * satisfies by construction. Standing the connected account in for it keeps
+   * the other seven checks live instead of switching the whole preflight off.
+   */
+  const previewRecipient = (
+    recipientMode === "group"
+      ? address
+      : recipient.trim()
+        ? recipientResolved.resolved
+        : address
+  ) as Address | undefined;
+
+  const init = useMemo<SlotInit | null>(() => {
+    if (!previewRecipient || !isAddress(previewRecipient, { strict: false }))
+      return null;
+    if (!isAddress(resolvedCurrency, { strict: false })) return null;
+    if (
+      resolvedHook !== zeroAddress &&
+      !isAddress(resolvedHook, { strict: false })
+    )
+      return null;
+    if (needsManager && !isAddress(resolvedManager, { strict: false }))
+      return null;
+    return {
+      recipient: previewRecipient,
+      currency: resolvedCurrency,
+      manager: resolvedManager,
+      hook: resolvedHook,
+      taxBps: percentToBps(taxBps),
+      minDepositSeconds: toSeconds(minDepositValue, minDepositUnit),
+      mutableTax,
+      mutableHook,
+    };
+  }, [
+    previewRecipient,
+    resolvedCurrency,
+    resolvedManager,
+    resolvedHook,
+    needsManager,
+    taxBps,
+    minDepositValue,
+    minDepositUnit,
+    mutableTax,
+    mutableHook,
+  ]);
+
+  /**
+   * The SDK's own validation, run before the button is pressed.
+   *
+   * Same function the client calls on submit, so the inline message and the
+   * revert it prevents can never disagree. Showing it here rather than only in
+   * a failure toast is the difference between a form error and a mystery.
+   */
+  const initError = useMemo(() => {
+    if (!init) return null;
+    try {
+      assertSlotInit(init);
+      return null;
+    } catch (e) {
+      return e instanceof Error
+        ? e.message.replace(/^createSlot: /, "")
+        : String(e);
+    }
+  }, [init]);
+
+  const wrongChain = isConnected && walletChainId !== selectedChainId;
+  const busy = actions.busy || creatingSplit;
   const anyResolving =
     recipientResolved.isResolving ||
     currencyResolved.isResolving ||
-    moduleResolved.isResolving ||
+    hookResolved.isResolving ||
     managerResolved.isResolving;
 
   // The chain's default currency is seeded by SectionCurrency, next to the
@@ -108,39 +202,49 @@ export default function CreatePage() {
   // schema default during mount, so the write was undone before first paint.
 
   useEffect(() => {
-    if (isSuccess) {
-      const timeout = setTimeout(() => push("/app"), 1500);
+    // `isSuccess` tracks the LAST transaction's receipt, and a batch produces
+    // several — so the redirect waits for the loop to finish as well, or a
+    // three-slot batch would navigate away after the first one confirmed.
+    if (actions.isSuccess && allSubmitted) {
+      const target = createdAddress.current
+        ? `/app/slots/${createdAddress.current}`
+        : "/app";
+      const timeout = setTimeout(() => push(target), 1500);
       return () => clearTimeout(timeout);
     }
-  }, [isSuccess, push]);
+  }, [actions.isSuccess, allSubmitted, push]);
 
-  const submitState = {
+  const submitState: SubmitState = {
     isConnected,
     wrongChain,
-    isSuccess,
-    isPending,
-    isConfirming,
+    isSuccess: actions.isSuccess && allSubmitted,
+    isPending: actions.isPending,
+    isConfirming: actions.isConfirming,
     creatingSplit,
     busy,
     anyResolving,
     isFormValid: form.formState.isValid,
+    initError,
     slotCount,
-    recipientMode: watchedRecipientMode,
+    batchIndex,
+    recipientMode,
   };
 
   async function onSubmit(data: CreateSlotFormValues) {
-    if (!isConnected || wrongChain) return;
+    if (!isConnected || wrongChain || !factory) return;
 
     const currency =
       data.currencyMode === "preset"
         ? data.presetCurrency
         : currencyResolved.resolved || data.customCurrency;
-    const module = moduleResolved.resolved || "";
-    const manager = needsManager ? managerResolved.resolved : zeroAddress;
+    if (!isAddress(currency, { strict: false })) return;
 
-    if (!isAddress(currency as string)) return;
-
-    let recipient: string;
+    // ── Recipient ──
+    //
+    // A group is a 0xSplits split, deployed first and then handed to the slot
+    // as a plain address. Nothing about it reaches the protocol: from the
+    // slot's side a split and a wallet are the same eight-field init.
+    let recipientAddress: string;
 
     if (data.recipientMode === "group") {
       setCreatingSplit(true);
@@ -175,15 +279,16 @@ export default function CreatePage() {
             "Splits are not available on this chain — pick a single recipient address instead.",
           );
         }
-        // Check if this exact split already exists
+        // The same members at the same allocations produce the same address, so
+        // a second slot for the same group costs no deployment.
         const { splitAddress: predictedAddress, deployed } =
           await splitClient.isDeployed(splitParams);
 
         if (deployed) {
-          recipient = predictedAddress;
+          recipientAddress = predictedAddress;
         } else {
           const { splitAddress } = await splitClient.createSplit(splitParams);
-          recipient = splitAddress;
+          recipientAddress = splitAddress;
         }
       } catch (err) {
         console.error("Failed to create split:", err);
@@ -192,99 +297,127 @@ export default function CreatePage() {
       }
       setCreatingSplit(false);
     } else {
-      recipient =
-        recipientResolved.resolved || data.recipient || (address ?? "");
+      recipientAddress =
+        (data.recipient.trim()
+          ? recipientResolved.resolved
+          : (address ?? "")) || "";
     }
 
-    if (!isAddress(recipient as string)) return;
+    if (!isAddress(recipientAddress, { strict: false })) return;
 
-    // A policy chosen by address is known now. One chosen by duration or price
-    // floor is resolved by the helpers below, which overwrite this.
-    const occupancyPolicy = (
-      data.occupancyPolicyMode !== "none" &&
-      isAddress(data.occupancyPolicy as string)
-        ? data.occupancyPolicy
+    /**
+     * The hook to attach, and its configuration.
+     *
+     * Both, together, because they are one decision. The tenure mode used to
+     * mean "get or deploy a hook for this duration" — a second wallet prompt on
+     * an unusual number, and a CREATE2 factory to make the address derivable.
+     * The duration now travels as the slot's own `hookData`, so one address
+     * serves every window and there is nothing to deploy.
+     */
+    const hookAddress = (
+      data.hookMode === "none"
+        ? zeroAddress
+        : hookResolved.resolved || data.hook
+    ) as Address;
+
+    /**
+     * The hook's own word, encoded by the form the hook described.
+     *
+     * One branch, for every hook. Minimum tenure used to have a second one
+     * here — its duration was a pair of form fields converted to seconds at
+     * submit — which meant the same `uint256 window` had two encoders and only
+     * the descriptor's was ever put to `validateHookData`. Empty is a legal
+     * answer and stays one: a hook that refuses it says so through the form,
+     * which is what disarms the button.
+     */
+    const hookData: Hex = (data.customHookData || ZERO_HOOK_DATA) as Hex;
+
+    if (
+      hookAddress !== zeroAddress &&
+      !isAddress(hookAddress, { strict: false })
+    )
+      return;
+
+    const managerAddress = (
+      data.mutableTax || data.mutableHook
+        ? managerResolved.resolved || data.manager
         : zeroAddress
     ) as Address;
 
-    const config = {
-      mutableTax: data.mutableTax,
-      mutableModule: data.mutableModule,
-      mutablePolicy: data.mutablePolicy,
-      manager: (isAddress(manager as string)
-        ? manager
-        : zeroAddress) as Address,
-    };
-    const initParams = {
-      taxPercentage: BigInt(Math.round(Number(data.taxPercentage) * 100)),
-      module: (isAddress(module as string) ? module : zeroAddress) as Address,
-      liquidationBountyBps: percentToBps(data.liquidationBountyPercent),
+    const slotInit: SlotInit = {
+      recipient: getAddress(recipientAddress),
+      currency: getAddress(currency),
+      manager:
+        managerAddress === zeroAddress
+          ? zeroAddress
+          : getAddress(managerAddress),
+      hook: hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
+      hookData,
+      taxBps: percentToBps(data.taxBps),
       minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
-      occupancyPolicy,
+      mutableTax: data.mutableTax,
+      mutableHook: data.mutableHook,
     };
 
-    // A policy chosen by duration or by price floor lives at a CREATE2 address
-    // derived from those terms, so it may not exist yet — these helpers deploy
-    // it first when needed, then create. Every other mode already has a
-    // concrete address sitting in `initParams.occupancyPolicy`.
-    //
-    // `count` is passed straight through: the policy is one stateless contract
-    // per set of terms, so a batch of slots all point at the same one and the
-    // deploy still happens at most once.
-    const count = BigInt(slotCount);
-
-    if (data.occupancyPolicyMode === "tenure") {
-      sdkCreateSlotWithTenure(
-        {
-          recipient: recipient as Address,
-          currency: currency as Address,
-          config,
-          initParams,
-        },
-        toSeconds(data.tenureValue, data.tenureUnit),
-        count,
-      );
-    } else if (data.occupancyPolicyMode === "price") {
-      // The floor is denominated in the slot's own currency, so it converts
-      // with THAT token's decimals — 1 USDC is 1e6, 1 WETH is 1e18 — and the
-      // policy rejects a mismatched pairing on-chain.
-      sdkCreateSlotWithPriceFloor(
-        {
-          recipient: recipient as Address,
-          currency: currency as Address,
-          config,
-          initParams,
-        },
-        toRawUnits(data.minPriceValue, currencyDecimals),
-        count,
-      );
-    } else if (slotCount === 1) {
-      sdkCreateSlot({
-        recipient: recipient as Address,
-        currency: currency as Address,
-        config,
-        initParams,
-      });
-    } else {
-      sdkCreateSlots({
-        recipient: recipient as Address,
-        currency: currency as Address,
-        config,
-        initParams,
-        count,
-      });
+    // The last gate before gas. `createSlot` asserts this again inside the SDK,
+    // so this is belt-and-braces — but it is the one that can still show the
+    // reason in the form rather than in a toast after a failed send.
+    try {
+      assertSlotInit(slotInit);
+    } catch (e) {
+      console.error("[create] refusing to send an init the chain rejects:", e);
+      return;
     }
+
+    setAllSubmitted(false);
+    setBatchIndex(0);
+    createdAddress.current = null;
+
+    // A single slot gets a simulation first: the factory returns the address it
+    // will deploy to, and a transaction hash carries no return value — so
+    // asking now is the only way to land the user on their own slot afterwards
+    // instead of on the index. It also surfaces a hook's veto as that hook's
+    // own revert reason, which a sent-and-reverted transaction cannot.
+    if (slotCount === 1) {
+      const predicted = await actions.preflight("Preview slot", () =>
+        actions.client.simulateCreateSlot(slotInit),
+      );
+      if (!predicted) return;
+      createdAddress.current = predicted;
+    }
+
+    // There is one `createSlot(SlotInit)` and no batch entry point, so a count
+    // above one is n transactions. Sent in sequence and stopped on the first
+    // refusal, because a wallet rejection halfway through a strip should leave
+    // the slots already made and not queue five more prompts behind it.
+    for (let i = 0; i < slotCount; i++) {
+      setBatchIndex(i);
+      const hash = await actions.createSlot(slotInit);
+      if (!hash) return;
+    }
+    setAllSubmitted(true);
   }
+
+  if (!factory)
+    return (
+      <div className="min-h-screen px-3 py-8 md:px-5">
+        <div className="border p-8 text-center text-sm text-muted-foreground">
+          The Slots protocol is not deployed on this chain, so there is nothing
+          here to create a slot with.
+        </div>
+      </div>
+    );
 
   return (
     <div className="min-h-screen">
       <PageHeader maxWidth="max-w-6xl">
         <div>
           <h1 className="text-xl font-bold tracking-tight leading-tight">
-            Create Slot
+            Create a slot
           </h1>
           <p className="text-muted-foreground text-xs">
-            Deploy a new slot on {chain?.name}
+            Eight values, fixed at birth except the ones you say may move
+            {chain?.name ? ` · ${chain.name}` : ""}.
           </p>
         </div>
       </PageHeader>
@@ -312,12 +445,8 @@ export default function CreatePage() {
                 <SectionEconomics />
               </FormSection>
 
-              <FormSection meta={SECTION.module}>
-                <SectionModule />
-              </FormSection>
-
-              <FormSection meta={SECTION.occupancy}>
-                <OccupancySection />
+              <FormSection meta={SECTION.hook}>
+                <SectionHook />
               </FormSection>
 
               <FormSection meta={SECTION.permissions}>

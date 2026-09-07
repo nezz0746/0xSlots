@@ -1,0 +1,192 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Slot, SlotInit} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
+import {HookBounds, IDescribedHook, HookDescriptor} from "../../src/IDescribedHook.sol";
+import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
+
+/// @dev A hook that works but describes nothing — the case a client must
+///      degrade on rather than fail on.
+contract SilentHook is ISlotHook {
+    function validateHookData(bytes32) external pure {}
+
+    function subscriptions() external pure returns (HookFlags memory f) {
+        f.beforeBuy = true;
+    }
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+}
+
+/// @dev A hook whose `descriptors()` reverts. It must still be usable — the
+///      discovery layer is advisory and cannot be load-bearing.
+contract LyingHook is SilentHook, IDescribedHook {
+    function descriptors() external pure returns (HookDescriptor[] memory) {
+        revert("no");
+    }
+}
+
+contract DescribedHookTest is Test {
+    SlotFactory factory;
+    MinimumTenureHook tenure;
+
+    uint256 constant TENURE = 7 days;
+
+    function setUp() public {
+        factory = SlotFactory(address(new ERC1967Proxy(
+            address(new SlotFactory()),
+            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+        )));
+        tenure = new MinimumTenureHook();
+    }
+
+    function _slot(address hook) internal returns (Slot) {
+        return _slot(hook, bytes32(0));
+    }
+
+    function _slot(address hook, bytes32 data) internal returns (Slot) {
+        return Slot(payable(factory.createSlot(SlotInit({
+            recipient: address(0xF00D),
+            currency: IERC20(address(0)),
+            manager: address(this),
+            hook: hook,
+            hookData: data,
+            taxBps: 500,
+            minDepositSeconds: 1 hours,
+            mutableTax: true,
+            mutableHook: true
+        }))));
+    }
+
+    // ── the descriptor itself ────────────────────────────────────────────────
+
+    function test_TheTenureHookDescribesItself() public view {
+        HookDescriptor[] memory d = tenure.descriptors();
+        assertEq(d.length, 1);
+        assertEq(d[0].family, keccak256("slots.hook.minimum-tenure"));
+        assertEq(d[0].version, 2);
+    }
+
+    /// @notice The descriptor names a window's SHAPE, never a window.
+    ///
+    /// @dev Version 1 encoded `tenureSeconds` here, when the address WAS the
+    ///      configuration, and reporting any number now would report one
+    ///      slot's terms to every other slot's reader. `data` was emptied for
+    ///      that reason and then refilled for a different one: the bounds a
+    ///      client should validate against are not a setting, they are this
+    ///      contract's own limits, and publishing them from the same constant
+    ///      the check reads is what stops a form and a revert disagreeing.
+    ///
+    ///      So the assertion is not "empty" but "carries no value": a range
+    ///      whose top is {MAX_TENURE}, which is true of every deployment and
+    ///      of every slot pointing at one.
+    function test_TheDescriptorNamesAShapeNotAWindow() public view {
+        HookDescriptor[] memory d = tenure.descriptors();
+        assertEq(d[0].signature, "uint256 window", "a type, not a value");
+        HookBounds[] memory b = abi.decode(d[0].data, (HookBounds[]));
+
+        assertEq(b.length, 1);
+        assertEq(b[0].name, "window");
+        assertEq(b[0].max, tenure.MAX_TENURE(), "a limit, not a setting");
+        assertEq(b[0].min, 1, "and zero is unconfigured, not short");
+    }
+
+    /// @notice The family id is a published constant. Pinned to its literal so
+    ///         a rename cannot silently repoint every client that matches it.
+    function test_TheFamilyIdsArePinned() public {
+        assertEq(tenure.FAMILY(), 0x0d7513dbf4adcafafb5452802cd9f31f7756b1fea3b6105f694902aa59312b8b);
+    }
+
+    /// @notice Two deployments of this hook are indistinguishable, which is
+    ///         the point: nothing about a slot's terms lives in the address.
+    function test_EveryDeploymentDescribesItselfIdentically() public {
+        MinimumTenureHook other = new MinimumTenureHook();
+        HookDescriptor[] memory a = tenure.descriptors();
+        HookDescriptor[] memory b = other.descriptors();
+        assertEq(a[0].family, b[0].family);
+        assertEq(a[0].version, b[0].version);
+        assertEq(a[0].data, b[0].data);
+    }
+
+    /// @notice The window comes from the slot's `hookData` and nowhere else.
+    function test_TheWindowIsReadOffTheSlotsConfiguration() public view {
+        assertEq(tenure.tenureOf(bytes32(uint256(3 days))), 3 days);
+        assertEq(tenure.tenureOf(bytes32(TENURE)), TENURE);
+    }
+
+
+
+    // ── the rule that keeps it safe ──────────────────────────────────────────
+
+    /// @notice The protocol must never read this. A hook whose `descriptors()`
+    ///         reverts has to remain completely usable, or the advisory layer
+    ///         has quietly become load-bearing.
+    function test_AHookWhoseDescriptorRevertsStillWorks() public {
+        LyingHook liar = new LyingHook();
+        Slot s = _slot(address(liar));
+
+        vm.expectRevert();
+        IDescribedHook(address(liar)).descriptors();
+
+        address buyer = address(0xB0B);
+        vm.deal(buyer, 10 ether);
+        uint256 need = s.minDepositForBuy(0.01 ether);
+        vm.prank(buyer);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, 0.01 ether, need, 0);
+
+        assertEq(s.occupant(), buyer, "execution is unaffected by discovery");
+        assertEq(s.hook(), address(liar));
+        assertTrue(s.hookFlags().beforeBuy, "authority still comes from flags");
+    }
+
+    /// @notice A hook that does not implement discovery at all is equally
+    ///         usable; the client just gets nothing to render.
+    function test_AHookThatDescribesNothingIsStillAFineHook() public {
+        SilentHook quiet = new SilentHook();
+        Slot s = _slot(address(quiet));
+
+        (bool ok, ) = address(quiet).staticcall(
+            abi.encodeCall(IDescribedHook.descriptors, ())
+        );
+        assertFalse(ok, "no such function; the client falls back to flags");
+
+        address buyer = address(0xB0B);
+        vm.deal(buyer, 10 ether);
+        uint256 need = s.minDepositForBuy(0.01 ether);
+        vm.prank(buyer);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, 0.01 ether, need, 0);
+        assertEq(s.occupant(), buyer);
+    }
+
+    /// @notice And the slot itself never calls it — asserted against bytecode,
+    ///         not by reading the source and hoping.
+    ///
+    /// @dev Scans the IMPLEMENTATION, not the slot. A slot is a BeaconProxy,
+    ///      so `address(slot).code` is the proxy stub and contains no selector
+    ///      from the logic at all — scanning it would pass for every possible
+    ///      implementation, including one that reads `descriptors()` on every
+    ///      buy. Mutation-checked: adding such a read to `Slot` fails this.
+    function test_TheSlotBytecodeDoesNotContainTheDescriptorsSelector() public {
+        _slot(address(tenure), bytes32(TENURE));
+        bytes4 sel = IDescribedHook.descriptors.selector;
+        bytes memory code = factory.implementation().code;
+        assertGt(code.length, 1000, "must be scanning the logic, not a proxy");
+
+        bool found;
+        for (uint256 i; i + 4 <= code.length; ++i) {
+            if (
+                code[i] == sel[0] && code[i + 1] == sel[1] &&
+                code[i + 2] == sel[2] && code[i + 3] == sel[3]
+            ) { found = true; break; }
+        }
+        assertFalse(found, "the protocol must not know this selector exists");
+    }
+}

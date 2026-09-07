@@ -1,53 +1,31 @@
-// Unified client (read + write)
+// The Slots SDK.
+//
+// ── V1 is gone from here ────────────────────────────────────────────────────
+//
+// This root used to export a GraphQL client for the RETIRED protocol's schema,
+// plus its feed and metadata modules and its policy resolvers. It also exported
+// a `createSlotsClient` and a `SlotsClient` — the SAME names the live protocol
+// uses under `/slots`, for a completely different object: 68 query methods
+// against an old indexer, where the live one has 48 that talk to contracts.
+//
+// Importing the wrong one type-checked. The root now IS the live protocol.
+
+// Chain and endpoint identity. Not protocol-specific.
 export {
-  type BuyParams,
-  type CreateSlotParams,
-  type CreateSlotsParams,
-  createSlotsClient,
-  type SlotConfig,
-  type SlotInitParams,
-  SlotsChain,
-  SlotsClient,
-  type SlotsClientConfig,
-  type ChainStatus,
+  API_URLS,
+  apiUrlFor,
   DEFAULT_API_URL,
   LOCAL_API_URL,
-  type IndexerMeta,
-  UpdateKind,
-} from "./client";
-// Errors
+  SlotsChain,
+  type SlotsEnvironment,
+} from "./chains";
 export { SlotsError } from "./errors";
-// Re-export generated types and SDK
-export * from "./generated/graphql";
-export { FeedModuleClient } from "./modules/feed";
-// Modules
-export { MetadataModuleClient } from "./modules/metadata";
-// Occupancy policies — resolve an address into human-readable terms, plus
-// accessors over the hand-vouched list. See ./policies.
-//
-// The raw VOUCHED_POLICIES record is deliberately NOT exported: it is keyed by
-// lowercase address and carries a chainId that every caller must respect, and
-// both are easy to get wrong by hand. Go through the accessors.
-export {
-  formatDuration,
-  getVouchedPolicy,
-  type PolicyImpact,
-  type PolicyKindId,
-  type ResolvedPolicy,
-  resolvePolicy,
-  searchVouchedPolicies,
-  type VouchedPolicy,
-  type VouchedPolicyEntry,
-  vouchedPoliciesForChain,
-} from "./policies";
-// Tokens
+export { isNativeCurrency, NATIVE_CURRENCY_ADDRESS } from "./native";
+export * from "./slots";
 export {
   CHAIN_TOKENS,
   getChainTokens,
-  getDefaultToken,
   getFaucetToken,
-  isNativeCurrency,
   NATIVE_CURRENCY,
-  NATIVE_CURRENCY_ADDRESS,
   type TokenInfo,
 } from "./tokens";

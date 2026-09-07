@@ -3,8 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Test} from "forge-std/Test.sol";
 
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
@@ -67,8 +67,7 @@ contract SlotCollectiveLayoutTest is Test {
         SlotCollective.InitialRoles memory roles = SlotCollective.InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            policyManagers: new address[](0),
-            utilityManagers: new address[](0),
+            hookManagers: new address[](0),
             splitManagers: new address[](0)
         });
 
@@ -78,7 +77,7 @@ contract SlotCollectiveLayoutTest is Test {
                     new ERC1967Proxy(
                         address(impl),
                         abi.encodeCall(
-                            SlotCollective.initializeManager, (split, roles)
+                            SlotCollective.initializeCollective, (split, roles)
                         )
                     )
                 )

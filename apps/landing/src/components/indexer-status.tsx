@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { useBlockNumber } from "wagmi";
 
 import {
@@ -9,34 +8,24 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
-import { useSlotsClient } from "@/hooks/use-v3";
+import { useIndexerMeta } from "@/hooks/use-explorer";
 
 /**
  * How far the indexer trails the chain.
  *
- * Two things changed with the move off the subgraph:
+ * Two things changed with the move off the subgraph, and both still hold:
  *
  *   * `_meta` returns `status`, a blob keyed by ponder's own chain NAME, each
  *     entry carrying `{ id, block }`. The name is a config label, not something
- *     this app knows, so the entry is found by matching `id` to the chain.
+ *     this app knows, so the entry is found by matching `id` to the chain. That
+ *     lookup now lives in `useIndexerMeta`.
  *   * `hasIndexingErrors` has no counterpart. Ponder halts on an indexing error
  *     rather than serving stale rows behind a flag, so a broken indexer shows up
  *     as a failed request — which is what `isError` already covers.
+ *
+ * The query moved out of the SDK client and onto `indexerUrlFor` directly: the
+ * SDK's client is generated against the PREVIOUS protocol's schema.
  */
-function useIndexerMeta() {
-  const { chainId } = useChain();
-  const client = useSlotsClient();
-  return useQuery({
-    queryKey: ["indexer-meta", chainId],
-    queryFn: async () => {
-      const res = await client.getMeta();
-      const status = res._meta?.status ?? {};
-      return Object.values(status).find((c) => c?.id === chainId) ?? null;
-    },
-    refetchInterval: 10_000,
-  });
-}
-
 export function IndexerStatus() {
   const { data: meta, isError } = useIndexerMeta();
   const { chainId } = useChain();

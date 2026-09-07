@@ -1,41 +1,39 @@
 "use client";
 
-import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
-import { type Address, erc20Abi } from "viem";
-import { useReadContract } from "wagmi";
+import type { Address } from "viem";
+import type { CurrencyMeta } from "@/hooks/slots/use-slots";
 import { useCurrencyBalance } from "@/hooks/use-currency-balance";
 import { formatBalance } from "@/utils";
 
-export function UserCurrencyBalance({ currency }: { currency: Address }) {
+/**
+ * What the viewer holds of the slot's own currency.
+ *
+ * Sits directly UNDER the valuation field, not above the form. Above, it read
+ * as one more statistic in a column already full of them. Under the field you
+ * are typing a number into, it is the answer to the question that number
+ * raises — can I afford that — at the moment it occurs to you.
+ *
+ * Takes the resolved {@link CurrencyMeta} rather than reading `symbol` and
+ * `decimals` itself. It used to issue its own pair of ERC-20 reads, which meant
+ * every slot page fetched the same two immutable values twice and could render
+ * a balance at 18 decimals beside a price at 6 while the second pair was still
+ * in flight.
+ */
+export function UserCurrencyBalance({
+  currency,
+  meta,
+}: {
+  currency: Address;
+  meta: CurrencyMeta;
+}) {
   const balance = useCurrencyBalance(currency);
-  const native = isNativeCurrency(currency);
-
-  // Both reads revert against address(0), so they are disabled rather than
-  // merely ignored — otherwise wagmi issues them on every render.
-  const { data: erc20Symbol } = useReadContract({
-    address: currency,
-    abi: erc20Abi,
-    functionName: "symbol",
-    query: { enabled: !native },
-  });
-  const { data: erc20Decimals } = useReadContract({
-    address: currency,
-    abi: erc20Abi,
-    functionName: "decimals",
-    query: { enabled: !native },
-  });
-
-  const symbol = native ? NATIVE_CURRENCY.symbol : erc20Symbol;
-  const decimals = native ? NATIVE_CURRENCY.decimals : erc20Decimals;
 
   return (
-    <div className="px-4 py-2 border-b flex justify-between text-sm">
-      <span className="text-muted-foreground">
-        Your {symbol ?? "Token"} Balance
+    <p className="mt-1 flex items-baseline justify-between gap-2 text-[10px] text-muted-foreground">
+      <span>Your {meta.symbol || "token"} balance</span>
+      <span className="font-medium tabular-nums text-foreground">
+        {formatBalance(balance, meta.decimals)}
       </span>
-      <span className="font-bold">
-        {decimals !== undefined ? formatBalance(balance, decimals) : "—"}
-      </span>
-    </div>
+    </p>
   );
 }

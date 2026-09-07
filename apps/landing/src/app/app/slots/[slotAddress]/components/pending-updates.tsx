@@ -1,203 +1,350 @@
 "use client";
 
-import { UpdateKind } from "@0xslots/sdk";
-import type { SlotOnChain } from "@0xslots/sdk/react";
-import { Clock, Loader2, X } from "lucide-react";
+import { findKnownHook } from "@0xslots/contracts/slots";
+import type { SlotState } from "@0xslots/sdk/slots";
+import { Info, Loader2 } from "lucide-react";
+import { type Address, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
-import { formatBps } from "@/utils";
+import { useChain } from "@/context/chain";
+import { useChainTimeSkew } from "@/hooks/slots/use-slots";
+import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
+import { cn } from "@/lib/utils";
+import { formatBps, truncateAddress } from "@/utils";
+
+type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
- * Who is looking. The same queued change means three different things, and the
- * copy has to say which:
- *
- * - `buyer`   — buying NOW applies it. Their own purchase IS the next
- *               ownership transition, so these are the terms they will hold
- *               the slot under, not the ones on display above.
- * - `occupant`— it does NOT touch them. It lands when they leave.
- * - `manager` — they queued it, and can retract it.
- *
- * The page used to show one string, written manager-facing, to all three:
- * "applied on next ownership transition". To a buyer that reads as *later, to
- * someone else* — exactly backwards.
+ * Which of the two dimensions a queued change touches. `proposeTerms` takes a
+ * flag per dimension and `cancelTerms` takes one per dimension, so a retraction
+ * has to name which — the two may belong to different roles in a collective.
  */
-export type PendingViewer = "buyer" | "occupant" | "manager";
+export type PendingDimension = "tax" | "hook";
 
-export type PendingChange = {
-  kind: UpdateKind;
-  label: string;
-  /** What the slot has today. */
-  current: string;
-  /** What it becomes when this applies. */
-  next: string;
-  /** Unix seconds, or 0 when the slot predates the contract recording it. */
-  proposedAt: bigint;
-};
+/**
+ * This file owns one subject — terms queued but not yet in force — in the two
+ * places it appears, and deliberately in two different registers:
+ *
+ * - {@link PendingTermsBanner} states the fact, in the info tab, read-only.
+ * - {@link QueuedTermsControls} retracts it, in the manage tab, manager only.
+ *
+ * They share the row data, the direction colouring and the countdown, so the
+ * two cannot drift into describing the same proposal differently. What they do
+ * not share is the ability to act: an informational strip that also fires
+ * transactions is how the retraction ended up behind a `×` — an icon that
+ * everywhere else on the web means "dismiss this notice", offered for an
+ * irreversible on-chain write.
+ */
 
-/** Human "3 days ago" for a unix timestamp, or null if we were never told. */
-function queuedAgo(proposedAt: bigint, nowSeconds: number): string | null {
-  if (proposedAt === 0n) return null;
-  const elapsed = Math.max(0, nowSeconds - Number(proposedAt));
-  if (elapsed < 60) return `${elapsed}s ago`;
-  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m ago`;
-  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)}h ago`;
-  return `${Math.floor(elapsed / 86400)}d ago`;
+/** "7h" — how long until a queued change becomes eligible. */
+export function eligibleIn(appliesAt: bigint, nowSeconds: number): string {
+  const left = Math.max(0, Number(appliesAt) - nowSeconds);
+  if (left < 60) return `${left}s`;
+  if (left < 3600) return `${Math.floor(left / 60)}m`;
+  if (left < 86400) return `${Math.ceil(left / 3600)}h`;
+  return `${Math.ceil(left / 86400)}d`;
 }
 
+function hookLabel(chainId: number, hook: Address): string {
+  if (hook === zeroAddress) return "none";
+  return findKnownHook(chainId, hook)?.name ?? truncateAddress(hook);
+}
+
+export type PendingRow = {
+  dimension: PendingDimension;
+  label: string;
+  current: string;
+  next: string;
+  /**
+   * Only the tax rate has a direction a reader can price. Cheaper is better for
+   * whoever holds the slot next, so down is the good one — the opposite of the
+   * usual green-is-up reflex, which is why it is computed here rather than left
+   * to a caller to get backwards.
+   */
+  direction?: "up" | "down";
+};
+
 /**
- * Collect the queued changes on a slot, resolved into before/after strings.
+ * The queued changes, resolved into before/after strings.
  *
- * Reads the three `has*` flags rather than testing the values for emptiness:
- * the zero address is a REAL proposed value for both address dimensions —
- * "remove the utility" and "drop the occupancy policy" are changes someone
- * deliberately queued, and treating them as "nothing pending" would hide the
- * most consequential update of the three.
+ * Reads the `has*` flags rather than testing values for emptiness: the zero
+ * address is a REAL proposed value for the hook dimension — "detach the hook"
+ * is something someone deliberately queued, and treating it as "nothing
+ * pending" would hide the more consequential of the two.
  */
 export function pendingChanges(
-  slot: SlotOnChain,
-  utilityName: (address: string | null) => string,
-  policyName: (address: string | null) => string,
-): PendingChange[] {
-  const changes: PendingChange[] = [];
+  state: SlotState,
+  chainId: number,
+): PendingRow[] {
+  const rows: PendingRow[] = [];
+  const { pending } = state;
 
-  if (slot.hasPendingTax) {
-    changes.push({
-      kind: UpdateKind.Tax,
+  if (pending.hasTax) {
+    rows.push({
+      dimension: "tax",
       label: "Tax rate",
-      current: `${formatBps(slot.taxPercentage.toString())}/mo`,
-      next: `${formatBps(slot.pendingTaxPercentage.toString())}/mo`,
-      proposedAt: slot.taxProposedAt,
+      current: `${formatBps(Number(state.taxBps))}`,
+      next: `${formatBps(Number(pending.taxBps))} / mo`,
+      direction: pending.taxBps > state.taxBps ? "up" : "down",
     });
   }
-  if (slot.hasPendingUtility) {
-    changes.push({
-      kind: UpdateKind.Utility,
-      label: "Utility",
-      current: utilityName(slot.utility),
-      next: utilityName(slot.pendingUtility),
-      proposedAt: slot.utilityProposedAt,
-    });
-  }
-  if (slot.hasPendingPolicy) {
-    changes.push({
-      kind: UpdateKind.Policy,
-      label: "Occupancy terms",
-      current: policyName(slot.occupancyPolicy),
-      next: policyName(slot.pendingPolicy),
-      proposedAt: slot.policyProposedAt,
+  if (pending.hasHook) {
+    rows.push({
+      dimension: "hook",
+      label: "Hook",
+      current: hookLabel(chainId, state.hook),
+      next: hookLabel(chainId, pending.hook),
     });
   }
 
-  return changes;
+  return rows;
 }
 
-const HEADLINE: Record<PendingViewer, string> = {
-  buyer: "Buying now applies these changes to you",
-  occupant: "Queued for the next occupant",
-  manager: "Queued changes",
+/** Must match the labels `useSlotAction` reports through `activeAction`, so a
+ *  per-row spinner lands on the retraction actually in flight rather than on
+ *  both at once. See `cancelTerms` in the SDK's react bindings. */
+const CANCEL_LABEL: Record<PendingDimension, string> = {
+  tax: "Cancel tax update",
+  hook: "Cancel hook update",
 };
 
-const SUBTEXT: Record<PendingViewer, string> = {
-  buyer:
-    "These take effect in the same transaction as your purchase. You will hold this slot on the new terms, not the ones shown above.",
-  occupant:
-    "Your terms are unchanged while you hold the slot. These apply when you release it or are bought out.",
-  manager:
-    "Applied on the next ownership transition — including a purchase, which lands them on the incoming occupant.",
+const CANCEL_TEXT: Record<PendingDimension, string> = {
+  tax: "Cancel tax change",
+  hook: "Cancel hook change",
 };
 
-export function PendingUpdatesNotice({
-  changes,
-  viewer,
+/** The changed value, tinted by direction. Shared so the two views cannot
+ *  disagree about which way is the good way. */
+function NextValue({ row }: { row: PendingRow }) {
+  return (
+    <span
+      className={cn(
+        "font-semibold tabular-nums",
+        row.direction === "down" && "text-emerald-600 dark:text-emerald-400",
+        row.direction === "up" && "text-amber-600 dark:text-amber-400",
+      )}
+    >
+      {row.next}
+    </span>
+  );
+}
+
+/**
+ * A queued change to this slot's terms, as one informational strip.
+ *
+ * ── Why this is not a warning ───────────────────────────────────────────────
+ *
+ * It used to be three amber panels' worth of copy, rendered twice — once in the
+ * details tab and once above the buy form — with a headline and a subtext per
+ * viewer, plus a paragraph explaining what an occupancy transition is. Nothing
+ * queued here is dangerous: it is a fact about the slot with one consequence for
+ * a buyer, and amber spent on it is amber unavailable for INSOLVENT, which
+ * genuinely is urgent. So: info tint, one line of numbers, one line of
+ * consequence, one place on the page.
+ *
+ * ── The one thing the copy must not fumble ──────────────────────────────────
+ *
+ * Eligibility and application are two conditions, not one. `TERMS_DELAY` makes a
+ * proposal eligible; only a buy, release or liquidation applies it. "Applies in
+ * 24h" implies a timer that does not exist, and "applies at the next buy" is
+ * false during the delay. The strip says the ripe half as a countdown and the
+ * trigger half as the consequence, which is both without the essay.
+ */
+export function PendingTermsBanner({
+  state,
   nowSeconds,
-  onCancel,
-  busy,
-  activeAction,
   className,
 }: {
-  changes: PendingChange[];
-  viewer: PendingViewer;
+  state: SlotState;
   nowSeconds: number;
-  /** Manager only. Omit to render read-only. */
-  onCancel?: (kind: UpdateKind) => void;
-  busy?: boolean;
-  activeAction?: string | null;
   className?: string;
 }) {
-  if (changes.length === 0) return null;
+  const { chainId } = useChain();
+  /**
+   * Both timestamps here are the CHAIN'S, so both must be measured against the
+   * chain's clock. `appliesAt` is derived from a `block.timestamp`, and on a
+   * warped local chain the browser's own clock reads days out. Measured from a
+   * block header rather than assumed — see `useChainTimeSkew`. Read before the
+   * early return below, because it is a hook and the return is conditional.
+   */
+  const skew = useChainTimeSkew();
 
-  // A buyer is the one who can be surprised by these, so they get the loud
-  // treatment. Everyone else gets an informational note.
-  const tone =
-    viewer === "buyer"
-      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-      : "border-border bg-muted/40 text-muted-foreground";
+  const rows = pendingChanges(state, chainId);
+  if (rows.length === 0) return null;
+
+  const chainNow = nowSeconds + skew;
+  /**
+   * Straight from `hasRipeTerms()`, not inferred from `proposedAt` and this
+   * browser's clock. The contract decides against ITS clock.
+   */
+  const ripe = state.pending.applies;
+  const { appliesAt } = state.pending;
+  const tax = rows.find((r) => r.dimension === "tax");
+
+  // One consequence line, and it turns on ripeness. Ripe: the reader's own buy
+  // is the transition that lands this. Unripe: it cannot be, whatever they do.
+  const consequence = ripe
+    ? tax
+      ? `Applies at the next buy — including yours, at ${tax.next}.`
+      : "Applies at the next buy — including yours."
+    : tax
+      ? `Buying after that holds this slot at ${tax.next}.`
+      : "Buying after that takes the new terms.";
 
   return (
     <div
-      className={`rounded-lg border p-3 space-y-2.5 ${tone} ${className ?? ""}`}
+      className={cn(
+        "border-b bg-sky-500/[0.06] px-3 py-2.5 sm:px-4",
+        "text-sky-900 dark:text-sky-100",
+        className,
+      )}
     >
-      <div className="space-y-1">
-        <p className="text-sm font-medium leading-tight">{HEADLINE[viewer]}</p>
-        <p className="text-xs leading-snug opacity-80">{SUBTEXT[viewer]}</p>
-      </div>
+      <div className="flex items-start gap-2.5">
+        <Info
+          className="mt-0.5 size-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+          aria-hidden="true"
+        />
 
-      <ul className="space-y-1.5">
-        {changes.map((change) => {
-          const ago = queuedAgo(change.proposedAt, nowSeconds);
-          const cancelLabel = CANCEL_LABEL[change.kind];
-          return (
-            <li
-              key={change.kind}
-              className="flex items-start justify-between gap-3 text-xs"
+        <div className="min-w-0 flex-1 space-y-1">
+          {rows.map((row) => (
+            <div
+              key={row.dimension}
+              className="flex items-center gap-x-2 gap-y-1 text-xs"
             >
-              <div className="min-w-0 space-y-0.5">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-medium">{change.label}</span>
-                  <span className="opacity-60 line-through">
-                    {change.current}
-                  </span>
-                  <span aria-hidden="true">→</span>
-                  <span className="font-semibold">{change.next}</span>
-                </div>
-                {ago && (
-                  <span className="flex items-center gap-1 opacity-60">
-                    <Clock className="size-3" aria-hidden="true" />
-                    queued {ago}
-                  </span>
-                )}
-              </div>
+              <span className="font-medium">{row.label}</span>
+              <span className="text-muted-foreground line-through">
+                {row.current}
+              </span>
+              <span aria-hidden="true" className="text-muted-foreground">
+                →
+              </span>
+              <NextValue row={row} />
+              <span className="ml-auto shrink-0 font-medium tabular-nums text-sky-700 dark:text-sky-300">
+                {ripe
+                  ? "eligible now"
+                  : `in ${eligibleIn(appliesAt, chainNow)}`}
+              </span>
+            </div>
+          ))}
 
-              {onCancel && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 shrink-0 text-destructive hover:text-destructive"
-                  disabled={busy}
-                  onClick={() => onCancel(change.kind)}
-                  aria-label={cancelLabel}
-                >
-                  {busy && activeAction === cancelLabel ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <X className="size-3" aria-hidden="true" />
-                  )}
-                </Button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {consequence}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
 
 /**
- * Must match the labels `useSlotAction` reports through `activeAction`, so the
- * spinner lands on the row whose cancel is actually in flight rather than on
- * all three at once.
+ * The manager's retraction controls, for the manage tab.
+ *
+ * Separate from the banner on purpose. This is the only place on the page that
+ * can undo a proposal, and it lives beside `Propose` — the control that made
+ * one — rather than inside a notice in the info tab. Two reasons, and the
+ * second is the load-bearing one:
+ *
+ *  1. Reading and writing are different tabs here already. The info tab is
+ *     where a prospective buyer looks; nothing there should send a transaction.
+ *
+ *  2. The affordance has to be a labelled button. It was a `×`, which reads as
+ *     "close this" everywhere else — so the single control for retracting a
+ *     queued change looked like a way to hide the message about it. An
+ *     irreversible write should never wear a dismiss icon.
  */
-const CANCEL_LABEL: Record<UpdateKind, string> = {
-  [UpdateKind.Tax]: "Cancel tax update",
-  [UpdateKind.Utility]: "Cancel utility update",
-  [UpdateKind.Policy]: "Cancel policy update",
-};
+export function QueuedTermsControls({
+  slot,
+  state,
+  actions,
+}: {
+  slot: Address;
+  state: SlotState;
+  actions: Actions;
+}) {
+  const { chainId } = useChain();
+  const skew = useChainTimeSkew();
+
+  const rows = pendingChanges(state, chainId);
+  if (rows.length === 0) return null;
+
+  const chainNow = nowSecondsOf(skew);
+  const ripe = state.pending.applies;
+  const { appliesAt } = state.pending;
+
+  return (
+    <div className="space-y-2 border border-sky-500/30 bg-sky-500/[0.06] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
+          Queued
+        </h4>
+        <span className="text-[10px] font-medium tabular-nums text-sky-700 dark:text-sky-300">
+          {ripe
+            ? "eligible now"
+            : `eligible in ${eligibleIn(appliesAt, chainNow)}`}
+        </span>
+      </div>
+
+      <ul className="space-y-2">
+        {rows.map((row) => {
+          const label = CANCEL_LABEL[row.dimension];
+          const working = actions.busy && actions.activeAction === label;
+          return (
+            <li
+              key={row.dimension}
+              className="flex flex-wrap items-center justify-between gap-2 text-xs"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="font-medium">{row.label}</span>
+                <span className="text-muted-foreground line-through">
+                  {row.current}
+                </span>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  →
+                </span>
+                <NextValue row={row} />
+              </span>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={actions.busy}
+                onClick={() =>
+                  // Per-dimension, mirroring the contract. The two may belong
+                  // to different roles, so an all-or-nothing cancel would let
+                  // one retraction silently destroy the other's queued change.
+                  actions.cancelTerms(
+                    slot,
+                    row.dimension === "tax",
+                    row.dimension === "hook",
+                  )
+                }
+              >
+                {working && (
+                  <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                )}
+                {CANCEL_TEXT[row.dimension]}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <p className="text-[10px] leading-snug text-muted-foreground">
+        Retracting is itself a transaction, and only possible until a buy,
+        release or liquidation applies these.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The chain's "now" in seconds.
+ *
+ * The banner is handed `nowSeconds` by the page, which already ticks one clock
+ * for every live figure on it. This panel has no such prop and does not need a
+ * second ticker: a countdown measured in hours does not have to be re-rendered
+ * every second, and the panel re-renders on every poll anyway.
+ */
+function nowSecondsOf(skew: number): number {
+  return Math.floor(Date.now() / 1000) + skew;
+}

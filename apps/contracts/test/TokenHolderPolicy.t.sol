@@ -8,12 +8,12 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Slot} from "../src/Slot.sol";
-import {SlotFactory} from "../src/SlotFactory.sol";
-import {SlotConfig, SlotInitParams} from "../src/interfaces/ISlot.sol";
-import {IOccupancyPolicy} from "../src/interfaces/IOccupancyPolicy.sol";
-import {IModuleMetadata} from "../src/interfaces/IModuleMetadata.sol";
-import {TokenHolderPolicy} from "../src/policies/TokenHolderPolicy.sol";
+import {Slot} from "../src/v1/Slot.sol";
+import {SlotFactory} from "../src/v1/SlotFactory.sol";
+import {SlotConfig, SlotInitParams} from "../src/v1/interfaces/ISlot.sol";
+import {IOccupancyPolicy} from "../src/v1/interfaces/IOccupancyPolicy.sol";
+import {IModuleMetadata} from "../src/v1/interfaces/IModuleMetadata.sol";
+import {TokenHolderPolicy} from "../src/v1/policies/TokenHolderPolicy.sol";
 
 contract THMockERC20 is ERC20 {
     constructor() ERC20("USDC", "USDC") {}

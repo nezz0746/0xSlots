@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {BaseScript, console2} from "./Base.s.sol";
-import {AdModule} from "../src/modules/AdModule.sol";
+import {AdModule} from "../src/v1/modules/AdModule.sol";
 
 /**
  * @title SetPrimarySlot

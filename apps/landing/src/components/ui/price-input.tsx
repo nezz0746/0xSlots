@@ -1,7 +1,13 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { formatUnits, parseUnits } from "viem";
 import { formatUsd } from "@/hooks/use-usd-price";
 import { cn } from "@/lib/utils";
@@ -55,6 +61,7 @@ export function PriceInput({
   symbol,
   disabled,
   hint,
+  below,
   toUsd,
 }: {
   /** Raw units — the slot's own denomination, never a float. */
@@ -67,6 +74,15 @@ export function PriceInput({
   symbol: string;
   disabled?: boolean;
   hint?: string;
+  /**
+   * Rendered directly beneath the field, under the hint.
+   *
+   * For the one fact this input raises and cannot answer: what you actually
+   * hold. A balance sitting above the form is a statistic; the same line under
+   * the field you are typing a number into is the answer to "can I afford
+   * that", at the moment the question occurs.
+   */
+  below?: ReactNode;
   /**
    * Token amount → USD, or `null` where there is no price (any chain but Base,
    * or a token Alchemy does not quote). Renders nothing on `null` rather than
@@ -174,7 +190,7 @@ export function PriceInput({
     [value, onChange],
   );
 
-  // `taxPercentage` is basis points PER MONTH, so this needs no time
+  // `taxBps` is basis points PER MONTH, so this needs no time
   // conversion. Off `display` rather than `value`: the whole point is that the
   // bill counts up alongside the price.
   const perMonth = (display * Number(taxBps)) / 10_000;
@@ -287,6 +303,7 @@ export function PriceInput({
       {/* Under the whole control rather than between the field and its steps,
           where it split one thing into two. */}
       {hint && <p className="mt-1 text-[10px] text-muted-foreground">{hint}</p>}
+      {below}
     </div>
   );
 }

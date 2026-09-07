@@ -85,7 +85,7 @@ export default async function BlogIndexPage() {
         </p>
 
         {posts.length === 0 ? (
-          <p className="mt-16 border-2 border-dashed border-muted-foreground p-8 text-center font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+          <p className="mt-16 border-2 border-dashed border-muted-foreground p-8 text-center text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
             No articles published yet
           </p>
         ) : (
@@ -102,13 +102,13 @@ export default async function BlogIndexPage() {
                       {date && (
                         <time
                           dateTime={post.publishedAt ?? undefined}
-                          className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
+                          className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground"
                         >
                           {date}
                         </time>
                       )}
                       {post.featured && (
-                        <span className="border border-destructive px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-destructive">
+                        <span className="border border-destructive px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-destructive">
                           Pinned
                         </span>
                       )}

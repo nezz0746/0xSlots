@@ -1,5 +1,6 @@
 import { ponder } from "ponder:registry";
 import {
+  account,
   collectiveActionEvent,
   collectiveDistributionEvent,
   collectiveRole,
@@ -7,15 +8,16 @@ import {
   collectiveSplitUpdatedEvent,
   slotCollective,
 } from "ponder:schema";
-import { type Hex, keccak256, toHex } from "viem";
+import { getAddress, type Hex, keccak256, toHex } from "viem";
+import { SlotCollectiveAbi } from "../abis";
 import { evtId, getOrCreateAccount, lower, ZERO_ADDR } from "./helpers";
 
 /**
  * SlotCollective indexing.
  *
- * A collective fills BOTH of a slot's named addresses: `recipient` (tax flows to
- * it) and `manager` (it may propose tax / utility / policy changes). Indexing it
- * turns those two columns on `slot` from opaque addresses into a join.
+ * A collective fills BOTH of a slot's named addresses: `recipient` (tax flows
+ * to it) and `manager` (it may propose tax and hook changes). Indexing it turns
+ * those two columns on `slot` from opaque addresses into a join.
  *
  * Two things here exist nowhere else and are the reason this file earns its
  * keep:
@@ -31,6 +33,18 @@ import { evtId, getOrCreateAccount, lower, ZERO_ADDR } from "./helpers";
  * Every write below touches a primary key only — no table scans — which is why
  * the split is modelled as a current-state table plus a separate event log
  * rather than as versioned rows needing a query to retire.
+ *
+ * ── What the port to the hook-based Slot changed, and what it did not ───────
+ *
+ * The payout half — roles, split membership, distributions — is untouched: a
+ * `PushSplit` did not change when the slot underneath it did.
+ *
+ * The governance half narrowed. `UTILITY_MANAGER_ROLE` is gone; the relays are
+ * `proposeTax` / `proposeHook` and their per-dimension cancels; `Dimension` has
+ * two members where `UpdateKind` had three; and `LiquidationBountyRelayed` went
+ * with the bounty. `POLICY_MANAGER_ROLE` is deliberately still called that even
+ * though it now governs the hook — the identifier is a `keccak256` of that
+ * exact string and live collectives already have holders of it.
  */
 
 /**
@@ -46,7 +60,13 @@ const ROLE_LABELS: Record<string, string> = {
 };
 for (const name of [
   "TAX_MANAGER_ROLE",
+  // The HOOK role. It kept the old identifier on purpose — see the file note.
   "POLICY_MANAGER_ROLE",
+  // RETIRED by the port and kept here anyway. A collective deployed before it
+  // and upgraded through the beacon still has the grants in its log, and
+  // labelling them "UTILITY_MANAGER" is the honest reading of that history —
+  // whereas a null label would suggest an unknown role rather than a dead one.
+  // Nothing can be granted under this hash any more: no relay reads it.
   "UTILITY_MANAGER_ROLE",
   "SPLIT_MANAGER_ROLE",
 ]) {
@@ -56,8 +76,16 @@ for (const name of [
 const labelFor = (roleHash: Hex): string | null =>
   ROLE_LABELS[roleHash.toLowerCase()] ?? null;
 
-/** `UpdateKind` in `ISlot.sol`. Positional — order must match the enum. */
-const KIND_NAMES = ["Tax", "Utility", "Policy"] as const;
+/**
+ * `Dimension` in `SlotGovernance.sol`. POSITIONAL — order must match the enum.
+ *
+ * Two members now, where the old `UpdateKind` had three. An out-of-range
+ * ordinal maps to null rather than to a name: a third value arriving here means
+ * either a legacy `Policy` proposal from a pre-port collective or an enum this
+ * file has not caught up with, and both deserve a visible hole rather than a
+ * guess.
+ */
+const KIND_NAMES = ["Tax", "Hook"] as const;
 const kindName = (kind: number): string | null => KIND_NAMES[kind] ?? null;
 
 // ── Factory ─────────────────────────────────────────────────
@@ -67,6 +95,23 @@ ponder.on(
   async ({ event, context }) => {
     await getOrCreateAccount(context, event.args.admin);
     await getOrCreateAccount(context, event.args.deployer);
+
+    // The collective's OWN account row, typed from provenance rather than from
+    // the bytecode sniff in `detectAccountType`.
+    //
+    // That sniff looks for the `splitHash()` selector in the deployed code, and
+    // a collective is a BeaconProxy — its runtime bytecode is the proxy's, the
+    // selector is in the implementation, and the scan finds nothing. Every
+    // collective would otherwise be typed CONTRACT, which is the one case
+    // `SPLIT` exists to name. This event is proof: an address the collective
+    // factory minted IS a split, and no read is needed to know it.
+    //
+    // Set before the slot handlers ever see the address — a collective is
+    // deployed before it can be named a slot's recipient — and `SPLIT` is not
+    // one of the transitions `getOrCreateAccount` overwrites, so it holds.
+    const collective = lower(event.args.collective);
+    await getOrCreateAccount(context, collective);
+    await context.db.update(account, { id: collective }).set({ type: "SPLIT" });
 
     // UPSERT, and touching only this event's own fields on conflict.
     //
@@ -82,7 +127,7 @@ ponder.on(
     await context.db
       .insert(slotCollective)
       .values({
-        id: lower(event.args.manager),
+        id: lower(event.args.collective),
         chainId: context.chain.id,
         admin: lower(event.args.admin),
         deployer: lower(event.args.deployer),
@@ -113,6 +158,9 @@ ponder.on(
 
 ponder.on("SlotCollective:RoleGranted", async ({ event, context }) => {
   const role = event.args.role as Hex;
+  // An address that only ever governed a collective — never bought, never was
+  // paid — has no `account` row from anywhere else. This is the one thing that
+  // creates it.
   await getOrCreateAccount(context, event.args.account);
 
   await context.db
@@ -180,6 +228,8 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
   for (let i = 0; i < recipients.length; i++) {
     const account = recipients[i]!;
     const allocation = allocations[i] ?? 0n;
+    // A payee who has done nothing else on this chain gets its `account` row
+    // from here and nowhere else.
     await getOrCreateAccount(context, account);
 
     const row = {
@@ -205,10 +255,8 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
     await context.db.delete(collectiveSplitRecipient, { collective, index: i });
   }
 
-  const version = evtId(event.transaction.hash, event.log.logIndex);
-
   await context.db.insert(collectiveSplitUpdatedEvent).values({
-    id: version,
+    id: evtId(event.transaction.hash, event.log.logIndex),
     collective,
     chainId,
     recipients: JSON.stringify(recipients.map((r) => lower(r))),
@@ -221,6 +269,28 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
+
+  // ── splitHash is READ, not derived ────────────────────────────────────────
+  //
+  // This column used to be filled from `evtId(tx, logIndex)` sliced to 64 hex
+  // characters — which is the TRANSACTION HASH, spelled in a way that made it
+  // look computed. Every row was wrong and every row looked plausible.
+  //
+  // The event carries the Split struct but not its hash, and the hash is what
+  // `distribute` checks its calldata against, so the only honest sources are a
+  // read or a re-implementation of `SplitV2Lib.getHash`. Read: one `eth_call`
+  // per split rewrite, cached by ponder like any other, and it cannot drift
+  // from the library. Null when it does not answer, rather than a placeholder.
+  let splitHash: Hex | null = null;
+  try {
+    splitHash = (await context.client.readContract({
+      address: getAddress(collective),
+      abi: SlotCollectiveAbi,
+      functionName: "splitHash",
+    })) as Hex;
+  } catch {
+    splitHash = null;
+  }
 
   // UPSERT rather than update-if-present.
   //
@@ -239,7 +309,7 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
   // so its block and tx ARE the creation ones. `SlotCollectiveDeployed` fills in
   // admin and deployer whenever it lands.
   const splitFields = {
-    splitHash: `0x${version.replace(/^0x/, "").slice(0, 64)}` as Hex,
+    splitHash,
     totalAllocation: total,
     distributionIncentive: incentive,
     splitRecipientCount: recipients.length,
@@ -272,12 +342,16 @@ ponder.on("SlotCollective:SetPaused", async ({ event, context }) => {
 
 // ── Governance relays ───────────────────────────────────────
 //
-// Why these are worth indexing at all: the SLOT's own propose events carry no
-// proposer, and `transaction.from` is wrong exactly where it matters — a Safe
-// holding a role reports whichever owner executed, a bundled call reports the
-// bundler. `by` below is the actual role holder, recoverable from nowhere else.
+// Why these are worth indexing at all: the SLOT's own `TermsProposed` and
+// `TermsCancelled` carry no actor, and `transaction.from` is wrong exactly
+// where it matters — a Safe holding a role reports whichever owner executed, a
+// bundled call reports the bundler. `by` below is the actual role holder,
+// recoverable from nowhere else.
+//
+// One relay, one slot-side event, one transaction: join on `tx` to put the WHO
+// next to the WHAT.
 
-ponder.on("SlotCollective:UpdateRelayed", async ({ event, context }) => {
+ponder.on("SlotCollective:TermsRelayed", async ({ event, context }) => {
   await getOrCreateAccount(context, event.args.by);
   await context.db.insert(collectiveActionEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -287,6 +361,9 @@ ponder.on("SlotCollective:UpdateRelayed", async ({ event, context }) => {
     by: lower(event.args.by),
     action: "propose",
     kind: kindName(event.args.kind),
+    // Raw bps for Tax, the widened address for Hook. The collective emits both
+    // through one `bytes32`, so the column keeps that shape and `kind` says how
+    // to read it.
     value: event.args.value as Hex,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
@@ -294,7 +371,7 @@ ponder.on("SlotCollective:UpdateRelayed", async ({ event, context }) => {
   });
 });
 
-ponder.on("SlotCollective:UpdateCancelRelayed", async ({ event, context }) => {
+ponder.on("SlotCollective:TermsCancelRelayed", async ({ event, context }) => {
   await getOrCreateAccount(context, event.args.by);
   await context.db.insert(collectiveActionEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -311,45 +388,31 @@ ponder.on("SlotCollective:UpdateCancelRelayed", async ({ event, context }) => {
   });
 });
 
-ponder.on(
-  "SlotCollective:PendingUpdatesCancelled",
-  async ({ event, context }) => {
-    await getOrCreateAccount(context, event.args.by);
-    await context.db.insert(collectiveActionEvent).values({
-      id: evtId(event.transaction.hash, event.log.logIndex),
-      collective: lower(event.log.address),
-      chainId: context.chain.id,
-      slot: lower(event.args.slot),
-      by: lower(event.args.by),
-      action: "cancelAll",
-      kind: null,
-      value: null,
-      timestamp: event.block.timestamp,
-      blockNumber: event.block.number,
-      tx: event.transaction.hash,
-    });
-  },
-);
-
-ponder.on(
-  "SlotCollective:LiquidationBountyRelayed",
-  async ({ event, context }) => {
-    await getOrCreateAccount(context, event.args.by);
-    await context.db.insert(collectiveActionEvent).values({
-      id: evtId(event.transaction.hash, event.log.logIndex),
-      collective: lower(event.log.address),
-      chainId: context.chain.id,
-      slot: lower(event.args.slot),
-      by: lower(event.args.by),
-      action: "bounty",
-      kind: null,
-      value: `0x${event.args.newBps.toString(16).padStart(64, "0")}` as Hex,
-      timestamp: event.block.timestamp,
-      blockNumber: event.block.number,
-      tx: event.transaction.hash,
-    });
-  },
-);
+/**
+ * The admin's reach across both dimensions at once.
+ *
+ * `kind` is null because the event names none — and unlike a per-dimension
+ * cancel, this one does not say what it actually dropped. `cancelAllProposals`
+ * try/catches each leg, so a collective with only a tax proposal queued emits
+ * exactly the same log as one with both. The slot's own `TermsCancelled`
+ * rows in the same transaction are what say which legs succeeded.
+ */
+ponder.on("SlotCollective:AllTermsCancelled", async ({ event, context }) => {
+  await getOrCreateAccount(context, event.args.by);
+  await context.db.insert(collectiveActionEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    collective: lower(event.log.address),
+    chainId: context.chain.id,
+    slot: lower(event.args.slot),
+    by: lower(event.args.by),
+    action: "cancelAll",
+    kind: null,
+    value: null,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
 
 // ── Distributions ───────────────────────────────────────────
 

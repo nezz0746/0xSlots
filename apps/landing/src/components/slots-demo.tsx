@@ -28,7 +28,7 @@ export function SlotsDemo() {
         <span className="text-[10px] uppercase tracking-wider opacity-50 block">
           Owner
         </span>
-        <span className="text-xs font-bold font-mono">
+        <span className="text-xs font-bold">
           {truncateAddress(OWNER_ADDRESS)}
         </span>
       </div>
@@ -70,9 +70,7 @@ export function SlotsDemo() {
                 <span className="text-[9px] uppercase tracking-wider opacity-50">
                   Slot {String(i + 1).padStart(2, "0")}
                 </span>
-                <span className="text-[10px] font-bold font-mono mt-0.5">
-                  {slot.id}
-                </span>
+                <span className="text-[10px] font-bold mt-0.5">{slot.id}</span>
               </div>
             </div>
           </div>

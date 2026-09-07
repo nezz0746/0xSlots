@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useChain } from "@/context/chain";
 import { NavLink } from "@/context/navigation";
-import { useRecentEvents } from "@/hooks/use-v3";
+import { useRecentEvents } from "@/hooks/use-explorer";
 import { normalizeEvents } from "@/lib/normalize-events";
 import { truncateAddress } from "@/utils";
 

@@ -10,16 +10,19 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotCollective} from "../src/SlotCollective.sol";
-import {SlotCollectiveFactory} from "../src/SlotCollectiveFactory.sol";
+import {SlotCollective} from "../src/collectives/SlotCollective.sol";
+import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 
 /// @dev Storage-compatible successor, used to prove a beacon upgrade actually
 ///      moves the code every existing manager runs.
 contract SlotCollectiveV2 is SlotCollective {
     constructor(address warehouse) SlotCollective(warehouse) {}
 
-    function version() external pure returns (string memory) {
-        return "v2";
+    /// @dev Overrides the inherited version rather than shadowing it — the
+    ///      point of the test is that a beacon upgrade moves the CODE, and
+    ///      the version is now how you observe that.
+    function version() public pure override returns (uint64) {
+        return 2;
     }
 }
 
@@ -80,7 +83,7 @@ contract SlotCollectiveFactoryTest is Test {
     }
 
     function _create(address admin_) internal returns (SlotCollective) {
-        return SlotCollective(payable(factory.createManager(_split(), _roles(admin_))));
+        return SlotCollective(payable(factory.createCollective(_split(), _roles(admin_))));
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -119,14 +122,14 @@ contract SlotCollectiveFactoryTest is Test {
     }
 
     function test_registryTracksEveryManager() public {
-        assertEq(factory.managerCount(), 0);
+        assertEq(factory.collectiveCount(), 0);
 
         SlotCollective a = _create(managerAdmin);
         SlotCollective b = _create(stranger);
 
-        assertEq(factory.managerCount(), 2);
-        assertEq(factory.managers(0), address(a));
-        assertEq(factory.managers(1), address(b));
+        assertEq(factory.collectiveCount(), 2);
+        assertEq(factory.collectives(0), address(a));
+        assertEq(factory.collectives(1), address(b));
         assertFalse(factory.isSlotCollective(makeAddr("notAManager")));
     }
 
@@ -149,7 +152,7 @@ contract SlotCollectiveFactoryTest is Test {
     ///      is what closes it.
     function test_implementationCannotBeInitialized() public {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        implementation.initializeManager(_split(), _roles(stranger));
+        implementation.initializeCollective(_split(), _roles(stranger));
     }
 
     function test_managerCannotBeReinitialized() public {
@@ -157,7 +160,7 @@ contract SlotCollectiveFactoryTest is Test {
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         vm.prank(stranger);
-        mgr.initializeManager(_split(), _roles(stranger));
+        mgr.initializeCollective(_split(), _roles(stranger));
 
         // And the original admin is untouched.
         assertTrue(mgr.hasRole(mgr.DEFAULT_ADMIN_ROLE(), managerAdmin));
@@ -183,8 +186,8 @@ contract SlotCollectiveFactoryTest is Test {
         vm.prank(factoryAdmin);
         factory.upgradeBeacon(address(v2));
 
-        assertEq(SlotCollectiveV2(payable(address(a))).version(), "v2");
-        assertEq(SlotCollectiveV2(payable(address(b))).version(), "v2");
+        assertEq(SlotCollectiveV2(payable(address(a))).version(), 2);
+        assertEq(SlotCollectiveV2(payable(address(b))).version(), 2);
 
         // State survives the code swap.
         assertTrue(a.hasRole(a.DEFAULT_ADMIN_ROLE(), managerAdmin));
@@ -208,7 +211,9 @@ contract SlotCollectiveFactoryTest is Test {
     // ═══════════════════════════════════════════════════════════
 
     function test_factoryCannotBeReinitialized() public {
-        vm.expectRevert(SlotCollectiveFactory.AlreadyInitialized.selector);
+        // OpenZeppelin's `Initializable`, not a hand-rolled flag. The guard
+        // moved so that future upgrades have a reinitializer available.
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         factory.initialize(stranger, address(implementation));
     }
 

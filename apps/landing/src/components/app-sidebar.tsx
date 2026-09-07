@@ -4,9 +4,9 @@ import { CHAINS } from "@0xslots/contracts";
 import {
   Check,
   ChevronDown,
+  FileCode2,
+  Plug,
   PlusIcon,
-  Scale,
-  Trophy,
   User,
   Users,
 } from "lucide-react";
@@ -14,7 +14,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { DevAccountSwitcher } from "@/components/dev-account-switcher";
 import { DevTimeWarp } from "@/components/dev-time-warp";
-import { IndexerStatus } from "@/components/indexer-status";
 import { TestnetFaucet } from "@/components/testnet-faucet";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +47,7 @@ import {
 } from "@/context/explorer-section";
 import { NavLink, useNavigation } from "@/context/navigation";
 import { EXTERNAL_LINKS } from "@/lib/external-links";
+import { CONTRACTS_PAGE_ENABLED } from "@/lib/features";
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -115,32 +115,6 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-
-              {/* Sits with the sections because it answers the same kind of
-                  question — what a slot's terms can be, alongside what a slot
-                  can do. It is a ROUTE, not a section: it pushes rather than
-                  setting explorer state, so `isActive` reads the path. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/app/policies")}
-                  onClick={() => push("/app/policies")}
-                >
-                  <Scale className="size-4" />
-                  <span>Policies</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              {/* A ROUTE like Policies, not a section: the reward leaderboard
-                  is program-wide, so it sits with the other "how the protocol
-                  works" destinations rather than the explorer tabs. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname.startsWith("/app/rewards")}
-                  onClick={() => push("/app/rewards")}
-                >
-                  <Trophy className="size-4" />
-                  <span>Rewards</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -150,6 +124,18 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              {/* Above "My Slots" because it is read BEFORE a slot exists:
+                  it is the catalogue you consult while deciding what to
+                  attach, not a view of anything you own. */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith("/app/hooks")}
+                  onClick={() => push("/app/hooks")}
+                >
+                  <Plug className="size-4" />
+                  <span>Hooks</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === "/app/profile"}
@@ -168,6 +154,24 @@ export function AppSidebar() {
                   <span>My Collectives</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+
+              {/* Last, and only where the page exists.
+                  It answers an operator's question — which code is behind this
+                  proxy on this chain, and who holds the key — so it belongs
+                  below the two destinations someone actually came here for,
+                  not among them. The route itself `notFound()`s when the flag
+                  is off; this keeps the nav from offering a dead link. */}
+              {CONTRACTS_PAGE_ENABLED && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/app/contracts")}
+                    onClick={() => push("/app/contracts")}
+                  >
+                    <FileCode2 className="size-4" />
+                    <span>Contracts</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -233,7 +237,6 @@ export function AppSidebar() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <IndexerStatus />
         </div>
       </SidebarFooter>
     </Sidebar>

@@ -60,8 +60,8 @@ import { parseEther } from "viem";
 await client.buy({
   slot: "0x...",
   account: "0x...",
-  depositAmount: parseEther("1"),
   selfAssessedPrice: parseEther("10"),
+  depositAmount: parseEther("1"),
 });
 
 await client.selfAssess("0xSlot", parseEther("20"));
@@ -69,16 +69,21 @@ await client.topUp("0xSlot", parseEther("0.5"));
 await client.withdraw("0xSlot", parseEther("0.1"));
 await client.release("0xSlot");
 await client.collect("0xSlot");       // permissionless
-await client.liquidate("0xSlot");     // permissionless, earns bounty
+await client.liquidate("0xSlot");     // permissionless — no bounty, the slot itself is the reward
 ```
 
 ## React Integration
 
 ```tsx
-import { useSlotsClient, useSlotAction, useSlotOnChain } from "@0xslots/sdk/react";
+import { useQuery } from "@tanstack/react-query";
+import { useSlotsClient, useSlotAction } from "@0xslots/sdk/react";
 
 function SlotView({ address }: { address: string }) {
-  const { data: slot, isLoading } = useSlotOnChain(address, 8453);
+  const client = useSlotsClient();
+  const { data: slot, isLoading } = useQuery({
+    queryKey: ["slot", address],
+    queryFn: () => client.slotState(address as `0x${string}`),
+  });
   const { buy, busy } = useSlotAction({
     onSuccess: (label, hash) => console.log(`${label}: ${hash}`),
   });
@@ -92,8 +97,8 @@ function SlotView({ address }: { address: string }) {
       <p>Occupant: {slot.occupant ?? "Vacant"}</p>
       <button disabled={busy} onClick={() => buy({
         slot: address as `0x${string}`,
-        depositAmount: 1000000n,
         selfAssessedPrice: 5000000n,
+        depositAmount: 1000000n,
       })}>Buy</button>
     </div>
   );

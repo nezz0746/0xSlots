@@ -1,0 +1,204 @@
+import { Callout } from 'vocs'
+
+# Hook reference
+
+The interfaces a hook implements. See [the concept](/concepts/hooks) for the
+model; this is the surface.
+
+A slot calls exactly one hook. `ISlotHook` is required; `IDescribedHook` is an
+optional, client-only extension for rendering.
+
+## `ISlotHook`
+
+```solidity
+interface ISlotHook {
+    function subscriptions() external view returns (HookFlags memory);
+    function validateHookData(bytes32 data) external view;
+
+    // decisions — view, revert to veto
+    function beforeBuy(SlotContext calldata ctx) external view;
+    function beforeSelfAssess(SlotContext calldata ctx) external view;
+
+    // effects — gas-capped and revert swallowed, unless `strict` is declared
+    function afterBuy(SlotContext calldata ctx) external;
+    function afterRelease(SlotContext calldata ctx) external;
+    function afterLiquidate(SlotContext calldata ctx) external;
+    function afterSettle(SlotContext calldata ctx) external;
+}
+```
+
+`subscriptions()` is `view`, not `pure`: a hook may answer it from storage. It is read
+**once** at attach and snapshotted, so a hook cannot widen its reach mid-tenure.
+
+<Callout type="info">
+There were eight callbacks until `Slot.sell` was removed. A consensual sale is
+now `selfAssess` then `buy`, performed by the OfferBook, so a sale runs
+`beforeSelfAssess` and `beforeBuy` like any other seating — and `beforeSell` /
+`afterSell` are gone. That is the point of the removal: there is one seating
+path, so there is no second door for a hook to have forgotten to police.
+</Callout>
+
+`validateHookData` is read at the same moment and for the same reason. `hookData`
+is opaque to the slot, so only the hook can say whether a given word means
+anything; refusing it here is the only chance anyone gets, because `before` is
+fail-closed and a hook that rejects its own configuration vetoes every buy
+forever. A hook that takes no configuration implements it as a no-op and thereby
+accepts anything — say so deliberately rather than by omission.
+
+## `SlotContext`
+
+One shape for every callback. Fields not meaningful for a given call are zero.
+
+```solidity
+struct SlotContext {
+    address slot;          // always msg.sender, passed explicitly
+    address caller;        // who called the slot — not necessarily the occupant
+    address account;       // incoming occupant on a transition; current otherwise
+    address occupant;      // who holds it now; zero when vacant
+    uint256 occupiedSince; // when the current occupancy began; zero when vacant
+    uint256 taxBps; // basis points per 30 days
+    uint256 currentPrice;
+    uint256 newPrice;      // proposed in `before`, just-set in `after`
+    uint256 depositAmount;
+    uint256 owed;          // afterSettle only — tax that accrued
+    uint256 paid;          // afterSettle only — what could be taken from deposit
+    bytes32 hookData;      // THIS SLOT's configuration for this hook
+}
+```
+
+`owed > paid` on `afterSettle` means the occupant has run dry — a useful distress
+signal. `newPrice` is a *proposal* in `beforeBuy` / `beforeSelfAssess` and a fact
+in the `after` callbacks.
+
+`hookData` is the slot's storage, not the hook's, and that is the load-bearing
+part. It is what lets one deployment serve every configuration — a
+`MinimumTenureHook` reads its window here, so a seven-day slot and a thirty-day
+slot point at the same address — and because it lives on the slot, a slot whose
+`mutableHook` is false has BOTH halves of its rules frozen. A hook keeping the
+same setting in its own storage could rewrite a slot's terms while the slot went
+on reporting itself immutable.
+
+Zero means the slot configured nothing. End-of-tenure callbacks carry the
+configuration the OUTGOING hook was attached with, not its successor's.
+
+## `HookFlags`
+
+Which callbacks a hook wants. Declared by the hook, snapshotted by the slot.
+
+```solidity
+struct HookFlags {
+    bool beforeBuy;
+    bool beforeSelfAssess;
+    bool afterBuy;
+    bool afterRelease;
+    bool afterLiquidate;
+    bool afterSettle;
+    bool strict;          // not a callback — a mode
+}
+```
+
+`strict` is the odd one out. The other six say which callbacks the hook wants;
+this one changes how they run. Declared, it drops the stipend on every `after`
+call and lets the revert through, so work that must land cannot be silently
+dropped — and the hook can fail the slot, eviction included.
+
+It is snapshotted with the rest, so a hook cannot become strict under a sitting
+occupant, and it appears in `SlotInfo.hookFlags` for anyone deciding whether to
+buy. Leave it false unless a swallowed write would be worse than a stuck slot.
+
+<Callout type="warning">
+The `before` flags are not optional to get right. A `before` hook is
+fail-closed: calling one on a contract that does not implement it reverts on the
+missing function, and a fail-closed revert vetoes **every** buy on that slot,
+forever. The flags are how the slot knows to skip a callback the hook never
+meant to answer.
+</Callout>
+
+## `IDescribedHook`
+
+Optional. Self-reported metadata for clients — **never** read by the slot.
+
+```solidity
+struct HookDescriptor {
+    bytes32 family;      // identifies the behaviour; the lookup key
+    uint32  version;     // the encoding of `data`, and nothing else
+    bytes   data;        // family-specific; empty where the slot holds the settings
+    string  metadataURI; // the human half — label, units, icon. May be empty.
+}
+
+interface IDescribedHook {
+    function descriptors() external view returns (HookDescriptor[] memory);
+}
+```
+
+<Callout type="info">
+`descriptors()` is an `eth_call` for clients only and may lie. Treat a revert,
+an unknown `family`, an unknown `version`, or `data` that fails to decode as
+"unknown" and fall back to the flags — which still say whether the hook can
+refuse a buy, and whether it is `strict`. A hook that answers family X version 1 and meets version 2 should
+ignore v2 rather than decode its bytes with v1's layout.
+</Callout>
+
+## `MinimumTenureHook`
+
+The one hook the protocol ships as a policy. One deployment per chain; the
+window a slot enforces is its own `hookData`, 32 bytes of big-endian seconds.
+
+```solidity
+function tenureOf(bytes32 data) external pure returns (uint256);
+function requiredDeposit(uint256 price, uint256 taxBps, uint256 window)
+    external pure returns (uint256);
+
+uint256 public constant MAX_TENURE = 3650 days;
+uint256 public constant BUYOUT_PREMIUM_BPS = 100_000;   // 10x
+```
+
+Inside the window it enforces three things:
+
+| | |
+|---|---|
+| **Entry is funded** | a buy must post enough deposit to cover the whole window at its own declared price |
+| **No price cut** | the occupant cannot lower their price while protected |
+| **Buyouts cost a premium** | a buyer must declare at least `BUYOUT_PREMIUM_BPS` of the occupant's price — 10x — to take the slot early |
+
+<Callout type="warning">
+The premium is what makes the window safe to have. An absolute veto meant a slot
+declared at dust accrued no tax, so its escrow never emptied and liquidation
+never armed, while the window refused every buyer — and the occupant could re-arm
+it indefinitely by releasing and rebuying through a second address. The slot left
+forced sale permanently, for the cost of gas.
+
+Bounded, protection scales with what the occupant declared. At 100 ether a buyer
+must declare 1000; at 1 wei they must declare 10. Buying a large shield means
+paying tax on a large number and being takeable at it, so a dust price buys dust
+protection.
+</Callout>
+
+An occupant that leaves is barred from retaking that slot for one window, so the
+window cannot be renewed for free. The bar is per slot and per account.
+
+### Errors
+
+| Error | Meaning |
+|---|---|
+| `TenureNotConfigured` | `hookData` is zero — a window was never set |
+| `TenureTooLong(max)` | above `MAX_TENURE` |
+| `TenureUnderfunded(required)` | the deposit does not cover the window |
+| `PriceCutDuringTenure` | a `selfAssess` lowering the price inside the window |
+| `TenureNotElapsed(availableAt)` | the leaver's re-entry bar has not expired |
+| `BuyoutBelowPremium(required)` | a mid-window buy declaring less than 10x |
+
+## Identifying a hook
+
+Hook kinds used to ship a factory that deployed at a CREATE2 address derived from
+the hook's terms, so `factory.verify(hook)` proved an address was the genuine
+hook for those exact terms. That is gone, and with it the reason for it: terms
+are no longer part of an address. A `MinimumTenureHook` is one deployment per
+chain and every duration is a slot's `hookData`.
+
+What a client checks now is the `family` a hook claims in its `descriptors()`,
+which somebody else's implementation of that behaviour answers just as well —
+and then the slot's own `hookData` for the terms. `descriptors()` may
+still lie; the flags, which the slot snapshotted, are what say whether a hook can
+refuse a buy.
+

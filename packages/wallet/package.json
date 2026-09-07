@@ -1,0 +1,37 @@
+{
+  "name": "@0xslots/wallet",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./qr": "./src/qr-code.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@coinbase/wallet-sdk": "^4.3.6",
+    "@walletconnect/ethereum-provider": "^2.23.6",
+    "qrcode": "^1.5.4"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5",
+    "@wagmi/core": "^3.4.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "viem": "^2",
+    "wagmi": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "vitest": "^2.1.9",
+    "@testing-library/react": "^16.3.0",
+    "jsdom": "^26.1.0"
+  }
+}

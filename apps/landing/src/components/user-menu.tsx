@@ -1,7 +1,7 @@
 "use client";
 
 import { CHAINS } from "@0xslots/contracts";
-import { ConnectButton as RainbowConnectButton } from "@rainbow-me/rainbowkit";
+import { useWalletModal } from "@0xslots/wallet";
 import { Check, Copy, LogOut, Network, User, Wallet } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
@@ -33,7 +33,8 @@ export function UserMenu() {
   const { push } = useNavigation();
   const { isMiniApp } = useFarcaster();
   const { chainId, setChain } = useChain();
-  const { connector } = useAccount();
+  const { connector, address, isConnected } = useAccount();
+  const { openConnect, openAccount } = useWalletModal();
   const { disconnect } = useDisconnect();
   const [copied, setCopied] = useState(false);
 
@@ -44,34 +45,27 @@ export function UserMenu() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  return (
-    <RainbowConnectButton.Custom>
-      {({ account, chain, openConnectModal, mounted }) => {
-        const connected = mounted && account && chain;
-
-        return connected ? (
-          <ConnectedMenu
-            account={account}
-            chainId={chainId}
-            setChain={setChain}
-            connector={connector}
-            disconnect={disconnect}
-            push={push}
-            isMiniApp={isMiniApp}
-            copied={copied}
-            copyAddress={copyAddress}
-          />
-        ) : (
-          <DisconnectedMenu
-            mounted={!!mounted}
-            openConnectModal={openConnectModal}
-            chainId={chainId}
-            setChain={setChain}
-            isMiniApp={isMiniApp}
-          />
-        );
-      }}
-    </RainbowConnectButton.Custom>
+  return isConnected && address ? (
+    <ConnectedMenu
+      account={{ address }}
+      chainId={chainId}
+      setChain={setChain}
+      connector={connector}
+      disconnect={disconnect}
+      push={push}
+      isMiniApp={isMiniApp}
+      copied={copied}
+      copyAddress={copyAddress}
+      openAccount={openAccount}
+    />
+  ) : (
+    <DisconnectedMenu
+      mounted={true}
+      openConnectModal={openConnect}
+      chainId={chainId}
+      setChain={setChain}
+      isMiniApp={isMiniApp}
+    />
   );
 }
 
@@ -173,6 +167,7 @@ function ConnectedMenu({
   isMiniApp,
   copied,
   copyAddress,
+  openAccount,
 }: {
   account: { address: string; displayBalance?: string };
   chainId: number;
@@ -183,6 +178,7 @@ function ConnectedMenu({
   isMiniApp: boolean;
   copied: boolean;
   copyAddress: (address: string) => void;
+  openAccount: () => void;
 }) {
   const { data: ensName } = useEnsName(account.address);
   const { data: ensAvatar } = useEnsAvatar(ensName);
@@ -234,7 +230,7 @@ function ConnectedMenu({
               {ensName && (
                 <p className="text-sm font-medium truncate">{ensName}</p>
               )}
-              <p className="text-xs text-muted-foreground font-mono">
+              <p className="text-xs text-muted-foreground">
                 {truncateAddress(account.address)}
               </p>
               {connector && (
@@ -307,6 +303,11 @@ function ConnectedMenu({
 
           <DropdownMenuSeparator />
         </div>
+
+        <DropdownMenuItem onClick={openAccount}>
+          <Wallet className="size-4" />
+          Manage wallet
+        </DropdownMenuItem>
 
         <DropdownMenuItem variant="destructive" onClick={() => disconnect()}>
           <LogOut className="size-4" />

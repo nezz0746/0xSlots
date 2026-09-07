@@ -1,18 +1,24 @@
 "use client";
 
-import { Loader2, RotateCcw } from "lucide-react";
+import type { SlotState } from "@0xslots/sdk/slots";
+import { BASIS_POINTS, MONTH_SECONDS } from "@0xslots/sdk/slots";
+import { Loader2, RotateCcw, UserCog } from "lucide-react";
 import { useCallback, useState } from "react";
 import { type Address, formatUnits, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
 import { PriceInput } from "@/components/ui/price-input";
-import { MONTH_SECONDS } from "@/constants";
 import { useChain } from "@/context/chain";
+import type { CurrencyMeta } from "@/hooks/slots/use-slots";
+import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
+import { useCurrencyBalance } from "@/hooks/use-currency-balance";
 import type { LiveAccrual } from "@/hooks/use-live-accrual";
-import { useSlotAction } from "@/hooks/use-slot-action";
-import type { SlotOnChain } from "@/hooks/use-slot-onchain";
 import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
 import { cn } from "@/lib/utils";
 import { formatBalance, formatDuration } from "@/utils";
+import { Panel } from "./panel";
+import { UserCurrencyBalance } from "./user-balance";
+
+type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
  * Everything the occupant can do to their own position, without selling it.
@@ -20,12 +26,12 @@ import { formatBalance, formatDuration } from "@/utils";
  * ── Why one button and not three ─────────────────────────────────────────
  *
  * Because the contract does not treat them as independent. `selfAssess` ends
- * with `_enforceMinDepositExisting(newPrice)`, so the deposit still standing
+ * with `_requireFunded(_deposit, newPrice)`, so the deposit still standing
  * after settlement has to cover the minimum at the NEW price. Raising your
  * valuation — the most ordinary thing an occupant wants to do — therefore
- * reverts with `InsufficientDeposit` unless the deposit was already large
- * enough. That was the panel's sharpest edge: the field let you type the price,
- * the button let you submit it, and the chain refused with an error naming a
+ * reverts with the funding error unless the deposit was already large enough.
+ * That was the panel's sharpest edge: the field let you type the price, the
+ * button let you submit it, and the chain refused with an error naming a
  * deposit nobody had mentioned.
  *
  * Withdrawal is the same coupling from the other side. `withdraw` refuses to
@@ -37,9 +43,12 @@ import { formatBalance, formatDuration } from "@/utils";
  * So price and deposit are one form and one submit, batched through the slot's
  * own `multicall`. What was two traps becomes two lines of copy: what the new
  * valuation costs to hold, and how long it stays funded afterwards.
+ *
+ * Both rules were re-read against `Slot.sol` during the port and both still
+ * hold verbatim under the hook-based protocol — only the helper's name changed,
+ * from `_enforceMinDepositExisting` to `_requireFunded`.
  */
 
-const BASIS_POINTS = 10_000n;
 const DAY = 86_400n;
 const ZERO = 0n;
 
@@ -93,27 +102,32 @@ function runwaySeconds(deposit: bigint, price: bigint, taxBps: bigint): bigint {
 
 export function ManageTerms({
   slot,
-  slotAddress,
+  state,
+  currency,
   accrual,
-  walletBalance,
-  onDone,
+  actions,
+  bare,
+  showBalance,
   trailing,
 }: {
-  slot: SlotOnChain;
-  slotAddress: string;
+  slot: Address;
+  state: SlotState;
+  currency: CurrencyMeta;
   /** The interpolated accrual, so the figures agree with the panel above. */
   accrual: LiveAccrual;
-  walletBalance: bigint;
-  onDone?: () => void;
-  /** Sits beside the submit — see the note on that row. */
+  actions: Actions;
+  /** Render without panel chrome, for the valuation card that already has a header. */
+  bare?: boolean;
+  /** Draw the viewer's balance under the valuation field. Off when disconnected. */
+  showBalance?: boolean;
+  /** Sits beside the submit — the "more actions" disclosure. See ActionsCard. */
   trailing?: React.ReactNode;
 }) {
-  const decimals = slot.currencyDecimals ?? 6;
-  const symbol = slot.currencySymbol ?? "USDC";
-  const taxBps = slot.taxPercentage;
+  const { decimals, symbol } = currency;
+  const taxBps = state.taxBps;
   const { chainId } = useChain();
-  const { toUsd } = useUsdPrice(slot.currency, chainId);
-  const { manageTerms, busy, activeAction } = useSlotAction();
+  const { toUsd } = useUsdPrice(state.currency, chainId);
+  const walletBalance = useCurrencyBalance(state.currency);
 
   const [priceWei, setPriceWei] = useState<bigint | null>(null);
   /** Signed: positive adds runway, negative takes it back. */
@@ -121,7 +135,7 @@ export function ManageTerms({
 
   // The field starts at whatever the slot currently says and only diverges once
   // touched, so opening the panel and leaving it changes nothing.
-  const newPrice = priceWei ?? slot.price;
+  const newPrice = priceWei ?? state.price;
 
   // What settlement will take before any of this runs. `selfAssess`, `topUp` and
   // `withdraw` all call `_settle()` first, so the deposit these figures must
@@ -129,7 +143,7 @@ export function ManageTerms({
   // on screen.
   const settledDeposit = accrual.remaining > ZERO ? accrual.remaining : ZERO;
 
-  const priceChanged = newPrice !== slot.price && newPrice > ZERO;
+  const priceChanged = newPrice !== state.price && newPrice > ZERO;
 
   /**
    * The floor the deposit has to clear, by the same ceilDiv the contract uses.
@@ -145,20 +159,23 @@ export function ManageTerms({
    * accruing in between — a top-up sized to the exact shortfall is already short
    * by the time it lands, and a withdrawal sized to the exact ceiling is already
    * over it.
+   *
+   * The CURRENT tax, not a pending one: `selfAssess` is not an occupancy
+   * transition, applies nothing, and is checked against the terms in force.
    */
   const floor =
-    slot.minDepositSeconds > ZERO
+    state.minDepositSeconds > ZERO
       ? depositForSeconds(
           newPrice,
           taxBps,
-          slot.minDepositSeconds + SETTLE_MARGIN_SECONDS,
+          state.minDepositSeconds + SETTLE_MARGIN_SECONDS,
         )
       : ZERO;
 
   /**
    * The shortfall a reprice creates, and only a reprice.
    *
-   * `_enforceMinDepositExisting` runs inside `selfAssess` and nowhere else, so
+   * `_requireFunded` runs inside `selfAssess` and nowhere else on this path, so
    * an occupant whose deposit has decayed below the minimum is not in trouble —
    * they are simply closer to the end of their runway, and the slot stays theirs
    * until it reaches zero. Charging them to open a panel they only opened to
@@ -224,33 +241,32 @@ export function ManageTerms({
   const movedUsd = formatUsd(toUsd(Number(formatUnits(moved, decimals))));
 
   /*
-   * `Multicall.multicall` is not payable, so a native TOP-UP cannot ride through
-   * it and the two stay separate — see `client.manageTerms`. Withdrawal is not
-   * payable either way, so that direction is always one transaction. Said out
-   * loud, because a wallet asking twice for one button is alarming when you were
-   * not told to expect it.
+   * `multicall` is not payable, so a native TOP-UP cannot ride through it and
+   * the two stay separate — see `client.manageTerms`. Withdrawal is not payable
+   * either way, so that direction is always one transaction. Said out loud,
+   * because a wallet asking twice for one button is alarming when you were not
+   * told to expect it.
    */
-  const native = slot.currency === zeroAddress;
+  const native = state.currency === zeroAddress;
   const steps = native && topUpAmount > ZERO ? 1 + (priceChanged ? 1 : 0) : 1;
 
-  const working = busy && activeAction === "Update terms";
+  const working = actions.busy && actions.activeAction === "Update terms";
 
   async function submit() {
-    const hash = await manageTerms(slotAddress as Address, {
+    const hash = await actions.manageTerms(slot, {
       newPrice: priceChanged ? newPrice : undefined,
       topUpAmount,
       withdrawAmount,
     });
     if (!hash) return;
     reset();
-    onDone?.();
   }
 
   const gain = "bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-500";
   const loss = "bg-red-500/[0.07] text-red-600 dark:text-red-500";
 
-  return (
-    <div className="space-y-2.5">
+  const body = (
+    <>
       <PriceInput
         label="Your valuation"
         value={newPrice}
@@ -260,6 +276,11 @@ export function ManageTerms({
         symbol={symbol}
         disabled={working}
         hint="What the next holder pays to take it from you"
+        below={
+          showBalance ? (
+            <UserCurrencyBalance currency={state.currency} meta={currency} />
+          ) : null
+        }
         toUsd={toUsd}
       />
 
@@ -375,6 +396,18 @@ export function ManageTerms({
         </Button>
         {trailing}
       </div>
-    </div>
+    </>
+  );
+
+  if (bare) return <div className="space-y-2.5">{body}</div>;
+
+  return (
+    <Panel
+      icon={UserCog}
+      title="Your position"
+      tint="bg-violet-500/10 text-violet-600 dark:text-violet-400"
+    >
+      {body}
+    </Panel>
   );
 }

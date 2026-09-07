@@ -1,5 +1,6 @@
+import { slotsTestTokenAddress } from "@0xslots/contracts/slots";
 import type { Address } from "viem";
-import { SlotsChain } from "./client";
+import { SlotsChain } from "./chains";
 import { NATIVE_CURRENCY_ADDRESS } from "./native";
 
 export interface TokenInfo {
@@ -55,16 +56,19 @@ export const NATIVE_CURRENCY: TokenInfo = {
 export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
   [SlotsChain.ANVIL]: [
     {
-      // LocalToken, deployed by apps/contracts/script/SeedLocal.s.sol.
+      // The test token deployed by `script/slots/SeedSlots.s.sol`, the
+      // hook-protocol local stack.
       //
-      // Plain CREATE, so the address derives from (deployer, nonce) and is
-      // independent of the contract's bytecode — it survives edits to the
-      // Solidity, and moves whenever the deployer's nonce count changes. That
-      // nonce is shared with DeployLocal, which runs first: adding a contract
-      // THERE moves this address too. SeedLocal asserts the value so drift
-      // fails the seed loudly instead of leaving the app pointed at nothing —
-      // when it fires, update both this and EXPECTED_LOCAL_TOKEN.
-      address: "0x9A676e781A523b5d0C0e43731313A708CB607508",
+      // `dev-chain.sh` re-checks it against the records on every local boot
+      // and refuses to start when the generated table is a step behind.
+      // Read from the generated deployment table, never typed here: plain
+      // CREATE means the address moves whenever the SEED changes what it
+      // deploys or in what order. Zero rather than a stale guess when nothing
+      // is deployed — a token that is plainly absent gets reported, one that is
+      // plausibly wrong gets debugged for an hour.
+      address:
+        slotsTestTokenAddress[31337] ??
+        "0x0000000000000000000000000000000000000000",
       name: "0xSlots Test USD",
       symbol: "USDX",
       decimals: 18,
@@ -106,6 +110,38 @@ export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
     // returns [0], so USDC stays the default and an untouched create form
     // produces the slot it always did.
     NATIVE_CURRENCY,
+  ],
+  /**
+   * Ethereum Sepolia — native ETH first, and that is a decision rather than an
+   * oversight.
+   *
+   * Every other chain here leads with a stablecoin because it has one a new
+   * user can actually get: anvil and base-sepolia both default to a token with
+   * an unpermissioned `mint`. Sepolia has none. Circle's USDC is the real
+   * FiatToken, so leading with it would put a trip to faucet.circle.com and an
+   * ERC-20 approval between a new user and their first slot, while testnet ETH
+   * is one faucet away and needs no approval at all.
+   */
+  [SlotsChain.SEPOLIA]: [
+    NATIVE_CURRENCY,
+    {
+      // Circle's testnet USDC. Mintable only by configured minters — see
+      // `faucet` on TokenInfo — so it is offered, not defaulted to.
+      address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      name: "USD Coin",
+      symbol: "USDC",
+      decimals: 6,
+      logo: "usdc",
+    },
+    {
+      // Not the OP-stack predeploy: Ethereum has no such thing, and this is
+      // the canonical Sepolia WETH.
+      address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+      name: "Wrapped Ether",
+      symbol: "WETH",
+      decimals: 18,
+      logo: "weth",
+    },
   ],
   [SlotsChain.BASE]: [
     {

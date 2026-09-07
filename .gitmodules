@@ -21,3 +21,6 @@
 [submodule "apps/contracts/lib/universal-rewards-distributor"]
 	path = apps/contracts/lib/universal-rewards-distributor
 	url = https://github.com/morpho-org/universal-rewards-distributor
+[submodule "apps/contracts/lib/openzeppelin-foundry-upgrades"]
+	path = apps/contracts/lib/openzeppelin-foundry-upgrades
+	url = https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades

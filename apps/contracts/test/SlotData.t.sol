@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {SlotData} from "../src/modules/SlotData.sol";
+import {SlotData} from "../src/v1/modules/SlotData.sol";
 
 contract Token is ERC20 {
     constructor() ERC20("Test", "TST") {}

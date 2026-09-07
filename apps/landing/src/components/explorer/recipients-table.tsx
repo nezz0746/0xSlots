@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useNavigation } from "@/context/navigation";
-import { useAccounts } from "@/hooks/use-v3";
+import { useAccounts } from "@/hooks/use-explorer";
 
 /**
  * Occupancy as one fixed-width bar.

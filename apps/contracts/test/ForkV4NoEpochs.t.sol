@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot} from "../src/Slot.sol";
+import {Slot} from "../src/v1/Slot.sol";
 
 /**
  * @notice Post-upgrade check against LIVE Base Sepolia state and bytecode.
