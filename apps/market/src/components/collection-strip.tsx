@@ -62,7 +62,7 @@ function Tile({
       src={art.image}
       alt=""
       loading="lazy"
-      className="size-full object-cover"
+      className="size-full bg-lift object-contain"
     />
   ) : (
     <Plate seed={`${collection.id}0${tokenId}`} />

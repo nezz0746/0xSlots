@@ -1,0 +1,26 @@
+[
+  {
+    "label": "slotFactory",
+    "slot": "0",
+    "offset": 0,
+    "bytes": 20
+  },
+  {
+    "label": "admin",
+    "slot": "1",
+    "offset": 0,
+    "bytes": 20
+  },
+  {
+    "label": "isCollection",
+    "slot": "2",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "collectionCount",
+    "slot": "3",
+    "offset": 0,
+    "bytes": 32
+  }
+]

@@ -61,7 +61,12 @@ export function Plate({
         src={src}
         alt={alt}
         loading="lazy"
-        className={`block h-full w-full bg-card object-cover ${className ?? ""}`}
+        // Contained, not cropped. A collection's works are not all square,
+        // and cover silently trims whatever does not fit — on a portrait piece
+        // that is the top and bottom of the image, which is usually the part
+        // that made it a composition. The tile keeps its square and the
+        // artwork sits inside it.
+        className={`block h-full w-full bg-lift object-contain ${className ?? ""}`}
       />
     );
 

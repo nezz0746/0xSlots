@@ -8,6 +8,7 @@ import { useCurrency } from "@/hooks/use-currency";
 import { useTokenArt, useTokenSlot } from "@/hooks/use-market";
 import { amount, truncate } from "@/lib/format";
 import type { IndexedToken } from "@/lib/indexer";
+import { describeRunway, runwayTone, TONE_TEXT } from "@/lib/runway";
 
 /**
  * How many unminted places to draw before summarising the rest.
@@ -171,6 +172,24 @@ function Work({
         <div className="mt-0.5 truncate text-[11px] text-dim">
           {slot?.isVacant ? "unheld" : truncate(token.owner)}
         </div>
+
+        {/* What holding it costs, and how long the escrow behind it lasts.
+            The price alone says what a work costs to TAKE and nothing about
+            what it costs to KEEP — and the runway is the figure that decides
+            whether it is about to change hands anyway. Colour is paired with
+            the number's own units, never carrying the meaning alone. */}
+        {slot && !slot.isVacant && (
+          <div className="mt-2 flex items-baseline gap-2 border-t border-line pt-2 text-[11px]">
+            <span className="tabular text-dim">
+              {Number(slot.taxBps) / 100}% / mo
+            </span>
+            <span
+              className={`ml-auto tabular ${TONE_TEXT[runwayTone(slot.secondsUntilLiquidation, slot.minDepositSeconds)]}`}
+            >
+              {describeRunway(slot.secondsUntilLiquidation)} left
+            </span>
+          </div>
+        )}
       </button>
     </li>
   );

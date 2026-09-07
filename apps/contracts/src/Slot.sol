@@ -56,7 +56,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 3;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -66,8 +66,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
 
     function initialize(SlotInit calldata p) external initializer {
         if (p.recipient == address(0)) revert InvalidRecipient();
-        if (p.taxBps == 0 || p.taxBps > MAX_TAX_BPS)
-            revert InvalidTax();
+        if (p.taxBps == 0 || p.taxBps > MAX_TAX_BPS) revert InvalidTax();
         if (
             address(p.currency) != address(0) &&
             address(p.currency).code.length == 0
