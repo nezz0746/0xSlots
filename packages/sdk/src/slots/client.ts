@@ -907,7 +907,10 @@ export class SlotsClient {
    */
   private assertSomeSlots(slots: readonly Address[], method: string): void {
     if (slots.length === 0)
-      throw new SlotsError(method, "no slots given — nothing would be collected");
+      throw new SlotsError(
+        method,
+        "no slots given — nothing would be collected",
+      );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1376,6 +1379,66 @@ export class SlotsClient {
         "ensureAllowance",
         "Approval confirmed but on-chain allowance is still insufficient after retries",
       );
+
+    /**
+     * The same question, asked of the node that decides whether the NEXT
+     * transaction looks like it will work.
+     *
+     * The poll above proves the approve is visible on `publicClient` — the
+     * app's own RPC. The buy that follows is submitted through the WALLET,
+     * and a wallet estimates gas against its own provider: MetaMask's Infura,
+     * not ours. Two nodes, two views, and the approve reaches them at
+     * different moments.
+     *
+     * When the wallet's node is the slower one it simulates the buy against a
+     * state with no allowance, the simulation reverts, and the user is shown
+     * "this transaction will probably fail" for a transaction that is
+     * perfectly good — which is why waiting a few seconds and retrying works,
+     * and why it looked like the wallet's bug. Nothing was wrong except which
+     * node had been asked.
+     *
+     * Best-effort by construction. A wallet that will not answer `eth_call`
+     * returns null and this stops rather than blocking a buy on a diagnostic:
+     * the allowance is already confirmed on a node we trust, and this is only
+     * about what the wallet is about to believe.
+     */
+    await this.pollUntil(
+      () => this.allowanceAsWalletSeesIt(currency, spender),
+      (value) => value === null || value >= amount,
+    );
+  }
+
+  /**
+   * `allowance()` read through the wallet's own transport.
+   *
+   * `this.wallet.request` goes to the injected provider, so this is answered by
+   * whichever node the wallet uses — the point of the exercise. Null for a
+   * wallet that refuses the call or answers something that is not a quantity;
+   * no caller treats that as a failure.
+   */
+  private async allowanceAsWalletSeesIt(
+    currency: Address,
+    spender: Address,
+  ): Promise<bigint | null> {
+    try {
+      const result = await this.wallet.request({
+        method: "eth_call",
+        params: [
+          {
+            to: currency,
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "allowance",
+              args: [this.account, spender],
+            }),
+          },
+          "latest",
+        ],
+      } as Parameters<typeof this.wallet.request>[0]);
+      return typeof result === "string" ? BigInt(result) : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Poll `check` until `predicate` holds or `maxAttempts` is exhausted. */

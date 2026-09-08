@@ -84,6 +84,97 @@ function harness(
   return { client, writeContract, readContract, signTypedData };
 }
 
+/**
+ * A client whose WALLET answers `eth_call` from a node of its own.
+ *
+ * The whole point of the seam under test: `publicClient` is the app's RPC and
+ * `walletClient` is the user's, and the approve reaches them at different
+ * moments. `walletAllowanceSeq` is what the wallet's node reports on each
+ * successive read — `[0n, 0n, AMOUNT]` is a node two polls behind.
+ */
+function laggingWalletClient(walletAllowanceSeq: (bigint | null)[]) {
+  const state: Record<string, unknown> = {
+    currency: ERC20,
+    quoteBuy: 100n,
+    allowance: 0n,
+  };
+  const writeContract = vi.fn(async ({ functionName, args }: any) => {
+    if (functionName === "approve") state.allowance = args[1];
+    return "0xhash";
+  });
+  const readContract = vi.fn(
+    async ({ functionName }: any) => state[functionName],
+  );
+
+  let i = 0;
+  const request = vi.fn(async () => {
+    const next = walletAllowanceSeq[Math.min(i, walletAllowanceSeq.length - 1)];
+    i++;
+    if (next === null) throw new Error("wallet does not do eth_call");
+    return `0x${next.toString(16)}`;
+  });
+
+  const client = new SlotsClient({
+    factoryAddress: FACTORY,
+    publicClient: {
+      readContract,
+      simulateContract: vi.fn(async () => ({ result: SLOT })),
+      waitForTransactionReceipt: vi.fn(async () => ({ status: "success" })),
+    } as any,
+    walletClient: {
+      writeContract,
+      request,
+      account: { address: ACCOUNT },
+      chain: { id: CHAIN_ID },
+    } as any,
+  });
+  return { client, writeContract, request };
+}
+
+describe("the approve the wallet has not seen yet", () => {
+  const buy = (client: SlotsClient) =>
+    client.buy({
+      slot: SLOT,
+      account: ACCOUNT,
+      selfAssessedPrice: 50n,
+      depositAmount: 50n,
+    });
+
+  it("waits for the WALLET's node before sending the buy", async () => {
+    // Two polls behind. Without this the buy is submitted while MetaMask's own
+    // provider still has no allowance, it estimates gas against that state, and
+    // the user is warned that a perfectly good transaction will fail.
+    const { client, writeContract, request } = laggingWalletClient([
+      0n,
+      0n,
+      100n,
+    ]);
+
+    await buy(client);
+
+    expect(request).toHaveBeenCalled();
+    // Asked until it said yes, rather than asked once and hoped.
+    expect(request.mock.calls.length).toBeGreaterThanOrEqual(3);
+
+    const order = writeContract.mock.calls.map((c: any[]) => c[0].functionName);
+    expect(order).toEqual(["approve", "buy"]);
+  });
+
+  it("does not hang on a wallet that will not answer", async () => {
+    // A read-only diagnostic must never be able to block a buy. The allowance
+    // is already confirmed on a node we trust; this only asks what the wallet
+    // is about to believe.
+    const { client, writeContract, request } = laggingWalletClient([null]);
+
+    await buy(client);
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(
+      writeContract.mock.calls.map((c: any[]) => c[0].functionName),
+    ).toEqual(["approve", "buy"]);
+  });
+});
+
 const approvals = (writeContract: ReturnType<typeof vi.fn>) =>
   writeContract.mock.calls.filter(
     (c: any[]) => c[0].functionName === "approve",
@@ -144,17 +235,17 @@ describe("collectAll", () => {
     // A zero is a real answer — already flushed, not a slot, or reverting —
     // and has to survive rather than be filtered into a shorter array that no
     // longer lines up with the input.
-    await expect(client.simulateCollectAll([SLOT, SLOT_B, ACCOUNT])).resolves.toEqual([
-      10n,
-      0n,
-      25n,
-    ]);
+    await expect(
+      client.simulateCollectAll([SLOT, SLOT_B, ACCOUNT]),
+    ).resolves.toEqual([10n, 0n, 25n]);
     expect(writeContract).not.toHaveBeenCalled();
   });
 
   it("refuses to simulate an empty batch too", async () => {
     const { client } = harness({}, undefined, []);
-    await expect(client.simulateCollectAll([])).rejects.toThrow(/no slots given/);
+    await expect(client.simulateCollectAll([])).rejects.toThrow(
+      /no slots given/,
+    );
   });
 });
 
@@ -727,7 +818,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         afterRelease: false,
         afterLiquidate: false,
         afterSettle: false,
-      strict: false,
+        strict: false,
       },
       pending: [0n, ZERO, false, false, 0n],
       hasRipeTerms: false,
