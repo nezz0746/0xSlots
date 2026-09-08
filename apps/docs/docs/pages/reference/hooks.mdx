@@ -122,14 +122,41 @@ Optional. Self-reported metadata for clients — **never** read by the slot.
 struct HookDescriptor {
     bytes32 family;      // identifies the behaviour; the lookup key
     uint32  version;     // the encoding of `data`, and nothing else
-    bytes   data;        // family-specific; empty where the slot holds the settings
-    string  metadataURI; // the human half — label, units, icon. May be empty.
+    string  signature;   // the ABI types of this family's `hookData`
+    bytes   data;        // abi.encode(HookBounds[]) — what each value means
+    string  metadataURI; // the human half — label, icon. May be empty.
+}
+
+struct HookBounds {
+    string  name;        // "window"
+    string  unit;        // "seconds" — so a client shows 7 days, not 604800
+    bool    bounded;     // whether min/max mean anything
+    uint256 min;
+    uint256 max;
 }
 
 interface IDescribedHook {
     function descriptors() external view returns (HookDescriptor[] memory);
 }
 ```
+
+`signature` is a plain ABI type list — `"uint256 window"` — so a client parses it
+with the tools it already has rather than a decoder written for this protocol.
+It sits outside `data` deliberately: a schema that is itself encoded cannot be
+read by the thing that needs it to know how to decode.
+
+Together the two are enough to render a configuration form for a hook nobody has
+written a screen for. The bounds come from the hook's own constants — `MAX_TENURE`
+rather than a literal — so a form built from them cannot offer a value the
+transaction would refuse, and changing the constant moves the form with it.
+
+<Callout type="info">
+The bounds are advice; `validateHookData` is the authority. It is the same
+function the slot calls at attach, it is `view`, and it reverts with a named,
+parameterised error — so a client can simulate the exact word it is about to
+submit and show the contract's own reason rather than a guess. Where the two
+disagree, the chain wins.
+</Callout>
 
 <Callout type="info">
 `descriptors()` is an `eth_call` for clients only and may lie. Treat a revert,

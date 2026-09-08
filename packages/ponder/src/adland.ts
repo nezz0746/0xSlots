@@ -1,6 +1,7 @@
 import { ponder } from "ponder:registry";
 import {
   accountSlot,
+  adKey,
   clearedEvent,
   creative,
   publishedEvent,
@@ -151,4 +152,82 @@ ponder.on("AdLand:Cleared", async ({ event, context }) => {
     clearedAt: event.block.timestamp,
     updatedAt: event.block.timestamp,
   });
+});
+
+
+/**
+ * The name registry — which key points where.
+ *
+ * `slotOf` is a mapping, so the set of keys cannot be read back on chain at
+ * all: you can ask what "ethereum" resolves to, but not which names exist. That
+ * was tolerable while only the owner could set one and there were a handful.
+ * Keys are now claimed permissionlessly at creation, so the set grows without
+ * anybody holding a list of it, and this is the only place that list can come
+ * from.
+ *
+ * Three events and they are one state machine: a key is SET (immediately, on
+ * first claim), then any later change is PROPOSED, waits out `CHANGE_DELAY`,
+ * and is either committed — which emits `SlotSet` again — or cancelled.
+ */
+
+ponder.on("AdLand:SlotSet", async ({ event, context }) => {
+  const chainId = context.chain.id;
+  const key = event.args.key;
+  const hook = lower(event.log.address);
+  const target = lower(event.args.slot);
+
+  await context.db
+    .insert(adKey)
+    .values({
+      key,
+      chainId,
+      hook,
+      slot: target,
+      pendingSlot: null,
+      pendingReadyAt: null,
+      setCount: 1,
+      claimedAt: event.block.timestamp,
+      updatedAt: event.block.timestamp,
+    })
+    // A commit fires `SlotSet` too, so this is both the claim and every later
+    // landing. Clearing `pending*` here is what closes the loop: the proposal
+    // that produced this change is spent, and a row still advertising it would
+    // show a queued repoint that already happened.
+    .onConflictDoUpdate((row) => ({
+      slot: target,
+      hook,
+      pendingSlot: null,
+      pendingReadyAt: null,
+      setCount: row.setCount + 1,
+      updatedAt: event.block.timestamp,
+    }));
+});
+
+ponder.on("AdLand:SlotProposed", async ({ event, context }) => {
+  const chainId = context.chain.id;
+
+  // No insert branch. A proposal can only exist on a key that already resolves
+  // somewhere — the contract writes straight through on a virgin key and never
+  // queues one — so a missing row here would mean the indexer had lost the
+  // `SlotSet` that created it, and inventing a row to hang the pending change
+  // on would paper over exactly that.
+  await context.db
+    .update(adKey, { key: event.args.key, chainId })
+    .set({
+      pendingSlot: lower(event.args.slot),
+      pendingReadyAt: BigInt(event.args.readyAt),
+      updatedAt: event.block.timestamp,
+    });
+});
+
+ponder.on("AdLand:SlotProposalCancelled", async ({ event, context }) => {
+  const chainId = context.chain.id;
+
+  await context.db
+    .update(adKey, { key: event.args.key, chainId })
+    .set({
+      pendingSlot: null,
+      pendingReadyAt: null,
+      updatedAt: event.block.timestamp,
+    });
 });

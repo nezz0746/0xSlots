@@ -2,31 +2,64 @@ import { Callout } from 'vocs'
 
 # Deployments
 
-The protocol currently lives on a **local anvil** chain only.
-
-Base and Base Sepolia are mid-redeploy. `Slot`'s storage layout was regrouped and
-its version bumped, which no live proxy can be upgraded into, so the deployment
-namespace moved to `0xslots.v2` and the old records were cleared. Until
-`pnpm protocol deploy --chain base-sepolia` is broadcast there is no recorded
-deployment on either chain, and the SDK reports none.
+The protocol is live on **Base**, **Base Sepolia** and **Ethereum Sepolia**, and
+runs locally on anvil.
 
 The SDK never needs these hardcoded — `CHAINS`, `DEFAULT_CHAIN` and
 `isDeployedOn(chainId)` from `@0xslots/contracts` are all derived from the
 address maps below, so the set of usable chains is exactly the set that has a
-`SlotFactory` recorded.
+`SlotFactory` recorded. Chains sort local, then testnets, then mainnets, off
+`chain.testnet`, so `DEFAULT_CHAIN` is never a mainnet by accident.
 
-## Base and Base Sepolia
+Every address here is written by `DeployProtocol` into
+`apps/contracts/deployments/<chainid>/`. That directory is the source; this page
+is a copy of it, and the copy is the one that goes stale.
 
-Nothing recorded. The previous deployment's contracts still exist on chain, but
-they are the retired generation: this repo can no longer reach them, because
-every address is derived from `keccak(NAMESPACE, name, version)` and the
-namespace moved.
+## Base — 8453
 
-<Callout type="warning">
-Do not restore the old addresses to make something resolve. An old `Slot` running
-the current implementation reads `lastSettled == 0` — the field moved from slot
-2's high bytes to slot 162 — and is instantly, permanently insolvent. The
-namespace bump is what keeps the two generations apart.
+| Contract | Address | Version |
+|---|---|---|
+| SlotFactory | `0x14df7d78ef556A80F0AD3ede3F10F1e24f92E1cE` | 2 |
+| Slot (beacon impl) | `0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530` | 3 |
+| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` | 2 |
+| SlotCollectiveFactory | `0x0552807845Ba2090bE65b8823D8A56514d38Ee72` | 2 |
+| SlotCollective (beacon impl) | `0x627c716889a7Cba789b787fDCfb37EcC41C1Fdf0` | 2 |
+| SlotBoundNFTFactory | `0x34E5dBeca60c26aeF6513f1cade6679cE4DBfDB8` | 1 |
+| AdLand (hook) | `0xf93d43532E1cC486479c9cF83CFc6161aAa8F4A9` | 1 |
+| MinimumTenureHook | `0xB1e68532Ba467b2310A931abcDD682E718426c9C` | 2 |
+
+## Base Sepolia — 84532
+
+| Contract | Address | Version |
+|---|---|---|
+| SlotFactory | `0xc20bD429Acb3f85ae12b46e3980a8a5184936b8C` | 2 |
+| Slot (beacon impl) | `0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530` | 3 |
+| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` | 2 |
+| SlotCollectiveFactory | `0x0552807845Ba2090bE65b8823D8A56514d38Ee72` | 2 |
+| SlotCollective (beacon impl) | `0x627c716889a7Cba789b787fDCfb37EcC41C1Fdf0` | 2 |
+| SlotBoundNFTFactory | `0x960438BAEb1586Ac2B3fCfdC3fBa196F1226b45a` | 1 |
+| AdLand (hook) | `0xf93d43532E1cC486479c9cF83CFc6161aAa8F4A9` | 1 |
+| MinimumTenureHook | `0xB1e68532Ba467b2310A931abcDD682E718426c9C` | 2 |
+
+## Ethereum Sepolia — 11155111
+
+| Contract | Address | Version |
+|---|---|---|
+| SlotFactory | `0x14df7d78ef556A80F0AD3ede3F10F1e24f92E1cE` | 2 |
+| Slot (beacon impl) | `0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530` | 3 |
+| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` | 2 |
+| SlotCollectiveFactory | `0x0552807845Ba2090bE65b8823D8A56514d38Ee72` | 2 |
+| SlotCollective (beacon impl) | `0x627c716889a7Cba789b787fDCfb37EcC41C1Fdf0` | 2 |
+| SlotBoundNFTFactory | `0x34E5dBeca60c26aeF6513f1cade6679cE4DBfDB8` | 1 |
+| AdLand (hook) | `0xA8079a3226C29D0D91DaDc698823Fd3cE96D7Ee7` | 1 |
+| MinimumTenureHook | `0xB1e68532Ba467b2310A931abcDD682E718426c9C` | 2 |
+
+<Callout>
+Most addresses repeat across chains because deployment is CREATE2 from one salt
+and `bytecode_hash = "none"` — identical code lands at an identical address. The
+ones that differ (`SlotFactory` on Base Sepolia, `AdLand` on Sepolia) were
+deployed from initcode that differed at the time. Do not infer the rule from the
+pattern; read the records.
 </Callout>
 
 ## Local anvil — 31337
@@ -37,14 +70,17 @@ local address is a real address. CREATE2 with `bytecode_hash = "none"`, so these
 survive a rebuild but move when a contract's own code changes; read them back
 from `apps/contracts/deployments/31337/` rather than trusting this table.
 
-| Contract | Address |
-|---|---|
-| SlotFactory | `0x8F7d16a1EC17966cd3915a081e1647fa71daFcf0` |
-| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` |
-| SlotCollectiveFactory | `0x13B0014f05438C430dC07b0A45C6FA52D7B6181d` |
-| MinimumTenureHook | `0x582921D7C1c1AF750eF24f9c4F840be7738f9913` |
-| AdLand (hook) | `0xc5ee1d668B8Ca9579B2086Da45175dFd9F7f458c` |
-| SlotsTestToken | `0xeE7d50f1E410c9B42Ae0D39C4549C17FA135add5` |
+No table here on purpose. Local addresses move whenever a contract's own code
+changes — that is what CREATE2 over initcode means — so any list printed here is
+wrong by the next commit and was, repeatedly. Read them back:
+
+```bash
+cat apps/contracts/deployments/31337/SlotFactory.json
+```
+
+`dev-chain.sh` re-checks the generated address table against those records on
+every boot and refuses to start when they disagree, so a stale local address is
+a startup error rather than an empty page.
 
 `CHAINS` filters anvil out unless `NODE_ENV === "development"`. Bundlers inline
 `NODE_ENV`, so a production build drops the entry at compile time rather than
@@ -92,7 +128,8 @@ import {
   slotFactoryAbi,
   offerBookAbi,
   minimumTenureHookAbi,
-  minimumTenureHookFactoryAbi,
+  slotBoundNftFactoryAbi,
+  slotBoundNftAbi,
   adLandAbi,
 } from "@0xslots/contracts";
 ```

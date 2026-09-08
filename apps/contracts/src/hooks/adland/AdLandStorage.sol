@@ -39,4 +39,37 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
 
     /// @notice Changes waiting out `CHANGE_DELAY`.
     mapping(bytes32 key => Pending) public pendingOf;
+
+    /**
+     * @notice The factory {AdLandCreate-createAdSlot} deploys through.
+     *
+     * @dev Stored rather than taken as an argument, which is the whole point of
+     *      that function: a caller who can name the factory can name the wrong
+     *      one, and a slot deployed by a factory nobody vetted is not a slot
+     *      this contract should be lending its name to.
+     *
+     *      Appended, and it has to be. This contract is a UUPS proxy with live
+     *      state, so a variable inserted above `_creative` would move every
+     *      mapping beneath it under a deployed contract. New slots go here, at
+     *      the end, always.
+     */
+    address public slotFactory;
+
+    /**
+     * @notice Who may repoint each key, besides the owner.
+     *
+     * @dev Set once, when a key is claimed through {AdLandCreate-createAdSlot},
+     *      and never cleared. Without it a permissionless claim gives a
+     *      publisher a one-shot binding rather than a name: they could point
+     *      "ethereum" at their slot and then never move it again, so the first
+     *      time that slot was redeployed their name would outlive it pointing
+     *      at nothing — the exact failure this registry exists to prevent,
+     *      relocated onto them.
+     *
+     *      It grants ONE power, over ONE key. It is not ownership of anything
+     *      else, and it does not outrank `owner()`.
+     *
+     *      Appended, and it has to be. See `slotFactory` above.
+     */
+    mapping(bytes32 key => address) public keyOwner;
 }

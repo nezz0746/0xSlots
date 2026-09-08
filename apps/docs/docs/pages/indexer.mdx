@@ -31,7 +31,8 @@ dropped its `apiKey` option accordingly — see [SlotsClient](/sdk/client).
 
 ## Shape
 
-Four differences from the subgraph this replaces:
+Four differences from the subgraph this replaced (`packages/subgraph` is
+deleted; these endpoints are the read path):
 
 - Plural fields return `{ items, totalCount, pageInfo }`, not a bare list.
 - Pagination is `limit` with `offset`, or the `after` / `before` cursors from
@@ -187,7 +188,38 @@ here.
 
 **SDK equivalent:** `await client.getMeta()`
 
-## The subgraph
+## Creatives
 
-`packages/subgraph` still exists and still deploys, but it is no longer what the
-SDK queries. Treat the endpoints above as the read path.
+One hook is indexed: **AdLand**, whose creative is the entire content of an ad
+space and lives nowhere else. Everything above is the core protocol, which every
+slot shares; a hook is one behaviour among however many people write, and no
+other hook is watched.
+
+| Entity | Key fields |
+|---|---|
+| `creative` | `slot`, `chainId`, `hook`, `uri`, `tenureId`, `publisher`, `clearedAt`, `publishCount`, `firstPublishedAt` |
+| `publishedEvent` | `id`, `slot`, `hook`, `uri`, `tenureId`, `publisher`, `timestamp`, `tx` |
+| `clearedEvent` | `id`, `slot`, `hook`, `fromTenure`, `toTenure`, `timestamp`, `tx` |
+
+`accountSlot` also carries `publishCount`, counted per account per slot — two
+creatives in one tenure count twice.
+
+Two events, and both matter. `Published` is somebody putting an ad up.
+`Cleared` is the hook blanking one because the slot changed hands — emitted from
+`afterBuy`, `afterRelease` and `afterLiquidate`, with no publish involved.
+Reading only the first leaves a creative in the index long after the chain has
+stopped serving it.
+
+A clear is **recorded, not applied**: the row keeps its `uri` and gains a
+`clearedAt`. That mirrors the contract, which leaves the string in storage and
+refuses to return it once `tenureId` has moved on — and it keeps two facts
+apart that an empty string cannot hold at once. A slot that has been advertised
+on and is now empty is not a slot nobody ever bought.
+
+<Callout>
+`creative.uri` is stored whole rather than hashed or resolved. AdLand's
+creatives are a few hundred bytes and travel inline as `data:` URIs precisely so
+no gateway sits on the render path — so the history needs no gateway either, and
+a creative whose IPFS pin has lapsed is still readable here as what was
+published.
+</Callout>

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IDescribedHook, HookDescriptor} from "../../IDescribedHook.sol";
 import {Versioned} from "../../Versioned.sol";
+import {AdLandCreate} from "./AdLandCreate.sol";
 import {AdLandCreatives} from "./AdLandCreatives.sol";
 import {AdLandLens} from "./AdLandLens.sol";
 import {AdLandRegistry} from "./AdLandRegistry.sol";
@@ -30,7 +31,13 @@ import {AdLandRegistry} from "./AdLandRegistry.sol";
  *      Everything here is what is left once the three concerns are elsewhere:
  *      construction, identity, and who may replace the code.
  */
-contract AdLand is AdLandCreatives, AdLandLens, AdLandRegistry, IDescribedHook {
+contract AdLand is
+    AdLandCreate,
+    AdLandCreatives,
+    AdLandLens,
+    AdLandRegistry,
+    IDescribedHook
+{
     function initialize(address initialOwner) external initializer {
         __Ownable_init(initialOwner);
     }
@@ -38,7 +45,7 @@ contract AdLand is AdLandCreatives, AdLandLens, AdLandRegistry, IDescribedHook {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     /**

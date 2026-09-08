@@ -478,6 +478,21 @@ export const adLandAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'recipient', internalType: 'address', type: 'address' },
+      { name: 'currency', internalType: 'contract IERC20', type: 'address' },
+      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'minDepositSeconds', internalType: 'uint256', type: 'uint256' },
+      { name: 'tenureWindow', internalType: 'uint256', type: 'uint256' },
+      { name: 'manager', internalType: 'address', type: 'address' },
+      { name: 'key', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'createAdSlot',
+    outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'creativeOf',
     outputs: [{ name: '', internalType: 'string', type: 'string' }],
@@ -517,6 +532,13 @@ export const adLandAbi = [
     inputs: [],
     name: 'initializedVersion',
     outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'keyOwner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
   {
@@ -607,6 +629,20 @@ export const adLandAbi = [
     name: 'setSlot',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'factory', internalType: 'address', type: 'address' }],
+    name: 'setSlotFactory',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'slotFactory',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -715,6 +751,32 @@ export const adLandAbi = [
     inputs: [
       { name: 'slot', internalType: 'address', type: 'address', indexed: true },
       {
+        name: 'creator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'tenureWindow',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'AdSlotCreated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      {
         name: 'fromTenure',
         internalType: 'uint64',
         type: 'uint64',
@@ -775,6 +837,25 @@ export const adLandAbi = [
       },
     ],
     name: 'Published',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'previous',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+      {
+        name: 'next',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
+    ],
+    name: 'SlotFactorySet',
   },
   {
     type: 'event',
@@ -848,8 +929,19 @@ export const adLandAbi = [
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'KeyTaken',
+  },
   { type: 'error', inputs: [], name: 'NativeSlotHasNoPermit' },
+  { type: 'error', inputs: [], name: 'NoFactory' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'NotKeyOwner',
+  },
   { type: 'error', inputs: [], name: 'NotOccupant' },
   { type: 'error', inputs: [], name: 'NothingPending' },
   {
@@ -907,7 +999,7 @@ export const adLandAbi = [
  */
 export const adLandAddress = {
   8453: '0xf93d43532E1cC486479c9cF83CFc6161aAa8F4A9',
-  31337: '0xECA9C36b5351cB70d948B6E52697Fb85b6549d02',
+  31337: '0xDE0980F2d7B6901b1DbB7F569eB71803032A9C7D',
   84532: '0xf93d43532E1cC486479c9cF83CFc6161aAa8F4A9',
   11155111: '0xA8079a3226C29D0D91DaDc698823Fd3cE96D7Ee7',
 } as const
@@ -4987,9 +5079,6 @@ export const slotFactoryConfig = {
 // SlotsTestToken
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
- *
- */
 export const slotsTestTokenAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
   {
@@ -5157,18 +5246,3 @@ export const slotsTestTokenAbi = [
     name: 'ERC20InvalidSpender',
   },
 ] as const
-
-/**
- *
- */
-export const slotsTestTokenAddress = {
-  31337: '0xeE7d50f1E410c9B42Ae0D39C4549C17FA135add5',
-} as const
-
-/**
- *
- */
-export const slotsTestTokenConfig = {
-  address: slotsTestTokenAddress,
-  abi: slotsTestTokenAbi,
-} as const
