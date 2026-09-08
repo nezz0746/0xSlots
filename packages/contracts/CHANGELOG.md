@@ -1,5 +1,49 @@
 # @0xslots/contracts
 
+## 0.24.0
+
+### Minor Changes
+
+- a548f2a: `AdLand` is version 2: it can create the slots it hooks, and a key can have an owner.
+
+  `createAdSlot(recipient, currency, taxBps, minDepositSeconds, tenureWindow, manager, key)` deploys through the recorded `SlotFactory` with `hook` fixed to AdLand. It removes the three fields of `SlotInit` that fail quietly: the hook address, which a form can fill with the wrong one and produce a valid slot that simply is not an ad space; `hookData`, a `bytes32` that is really seconds; and `mutableHook`, which is `false` here, so a slot made this way is an ad space permanently rather than currently. Anyone wanting the other trade still calls `SlotFactory.createSlot` directly — this gates nothing.
+
+  A non-zero `key` claims a registry name in the same transaction, first come first served, recorded in the new `keyOwner` mapping. Only an UNCLAIMED key can be taken, so `primary` and anything already pointing somewhere are not available; the owner can still repoint any key through `setSlot`'s two-day path, so a squatted name costs a delay rather than being lost. A taken key reverts the whole creation rather than handing back a slot the caller believes is named and is not.
+
+  `setSlot` accepts the key's owner as well as the contract owner. Everything else about it is unchanged, including that the first write to an unset key is immediate and every later one waits `CHANGE_DELAY` and needs `commitSlot`.
+
+  New surface on `adLandAbi`: `createAdSlot`, `setSlotFactory`, `slotFactory`, `keyOwner`, and a `NotKeyOwner` / `KeyTaken` / `NoFactory` error each. `slotFactory` must be set by the owner once after upgrading, or `createAdSlot` reverts with `NoFactory`.
+
+  Storage is append-only, so this upgrades the live proxies in place. The recorded AdLand address changes on Base, Base Sepolia and Ethereum Sepolia.
+
+- 3976783: Add `SlotFactory.collectAll(address[])` — flush accrued tax out of many slots in
+  one transaction, and `collectFrom(address)` for a single one.
+
+  Collection is already permissionless and the money always goes to each slot's
+  own `recipient`, so this grants no new authority: it is a gas convenience for a
+  keeper, or for a recipient holding many slots.
+
+  Each collection is isolated, so a slot that reverts — `NothingToCollect`, or a
+  `strict` hook that reverts in `afterSettle` — leaves a zero in the returned
+  array instead of denying every other recipient their rent. Addresses the factory
+  did not create are skipped rather than rejected.
+
+  The returned amounts are what actually moved, capped by each slot's deposit: for
+  an insolvent slot the raw `taxOwed()` exceeds what settlement will pay out, and
+  the excess is carried as arrears rather than transferred. Simulate the call to
+  price a "collect all" button before showing it.
+
+  Adds a `NotASlot` error. `SlotFactory.version()` is now 3; this is an
+  implementation change with no storage change, so it upgrades in place.
+
+  On the SDK: `collectAll(slots)`, `simulateCollectAll(slots)` and
+  `collectFrom(slot)` on `SlotsClient`, plus a `collectAll` in the
+  `useSlotsActions` React bindings. Simulate to price a "collect all" button — a
+  transaction hash carries no return value, so that is the only way to show what a
+  collection is worth before signing it. An empty batch is refused client-side:
+  the contract accepts it, which is exactly why a UI should not be able to prompt
+  for a signature that pays gas to do nothing.
+
 ## 0.23.0
 
 ### Minor Changes

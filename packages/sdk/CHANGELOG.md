@@ -1,5 +1,51 @@
 # @0xslots/sdk
 
+## 0.30.0
+
+### Minor Changes
+
+- 3976783: Add `SlotFactory.collectAll(address[])` — flush accrued tax out of many slots in
+  one transaction, and `collectFrom(address)` for a single one.
+
+  Collection is already permissionless and the money always goes to each slot's
+  own `recipient`, so this grants no new authority: it is a gas convenience for a
+  keeper, or for a recipient holding many slots.
+
+  Each collection is isolated, so a slot that reverts — `NothingToCollect`, or a
+  `strict` hook that reverts in `afterSettle` — leaves a zero in the returned
+  array instead of denying every other recipient their rent. Addresses the factory
+  did not create are skipped rather than rejected.
+
+  The returned amounts are what actually moved, capped by each slot's deposit: for
+  an insolvent slot the raw `taxOwed()` exceeds what settlement will pay out, and
+  the excess is carried as arrears rather than transferred. Simulate the call to
+  price a "collect all" button before showing it.
+
+  Adds a `NotASlot` error. `SlotFactory.version()` is now 3; this is an
+  implementation change with no storage change, so it upgrades in place.
+
+  On the SDK: `collectAll(slots)`, `simulateCollectAll(slots)` and
+  `collectFrom(slot)` on `SlotsClient`, plus a `collectAll` in the
+  `useSlotsActions` React bindings. Simulate to price a "collect all" button — a
+  transaction hash carries no return value, so that is the only way to show what a
+  collection is worth before signing it. An empty batch is refused client-side:
+  the contract accepts it, which is exactly why a UI should not be able to prompt
+  for a signature that pays gas to do nothing.
+
+### Patch Changes
+
+- a548f2a: An ERC-20 `buy` no longer arrives before the wallet believes the approve happened.
+
+  `ensureAllowance` already waited for the allowance to be visible — but on the app's own `publicClient`. The buy that follows is submitted through the WALLET, and a wallet estimates gas against its own provider. Two nodes, two views, and the approve reaches them at different moments; when the wallet's is slower it simulates the buy against a state with no allowance and warns the user that a perfectly good transaction will probably fail. Waiting and retrying worked, which is what made it look like a wallet bug.
+
+  The same poll now also asks through `wallet.request`, which reaches whichever node the wallet uses. Best-effort: a wallet that will not answer `eth_call` stops the poll rather than blocking a buy on a diagnostic.
+
+  No API change. A buy may take a second or two longer to leave, which is the second or two it was previously spending on a failed estimate.
+
+- Updated dependencies [a548f2a]
+- Updated dependencies [3976783]
+  - @0xslots/contracts@0.24.0
+
 ## 0.29.0
 
 ### Minor Changes
