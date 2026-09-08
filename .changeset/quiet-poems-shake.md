@@ -1,5 +1,6 @@
 ---
 "@0xslots/contracts": minor
+"@0xslots/sdk": minor
 ---
 
 Add `SlotFactory.collectAll(address[])` — flush accrued tax out of many slots in
@@ -21,3 +22,12 @@ price a "collect all" button before showing it.
 
 Adds a `NotASlot` error. `SlotFactory.version()` is now 3; this is an
 implementation change with no storage change, so it upgrades in place.
+
+
+On the SDK: `collectAll(slots)`, `simulateCollectAll(slots)` and
+`collectFrom(slot)` on `SlotsClient`, plus a `collectAll` in the
+`useSlotsActions` React bindings. Simulate to price a "collect all" button — a
+transaction hash carries no return value, so that is the only way to show what a
+collection is worth before signing it. An empty batch is refused client-side:
+the contract accepts it, which is exactly why a UI should not be able to prompt
+for a signature that pays gas to do nothing.
