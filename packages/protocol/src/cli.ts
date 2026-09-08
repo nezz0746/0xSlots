@@ -10,7 +10,7 @@ import c from "picocolors";
 import {
   ANVIL,
   type ChainConfig,
-  findChain,
+  findChains,
   loadChains,
   recordDirFor,
   rpcFor,
@@ -87,10 +87,23 @@ async function pickMode(): Promise<Mode> {
   );
 }
 
-async function pickChain(chains: ChainConfig[]): Promise<ChainConfig> {
-  return ok(
-    await p.select<ChainConfig>({
-      message: "Which chain?",
+/**
+ * Which chains to act on.
+ *
+ * Multi-select rather than one-at-a-time, because the thing being rolled out is
+ * ONE set of implementations and the interesting question is which chains are
+ * behind it. Running the command once per chain also meant confirming each in
+ * isolation, so nobody ever saw "these three, including a mainnet" as a single
+ * decision — which is the decision actually being made.
+ *
+ * Nothing is pre-selected. A default here would be a default about where to
+ * send transactions.
+ */
+async function pickChains(chains: ChainConfig[]): Promise<ChainConfig[]> {
+  const picked = ok(
+    await p.multiselect<ChainConfig>({
+      message: "Which chains?",
+      required: true,
       options: chains.map((x) => ({
         value: x,
         label: x.chainId === ANVIL ? c.dim(x.name) : x.name,
@@ -103,114 +116,123 @@ async function pickChain(chains: ChainConfig[]): Promise<ChainConfig> {
       })),
     }),
   );
+
+  // Config order — local, testnets, mainnets — regardless of the order they
+  // were ticked in, so the cheapest place to be wrong is always tried first.
+  // An explicit `--chain a,b` keeps its own order; a checkbox list expresses no
+  // sequence, so imposing the safe one costs nothing.
+  return chains.filter((x) => picked.includes(x));
 }
 
-async function run(mode: Mode | undefined, opts: Options) {
-  p.intro(c.bgCyan(c.black(" 0xSlots protocol ")));
+/** Everything one chain can be asked without sending anything. */
+interface Preflight {
+  cfg: ChainConfig;
+  rpc: string;
+  local: boolean;
+  recordDir: string;
+  rows: string[];
+  standalone: string[];
+  changing: number;
+  blocked: { name: string; moved: string[] }[];
+  /** Set when this chain will be left alone, and why. */
+  skip?: string;
+  /**
+   * The KIND of skip, so the summary can act on it rather than only print it.
+   *
+   * `wrong-mode` is the one that earns a field of its own: it means the chain
+   * is fine and the command was wrong, which is the only skip with an obvious
+   * next command — and the only one worth offering.
+   */
+  skipKind?: "wrong-mode" | "unreachable" | "unconfigured" | "failed";
+}
 
-  const chains = loadChains();
-  if (!chains.length) bail("No chain configs in apps/contracts/deployments/config.");
+type Step = <T>(label: string, fn: () => T) => T;
 
-  if (!mode) {
-    if (!interactive()) bail("No command given.", "Try: protocol upgrade --help");
-    mode = await pickMode();
-  }
+function spinnerStep(): Step {
+  const spin = p.spinner();
+  return <T>(label: string, fn: () => T): T => {
+    spin.start(label);
+    try {
+      const out = fn();
+      spin.stop(`${label} ${c.green("\u2713")}`);
+      return out;
+    } catch (e) {
+      spin.stop(`${label} ${c.red("\u2717")}`);
+      throw e;
+    }
+  };
+}
 
-  // ── which chain ───────────────────────────────────────────────────────────
-  const requested = opts.chain ?? process.env.CHAIN;
-  let cfg = findChain(chains, requested);
-  if (requested && !cfg)
-    bail(
-      `No chain "${requested}".`,
-      `Known: ${chains.map((x) => `${x.name} (${x.chainId})`).join(", ")}`,
-    );
-  if (!cfg) {
-    if (!interactive()) bail("No --chain given and nothing to prompt with.");
-    cfg = await pickChain(chains);
-  }
-
+/**
+ * Read one chain, decide nothing.
+ *
+ * ── Why a chain that cannot be acted on is skipped, not fatal ─────────────
+ *
+ * These used to be `bail`s, which was right when a run meant one chain: a
+ * missing RPC or an unreachable node is worth stopping for when it is the only
+ * thing you asked about. Across a set it is the opposite — refusing to upgrade
+ * four healthy chains because a fifth is unreachable turns one flaky endpoint
+ * into a stalled rollout, and the obvious workaround is to re-run without it,
+ * which is exactly what this does automatically and says out loud.
+ *
+ * The reason travels with the result so the summary can name it. Silence would
+ * be the real failure: a chain quietly absent from the outcome reads as done.
+ */
+function preflight(mode: Mode, cfg: ChainConfig, step: Step): Preflight {
   const chainId = cfg.chainId;
   const local = chainId === ANVIL;
   const rpc = rpcFor(cfg);
-  if (!rpc) bail(`No RPC for ${cfg.name}.`, `Set ${cfg.rpcEnv}, or add "rpcUrl".`);
+  const recordDir = recordDirFor(chainId);
 
-  // ── dry or for real ───────────────────────────────────────────────────────
-  //
-  // Asked only when it was not said. A flag is an answer; re-asking would make
-  // the scripted path prompt for something it already decided.
-  let dry = opts.dry ?? false;
-  if (opts.dry === undefined && interactive()) {
-    dry = ok(
-      await p.select<boolean>({
-        message: `On ${c.bold(cfg.name)}:`,
-        options: [
-          { value: true, label: "Dry run", hint: "report only, send nothing" },
-          {
-            value: false,
-            label: local ? "Broadcast" : c.yellow("Broadcast"),
-            hint: local ? "local chain" : "sends transactions",
-          },
-        ],
-        initialValue: !local,
-      }),
-    );
-  }
+  const base: Preflight = {
+    cfg,
+    rpc: rpc ?? "",
+    local,
+    recordDir,
+    rows: [],
+    standalone: [],
+    changing: 0,
+    blocked: [],
+  };
 
-  p.log.step(
-    `${c.bold(cfg.name)} ${c.dim(`(${chainId})`)}  ${c.dim(rpcOrigin(rpc))}\n` +
-      `${c.dim("admin")}  ${cfg.admin}`,
-  );
-
+  if (!rpc)
+    return {
+      ...base,
+      skipKind: "unconfigured",
+      skip: `no RPC — set ${cfg.rpcEnv}`,
+    };
   if (!reachable(rpc))
-    bail(
-      `${cfg.name} is not reachable at ${rpcOrigin(rpc)}.`,
-      local ? "Start it with:  pnpm dev:local" : `Check ${cfg.rpcEnv}.`,
-    );
+    return {
+      ...base,
+      skipKind: "unreachable",
+      skip: local ? "not running" : `unreachable at ${rpcOrigin(rpc)}`,
+    };
 
   // The admin is the only key that can upgrade anything here. A zero one is not
   // a permissive default, it is a protocol nobody can ever fix — and the
   // mainnet configs ship zeroed deliberately, so this is the likely state, not
-  // an unlikely one. `initialize` would revert eventually; saying so here costs
-  // no gas and names the file to edit.
+  // an unlikely one.
   if (/^0x0+$/i.test(cfg.admin))
-    bail(
-      `${cfg.name} has no admin configured.`,
-      `deployments/config/${chainId}.json has admin ${cfg.admin} — set it to the\n` +
-        `address that should hold upgrade rights before deploying anything.`,
-    );
+    return {
+      ...base,
+      skipKind: "unconfigured",
+      skip: `no admin in deployments/config/${chainId}.json`,
+    };
 
-  // ── deploy vs upgrade ─────────────────────────────────────────────────────
   // Asked through `recordedAddress`, not by listing filenames: a file existing
   // is not evidence THIS protocol wrote it.
-  const recordDir = recordDirFor(chainId);
   const liveProxies = Object.keys(PROXIES).filter((n) =>
     Boolean(recordedAddress(recordDir, n)),
   );
 
   if (mode === "upgrade" && liveProxies.length === 0)
-    bail(
-      `Nothing is deployed on ${cfg.name}, so there is nothing to upgrade.`,
-      `Run:  pnpm protocol deploy --chain ${cfg.name}`,
-    );
+    return { ...base, skipKind: "wrong-mode", skip: "nothing deployed here yet" };
   if (mode === "deploy" && liveProxies.length > 0)
-    bail(
-      `${cfg.name} already has ${liveProxies.join(", ")}.`,
-      `Deploying again would stand up a SECOND protocol beside the live one.\n` +
-        `Run:  pnpm protocol upgrade --chain ${cfg.name}`,
-    );
-
-  const spin0 = p.spinner();
-  const step0 = <T>(label: string, fn: () => T): T => {
-    spin0.start(label);
-    try {
-      const out = fn();
-      spin0.stop(`${label} ${c.green("✓")}`);
-      return out;
-    } catch (e) {
-      spin0.stop(`${label} ${c.red("✗")}`);
-      throw e;
-    }
-  };
+    return {
+      ...base,
+      skipKind: "wrong-mode",
+      skip: `already deployed (${liveProxies.length}/${Object.keys(PROXIES).length})`,
+    };
 
   // ── what the script would do ──────────────────────────────────────────────
   //
@@ -219,14 +241,13 @@ async function run(mode: Mode | undefined, opts: Options) {
   // computes the salts.
   let plan;
   try {
-    plan = step0(`Simulating on ${cfg.name}`, () => simulate(rpc, cfg.admin));
+    plan = step(`Simulating on ${cfg.name}`, () => simulate(rpc, cfg.admin));
   } catch (e) {
     const out = String((e as { stdout?: string }).stdout ?? (e as Error).message);
     p.log.error(out.split("\n").slice(-12).join("\n"));
-    return bail("The simulation failed. Nothing was sent.");
+    return { ...base, skipKind: "failed", skip: "the simulation failed" };
   }
 
-  // ── the gate ──────────────────────────────────────────────────────────────
   const rows: string[] = [];
   const blocked: { name: string; moved: string[] }[] = [];
   let changing = 0;
@@ -288,7 +309,7 @@ async function run(mode: Mode | undefined, opts: Options) {
     const versions =
       onChain === code
         ? c.dim(`v${code ?? "?"}`)
-        : c.yellow(`v${onChain ?? "?"} → v${code ?? "?"}`);
+        : c.yellow(`v${onChain ?? "?"} \u2192 v${code ?? "?"}`);
 
     rows.push(
       `${c.bold(label)}${" ".repeat(Math.max(1, 26 - stripped(label).length))}` +
@@ -297,7 +318,6 @@ async function run(mode: Mode | undefined, opts: Options) {
         `${note}`,
     );
   }
-  p.note(rows.join("\n"), mode === "deploy" ? "to deploy" : "what would change");
 
   // ── the contracts that are never upgraded ─────────────────────────────────
   //
@@ -328,8 +348,6 @@ async function run(mode: Mode | undefined, opts: Options) {
     }
 
     // The address it USED to be, when the plan moves it — null when it did not.
-    // A nullable rather than a boolean beside `was`, so the address below is
-    // narrowed by the same test that decided there was one.
     const previous =
       was && was.toLowerCase() !== act.address.toLowerCase() ? was : null;
     const moved = previous !== null;
@@ -348,21 +366,124 @@ async function run(mode: Mode | undefined, opts: Options) {
     standalone.push(`${c.bold(name.padEnd(22))} ${verdict} ${detail}`);
     if (moved) movedStandalone.push(name);
   }
-  if (standalone.length) {
-    // The consequence, once, under the table rather than repeated per row —
-    // it is the same sentence every time and it does not fit on one.
-    if (movedStandalone.length)
-      standalone.push(
-        "",
-        c.dim("The old address keeps running. Slots already attached to it"),
-        c.dim("stay on it; only new ones can point at the new address."),
-      );
-    p.note(standalone.join("\n"), "standalone — a change deploys a new one");
+  if (standalone.length && movedStandalone.length)
+    standalone.push(
+      "",
+      c.dim("The old address keeps running. Slots already attached to it"),
+      c.dim("stay on it; only new ones can point at the new address."),
+    );
+
+  return { ...base, rows, standalone, changing, blocked };
+}
+
+/**
+ * The key for one chain.
+ *
+ * Anvil's well-known account is a default only for anvil. Letting it stand in
+ * for a missing `PK` anywhere else would send a real transaction from a key
+ * whose private half is in every tutorial on the internet.
+ */
+const keyFor = (pf: Preflight) =>
+  process.env.PK ??
+  (pf.local
+    ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    : undefined);
+
+async function run(mode: Mode | undefined, opts: Options) {
+  p.intro(c.bgCyan(c.black(" 0xSlots protocol ")));
+
+  const chains = loadChains();
+  if (!chains.length) bail("No chain configs in apps/contracts/deployments/config.");
+
+  if (!mode) {
+    if (!interactive()) bail("No command given.", "Try: protocol upgrade --help");
+    mode = await pickMode();
   }
 
+  // ── which chains ──────────────────────────────────────────────────────────
+  const requested = opts.chain ?? process.env.CHAIN;
+  const { found, missing } = findChains(chains, requested);
+  if (missing.length)
+    bail(
+      `No chain ${missing.map((m) => `"${m}"`).join(", ")}.`,
+      `Known: ${chains.map((x) => `${x.name} (${x.chainId})`).join(", ")}\n` +
+        `Several at once: --chain base-sepolia,base   ·   everything: --chain all`,
+    );
+
+  let selected = found;
+  if (!selected.length) {
+    if (!interactive()) bail("No --chain given and nothing to prompt with.");
+    selected = await pickChains(chains);
+  }
+
+  // ── dry or for real ───────────────────────────────────────────────────────
+  //
+  // Asked only when it was not said. A flag is an answer; re-asking would make
+  // the scripted path prompt for something it already decided.
+  let dry = opts.dry ?? false;
+  if (opts.dry === undefined && interactive()) {
+    const allLocal = selected.every((x) => x.chainId === ANVIL);
+    dry = ok(
+      await p.select<boolean>({
+        message:
+          selected.length === 1
+            ? `On ${c.bold(selected[0]!.name)}:`
+            : `On ${c.bold(String(selected.length))} chains:`,
+        options: [
+          { value: true, label: "Dry run", hint: "report only, send nothing" },
+          {
+            value: false,
+            label: allLocal ? "Broadcast" : c.yellow("Broadcast"),
+            hint: allLocal ? "local chain" : "sends transactions",
+          },
+        ],
+        initialValue: !allLocal,
+      }),
+    );
+  }
+
+  // ── read every chain before touching any of them ──────────────────────────
+  //
+  // All the reading first, then one decision, then all the writing. Interleaving
+  // them — plan a chain, send to it, plan the next — means the mainnet
+  // confirmation appears after transactions have already landed elsewhere, so
+  // the answer "no" comes too late to mean anything.
+  const step0 = spinnerStep();
+  const results: Preflight[] = [];
+
+  for (const cfg of selected) {
+    const rpc = rpcFor(cfg);
+    p.log.step(
+      `${c.bold(cfg.name)} ${c.dim(`(${cfg.chainId})`)}  ${c.dim(rpcOrigin(rpc))}\n` +
+        `${c.dim("admin")}  ${cfg.admin}`,
+    );
+
+    const pf = preflight(mode, cfg, step0);
+    results.push(pf);
+
+    if (pf.skip) {
+      p.log.warn(`${c.bold(cfg.name)} skipped \u2014 ${pf.skip}`);
+      continue;
+    }
+    p.note(pf.rows.join("\n"), `${cfg.name} \u2014 ${mode === "deploy" ? "to deploy" : "what would change"}`);
+    if (pf.standalone.length)
+      p.note(pf.standalone.join("\n"), `${cfg.name} \u2014 standalone`);
+  }
+
+  // ── the gate ──────────────────────────────────────────────────────────────
+  //
+  // One moved slot stops the WHOLE run, not just the chain that noticed it. The
+  // same implementation is going everywhere, so a layout that moved is a fact
+  // about the code rather than about a chain — the others have simply not been
+  // asked yet, and letting them proceed would corrupt them one at a time.
+  const blocked = results.flatMap((r) =>
+    r.blocked.map((b) => ({ chain: r.cfg.name, ...b })),
+  );
   if (blocked.length) {
     for (const b of blocked)
-      p.log.error(`${b.name}\n${b.moved.map((m) => `  ${m}`).join("\n")}`);
+      p.log.error(
+        `${b.chain} \u00b7 ${b.name}\n${b.moved.map((m) => `  ${m}`).join("\n")}`,
+      );
     bail(
       "A storage slot moved under a live proxy.",
       "Every value after it would be read from the wrong place, and an upgrade\n" +
@@ -370,14 +491,61 @@ async function run(mode: Mode | undefined, opts: Options) {
     );
   }
 
+  const skipped = results.filter((r) => r.skip);
+  const actionable = results.filter(
+    (r) => !r.skip && (mode === "deploy" || r.changing > 0),
+  );
+  const uptodate = results.filter(
+    (r) => !r.skip && mode === "upgrade" && r.changing === 0,
+  );
+
   if (dry) {
-    p.log.info(c.dim("Nothing was sent and no record was written."));
-    p.outro(`Apply it:  ${c.bold(`pnpm protocol ${mode} --chain ${cfg.name}`)}`);
+    summarise(mode, actionable, uptodate, skipped, true);
+
+    if (actionable.length) {
+      const names = actionable.map((r) => r.cfg.name).join(",");
+      p.outro(`Apply it:  ${c.bold(`pnpm protocol ${mode} --chain ${names}`)}`);
+      return;
+    }
+
+    const wrongMode = skipped.filter((r) => r.skipKind === "wrong-mode");
+    if (wrongMode.length && wrongMode.length === results.length) {
+      const other: Mode = mode === "deploy" ? "upgrade" : "deploy";
+      const names = wrongMode.map((r) => r.cfg.name).join(",");
+      p.outro(`Try:  ${c.bold(`pnpm protocol ${other} --dry --chain ${names}`)}`);
+      return;
+    }
+
+    p.outro(c.dim("Nothing was sent and no record was written."));
     return;
   }
 
-  if (mode === "upgrade" && changing === 0) {
-    p.outro(c.green("Every contract is already running its current code."));
+  if (!actionable.length) {
+    summarise(mode, actionable, uptodate, skipped, false);
+
+    // Every chain turned this command away, and all for the same reason: the
+    // protocol is there and you asked to deploy, or it is not and you asked to
+    // upgrade. That is a mistyped command rather than a state to investigate,
+    // so the useful output is the command you meant — not a table repeating
+    // "wrong mode" once per chain and then saying "Nothing to do."
+    const wrongMode = skipped.filter((r) => r.skipKind === "wrong-mode");
+    if (wrongMode.length && wrongMode.length === results.length) {
+      const other: Mode = mode === "deploy" ? "upgrade" : "deploy";
+      const names = wrongMode.map((r) => r.cfg.name).join(",");
+      p.log.info(
+        mode === "deploy"
+          ? "Every chain you picked already has the protocol on it."
+          : "None of the chains you picked have the protocol on them yet.",
+      );
+      p.outro(`Try:  ${c.bold(`pnpm protocol ${other} --chain ${names}`)}`);
+      return;
+    }
+
+    p.outro(
+      uptodate.length
+        ? c.green("Every contract is already running its current code.")
+        : c.yellow("Nothing to do."),
+    );
     return;
   }
 
@@ -386,30 +554,47 @@ async function run(mode: Mode | undefined, opts: Options) {
   // and only then told the key was missing — which teaches people that the
   // scary prompt is not the last word, and that is the opposite of what it is
   // for.
-  const key =
-    process.env.PK ??
-    (local
-      ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-      : undefined);
-  if (!key)
+  const keyless = actionable.filter((r) => !keyFor(r));
+  if (keyless.length)
     bail(
       "PK is not set, so nothing can be broadcast.",
-      `Put it in apps/contracts/.env, or pass it for one run:\n` +
-        `  PK=0x… pnpm protocol ${mode} --chain ${cfg.name}`,
+      `Needed for ${keyless.map((r) => r.cfg.name).join(", ")}.\n` +
+        `Put it in apps/contracts/.env, or pass it for one run:\n` +
+        `  PK=0x\u2026 pnpm protocol ${mode} --chain ${actionable.map((r) => r.cfg.name).join(",")}`,
     );
 
-  // ── confirm, proportional to what a mistake costs ─────────────────────────
+  // ── confirm, once, proportional to what a mistake costs ───────────────────
   //
-  // Anvil is wiped several times an hour and has nothing to corrupt, so a
-  // prompt there is friction on the loop you are actually in.
-  if (!local && !opts.yes) {
+  // One prompt for the whole set rather than one per chain. Confirming each in
+  // turn hides the shape of what is about to happen: "yes" four times is not
+  // the same decision as "yes, to these four, two of which are mainnets".
+  //
+  // Anvil is wiped several times an hour and has nothing to corrupt, so a run
+  // that is entirely local skips this — it is friction on the loop you are
+  // actually in.
+  const remote = actionable.filter((r) => !r.local);
+  const mainnets = remote.filter((r) => !r.cfg.testnet);
+
+  if (remote.length && !opts.yes) {
     if (!interactive())
       bail("Refusing to broadcast unprompted.", "Pass --yes to skip the prompt.");
+
+    const list = actionable
+      .map((r) =>
+        r.local
+          ? `  ${c.dim(r.cfg.name)} ${c.dim("· local")}`
+          : r.cfg.testnet
+            ? `  ${r.cfg.name} ${c.dim("· testnet")}`
+            : `  ${c.red(c.bold(r.cfg.name))} ${c.red("· MAINNET")}`,
+      )
+      .join("\n");
+    p.note(list, `about to ${mode}`);
+
     const go = ok(
       await p.confirm({
-        message: cfg.testnet
-          ? `Broadcast to ${c.bold(cfg.name)}?`
-          : `Broadcast to ${c.red(c.bold(`${cfg.name} — MAINNET`))}?`,
+        message: mainnets.length
+          ? `Broadcast to ${c.red(c.bold(`${mainnets.length} MAINNET${mainnets.length > 1 ? "S" : ""}`))} and ${actionable.length - mainnets.length} other chain(s)?`
+          : `Broadcast to ${c.bold(String(actionable.length))} chain(s)?`,
         initialValue: false,
       }),
     );
@@ -419,87 +604,138 @@ async function run(mode: Mode | undefined, opts: Options) {
     }
   }
 
-  // ── go ────────────────────────────────────────────────────────────────────
-  const spin = p.spinner();
-  const step = <T>(label: string, fn: () => T): T => {
-    spin.start(label);
-    try {
-      const out = fn();
-      spin.stop(`${label} ${c.green("✓")}`);
-      return out;
-    } catch (e) {
-      spin.stop(`${label} ${c.red("✗")}`);
-      throw e;
-    }
-  };
+  // ── go, one chain at a time ───────────────────────────────────────────────
+  //
+  // Sequential on purpose. `forge script` keeps a broadcast cache under
+  // `apps/contracts`, and two of them running at once would be writing the same
+  // files; the terminal is also one spinner wide. Slower, and the alternative is
+  // a rollout whose failures cannot be told apart.
+  const step = spinnerStep();
+  const done: Preflight[] = [];
+  const failed: { cfg: ChainConfig; reason: string }[] = [];
 
-  let log = "";
-  try {
-    log = step(
-      `${mode === "deploy" ? "Deploying" : "Upgrading"} on ${cfg.name}`,
-      () =>
-        execFileSync(
-          "forge",
-          [
-            "script",
-            "script/protocol/DeployProtocol.s.sol:DeployProtocol",
-            "--rpc-url", rpc,
-            "--broadcast",
-            "--private-key", key,
-          ],
-          {
-            cwd: CONTRACTS,
-            encoding: "utf8",
-            env: { ...process.env, ...FORGE_ENV, DRY_RUN: "false" },
-          },
-        ),
-    );
-  } catch (e) {
-    const out = String((e as { stdout?: string }).stdout ?? (e as Error).message);
-    p.log.error(out.split("\n").slice(-12).join("\n"));
-    bail("The protocol script failed. Nothing was recorded.");
+  for (const pf of actionable) {
+    const key = keyFor(pf)!;
+    let log = "";
+    try {
+      log = step(
+        `${mode === "deploy" ? "Deploying" : "Upgrading"} on ${pf.cfg.name}`,
+        () =>
+          execFileSync(
+            "forge",
+            [
+              "script",
+              "script/protocol/DeployProtocol.s.sol:DeployProtocol",
+              "--rpc-url", pf.rpc,
+              "--broadcast",
+              "--private-key", key,
+            ],
+            {
+              cwd: CONTRACTS,
+              encoding: "utf8",
+              env: { ...process.env, ...FORGE_ENV, DRY_RUN: "false" },
+            },
+          ),
+      );
+    } catch (e) {
+      const out = String((e as { stdout?: string }).stdout ?? (e as Error).message);
+      p.log.error(`${pf.cfg.name}\n${out.split("\n").slice(-12).join("\n")}`);
+      failed.push({ cfg: pf.cfg, reason: "the protocol script failed" });
+      // Carried on rather than aborted: the chains already broadcast to cannot
+      // be un-broadcast, so stopping here would leave the set half-applied AND
+      // half-unattempted, which is strictly worse than half-applied and known.
+      continue;
+    }
+
+    const outcome = log
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => /^(deployed|upgraded)\s/.test(l));
+    if (outcome.length) p.note(outcome.join("\n"), `${pf.cfg.name} \u2014 on chain`);
+
+    // Written only after a successful broadcast, so the file always describes
+    // what is actually behind the proxy. This is the next upgrade's baseline.
+    step(`Recording storage layouts for ${pf.cfg.name}`, () => {
+      for (const [name, spec] of Object.entries(PROXIES)) {
+        if (!recordedAddress(pf.recordDir, name)) continue;
+        const l = layoutOf(spec.target);
+        if (l)
+          writeFileSync(
+            layoutPath(pf.recordDir, name),
+            `${JSON.stringify(l, null, 2)}\n`,
+          );
+      }
+    });
+
+    done.push(pf);
   }
 
-  const outcome = log
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => /^(deployed|upgraded)\s/.test(l));
-  if (outcome.length) p.note(outcome.join("\n"), "on chain");
+  // ── rebuild once, not per chain ───────────────────────────────────────────
+  //
+  // These read the whole `deployments` tree and rewrite one generated file, so
+  // running them per chain did the same work N times and left the intermediate
+  // states on disk. Skipped entirely when nothing landed.
+  if (done.length) {
+    const pnpm = (args: string[]) =>
+      execFileSync("pnpm", args, { cwd: REPO, encoding: "utf8", stdio: "pipe" });
 
-  // Written only after a successful broadcast, so the file always describes
-  // what is actually behind the proxy. This is the next upgrade's baseline.
-  step("Recording storage layouts", () => {
-    for (const [name, spec] of Object.entries(PROXIES)) {
-      if (!recordedAddress(recordDir, name)) continue;
-      const l = layoutOf(spec.target);
-      if (l)
-        writeFileSync(
-          layoutPath(recordDir, name),
-          `${JSON.stringify(l, null, 2)}\n`,
-        );
-    }
-  });
+    step("Regenerating ABIs and addresses", () =>
+      pnpm(["--filter", "@0xslots/contracts", "codegen"]),
+    );
+    step("Rebuilding @0xslots/contracts", () =>
+      pnpm(["--filter", "@0xslots/contracts", "build"]),
+    );
+    step("Rebuilding @0xslots/sdk", () =>
+      pnpm(["--filter", "@0xslots/sdk", "build"]),
+    );
+  }
 
-  const pnpm = (args: string[]) =>
-    execFileSync("pnpm", args, { cwd: REPO, encoding: "utf8", stdio: "pipe" });
+  // ── what actually happened ────────────────────────────────────────────────
+  const lines: string[] = [];
+  for (const r of done) lines.push(`${c.green("\u2713")} ${r.cfg.name}`);
+  for (const f of failed) lines.push(`${c.red("\u2717")} ${f.cfg.name}  ${c.dim(f.reason)}`);
+  for (const r of uptodate)
+    lines.push(`${c.dim("\u00b7")} ${c.dim(`${r.cfg.name}  already current`)}`);
+  for (const r of skipped)
+    lines.push(`${c.dim("\u00b7")} ${c.dim(`${r.cfg.name}  ${r.skip}`)}`);
+  p.note(lines.join("\n"), "result");
 
-  step("Regenerating ABIs and addresses", () =>
-    pnpm(["--filter", "@0xslots/contracts", "codegen"]),
-  );
-  step("Rebuilding @0xslots/contracts", () =>
-    pnpm(["--filter", "@0xslots/contracts", "build"]),
-  );
-  step("Rebuilding @0xslots/sdk", () =>
-    pnpm(["--filter", "@0xslots/sdk", "build"]),
-  );
+  if (failed.length) {
+    p.outro(
+      c.red(
+        `${done.length} of ${done.length + failed.length} chains updated \u2014 ` +
+          `${failed.map((f) => f.cfg.name).join(", ")} did not.`,
+      ),
+    );
+    process.exit(1);
+  }
+  p.outro(c.green(`${done.map((r) => r.cfg.name).join(", ")} up to date.`));
+}
 
-  p.outro(c.green(`${cfg.name} is up to date.`));
+/** The same table for a dry run and for a run with nothing to do. */
+function summarise(
+  mode: Mode,
+  actionable: Preflight[],
+  uptodate: Preflight[],
+  skipped: Preflight[],
+  dry: boolean,
+) {
+  const lines: string[] = [];
+  for (const r of actionable)
+    lines.push(
+      `${c.yellow(dry ? "would" : "will")} ${r.cfg.name}  ${c.dim(`${r.changing} change${r.changing === 1 ? "" : "s"}`)}`,
+    );
+  for (const r of uptodate)
+    lines.push(`${c.dim("\u00b7")} ${c.dim(`${r.cfg.name}  already current`)}`);
+  for (const r of skipped)
+    lines.push(`${c.dim("\u00b7")} ${c.dim(`${r.cfg.name}  ${r.skip}`)}`);
+  if (lines.length) p.note(lines.join("\n"), mode === "deploy" ? "deploy plan" : "upgrade plan");
 }
 
 const program = new Command();
 program
   .name("protocol")
-  .description("Deploy and upgrade the Slots protocol on one chain.")
+  .description("Deploy and upgrade the Slots protocol across chains.")
   // Deliberately NO options here. Declaring them on both the program and its
   // subcommands makes the program-level one win — commander consumes
   // `--chain base-sepolia` as a global before `upgrade` ever sees it, and the
@@ -511,10 +747,13 @@ for (const mode of ["deploy", "upgrade"] as const) {
     .command(mode)
     .description(
       mode === "deploy"
-        ? "Stand the protocol up on a chain that has none."
+        ? "Stand the protocol up on chains that have none."
         : "Move live proxies to the current implementations.",
     )
-    .option("-c, --chain <name>", "chain name or id; prompts when omitted")
+    .option(
+      "-c, --chain <names>",
+      "chain names or ids, comma-separated; \"all\" for every configured chain; prompts when omitted",
+    )
     .option("-d, --dry", "report what would happen, send nothing")
     .option("-y, --yes", "skip the confirmation prompt")
     .action((opts: Options) => go(mode, opts));

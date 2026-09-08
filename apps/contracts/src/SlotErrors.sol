@@ -21,6 +21,9 @@ error NotInsolvent();
 error CannotBuyFromYourself();
 error NothingToWithdraw();
 error NothingToCollect();
+
+/// @dev Thrown by the factory for an address it did not create.
+error NotASlot();
 error NothingToClaim();
 error TransferFailed();
 

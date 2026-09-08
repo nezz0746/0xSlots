@@ -4837,6 +4837,22 @@ export const slotFactoryAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'slots', internalType: 'address[]', type: 'address[]' }],
+    name: 'collectAll',
+    outputs: [
+      { name: 'collected', internalType: 'uint256[]', type: 'uint256[]' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'collectFrom',
+    outputs: [{ name: 'amount', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [
       {
         name: 'init',
@@ -5041,6 +5057,7 @@ export const slotFactoryAbi = [
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'InvalidRecipient' },
+  { type: 'error', inputs: [], name: 'NotASlot' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotManager' },
   { type: 'error', inputs: [], name: 'UUPSUnauthorizedCallContext' },
