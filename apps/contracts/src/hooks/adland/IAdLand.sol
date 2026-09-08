@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import {SlotInfo} from "../../SlotViews.sol";
 
 /// @dev The slice of `Slot` AdLand calls. Narrow on purpose: declaring the
@@ -87,6 +89,10 @@ interface IAdLand {
 
     error NotOccupant();
     error ZeroSlot();
+    /// @notice That key already resolves to a slot.
+    error KeyTaken(bytes32 key);
+    /// @notice Not the contract owner, and not the holder of this key.
+    error NotKeyOwner(bytes32 key);
     error NothingPending();
     error TooEarly(uint64 readyAt);
     error NativeSlotHasNoPermit();
@@ -117,4 +123,28 @@ interface IAdLand {
     function slotOf(bytes32 key) external view returns (address);
 
     function primary() external view returns (address);
+}
+
+/**
+ * The two things {AdLandCreate} needs of the protocol it deploys into.
+ *
+ * Declared here rather than imported from `Slot.sol` and `SlotFactory.sol`,
+ * which would pull the whole core into this hook's compilation unit — and with
+ * it every one of the core's imports into the initcode hash that decides this
+ * contract's CREATE2 address.
+ */
+struct SlotInit {
+    address recipient;
+    IERC20 currency;
+    address manager;
+    address hook;
+    bytes32 hookData;
+    uint256 taxBps;
+    uint256 minDepositSeconds;
+    bool mutableTax;
+    bool mutableHook;
+}
+
+interface ISlotFactory {
+    function createSlot(SlotInit calldata init) external returns (address);
 }

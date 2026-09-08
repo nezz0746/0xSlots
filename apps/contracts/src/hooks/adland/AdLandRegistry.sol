@@ -25,7 +25,15 @@ abstract contract AdLandRegistry is AdLandStorage {
     ///      does not choose which — an owner who picks whether their own change
     ///      is delayed provides no assurance at all. Nothing depends on a key
     ///      that has no value yet, so creating one needs no wait.
-    function setSlot(bytes32 key, address slot) external onlyOwner {
+    /// @dev The owner, or whoever claimed this key at creation. A holder may
+    ///      move their own name and nothing else; the owner may move anyone's,
+    ///      which is what makes a squatted key cost two days rather than being
+    ///      gone. A key nobody has claimed has no holder, so it stays
+    ///      owner-only here — claiming happens in {AdLandCreate-createAdSlot}.
+    function setSlot(bytes32 key, address slot) external {
+        if (msg.sender != owner() && msg.sender != keyOwner[key]) {
+            revert NotKeyOwner(key);
+        }
         if (slot == address(0)) revert ZeroSlot();
 
         if (slotOf[key] == address(0)) {

@@ -629,6 +629,57 @@ export const clearedEvent = onchainTable(
   }),
 );
 
+/**
+ * AdLand's name registry: what each key resolves to.
+ *
+ * A publisher embeds `<adland-slot name="ethereum">` rather than an address,
+ * because a pasted address lives in HTML nobody can reach again — redeploy the
+ * slot and every page carrying it shows a dead space forever. The key is the
+ * indirection that fixes that, and this table is what makes the set of them
+ * listable: `slotOf` is a mapping, and a mapping cannot be enumerated on chain.
+ *
+ * Keys are claimed permissionlessly at creation (first come, first served on an
+ * unclaimed key) and repointed by their holder or the contract owner, so the
+ * set grows without anybody curating it. That is precisely why it needs
+ * indexing — nothing else can answer "which names exist".
+ *
+ * `owner` is deliberately absent. `SlotSet` carries the key, the previous slot
+ * and the new one, but not who claimed it, and the two ways to infer it are
+ * both wrong: `transaction.from` is the sender rather than the claimant
+ * whenever a contract or multisig calls, and a `keyOwner` read per event adds
+ * an RPC round trip to serve a column no listing needs. Read it on chain from
+ * a detail view, where one call is cheap and correct.
+ */
+export const adKey = onchainTable(
+  "ad_key",
+  (t) => ({
+    /// The `bytes32` key. Short names are ASCII, so they read back directly.
+    key: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    /// The AdLand deployment holding it — one per chain, but stored rather
+    /// than assumed, so a second one does not silently merge into the first.
+    hook: t.hex().notNull(),
+    /// What it resolves to right now.
+    slot: t.hex().notNull(),
+    /// A queued repoint, waiting out `CHANGE_DELAY`. Null when none.
+    pendingSlot: t.hex(),
+    pendingReadyAt: t.bigint(),
+    /// How many times this key has been pointed somewhere. One means it is
+    /// still on its original claim.
+    setCount: t.integer().notNull(),
+    claimedAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    // Per chain: the same name on base and base-sepolia are different keys
+    // pointing at different slots, and merging them would resolve an embed to
+    // the wrong network's space.
+    pk: primaryKey({ columns: [table.key, table.chainId] }),
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+  }),
+);
+
 export const slotCreatedEvent = onchainTable(
   "slot_created_event",
   (t) => ({
@@ -1166,11 +1217,29 @@ export const cancelledOrderRelations = relations(cancelledOrder, ({ one }) => ({
   slotRef: one(slot, { fields: [cancelledOrder.slot], references: [slot.id] }),
 }));
 
-export const creativeRelations = relations(creative, ({ one }) => ({
+/**
+ * A key points AT a slot, and the join has to be chain-scoped like the rest —
+ * the same name on two chains is two keys resolving to two different spaces.
+ */
+export const adKeyRelations = relations(adKey, ({ one }) => ({
+  slotRef: one(slot, {
+    fields: [adKey.slot],
+    references: [slot.id],
+  }),
+  /// What that slot is currently showing, so one query answers "the ad behind
+  /// this name" — which is the whole reason a publisher embeds a name.
+  creativeRef: one(creative, {
+    fields: [adKey.slot],
+    references: [creative.slot],
+  }),
+}));
+
+export const creativeRelations = relations(creative, ({ one, many }) => ({
   slotRef: one(slot, {
     fields: [creative.slot],
     references: [slot.id],
   }),
+  adKeys: many(adKey),
 }));
 
 export const publishedEventRelations = relations(publishedEvent, ({ one }) => ({
@@ -1380,6 +1449,11 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     references: [slotCollective.id],
     relationName: "collectiveReceivingSlots",
   }),
+
+  // Many, not one. Nothing stops two names resolving to the same space —
+  // "ethereum" and "eth" are separate claims — so a slot carries a list of the
+  // keys pointing at it rather than a name of its own.
+  adKeys: many(adKey),
 
   accountSlots: many(accountSlot),
   operators: many(slotOperator),
