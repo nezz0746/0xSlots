@@ -35,7 +35,7 @@ export function loadChains(): ChainConfig[] {
     .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
-/** Resolve `--chain` by name or id. */
+/** Resolve one `--chain` token by name or id. */
 export function findChain(
   chains: ChainConfig[],
   arg: string | undefined,
@@ -45,6 +45,48 @@ export function findChain(
     chains.find((c) => String(c.chainId) === String(arg)) ??
     chains.find((c) => c.name === arg)
   );
+}
+
+/**
+ * Resolve `--chain` when it may name several.
+ *
+ * Comma-separated, plus `all` for every configured chain. Order follows what
+ * was ASKED for rather than {loadChains}' own ordering, because a run that says
+ * `--chain base-sepolia,base` is describing a sequence: prove it on the testnet,
+ * then go. Reordering that would quietly send the mainnet transaction first.
+ *
+ * `all` is the exception and stays in config order — local, testnets, mainnets —
+ * which puts the same "cheapest first" property back for the one spelling that
+ * expresses no preference.
+ *
+ * Unknown tokens come back in `missing` rather than throwing, so the caller can
+ * name every one of them at once instead of one per run.
+ */
+export function findChains(
+  chains: ChainConfig[],
+  arg: string | undefined,
+): { found: ChainConfig[]; missing: string[] } {
+  if (!arg) return { found: [], missing: [] };
+
+  const tokens = arg
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  if (tokens.length === 1 && tokens[0]?.toLowerCase() === "all")
+    return { found: chains, missing: [] };
+
+  const found: ChainConfig[] = [];
+  const missing: string[] = [];
+  for (const token of tokens) {
+    const hit = findChain(chains, token);
+    if (!hit) missing.push(token);
+    // Named twice is not an error, but running it twice would be: the second
+    // pass would find its own broadcast already applied and report nothing to
+    // do, which reads like a failure.
+    else if (!found.includes(hit)) found.push(hit);
+  }
+  return { found, missing };
 }
 
 /**

@@ -109,17 +109,53 @@ Require `walletClient` + `publicClient`. All return `Promise<Hash>`.
 
 | Method | Description |
 | --- | --- |
-| `createSlot(params)` | Deploy a slot via the factory |
-| `createSlots(params)` | Deploy several with identical parameters |
+| `createSlot(init)` | Deploy a slot via the factory |
+| `simulateCreateSlot(init)` | The address it would get, sending nothing |
 | `buy(params)` | Take a slot (auto-approves ERC-20) |
+| `simulateBuy(params)` | Check a buy would succeed, sending nothing |
 | `topUp(slot, amount)` | Add to the deposit (auto-approves ERC-20) |
 | `withdraw(slot, amount)` | Withdraw surplus deposit |
 | `selfAssess(slot, price)` | Set the self-assessed price |
 | `release(slot)` | Leave, reclaiming the remaining deposit |
-| `collect(slot)` | Push accrued tax to the recipient |
-| `collectAll(slots)` | The same across many slots |
 | `liquidate(slot)` | Remove an insolvent occupant, earn the bounty |
-| `multicall(slot, calls)` | Batch several slot calls |
+| `collect(slot)` | Push accrued tax to the recipient |
+| `collectAll(slots)` | The same across many slots, in one transaction |
+| `simulateCollectAll(slots)` | What that would pay out, per slot |
+| `collectFrom(slot)` | One slot, through the factory — see below |
+| `claim(slot, account?)` | Take a payout that could not be pushed |
+| `setOperator(slot, op, allowed)` | Let somebody else act for your tenancy |
+| `proposeTerms(slot, params)` | Queue a tax or hook change |
+| `cancelTerms(slot, …)` | Drop a queued change |
+| `manageTerms(slot, …)` | Propose, cancel and apply in one call |
+
+### Collecting in bulk
+
+`collectAll` is on the **factory**, because the factory is the only thing that
+knows which addresses it created — a standalone batcher would take the array on
+trust. Nothing about it is privileged: `collect` is permissionless on every slot
+and the money always goes to that slot's own recipient, so this buys one base
+fee instead of twenty and nothing else.
+
+Each collection is isolated on chain, so a slot that reverts — one already
+flushed, or a `strict` hook that reverts in `afterSettle` — leaves a zero in the
+result rather than failing the batch for every other recipient. Addresses the
+factory did not create are skipped the same way.
+
+```ts
+const amounts = await client.simulateCollectAll(slots);   // sends nothing
+const total = amounts.reduce((a, b) => a + b, 0n);        // label the button
+if (total > 0n) await client.collectAll(slots);           // then press it
+```
+
+Simulate first. A transaction hash carries no return value, so that is the only
+way to show what a collection is worth before signing it — and the zeroes tell
+you which slots to drop from the batch. There is no size cap in the SDK: the
+real limit is the block gas limit, which differs per chain and per slot, and the
+simulation fails the same way the transaction would.
+
+`collectFrom(slot)` is the single-slot form. Prefer `collect(slot)`, which is one
+hop shorter; this one exists because it reverts (`NotASlot`, or the slot's own
+revert) where a batch would swallow the same failure into a zero.
 
 ### Manager operations
 

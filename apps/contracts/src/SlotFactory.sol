@@ -25,7 +25,7 @@ contract SlotFactory is VersionedUUPS {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 3;
     }
 
     /// @notice Which migration has run against THIS proxy's storage.
@@ -95,6 +95,94 @@ contract SlotFactory is VersionedUUPS {
             address(init.currency),
             init.hook
         );
+    }
+
+    /**
+     * @notice Flush accrued tax out of many slots at once.
+     *
+     * @dev ── Why it lives here ─────────────────────────────────────────────
+     *
+     *      The factory already knows which addresses are slots, and that check
+     *      is the only thing a batch collector needs that a standalone utility
+     *      would have to be told. A separate contract would take an array of
+     *      addresses on trust and call `collect()` on whatever it was handed.
+     *
+     *      ── Nothing here is privileged ────────────────────────────────────
+     *
+     *      `collect()` is permissionless on every slot and the money always
+     *      goes to that slot's own `recipient`, so this grants no authority
+     *      over anyone's funds. It is a gas convenience: a keeper, or a
+     *      recipient with twenty slots, spends one transaction instead of
+     *      twenty and one base fee instead of twenty.
+     *
+     *      ── One bad slot must not sink the batch ──────────────────────────
+     *
+     *      Each collection is isolated, and the reasons a single one reverts
+     *      are ordinary rather than exceptional: `NothingToCollect` for a slot
+     *      whose tax is already flushed — which is most of them, most of the
+     *      time — and a hook that reverts in `afterSettle` while running
+     *      uncapped under `strict`. Neither is a reason to deny nineteen other
+     *      recipients their rent, so a failure leaves a zero in `collected` and
+     *      the loop carries on.
+     *
+     *      Addresses this factory did not create are skipped rather than
+     *      rejected, for the same reason: a stale entry in a caller's list is
+     *      not worth failing a batch over.
+     *
+     * @return collected What each slot actually paid out, indexed as passed in.
+     *         Zero means skipped, already flushed, or reverted — deliberately
+     *         not distinguished, because the caller's next move is the same for
+     *         all three. Simulate this call to price the button before showing
+     *         it; the per-slot `TaxCollected` events carry the recipients.
+     */
+    function collectAll(address[] calldata slots)
+        external
+        returns (uint256[] memory collected)
+    {
+        collected = new uint256[](slots.length);
+        for (uint256 i; i < slots.length; ++i) {
+            // Through an external self-call, which is the only way to isolate
+            // a revert: `try` guards the call in its own expression and nothing
+            // in the success block, so the amount has to be read on the far
+            // side of the same boundary the failure is caught at.
+            try this.collectFrom(slots[i]) returns (uint256 amount) {
+                collected[i] = amount;
+            } catch {}
+        }
+    }
+
+    /**
+     * @notice Flush one slot, and say how much moved.
+     *
+     * @dev Exists to be `try`-ed by {collectAll}, and is harmless to call
+     *      directly — it does nothing `collect()` does not already allow
+     *      anyone to do. The `isSlot` guard is not there to protect the
+     *      caller's funds but to keep this from becoming a way to make the
+     *      factory address call arbitrary contracts.
+     *
+     *      The amount is read BEFORE collecting. `_flush` zeroes `collectedTax`
+     *      on the way out, so reading it afterwards reports zero for a
+     *      collection that worked — a mistake the previous generation's batch
+     *      collector shipped with. What `collect()` is about to pay is what has
+     *      already accrued plus what this settlement is about to add, and both
+     *      are readable now.
+     *
+     *      Capped by the deposit, which is not defensive rounding but the
+     *      settlement rule: `taxOwed()` is the RAW debt and may exceed the
+     *      escrow, in which case `_settle` takes the deposit and carries the
+     *      rest as arrears against the occupant rather than paying it out.
+     *      Adding the uncapped debt here would report money to a recipient that
+     *      no transfer moved, on exactly the slots — insolvent ones — a
+     *      collection run is most likely to be sweeping up.
+     */
+    function collectFrom(address slot) external returns (uint256 amount) {
+        if (!isSlot[slot]) revert NotASlot();
+
+        Slot s = Slot(payable(slot));
+        uint256 owed = s.taxOwed();
+        uint256 escrow = s.deposit();
+        amount = s.collectedTax() + (owed > escrow ? escrow : owed);
+        s.collect();
     }
 
     function transferAdmin(address next) external onlyAdmin {

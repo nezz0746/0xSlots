@@ -39,6 +39,11 @@ function harness(
     args: readonly unknown[],
     state: Record<string, unknown>,
   ) => void,
+  /**
+   * What `simulateContract` hands back. A slot address covers `createSlot`,
+   * which is the only simulate most tests reach; `collectAll` returns amounts.
+   */
+  simulateResult: unknown = SLOT,
 ) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which is
@@ -65,7 +70,7 @@ function harness(
     // real routing rather than a client that quietly has nowhere to send it.
     publicClient: {
       readContract,
-      simulateContract: vi.fn(async () => ({ result: SLOT })),
+      simulateContract: vi.fn(async () => ({ result: simulateResult })),
       waitForTransactionReceipt: vi.fn(async () => ({ status: "success" })),
     } as any,
     walletClient: {
@@ -86,6 +91,72 @@ const approvals = (writeContract: ReturnType<typeof vi.fn>) =>
 
 const sent = (writeContract: ReturnType<typeof vi.fn>, name: string) =>
   writeContract.mock.calls.find((c: any[]) => c[0].functionName === name)?.[0];
+
+const SLOT_B = "0x7777777777777777777777777777777777777777" as const;
+
+/**
+ * Batch collection.
+ *
+ * These assert WHERE the call goes as much as what it carries. `collect` is on
+ * the slot and `collectAll` is on the factory, and sending either to the other
+ * address fails in a way no type catches — the ABIs both have the name, and the
+ * wrong target simply reverts on chain.
+ */
+describe("collectAll", () => {
+  it("goes to the factory, carrying the slots", async () => {
+    const { client, writeContract } = harness({});
+    await client.collectAll([SLOT, SLOT_B]);
+
+    const call = sent(writeContract, "collectAll");
+    expect(call.address).toBe(FACTORY);
+    expect(call.args[0]).toEqual([SLOT, SLOT_B]);
+  });
+
+  it("collect() still goes to the slot itself", async () => {
+    const { client, writeContract } = harness({});
+    await client.collect(SLOT);
+    expect(sent(writeContract, "collect").address).toBe(SLOT);
+  });
+
+  it("collectFrom() goes to the factory with one slot", async () => {
+    const { client, writeContract } = harness({});
+    await client.collectFrom(SLOT);
+
+    const call = sent(writeContract, "collectFrom");
+    expect(call.address).toBe(FACTORY);
+    expect(call.args[0]).toBe(SLOT);
+  });
+
+  /**
+   * The contract accepts an empty batch — an empty loop is not an error — which
+   * is exactly why the client refuses it. A UI mapping over an empty selection
+   * would otherwise prompt for a signature that pays gas to do nothing.
+   */
+  it("refuses an empty batch without sending anything", async () => {
+    const { client, writeContract } = harness({});
+    await expect(client.collectAll([])).rejects.toThrow(/no slots given/);
+    expect(writeContract).not.toHaveBeenCalled();
+  });
+
+  it("simulates to the per-slot amounts, as a plain array", async () => {
+    const { client, writeContract } = harness({}, undefined, [10n, 0n, 25n]);
+
+    // A zero is a real answer — already flushed, not a slot, or reverting —
+    // and has to survive rather than be filtered into a shorter array that no
+    // longer lines up with the input.
+    await expect(client.simulateCollectAll([SLOT, SLOT_B, ACCOUNT])).resolves.toEqual([
+      10n,
+      0n,
+      25n,
+    ]);
+    expect(writeContract).not.toHaveBeenCalled();
+  });
+
+  it("refuses to simulate an empty batch too", async () => {
+    const { client } = harness({}, undefined, []);
+    await expect(client.simulateCollectAll([])).rejects.toThrow(/no slots given/);
+  });
+});
 
 describe("native ETH slots", () => {
   it("buy attaches value equal to the slot's own quote, and never approves", async () => {

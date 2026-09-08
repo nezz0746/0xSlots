@@ -819,6 +819,97 @@ export class SlotsClient {
     return result;
   }
 
+  /**
+   * Flush accrued tax out of many slots in one transaction.
+   *
+   * On the FACTORY rather than per slot, because the factory is the only thing
+   * that knows which addresses it created — a standalone batcher would take the
+   * array on trust. Nothing here is privileged: {@link collect} is permissionless
+   * on every slot and the money always goes to that slot's own recipient, so
+   * this is a gas convenience and not an authority.
+   *
+   * Each collection is isolated on chain. A slot that reverts —
+   * `NothingToCollect` on one already flushed, or a `strict` hook that reverts
+   * in `afterSettle` — leaves a zero in the result rather than failing the batch
+   * for every other recipient. Addresses the factory did not create are skipped.
+   *
+   * ── Size it yourself ──────────────────────────────────────────────────────
+   *
+   * There is no cap here, and that is deliberate: the real limit is the block
+   * gas limit, which differs per chain and per slot — a slot with a `strict`
+   * hook costs far more to settle than a bare one. Call
+   * {@link simulateCollectAll} first; it fails the same way the transaction
+   * would, for free.
+   */
+  async collectAll(slots: readonly Address[]): Promise<Hash> {
+    this.assertSomeSlots(slots, "collectAll");
+    return this.wallet.writeContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "collectAll",
+      args: [slots as Address[]],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * What {@link collectAll} would pay out, per slot, without sending anything.
+   *
+   * The useful half of the pair. A transaction hash carries no return value, so
+   * "collect all — 1.24 ETH across 6 slots" can only be shown by simulating it;
+   * and the zeroes tell you which slots are already flushed, unreachable to the
+   * factory, or reverting, so a caller can drop them and send a smaller batch.
+   *
+   * Amounts are capped by each slot's deposit rather than being its raw
+   * `taxOwed`: an insolvent slot pays what escrow it has and the remainder is
+   * carried as arrears against the occupant, never transferred to the recipient.
+   */
+  async simulateCollectAll(slots: readonly Address[]): Promise<bigint[]> {
+    this.assertSomeSlots(slots, "simulateCollectAll");
+    const { result } = await this.publicClient.simulateContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "collectAll",
+      args: [slots as Address[]],
+      account: this.account,
+    });
+    return [...result];
+  }
+
+  /**
+   * Flush one slot through the factory, and learn what moved.
+   *
+   * {@link collect} on the slot itself is the same money and one hop shorter, so
+   * reach for that. This exists because it is what {@link collectAll} calls per
+   * slot, and because it REVERTS rather than returning zero — `NotASlot` for an
+   * address the factory did not create, and the slot's own revert otherwise.
+   * Inside a batch those are swallowed into zeroes; on their own they are the
+   * answer.
+   */
+  collectFrom(slot: Address): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "collectFrom",
+      args: [slot],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * An empty batch is a transaction that pays gas to do nothing.
+   *
+   * The contract accepts it — an empty loop is not an error — which is exactly
+   * why it is worth catching here instead. A UI that maps over an empty
+   * selection should not be able to prompt for a signature.
+   */
+  private assertSomeSlots(slots: readonly Address[], method: string): void {
+    if (slots.length === 0)
+      throw new SlotsError(method, "no slots given — nothing would be collected");
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // WRITE — occupancy
   // ═══════════════════════════════════════════════════════════════════════════

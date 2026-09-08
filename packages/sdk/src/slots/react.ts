@@ -291,6 +291,22 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     (slot: Address) => exec("Collect tax", () => client.collect(slot)),
     [exec, client],
   );
+  /**
+   * Every slot in one signature, through the factory.
+   *
+   * Not wrapped with a simulate-first: `simulateCollectAll` is a READ and this
+   * hook is the write path, so pairing them here would make a button that shows
+   * an amount also send a transaction to learn it. Read it yourself to label the
+   * button, then call this when it is pressed.
+   */
+  const collectAll = useCallback(
+    (slots: readonly Address[]) =>
+      exec(
+        slots.length === 1 ? "Collect tax" : `Collect tax from ${slots.length} slots`,
+        () => client.collectAll(slots),
+      ),
+    [exec, client],
+  );
   const claim = useCallback(
     (slot: Address, account?: Address) =>
       exec("Claim", () => client.claim(slot, account)),
@@ -347,6 +363,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     setOperator,
     // Money out
     collect,
+    collectAll,
     claim,
     // Manager
     proposeTerms,
