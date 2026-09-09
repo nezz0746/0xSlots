@@ -267,7 +267,8 @@ contract CollectAllTest is Test {
     }
 
     /// @dev The doc says to bump it with any change to this contract.
+    ///      4 is the move from CREATE to CREATE2 in `createSlot`.
     function test_TheFactoryVersionWasBumped() public view {
-        assertEq(factory.version(), 3);
+        assertEq(factory.version(), 4);
     }
 }

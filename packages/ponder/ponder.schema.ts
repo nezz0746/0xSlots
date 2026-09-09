@@ -94,16 +94,48 @@ export const accountChain = onchainTable(
   }),
 );
 
-export const currency = onchainTable("currency", (t) => ({
-  id: t.hex().primaryKey(),
-  name: t.text(),
-  symbol: t.text(),
-  decimals: t.integer().notNull(),
-}));
-
 // ──────────────────────────────────────────
 // Chain-scoped entities
+//
+// Everything below is keyed by (address, chainId) rather than by address
+// alone, because everything below is CODE rather than an identity — and a
+// contract address is only unique within one chain.
+//
+// This is not theoretical. `SlotFactory` and `SlotCollectiveFactory` deploy
+// with plain `new BeaconProxy(...)`, so a child's address is
+// `keccak(rlp(factory, nonce))` and nothing else. The factories are deployed
+// at the SAME address on base and on Ethereum sepolia, and both start at
+// nonce 1 — so the Nth slot on base and the Nth slot on sepolia have
+// identical addresses, by construction rather than by accident.
+//
+// Keying any of these on the address alone therefore does not merely risk a
+// collision, it guarantees one the moment two chains reach the same nonce.
+// `account` stays address-keyed on purpose: an account IS an identity, the
+// same key on every chain, with `accountChain` holding its per-chain counters.
 // ──────────────────────────────────────────
+
+/**
+ * An ERC-20, or the native-ETH sentinel at the zero address.
+ *
+ * Chain-scoped for the same reason `hook` is: a token is code. The same
+ * address on two chains is two deployments, and `name`/`symbol`/`decimals`
+ * are read off whichever one this row belongs to — merging them would label a
+ * slot's price in another network's token.
+ */
+export const currency = onchainTable(
+  "currency",
+  (t) => ({
+    id: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    name: t.text(),
+    symbol: t.text(),
+    decimals: t.integer().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.id, table.chainId] }),
+    chainIdx: index().on(table.chainId),
+  }),
+);
 
 /**
  * The factory, which is also the protocol's event hub and its admin surface.
@@ -116,7 +148,7 @@ export const currency = onchainTable("currency", (t) => ({
 export const factory = onchainTable(
   "factory",
   (t) => ({
-    id: t.hex().primaryKey(),
+    id: t.hex().notNull(),
     chainId: t.integer().notNull(),
     slotCount: t.bigint().notNull(),
     /// May upgrade the beacon and upgrade the factory.
@@ -126,6 +158,12 @@ export const factory = onchainTable(
     implementationUpdatedAt: t.bigint(),
   }),
   (table) => ({
+    // (address, chainId), not address. The SlotFactory is deployed at the same
+    // address on base and on sepolia, and `touchFactory` upserts — so an
+    // address-only key silently MERGED the two chains' factories into one row,
+    // summing `slotCount` across chains and keeping whichever `chainId` was
+    // indexed first. No crash, just a row that was quietly wrong.
+    pk: primaryKey({ columns: [table.id, table.chainId] }),
     chainIdx: index().on(table.chainId),
   }),
 );
@@ -262,7 +300,7 @@ export const collectionToken = onchainTable(
 export const slot = onchainTable(
   "slot",
   (t) => ({
-    id: t.hex().primaryKey(),
+    id: t.hex().notNull(),
     chainId: t.integer().notNull(),
     factory: t.hex().notNull(),
 
@@ -367,6 +405,12 @@ export const slot = onchainTable(
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
+    // (address, chainId), not address. A slot is a BeaconProxy deployed with
+    // `new` — its address is `keccak(rlp(factory, nonce))` — and the factory
+    // sits at one address across chains, so slot #N on base and slot #N on
+    // sepolia ARE the same address. Keying on the address alone made the
+    // second chain's insert a duplicate-key crash rather than a second row.
+    pk: primaryKey({ columns: [table.id, table.chainId] }),
     chainIdx: index().on(table.chainId),
     factoryIdx: index().on(table.factory),
     hookIdx: index().on(table.hook),
@@ -401,7 +445,7 @@ export const accountSlot = onchainTable(
     lastInteractedAt: t.bigint().notNull(),
   }),
   (table) => ({
-    pk: primaryKey({ columns: [table.account, table.slot] }),
+    pk: primaryKey({ columns: [table.account, table.slot, table.chainId] }),
     chainIdx: index().on(table.chainId),
   }),
 );
@@ -447,7 +491,9 @@ export const slotOperator = onchainTable(
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
-    pk: primaryKey({ columns: [table.slot, table.tenure, table.operator] }),
+    pk: primaryKey({
+      columns: [table.slot, table.tenure, table.operator, table.chainId],
+    }),
     chainIdx: index().on(table.chainId),
     // The lookup a client actually makes: this slot, this tenure.
     currentIdx: index().on(table.slot, table.tenure),
@@ -476,7 +522,7 @@ export const slotCredit = onchainTable(
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
-    pk: primaryKey({ columns: [table.slot, table.account] }),
+    pk: primaryKey({ columns: [table.slot, table.account, table.chainId] }),
     chainIdx: index().on(table.chainId),
     accountIdx: index().on(table.account),
   }),
@@ -501,7 +547,9 @@ export const cancelledOrder = onchainTable(
     tx: t.hex().notNull(),
   }),
   (table) => ({
-    pk: primaryKey({ columns: [table.slot, table.buyer, table.nonce] }),
+    pk: primaryKey({
+      columns: [table.slot, table.buyer, table.nonce, table.chainId],
+    }),
     chainIdx: index().on(table.chainId),
     buyerIdx: index().on(table.buyer),
   }),
@@ -559,11 +607,13 @@ export const creative = onchainTable(
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
-    // Keyed on the slot alone, matching `slot.id` and every other slot-keyed
-    // table here. A slot address is treated as globally unique in this schema
-    // — one row per deployed proxy, whatever chain it is on — and a creative
-    // keyed differently could not join to it.
-    pk: primaryKey({ columns: [table.slot] }),
+    // Keyed (slot, chainId), matching `slot`'s own key and every other
+    // slot-keyed table here. This once read "a slot address is globally
+    // unique — one row per deployed proxy, whatever chain it is on". That was
+    // false: the factories deploy at one address across chains with `new`, so
+    // the same slot address exists on base and on sepolia and is two
+    // different slots. The chain is part of the identity, here and everywhere.
+    pk: primaryKey({ columns: [table.slot, table.chainId] }),
     chainIdx: index().on(table.chainId),
     hookIdx: index().on(table.hook),
     publisherIdx: index().on(table.publisher),
@@ -1185,8 +1235,8 @@ export const accountSlotRelations = relations(accountSlot, ({ one }) => ({
     references: [account.id],
   }),
   slotRef: one(slot, {
-    fields: [accountSlot.slot],
-    references: [slot.id],
+    fields: [accountSlot.slot, accountSlot.chainId],
+    references: [slot.id, slot.chainId],
   }),
 }));
 
@@ -1202,11 +1252,17 @@ export const hookRelations = relations(hook, ({ many }) => ({
 }));
 
 export const slotOperatorRelations = relations(slotOperator, ({ one }) => ({
-  slotRef: one(slot, { fields: [slotOperator.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [slotOperator.slot, slotOperator.chainId],
+    references: [slot.id, slot.chainId],
+  }),
 }));
 
 export const slotCreditRelations = relations(slotCredit, ({ one }) => ({
-  slotRef: one(slot, { fields: [slotCredit.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [slotCredit.slot, slotCredit.chainId],
+    references: [slot.id, slot.chainId],
+  }),
   accountRef: one(account, {
     fields: [slotCredit.account],
     references: [account.id],
@@ -1214,7 +1270,10 @@ export const slotCreditRelations = relations(slotCredit, ({ one }) => ({
 }));
 
 export const cancelledOrderRelations = relations(cancelledOrder, ({ one }) => ({
-  slotRef: one(slot, { fields: [cancelledOrder.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [cancelledOrder.slot, cancelledOrder.chainId],
+    references: [slot.id, slot.chainId],
+  }),
 }));
 
 /**
@@ -1223,29 +1282,29 @@ export const cancelledOrderRelations = relations(cancelledOrder, ({ one }) => ({
  */
 export const adKeyRelations = relations(adKey, ({ one }) => ({
   slotRef: one(slot, {
-    fields: [adKey.slot],
-    references: [slot.id],
+    fields: [adKey.slot, adKey.chainId],
+    references: [slot.id, slot.chainId],
   }),
   /// What that slot is currently showing, so one query answers "the ad behind
   /// this name" — which is the whole reason a publisher embeds a name.
   creativeRef: one(creative, {
-    fields: [adKey.slot],
-    references: [creative.slot],
+    fields: [adKey.slot, adKey.chainId],
+    references: [creative.slot, creative.chainId],
   }),
 }));
 
 export const creativeRelations = relations(creative, ({ one, many }) => ({
   slotRef: one(slot, {
-    fields: [creative.slot],
-    references: [slot.id],
+    fields: [creative.slot, creative.chainId],
+    references: [slot.id, slot.chainId],
   }),
   adKeys: many(adKey),
 }));
 
 export const publishedEventRelations = relations(publishedEvent, ({ one }) => ({
   slotRef: one(slot, {
-    fields: [publishedEvent.slot],
-    references: [slot.id],
+    fields: [publishedEvent.slot, publishedEvent.chainId],
+    references: [slot.id, slot.chainId],
   }),
 }));
 
@@ -1253,12 +1312,12 @@ export const slotCreatedEventRelations = relations(
   slotCreatedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [slotCreatedEvent.slot],
-      references: [slot.id],
+      fields: [slotCreatedEvent.slot, slotCreatedEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
     factoryRef: one(factory, {
-      fields: [slotCreatedEvent.factory],
-      references: [factory.id],
+      fields: [slotCreatedEvent.factory, slotCreatedEvent.chainId],
+      references: [factory.id, factory.chainId],
     }),
   }),
 );
@@ -1267,8 +1326,8 @@ export const adminTransferredEventRelations = relations(
   adminTransferredEvent,
   ({ one }) => ({
     factoryRef: one(factory, {
-      fields: [adminTransferredEvent.factory],
-      references: [factory.id],
+      fields: [adminTransferredEvent.factory, adminTransferredEvent.chainId],
+      references: [factory.id, factory.chainId],
     }),
   }),
 );
@@ -1277,14 +1336,17 @@ export const beaconUpgradedEventRelations = relations(
   beaconUpgradedEvent,
   ({ one }) => ({
     factoryRef: one(factory, {
-      fields: [beaconUpgradedEvent.factory],
-      references: [factory.id],
+      fields: [beaconUpgradedEvent.factory, beaconUpgradedEvent.chainId],
+      references: [factory.id, factory.chainId],
     }),
   }),
 );
 
 export const boughtEventRelations = relations(boughtEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [boughtEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [boughtEvent.slot, boughtEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
   buyerRef: one(account, {
     fields: [boughtEvent.buyer],
     references: [account.id],
@@ -1292,7 +1354,10 @@ export const boughtEventRelations = relations(boughtEvent, ({ one }) => ({
 }));
 
 export const releasedEventRelations = relations(releasedEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [releasedEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [releasedEvent.slot, releasedEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
   occupantRef: one(account, {
     fields: [releasedEvent.occupant],
     references: [account.id],
@@ -1303,8 +1368,8 @@ export const liquidatedEventRelations = relations(
   liquidatedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [liquidatedEvent.slot],
-      references: [slot.id],
+      fields: [liquidatedEvent.slot, liquidatedEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
     occupantRef: one(account, {
       fields: [liquidatedEvent.occupant],
@@ -1314,23 +1379,38 @@ export const liquidatedEventRelations = relations(
 );
 
 export const priceSetEventRelations = relations(priceSetEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [priceSetEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [priceSetEvent.slot, priceSetEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
 }));
 
 export const depositedEventRelations = relations(depositedEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [depositedEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [depositedEvent.slot, depositedEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
 }));
 
 export const withdrawnEventRelations = relations(withdrawnEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [withdrawnEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [withdrawnEvent.slot, withdrawnEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
 }));
 
 export const settledEventRelations = relations(settledEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [settledEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [settledEvent.slot, settledEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
 }));
 
 export const taxPaidEventRelations = relations(taxPaidEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [taxPaidEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [taxPaidEvent.slot, taxPaidEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
   payerRef: one(account, {
     fields: [taxPaidEvent.payer],
     references: [account.id],
@@ -1341,8 +1421,8 @@ export const taxCollectedEventRelations = relations(
   taxCollectedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [taxCollectedEvent.slot],
-      references: [slot.id],
+      fields: [taxCollectedEvent.slot, taxCollectedEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
     recipientRef: one(account, {
       fields: [taxCollectedEvent.recipient],
@@ -1352,7 +1432,10 @@ export const taxCollectedEventRelations = relations(
 );
 
 export const creditedEventRelations = relations(creditedEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [creditedEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [creditedEvent.slot, creditedEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
   accountRef: one(account, {
     fields: [creditedEvent.account],
     references: [account.id],
@@ -1360,7 +1443,10 @@ export const creditedEventRelations = relations(creditedEvent, ({ one }) => ({
 }));
 
 export const claimedEventRelations = relations(claimedEvent, ({ one }) => ({
-  slotRef: one(slot, { fields: [claimedEvent.slot], references: [slot.id] }),
+  slotRef: one(slot, {
+    fields: [claimedEvent.slot, claimedEvent.chainId],
+    references: [slot.id, slot.chainId],
+  }),
   accountRef: one(account, {
     fields: [claimedEvent.account],
     references: [account.id],
@@ -1371,8 +1457,8 @@ export const operatorSetEventRelations = relations(
   operatorSetEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [operatorSetEvent.slot],
-      references: [slot.id],
+      fields: [operatorSetEvent.slot, operatorSetEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
   }),
 );
@@ -1381,8 +1467,8 @@ export const termsProposedEventRelations = relations(
   termsProposedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [termsProposedEvent.slot],
-      references: [slot.id],
+      fields: [termsProposedEvent.slot, termsProposedEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
   }),
 );
@@ -1391,8 +1477,8 @@ export const termsAppliedEventRelations = relations(
   termsAppliedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [termsAppliedEvent.slot],
-      references: [slot.id],
+      fields: [termsAppliedEvent.slot, termsAppliedEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
   }),
 );
@@ -1401,8 +1487,8 @@ export const termsCancelledEventRelations = relations(
   termsCancelledEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [termsCancelledEvent.slot],
-      references: [slot.id],
+      fields: [termsCancelledEvent.slot, termsCancelledEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
   }),
 );
@@ -1419,12 +1505,12 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     relationName: "occupant",
   }),
   currencyRef: one(currency, {
-    fields: [slot.currency],
-    references: [currency.id],
+    fields: [slot.currency, slot.chainId],
+    references: [currency.id, currency.chainId],
   }),
   factoryRef: one(factory, {
-    fields: [slot.factory],
-    references: [factory.id],
+    fields: [slot.factory, slot.chainId],
+    references: [factory.id, factory.chainId],
   }),
   // Two columns, because `hook` is chain-scoped by primary key — the same
   // address on two chains is two deployments with possibly different
@@ -1440,13 +1526,13 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
   // one". Distinct relationNames because a slot may point at the same
   // collective twice, for different reasons.
   managerCollectiveRef: one(slotCollective, {
-    fields: [slot.manager],
-    references: [slotCollective.id],
+    fields: [slot.manager, slot.chainId],
+    references: [slotCollective.id, slotCollective.chainId],
     relationName: "collectiveManagedSlots",
   }),
   recipientCollectiveRef: one(slotCollective, {
-    fields: [slot.recipient],
-    references: [slotCollective.id],
+    fields: [slot.recipient, slot.chainId],
+    references: [slotCollective.id, slotCollective.chainId],
     relationName: "collectiveReceivingSlots",
   }),
 
@@ -1511,8 +1597,8 @@ export const hookCallFailedEventRelations = relations(
   hookCallFailedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [hookCallFailedEvent.slot],
-      references: [slot.id],
+      fields: [hookCallFailedEvent.slot, hookCallFailedEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
     hookRef: one(hook, {
       fields: [hookCallFailedEvent.hook, hookCallFailedEvent.chainId],
@@ -1551,7 +1637,7 @@ export const hookCallFailedEventRelations = relations(
 export const slotCollective = onchainTable(
   "slot_collective",
   (t) => ({
-    id: t.hex().primaryKey(),
+    id: t.hex().notNull(),
     chainId: t.integer().notNull(),
     /// DEFAULT_ADMIN_ROLE holder at deployment. Roles can move afterwards —
     /// `collectiveRole` is the live answer, this is only the founding one.
@@ -1574,6 +1660,10 @@ export const slotCollective = onchainTable(
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
+    // (address, chainId), like `slot`. SlotCollectiveFactory deploys with
+    // `new BeaconProxy` too, and sits at the same address on all three chains
+    // — so collective #N collides across chains exactly as slot #N does.
+    pk: primaryKey({ columns: [table.id, table.chainId] }),
     chainIdx: index().on(table.chainId),
     adminIdx: index().on(table.admin),
   }),
@@ -1602,7 +1692,7 @@ export const collectiveRole = onchainTable(
   }),
   (table) => ({
     pk: primaryKey({
-      columns: [table.collective, table.role, table.account],
+      columns: [table.collective, table.role, table.account, table.chainId],
     }),
     chainIdx: index().on(table.chainId),
     accountIdx: index().on(table.account),
@@ -1633,7 +1723,9 @@ export const collectiveSplitRecipient = onchainTable(
     updatedAt: t.bigint().notNull(),
   }),
   (table) => ({
-    pk: primaryKey({ columns: [table.collective, table.index] }),
+    pk: primaryKey({
+      columns: [table.collective, table.index, table.chainId],
+    }),
     chainIdx: index().on(table.chainId),
     collectiveIdx: index().on(table.collective),
     accountIdx: index().on(table.account),
@@ -1745,8 +1837,8 @@ export const slotCollectiveRelations = relations(
 
 export const collectiveRoleRelations = relations(collectiveRole, ({ one }) => ({
   collectiveRef: one(slotCollective, {
-    fields: [collectiveRole.collective],
-    references: [slotCollective.id],
+    fields: [collectiveRole.collective, collectiveRole.chainId],
+    references: [slotCollective.id, slotCollective.chainId],
   }),
   accountRef: one(account, {
     fields: [collectiveRole.account],
@@ -1758,8 +1850,11 @@ export const collectiveSplitRecipientRelations = relations(
   collectiveSplitRecipient,
   ({ one }) => ({
     collectiveRef: one(slotCollective, {
-      fields: [collectiveSplitRecipient.collective],
-      references: [slotCollective.id],
+      fields: [
+        collectiveSplitRecipient.collective,
+        collectiveSplitRecipient.chainId,
+      ],
+      references: [slotCollective.id, slotCollective.chainId],
     }),
     accountRef: one(account, {
       fields: [collectiveSplitRecipient.account],
@@ -1772,8 +1867,11 @@ export const collectiveSplitUpdatedEventRelations = relations(
   collectiveSplitUpdatedEvent,
   ({ one }) => ({
     collectiveRef: one(slotCollective, {
-      fields: [collectiveSplitUpdatedEvent.collective],
-      references: [slotCollective.id],
+      fields: [
+        collectiveSplitUpdatedEvent.collective,
+        collectiveSplitUpdatedEvent.chainId,
+      ],
+      references: [slotCollective.id, slotCollective.chainId],
     }),
   }),
 );
@@ -1782,12 +1880,12 @@ export const collectiveActionEventRelations = relations(
   collectiveActionEvent,
   ({ one }) => ({
     collectiveRef: one(slotCollective, {
-      fields: [collectiveActionEvent.collective],
-      references: [slotCollective.id],
+      fields: [collectiveActionEvent.collective, collectiveActionEvent.chainId],
+      references: [slotCollective.id, slotCollective.chainId],
     }),
     slotRef: one(slot, {
-      fields: [collectiveActionEvent.slot],
-      references: [slot.id],
+      fields: [collectiveActionEvent.slot, collectiveActionEvent.chainId],
+      references: [slot.id, slot.chainId],
     }),
     byRef: one(account, {
       fields: [collectiveActionEvent.by],
@@ -1800,8 +1898,11 @@ export const collectiveDistributionEventRelations = relations(
   collectiveDistributionEvent,
   ({ one }) => ({
     collectiveRef: one(slotCollective, {
-      fields: [collectiveDistributionEvent.collective],
-      references: [slotCollective.id],
+      fields: [
+        collectiveDistributionEvent.collective,
+        collectiveDistributionEvent.chainId,
+      ],
+      references: [slotCollective.id, slotCollective.chainId],
     }),
   }),
 );

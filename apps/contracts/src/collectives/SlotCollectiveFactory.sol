@@ -54,7 +54,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 3;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -200,7 +200,19 @@ contract SlotCollectiveFactory is VersionedUUPS {
             SlotCollective.initializeCollective,
             (split, roles)
         );
-        collective = address(new BeaconProxy(address(beacon), initData));
+        // CREATE2, salted with the chain id and the collective's index. Plain
+        // `new` derives the address from `keccak(rlp(factory, nonce))` alone,
+        // and this factory sits at ONE address across chains — so collective
+        // #N was the same address on every chain it was deployed to. The
+        // index makes them distinct within a chain, `block.chainid` across
+        // chains; the initcode alone would not, since `(beacon, initData)`
+        // can be byte-identical on two chains. Same reasoning as
+        // `SlotFactory.createSlot`, written out in full there.
+        collective = address(
+            new BeaconProxy{
+                salt: keccak256(abi.encode(block.chainid, collectives.length))
+            }(address(beacon), initData)
+        );
 
         isSlotCollective[collective] = true;
         collectives.push(collective);

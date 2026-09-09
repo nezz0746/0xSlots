@@ -221,7 +221,10 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
   const total = split.totalAllocation as bigint;
   const incentive = Number(split.distributionIncentive ?? 0);
 
-  const prev = await context.db.find(slotCollective, { id: collective });
+  const prev = await context.db.find(slotCollective, {
+    id: collective,
+    chainId,
+  });
   const prevCount = prev?.splitRecipientCount ?? 0;
 
   // Overwrite positions 0..n-1.
@@ -252,7 +255,11 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
   // `splitRecipientCount` is stored — without it, finding the stale rows would
   // need a scan.
   for (let i = recipients.length; i < prevCount; i++) {
-    await context.db.delete(collectiveSplitRecipient, { collective, index: i });
+    await context.db.delete(collectiveSplitRecipient, {
+      collective,
+      index: i,
+      chainId,
+    });
   }
 
   await context.db.insert(collectiveSplitUpdatedEvent).values({
@@ -333,10 +340,14 @@ ponder.on("SlotCollective:SplitUpdated", async ({ event, context }) => {
 
 ponder.on("SlotCollective:SetPaused", async ({ event, context }) => {
   const collective = lower(event.log.address);
-  const row = await context.db.find(slotCollective, { id: collective });
+  const chainId = context.chain.id;
+  const row = await context.db.find(slotCollective, {
+    id: collective,
+    chainId,
+  });
   if (!row) return;
   await context.db
-    .update(slotCollective, { id: collective })
+    .update(slotCollective, { id: collective, chainId })
     .set({ paused: event.args.paused, updatedAt: event.block.timestamp });
 });
 

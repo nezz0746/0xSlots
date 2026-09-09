@@ -19,8 +19,10 @@ import {
 contract TF is ERC20 { constructor() ERC20("T","T"){} function mint(address t,uint256 a) external {_mint(t,a);} }
 
 /// @dev A later factory, to prove an upgrade reaches new collections only.
+/// @dev Must stay AHEAD of `SlotBoundNFTFactory.version()`, or the assertion
+///      that the upgrade landed passes whether or not it did.
 contract SlotBoundNFTFactoryV2 is SlotBoundNFTFactory {
-    function version() public pure override returns (uint64) { return 2; }
+    function version() public pure override returns (uint64) { return 3; }
 }
 
 contract SlotBoundNFTFactoryTest is Test {
@@ -118,7 +120,7 @@ contract SlotBoundNFTFactoryTest is Test {
         address v2 = address(new SlotBoundNFTFactoryV2());
         vm.prank(admin);
         factory.upgradeToAndCall(v2, "");
-        assertEq(factory.version(), 2);
+        assertEq(factory.version(), 3, "the upgrade landed");
 
         assertEq(before.codehash, codeBefore, "already deployed, and untouched");
         assertEq(factory.collectionCount(), 1, "and the registry survived");

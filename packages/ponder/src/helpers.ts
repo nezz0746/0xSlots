@@ -133,6 +133,7 @@ export async function getOrCreateAccountSlot(
   const existing = await ctx.db.find(accountSlot, {
     account: acc,
     slot: slt,
+    chainId,
   });
   if (existing) return existing;
   return ctx.db.insert(accountSlot).values({
@@ -148,9 +149,13 @@ export async function getOrCreateAccountSlot(
   });
 }
 
-export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
+export async function getOrCreateCurrency(
+  ctx: Context,
+  addressRaw: Hex,
+): Promise<{ id: Hex; chainId: number }> {
   const id = lower(addressRaw);
-  const existing = await ctx.db.find(currency, { id });
+  const chainId = ctx.chain.id;
+  const existing = await ctx.db.find(currency, { id, chainId });
   if (existing) return existing;
 
   let name: string | null = null;
@@ -164,8 +169,9 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
     // the price. `decimals` only looked handled because 18 is also the generic
     // default here, not because native was considered.
     //
-    // Named statically instead. Every chain this indexes is ETH-denominated;
-    // a chain with a different native token would need this keyed by chainId.
+    // Named statically instead. Every chain this indexes is ETH-denominated, so
+    // one name serves them all; the row IS per chain now, so a chain with a
+    // different native token only needs this branch to look at `chainId`.
     name = "Ether";
     symbol = "ETH";
   } else {
@@ -252,7 +258,8 @@ export async function getOrCreateCurrency(ctx: Context, addressRaw: Hex) {
     }
   }
 
-  return ctx.db.insert(currency).values({ id, name, symbol, decimals });
+  await ctx.db.insert(currency).values({ id, chainId, name, symbol, decimals });
+  return { id, chainId };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
