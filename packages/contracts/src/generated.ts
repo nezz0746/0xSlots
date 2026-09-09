@@ -999,7 +999,7 @@ export const adLandAbi = [
  */
 export const adLandAddress = {
   8453: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
-  31337: '0xDE0980F2d7B6901b1DbB7F569eB71803032A9C7D',
+  31337: '0x6ECDEAd3adcE6789EDAC392d7145e31cCc9158bA',
   84532: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
   11155111: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
 } as const
@@ -1370,7 +1370,7 @@ export const minimumTenureHookAbi = [
  */
 export const minimumTenureHookAddress = {
   8453: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
-  31337: '0xB1e68532Ba467b2310A931abcDD682E718426c9C',
+  31337: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
   84532: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
   11155111: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
 } as const
@@ -1697,7 +1697,7 @@ export const offerBookAbi = [
  */
 export const offerBookAddress = {
   8453: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
-  31337: '0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2',
+  31337: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
   84532: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
   11155111: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
 } as const
@@ -2651,7 +2651,7 @@ export const slotAbi = [
  */
 export const slotAddress = {
   8453: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
-  31337: '0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530',
+  31337: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
   84532: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
   11155111: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
 } as const
@@ -3634,7 +3634,7 @@ export const slotBoundNftFactoryAbi = [
  */
 export const slotBoundNftFactoryAddress = {
   8453: '0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4',
-  31337: '0xC791CE7cFD22FA180c76e82530864457Df9C9453',
+  31337: '0x5E3eF051FfC7edC5763697c67D46aeBfED4ea4CB',
   84532: '0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4',
   11155111: '0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4',
 } as const
@@ -4493,7 +4493,7 @@ export const slotCollectiveAbi = [
  */
 export const slotCollectiveAddress = {
   8453: '0x879352c146CF7498F2738ff83202748Db5cB9c21',
-  31337: '0x56BFcBbD8A8624DFcd8b774b5ce04533D6929aC3',
+  31337: '0xB9c6D7c0C5D7E82CA8B1FC8C35bE2489Dd2d4dad',
   84532: '0x879352c146CF7498F2738ff83202748Db5cB9c21',
   11155111: '0x879352c146CF7498F2738ff83202748Db5cB9c21',
 } as const
@@ -4785,7 +4785,7 @@ export const slotCollectiveFactoryAbi = [
  */
 export const slotCollectiveFactoryAddress = {
   8453: '0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1',
-  31337: '0x4b9B092168BcdE4e68998FB30956D0da69CCB2fd',
+  31337: '0x6c40003Ac3cB4c4188b38061A078c6a8b2E0FcD6',
   84532: '0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1',
   11155111: '0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1',
 } as const
@@ -5076,7 +5076,7 @@ export const slotFactoryAbi = [
  */
 export const slotFactoryAddress = {
   8453: '0x4416f23E3d8de4E35937448FD221549b6E38483B',
-  31337: '0x2C5126Efbf0f16c2ceff4B35C8798B98a3587EAd',
+  31337: '0x87Da6e2A1E5623589cdf90a97E235133D37046e5',
   84532: '0x4416f23E3d8de4E35937448FD221549b6E38483B',
   11155111: '0x4416f23E3d8de4E35937448FD221549b6E38483B',
 } as const
@@ -5096,6 +5096,9 @@ export const slotFactoryConfig = {
 // SlotsTestToken
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/**
+ *
+ */
 export const slotsTestTokenAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
   {
@@ -5263,3 +5266,18 @@ export const slotsTestTokenAbi = [
     name: 'ERC20InvalidSpender',
   },
 ] as const
+
+/**
+ *
+ */
+export const slotsTestTokenAddress = {
+  31337: '0xeE7d50f1E410c9B42Ae0D39C4549C17FA135add5',
+} as const
+
+/**
+ *
+ */
+export const slotsTestTokenConfig = {
+  address: slotsTestTokenAddress,
+  abi: slotsTestTokenAbi,
+} as const
