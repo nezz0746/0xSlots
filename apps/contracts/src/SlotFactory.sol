@@ -25,7 +25,7 @@ contract SlotFactory is VersionedUUPS {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 3;
+        return 4;
     }
 
     /// @notice Which migration has run against THIS proxy's storage.
@@ -77,12 +77,44 @@ contract SlotFactory is VersionedUUPS {
         emit AdminTransferred(address(0), admin_);
     }
 
+    /**
+     * @notice Create a slot.
+     *
+     * @dev ── Why CREATE2, and why `block.chainid` is in the salt ──────────
+     *
+     *      This was plain `new BeaconProxy(...)` — CREATE — whose address is
+     *      `keccak(rlp(deployer, nonce))` and NOTHING else. Constructor
+     *      arguments do not enter a CREATE address, so two slots with
+     *      different recipients, currencies, hooks and tax rates still landed
+     *      on the same address whenever the factory's nonce matched.
+     *
+     *      This factory is deployed at the same address on every chain. Its
+     *      nonce therefore ran through the same sequence on each of them, and
+     *      slot #N on base and slot #N on sepolia WERE the same address. Not
+     *      a collision risk — an identity, guaranteed by the arithmetic.
+     *
+     *      CREATE2 keys the address on `keccak(0xff, factory, salt,
+     *      keccak(initcode))` instead. Nonce drops out; the salt decides.
+     *
+     *      Both halves of the salt are load bearing:
+     *
+     *        `slotCount`     makes slots distinct WITHIN a chain. It is
+     *                        strictly increasing, so a salt never repeats and
+     *                        CREATE2 can never revert on an occupied address.
+     *
+     *        `block.chainid` makes them distinct ACROSS chains. Without it
+     *                        the initcode — `(beacon, initData)` — can be
+     *                        byte-identical on two chains, and the collision
+     *                        would survive the move to CREATE2 untouched.
+     *
+     *      The factory keeping one address across chains is deliberate and is
+     *      not what changes here. Only its children stop sharing one.
+     */
     function createSlot(SlotInit calldata init) external returns (address slot) {
         slot = address(
-            new BeaconProxy(
-                address(beacon),
-                abi.encodeCall(Slot.initialize, (init))
-            )
+            new BeaconProxy{
+                salt: keccak256(abi.encode(block.chainid, slotCount))
+            }(address(beacon), abi.encodeCall(Slot.initialize, (init)))
         );
         isSlot[slot] = true;
         unchecked {

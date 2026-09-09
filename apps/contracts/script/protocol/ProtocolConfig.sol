@@ -45,7 +45,7 @@ abstract contract ProtocolConfig is Script {
      *      v2 — `Slot` gained `hookData` and a regrouped storage layout, which
      *      no live proxy can be upgraded into.
      */
-    string internal constant NAMESPACE = "0xslots.v2";
+    string internal constant NAMESPACE = "0xslots.v3";
 
     struct ChainConfig {
         string name;
@@ -87,21 +87,19 @@ abstract contract ProtocolConfig is Script {
      *      address on every chain rather than colliding with the old one —
      *      and excludes the chain id, so that address is the same everywhere.
      */
-    function saltFor(string memory contractName, uint64 v)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function saltFor(
+        string memory contractName,
+        uint64 v
+    ) internal pure returns (bytes32) {
         return keccak256(abi.encode(NAMESPACE, contractName, v));
     }
 
     /// @dev Where a `new X{salt: s}(args)` will land, given the canonical
     ///      deployer. Lets a script report an address before spending gas.
-    function predict(bytes32 salt, bytes memory initCode)
-        internal
-        pure
-        returns (address)
-    {
+    function predict(
+        bytes32 salt,
+        bytes memory initCode
+    ) internal pure returns (address) {
         return
             address(
                 uint160(
@@ -121,11 +119,9 @@ abstract contract ProtocolConfig is Script {
 
     // ── the address book ──────────────────────────────────────────────────
 
-    function recordPath(string memory name)
-        internal
-        view
-        returns (string memory)
-    {
+    function recordPath(
+        string memory name
+    ) internal view returns (string memory) {
         return
             string.concat(
                 vm.projectRoot(),
@@ -217,5 +213,4 @@ abstract contract ProtocolConfig is Script {
         if (raw.readUint(".version") == 0) return address(0);
         return raw.readAddress(".address");
     }
-
 }

@@ -54,7 +54,7 @@ ponder.on("AdLand:Published", async ({ event, context }) => {
    * transaction and the row is already seated with the new occupant by the time
    * this runs.
    */
-  const s = await context.db.find(slot, { id: slotAddr });
+  const s = await context.db.find(slot, { id: slotAddr, chainId });
   const publisher = s?.occupant ?? null;
 
   await context.db
@@ -111,10 +111,11 @@ ponder.on("AdLand:Published", async ({ event, context }) => {
     const existing = await context.db.find(accountSlot, {
       account: publisher,
       slot: slotAddr,
+      chainId,
     });
     if (existing) {
       await context.db
-        .update(accountSlot, { account: publisher, slot: slotAddr })
+        .update(accountSlot, { account: publisher, slot: slotAddr, chainId })
         .set({
           publishCount: existing.publishCount + 1,
           lastInteractedAt: event.block.timestamp,
@@ -145,15 +146,14 @@ ponder.on("AdLand:Cleared", async ({ event, context }) => {
   // Nothing to clear if this indexer never saw the publish — a slot advertised
   // on before the hook's start block. `update` on a missing row throws, so the
   // find is the guard rather than a nicety.
-  const current = await context.db.find(creative, { slot: slotAddr });
+  const current = await context.db.find(creative, { slot: slotAddr, chainId });
   if (!current) return;
 
-  await context.db.update(creative, { slot: slotAddr }).set({
+  await context.db.update(creative, { slot: slotAddr, chainId }).set({
     clearedAt: event.block.timestamp,
     updatedAt: event.block.timestamp,
   });
 });
-
 
 /**
  * The name registry — which key points where.
@@ -211,23 +211,19 @@ ponder.on("AdLand:SlotProposed", async ({ event, context }) => {
   // queues one — so a missing row here would mean the indexer had lost the
   // `SlotSet` that created it, and inventing a row to hang the pending change
   // on would paper over exactly that.
-  await context.db
-    .update(adKey, { key: event.args.key, chainId })
-    .set({
-      pendingSlot: lower(event.args.slot),
-      pendingReadyAt: BigInt(event.args.readyAt),
-      updatedAt: event.block.timestamp,
-    });
+  await context.db.update(adKey, { key: event.args.key, chainId }).set({
+    pendingSlot: lower(event.args.slot),
+    pendingReadyAt: BigInt(event.args.readyAt),
+    updatedAt: event.block.timestamp,
+  });
 });
 
 ponder.on("AdLand:SlotProposalCancelled", async ({ event, context }) => {
   const chainId = context.chain.id;
 
-  await context.db
-    .update(adKey, { key: event.args.key, chainId })
-    .set({
-      pendingSlot: null,
-      pendingReadyAt: null,
-      updatedAt: event.block.timestamp,
-    });
+  await context.db.update(adKey, { key: event.args.key, chainId }).set({
+    pendingSlot: null,
+    pendingReadyAt: null,
+    updatedAt: event.block.timestamp,
+  });
 });

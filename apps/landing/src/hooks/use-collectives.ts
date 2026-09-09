@@ -200,8 +200,8 @@ export interface CollectiveDetail {
 }
 
 const DETAIL_QUERY = /* GraphQL */ `
-  query Collective($id: String!) {
-    slotCollective(id: $id) {
+  query Collective($id: String!, $chainId: Int!) {
+    slotCollective(id: $id, chainId: $chainId) {
       id
       chainId
       admin
@@ -212,7 +212,10 @@ const DETAIL_QUERY = /* GraphQL */ `
       createdAt
       createdTx
     }
-    collectiveSplitRecipients(where: { collective: $id }, limit: 200) {
+    collectiveSplitRecipients(
+      where: { collective: $id, chainId: $chainId }
+      limit: 200
+    ) {
       items {
         index
         account
@@ -242,7 +245,10 @@ export function useCollective(address: string | undefined) {
       const res = await fetch(indexerUrlFor(chainId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: DETAIL_QUERY, variables: { id } }),
+        body: JSON.stringify({
+          query: DETAIL_QUERY,
+          variables: { id, chainId },
+        }),
       });
       if (!res.ok) throw new Error(`Indexer ${res.status}`);
 
@@ -266,9 +272,9 @@ export function useCollective(address: string | undefined) {
 }
 
 const ROLES_QUERY = /* GraphQL */ `
-  query CollectiveRoles($collective: String!) {
+  query CollectiveRoles($collective: String!, $chainId: Int!) {
     collectiveRoles(
-      where: { collective: $collective, granted: true }
+      where: { collective: $collective, granted: true, chainId: $chainId }
       limit: 200
     ) {
       items {
@@ -304,7 +310,7 @@ export function useCollectiveRoles(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: ROLES_QUERY,
-          variables: { collective: collective?.toLowerCase() },
+          variables: { collective: collective?.toLowerCase(), chainId },
         }),
       });
       if (!res.ok) throw new Error(`Indexer ${res.status}`);

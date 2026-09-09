@@ -64,7 +64,10 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function loadSlot(context: Context, addr: Hex) {
-  const row = await context.db.find(slot, { id: lower(addr) });
+  const row = await context.db.find(slot, {
+    id: lower(addr),
+    chainId: context.chain.id,
+  });
   if (!row) throw new Error(`Slot ${addr} not found in store`);
   return row;
 }
@@ -93,6 +96,7 @@ async function clearOccupant(
   const accSlot = await context.db.find(accountSlot, {
     account: prev,
     slot: slotAddr,
+    chainId: context.chain.id,
   });
   let held = 0n;
   if (accSlot?.lastOccupiedAt != null) {
@@ -100,7 +104,11 @@ async function clearOccupant(
   }
   if (accSlot) {
     await context.db
-      .update(accountSlot, { account: prev, slot: slotAddr })
+      .update(accountSlot, {
+        account: prev,
+        slot: slotAddr,
+        chainId: context.chain.id,
+      })
       .set({
         holdTime: accSlot.holdTime + held,
         lastOccupiedAt: null,
@@ -179,7 +187,11 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
     chainId,
   );
   await context.db
-    .update(accountSlot, { account: lower(event.args.buyer), slot: slotAddr })
+    .update(accountSlot, {
+      account: lower(event.args.buyer),
+      slot: slotAddr,
+      chainId: context.chain.id,
+    })
     .set({
       lastOccupiedAt: event.block.timestamp,
       lastInteractedAt: event.block.timestamp,
@@ -196,16 +208,18 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
   // the counter exists to avoid.
   const tenure = s.tenureId + 1n;
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    occupant: lower(event.args.buyer),
-    occupantAccount: buyer.id,
-    isOccupied: true,
-    occupiedSince: event.block.timestamp,
-    tenureId: tenure,
-    price: event.args.price,
-    deposit: event.args.deposit,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      occupant: lower(event.args.buyer),
+      occupantAccount: buyer.id,
+      isOccupied: true,
+      occupiedSince: event.block.timestamp,
+      tenureId: tenure,
+      price: event.args.price,
+      deposit: event.args.deposit,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(boughtEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -248,10 +262,12 @@ ponder.on("Slot:Released", async ({ event, context }) => {
     s.recipient,
   );
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    ...VACANT,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      ...VACANT,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(releasedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -294,10 +310,12 @@ ponder.on("Slot:Liquidated", async ({ event, context }) => {
     lower(event.args.by) === lower(event.transaction.from),
   );
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    ...VACANT,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      ...VACANT,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(liquidatedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -319,10 +337,12 @@ ponder.on("Slot:PriceSet", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    price: event.args.newPrice,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      price: event.args.newPrice,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(priceSetEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -347,10 +367,12 @@ ponder.on("Slot:Deposited", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    deposit: event.args.total,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      deposit: event.args.total,
+      updatedAt: event.block.timestamp,
+    });
 
   await getOrCreateAccount(
     context,
@@ -365,7 +387,11 @@ ponder.on("Slot:Deposited", async ({ event, context }) => {
     chainId,
   );
   await context.db
-    .update(accountSlot, { account: lower(event.args.by), slot: slotAddr })
+    .update(accountSlot, {
+      account: lower(event.args.by),
+      slot: slotAddr,
+      chainId: context.chain.id,
+    })
     .set({ lastInteractedAt: event.block.timestamp });
 
   await context.db.insert(depositedEvent).values({
@@ -386,10 +412,12 @@ ponder.on("Slot:Withdrawn", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    deposit: event.args.left,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      deposit: event.args.left,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(withdrawnEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -421,11 +449,13 @@ ponder.on("Slot:Settled", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    deposit: event.args.depositLeft,
-    collectedTax: row.collectedTax + event.args.paid,
-    updatedAt: event.block.timestamp,
-  }));
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      deposit: event.args.depositLeft,
+      collectedTax: row.collectedTax + event.args.paid,
+      updatedAt: event.block.timestamp,
+    }));
 
   await context.db.insert(settledEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -454,10 +484,12 @@ ponder.on("Slot:TaxPaid", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const payer = lower(event.args.payer);
 
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    taxPaidTotal: row.taxPaidTotal + event.args.paid,
-    updatedAt: event.block.timestamp,
-  }));
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      taxPaidTotal: row.taxPaidTotal + event.args.paid,
+      updatedAt: event.block.timestamp,
+    }));
 
   const s = await loadSlot(context, slotAddr);
 
@@ -474,7 +506,11 @@ ponder.on("Slot:TaxPaid", async ({ event, context }) => {
     chainId,
   );
   await context.db
-    .update(accountSlot, { account: payer, slot: slotAddr })
+    .update(accountSlot, {
+      account: payer,
+      slot: slotAddr,
+      chainId: context.chain.id,
+    })
     .set((row) => ({
       taxPaid: row.taxPaid + event.args.paid,
       lastInteractedAt: event.block.timestamp,
@@ -499,11 +535,13 @@ ponder.on("Slot:TaxCollected", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    collectedTax: 0n,
-    totalCollected: row.totalCollected + event.args.amount,
-    updatedAt: event.block.timestamp,
-  }));
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      collectedTax: 0n,
+      totalCollected: row.totalCollected + event.args.amount,
+      updatedAt: event.block.timestamp,
+    }));
 
   await getOrCreateAccount(context, event.args.recipient);
 
@@ -536,10 +574,12 @@ ponder.on("Slot:Credited", async ({ event, context }) => {
 
   await getOrCreateAccount(context, acct);
 
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    creditedTotal: row.creditedTotal + event.args.amount,
-    updatedAt: event.block.timestamp,
-  }));
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      creditedTotal: row.creditedTotal + event.args.amount,
+      updatedAt: event.block.timestamp,
+    }));
 
   await context.db
     .insert(slotCredit)
@@ -687,21 +727,25 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
   const s = await loadSlot(context, slotAddr);
   const proposedHook = lower(event.args.hook);
 
-  await context.db.update(slot, { id: slotAddr }).set((row) => ({
-    pendingHasTax: event.args.changeTax || row.pendingHasTax,
-    pendingTaxBps: event.args.changeTax ? event.args.taxBps : row.pendingTaxBps,
-    pendingHasHook: event.args.changeHook || row.pendingHasHook,
-    // The zero address is a real proposed value — "detach the hook" — which is
-    // why `pendingHasHook` exists rather than testing this column for null.
-    pendingHook: event.args.changeHook ? proposedHook : row.pendingHook,
-    // Under the same flag as the address, because the contract queues them
-    // together: a proposal that named a hook also named its configuration.
-    pendingHookData: event.args.changeHook
-      ? lower(event.args.hookData)
-      : row.pendingHookData,
-    pendingProposedAt: event.block.timestamp,
-    updatedAt: event.block.timestamp,
-  }));
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      pendingHasTax: event.args.changeTax || row.pendingHasTax,
+      pendingTaxBps: event.args.changeTax
+        ? event.args.taxBps
+        : row.pendingTaxBps,
+      pendingHasHook: event.args.changeHook || row.pendingHasHook,
+      // The zero address is a real proposed value — "detach the hook" — which is
+      // why `pendingHasHook` exists rather than testing this column for null.
+      pendingHook: event.args.changeHook ? proposedHook : row.pendingHook,
+      // Under the same flag as the address, because the contract queues them
+      // together: a proposal that named a hook also named its configuration.
+      pendingHookData: event.args.changeHook
+        ? lower(event.args.hookData)
+        : row.pendingHookData,
+      pendingProposedAt: event.block.timestamp,
+      updatedAt: event.block.timestamp,
+    }));
 
   await context.db.insert(termsProposedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -766,21 +810,23 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     }
   }
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    taxBps: event.args.taxBps,
-    hook: nextHook === ZERO_ADDR ? null : nextHook,
-    // Detaching clears it on chain, so mirroring the event rather than
-    // preserving the old value is what keeps this row honest.
-    hookData: nextHook === ZERO_ADDR ? null : nextHookData,
-    ...hookFlagColumns(flags),
-    pendingHasTax: false,
-    pendingTaxBps: null,
-    pendingHasHook: false,
-    pendingHook: null,
-    pendingHookData: null,
-    pendingProposedAt: null,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      taxBps: event.args.taxBps,
+      hook: nextHook === ZERO_ADDR ? null : nextHook,
+      // Detaching clears it on chain, so mirroring the event rather than
+      // preserving the old value is what keeps this row honest.
+      hookData: nextHook === ZERO_ADDR ? null : nextHookData,
+      ...hookFlagColumns(flags),
+      pendingHasTax: false,
+      pendingTaxBps: null,
+      pendingHasHook: false,
+      pendingHook: null,
+      pendingHookData: null,
+      pendingProposedAt: null,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(termsAppliedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
@@ -830,16 +876,18 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   const nextHasTax = tax ? false : s.pendingHasTax;
   const nextHasHook = hookFlag ? false : s.pendingHasHook;
 
-  await context.db.update(slot, { id: slotAddr }).set({
-    pendingHasTax: nextHasTax,
-    pendingTaxBps: tax ? null : s.pendingTaxBps,
-    pendingHasHook: nextHasHook,
-    pendingHook: hookFlag ? null : s.pendingHook,
-    pendingHookData: hookFlag ? null : s.pendingHookData,
-    // Mirrors `if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0`.
-    pendingProposedAt: nextHasTax || nextHasHook ? s.pendingProposedAt : null,
-    updatedAt: event.block.timestamp,
-  });
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set({
+      pendingHasTax: nextHasTax,
+      pendingTaxBps: tax ? null : s.pendingTaxBps,
+      pendingHasHook: nextHasHook,
+      pendingHook: hookFlag ? null : s.pendingHook,
+      pendingHookData: hookFlag ? null : s.pendingHookData,
+      // Mirrors `if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0`.
+      pendingProposedAt: nextHasTax || nextHasHook ? s.pendingProposedAt : null,
+      updatedAt: event.block.timestamp,
+    });
 
   await context.db.insert(termsCancelledEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),

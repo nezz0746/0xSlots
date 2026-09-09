@@ -46,7 +46,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
 
     /// @inheritdoc Versioned
     function version() public pure virtual override returns (uint64) {
-        return 1;
+        return 2;
     }
 
     /// @notice The slot factory every collection creates its slots through.
@@ -99,8 +99,16 @@ contract SlotBoundNFTFactory is VersionedUUPS {
         external
         returns (address collection)
     {
+        // CREATE2, salted with the chain id and the collection's index — the
+        // same reasoning as `SlotFactory.createSlot`, written out in full
+        // there. The constructor arguments below do NOT make the address
+        // unique on their own: under plain `new` they are invisible to it
+        // entirely, and under CREATE2 two identical collections created on
+        // two chains would still share one address without `block.chainid`.
         collection = address(
-            new SlotBoundNFT(
+            new SlotBoundNFT{
+                salt: keccak256(abi.encode(block.chainid, collectionCount))
+            }(
                 slotFactory,
                 init.name,
                 init.symbol,
