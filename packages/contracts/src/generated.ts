@@ -493,6 +493,36 @@ export const adLandAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      {
+        name: 'params',
+        internalType: 'struct AdLandCreate.AdSlotParams[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'recipient', internalType: 'address', type: 'address' },
+          {
+            name: 'currency',
+            internalType: 'contract IERC20',
+            type: 'address',
+          },
+          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'minDepositSeconds',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
+          { name: 'tenureWindow', internalType: 'uint256', type: 'uint256' },
+          { name: 'manager', internalType: 'address', type: 'address' },
+          { name: 'key', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+    ],
+    name: 'createAdSlotMany',
+    outputs: [{ name: 'slots', internalType: 'address[]', type: 'address[]' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'creativeOf',
     outputs: [{ name: '', internalType: 'string', type: 'string' }],
@@ -540,6 +570,13 @@ export const adLandAbi = [
     name: 'keyOwner',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'data', internalType: 'bytes[]', type: 'bytes[]' }],
+    name: 'multicall',
+    outputs: [{ name: 'results', internalType: 'bytes[]', type: 'bytes[]' }],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -927,6 +964,7 @@ export const adLandAbi = [
     name: 'ERC1967InvalidImplementation',
   },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
+  { type: 'error', inputs: [], name: 'EmptyBatch' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   {
