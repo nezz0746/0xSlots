@@ -188,4 +188,97 @@ contract AdLandCreateTest is Test {
         vm.expectRevert();
         adland.createAdSlot(bob, IERC20(address(0)), 500, 1 days, 0, bob, "primary");
     }
+
+    // ── batching ────────────────────────────────────────────────────────────
+
+    function _params(bytes32 key) internal view returns (AdLandCreate.AdSlotParams memory) {
+        return AdLandCreate.AdSlotParams({
+            recipient: pub,
+            currency: IERC20(address(0)),
+            taxBps: 500,
+            minDepositSeconds: 1 days,
+            tenureWindow: 7 days,
+            manager: pub,
+            key: key
+        });
+    }
+
+    /// @notice Many spaces from one call, distinct and in the order asked for.
+    /// @dev The distinctness is the load-bearing part: the factory salts
+    ///      CREATE2 with an incrementing counter, so the salt cannot repeat
+    ///      within a transaction. If that ever changed, the second create would
+    ///      land on an occupied address and revert — this is the test that
+    ///      would catch it.
+    function test_CreateManyMakesDistinctSlots() public {
+        AdLandCreate.AdSlotParams[] memory p = new AdLandCreate.AdSlotParams[](3);
+        p[0] = _params(bytes32(0));
+        p[1] = _params(bytes32(0));
+        p[2] = _params(bytes32(0));
+
+        vm.prank(pub);
+        address[] memory slots = adland.createAdSlotMany(p);
+
+        assertEq(slots.length, 3, "one per entry");
+        assertTrue(slots[0] != slots[1] && slots[1] != slots[2], "all distinct");
+        for (uint256 i; i < slots.length; ++i) {
+            assertEq(Slot(payable(slots[i])).hook(), address(adland), "real slot");
+        }
+    }
+
+    /// @notice A batch may claim names, and they belong to the caller.
+    function test_CreateManyClaimsNamesForTheCaller() public {
+        AdLandCreate.AdSlotParams[] memory p = new AdLandCreate.AdSlotParams[](2);
+        p[0] = _params("one");
+        p[1] = _params("two");
+
+        vm.prank(pub);
+        address[] memory slots = adland.createAdSlotMany(p);
+
+        assertEq(adland.slotOf("one"), slots[0], "first name points at first slot");
+        assertEq(adland.slotOf("two"), slots[1], "and the second at the second");
+        assertEq(adland.keyOwner("one"), pub, "claimed by the caller, not the hook");
+    }
+
+    /// @notice Two entries wanting one name take the whole batch down.
+    /// @dev The same rule as two separate transactions — the first write to
+    ///      `slotOf` makes the second a `KeyTaken` — and deliberately not
+    ///      special-cased. Half-succeeding would hand back a slot the caller
+    ///      believes is named and is not.
+    function test_CreateManyRejectsADuplicateNameWithin() public {
+        AdLandCreate.AdSlotParams[] memory p = new AdLandCreate.AdSlotParams[](2);
+        p[0] = _params("same");
+        p[1] = _params("same");
+
+        vm.prank(pub);
+        vm.expectRevert();
+        adland.createAdSlotMany(p);
+    }
+
+    /// @notice An empty batch is a caller bug, not a successful no-op.
+    function test_CreateManyRejectsAnEmptyBatch() public {
+        AdLandCreate.AdSlotParams[] memory p = new AdLandCreate.AdSlotParams[](0);
+        vm.prank(pub);
+        vm.expectRevert(AdLandCreate.EmptyBatch.selector);
+        adland.createAdSlotMany(p);
+    }
+
+    /// @notice `multicall` preserves msg.sender, which is the whole point of
+    ///         having it rather than routing through a generic aggregator.
+    /// @dev Through Multicall3 every call arrives from the aggregator, so a
+    ///      name claimed in the batch would be owned by IT. Here the self
+    ///      `delegatecall` keeps the caller, so `keyOwner` records the person.
+    function test_MulticallKeepsTheCallerAsSender() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] =
+            abi.encodeCall(AdLandCreate.createAdSlot, (pub, IERC20(address(0)), 500, 1 days, 7 days, pub, "mine"));
+        calls[1] =
+            abi.encodeCall(AdLandCreate.createAdSlot, (pub, IERC20(address(0)), 500, 1 days, 7 days, pub, bytes32(0)));
+
+        vm.prank(alice);
+        bytes[] memory out = adland.multicall(calls);
+
+        assertEq(out.length, 2, "one result per call");
+        assertEq(adland.keyOwner("mine"), alice, "the caller owns the name, not the hook");
+        assertTrue(abi.decode(out[0], (address)) != abi.decode(out[1], (address)), "two distinct slots");
+    }
 }

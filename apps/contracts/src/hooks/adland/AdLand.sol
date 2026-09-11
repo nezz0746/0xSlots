@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import {IDescribedHook, HookDescriptor} from "../../IDescribedHook.sol";
 import {Versioned} from "../../Versioned.sol";
 import {AdLandCreate} from "./AdLandCreate.sol";
@@ -36,6 +37,35 @@ contract AdLand is
     AdLandCreatives,
     AdLandLens,
     AdLandRegistry,
+
+    /**
+     * Batch anything on this hook in one transaction.
+     *
+     * ── Why it is safe to add to a LIVE proxy ────────────────────────────
+     *
+     * It declares no storage. `MulticallUpgradeable` extends `Initializable`
+     * and `ContextUpgradeable`, both of which this contract already inherits
+     * through `OwnableUpgradeable`, and OZ v5 keeps what state they have in
+     * ERC-7201 namespaced slots rather than the sequential layout. So this
+     * appears in the inheritance list without moving a single slot beneath
+     * it — which is the only question that matters for an upgrade, and the
+     * reason {AdLandStorage} declares every slot in one place.
+     *
+     * ── What it does and does not give the caller ───────────────────────
+     *
+     * `multicall` is a self-`delegatecall` per entry, so `msg.sender` is
+     * preserved throughout: a batch of `publish` calls is still the
+     * occupant publishing, and a batch of `createAdSlot` calls still
+     * records the caller in `keyOwner`. That is the difference from routing
+     * the same batch through a generic aggregator like Multicall3, where
+     * every call arrives from the aggregator and a claimed name ends up
+     * owned by it.
+     *
+     * It grants nothing new. Every function it can reach is one the caller
+     * could already call directly, with the same access control applied in
+     * the same order — this only removes the confirmations between them.
+     */
+    MulticallUpgradeable,
     IDescribedHook
 {
     function initialize(address initialOwner) external initializer {
@@ -44,8 +74,12 @@ contract AdLand is
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
+    ///
+    ///      3 — `multicall` and `createAdSlotMany`. Additive: no storage moved,
+    ///      no existing selector changed, no behaviour altered for a caller who
+    ///      uses neither.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 3;
     }
 
     /**
