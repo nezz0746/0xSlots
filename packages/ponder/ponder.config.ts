@@ -252,6 +252,34 @@ const ANVIL_START_BLOCK = Number(
       : ANVIL_SLOT_FACTORY_RECORD.startBlock),
 );
 
+// AdLand on anvil. `DeployProtocol.s.sol` deploys the hook on every chain it
+// touches, 31337 included, and stamps `version` into the record — so the same
+// reader the testnets use resolves it here, and the env override is the same
+// escape hatch.
+//
+// This source exists even when nothing answers at the address, for the reason
+// spelled out over `buildLocalConfig`: `src/index.ts` imports `./adland`
+// unconditionally, and ponder rejects a handler whose source the config does
+// not declare. Leaving it out is what made every local run fail the build with
+// `Invalid event 'AdLand:Published'`.
+const ANVIL_ADLAND_RECORD = remoteFactory(
+  "ADLAND_ANVIL",
+  "ADLAND_START_BLOCK_ANVIL",
+  31337,
+  "AdLand",
+);
+const ANVIL_ADLAND = {
+  address: ANVIL_ADLAND_RECORD.address,
+  // Anvil is always indexed from genesis; `"latest"` only ever means "no
+  // record", and there is nothing to skip ahead to on a chain this short.
+  startBlock: Number(
+    process.env.ADLAND_START_BLOCK_ANVIL ??
+      (ANVIL_ADLAND_RECORD.startBlock === "latest"
+        ? 0
+        : ANVIL_ADLAND_RECORD.startBlock),
+  ),
+};
+
 const BASE_SEPOLIA_SLOT_FACTORY = remoteFactory(
   "SLOTS_FACTORY_BASE_SEPOLIA",
   "SLOTS_START_BLOCK_BASE_SEPOLIA",
@@ -858,6 +886,7 @@ function buildLocalConfig() {
           },
         },
       },
+      AdLand: { abi: AdLandAbi, chain: { anvil: ANVIL_ADLAND } },
       SlotBoundNFTFactory: {
         abi: SlotBoundNftFactoryAbi,
         chain: { anvil: nftAt },
