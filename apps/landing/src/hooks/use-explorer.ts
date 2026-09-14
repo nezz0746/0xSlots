@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Address } from "viem";
+import { MONTH_SECONDS } from "@/constants";
 import { useChain } from "@/context/chain";
 import type { AccountType } from "@/lib/indexer";
 import { indexerUrlFor } from "@/lib/indexer";
@@ -141,6 +142,12 @@ export interface ExplorerSlot {
   pendingHasTax: boolean;
   pendingHasHook: boolean;
   createdAt: string;
+  /**
+   * When tax was last realised out of `deposit`. Null on rows written before
+   * the column existed — see {@link isInsolventAt}, which reports "cannot say"
+   * rather than guessing.
+   */
+  lastSettled: string | null;
 }
 
 export interface AccountChainRow {
@@ -184,6 +191,7 @@ const SLOT_FIELDS = /* GraphQL */ `
   pendingHasTax
   pendingHasHook
   createdAt
+  lastSettled
 `;
 
 // ──────────────────────────────────────────
@@ -338,6 +346,14 @@ export interface SlotFilters {
   hooks?: string[];
   recipient?: string;
   occupant?: string;
+  /**
+   * Who deployed the slot, which is not who is paid by it.
+   *
+   * Here for the profile page's "created" list. The column has always been
+   * indexed; it simply had no filter, which is why that page read
+   * `SlotCreated` logs off the chain instead.
+   */
+  creator?: string;
 }
 
 export interface SlotSort {
@@ -377,6 +393,8 @@ function buildSlotWhere(chainId: number, filters?: SlotFilters): string {
     parts.push(`recipient: "${filters.recipient.toLowerCase()}"`);
   if (filters?.occupant)
     parts.push(`occupant: "${filters.occupant.toLowerCase()}"`);
+  if (filters?.creator)
+    parts.push(`creator: "${filters.creator.toLowerCase()}"`);
   return `{ ${parts.join(", ")} }`;
 }
 
@@ -450,6 +468,7 @@ export function useExplorerSlots(
       filters?.hooks?.join(",") ?? "",
       filters?.recipient ?? "",
       filters?.occupant ?? "",
+      filters?.creator ?? "",
       sort?.orderBy ?? "",
       sort?.orderDirection ?? "",
       page.limit,
@@ -905,4 +924,92 @@ export function useIndexerMeta() {
       return Object.values(status).find((c) => c && c.id === chainId) ?? null;
     },
   });
+}
+
+// ──────────────────────────────────────────
+// Solvency, without asking the chain
+// ──────────────────────────────────────────
+
+/** The contract's denominator. `taxBps` is basis points per 30 days. */
+const BASIS_POINTS = 10_000n;
+
+/**
+ * Tax accrued since the last settlement, as of `nowSeconds`.
+ *
+ * `null` means the row cannot answer — see the last paragraph.
+ *
+ * ── Why this is computed rather than read ───────────────────────────────────
+ *
+ * `isInsolvent` is a function of `block.timestamp`, so no indexed column can
+ * hold it — nothing is emitted when a slot crosses into insolvency, it simply
+ * becomes true while nothing happens on chain. The listing used to get it by
+ * asking the chain per row on a timer, which is one `eth_call` per slot per
+ * poll per open tab, for a figure that is pure arithmetic over values the
+ * indexer already has.
+ *
+ * The arithmetic is the contract's own, from `SlotMath.taxFor`:
+ *
+ *   owed = price * taxBps * elapsed / (30 days * 10_000)
+ *
+ * evaluated against `lastSettled`, which is what `SlotAccounting.taxOwed()`
+ * measures from. BigInt throughout and the division last, mirroring the
+ * contract's `mulDiv` — doing it in floats rounds a wei-precise comparison
+ * into a wrong badge on a slot sitting near the boundary.
+ *
+ * ── The three ways this answers "no" ────────────────────────────────────────
+ *
+ * A vacant slot cannot be insolvent — the contract returns zero owed when
+ * there is no occupant. Neither can one whose `lastSettled` we do not know:
+ * that is a row written before the column existed, and treating a null as zero
+ * would date the accrual to 1970 and mark every such slot insolvent. Absence
+ * of evidence is reported as solvent, because the badge's job is to point at a
+ * liquidation opportunity and a wrong one sends somebody to spend gas on a
+ * slot that is fine.
+ */
+export function taxOwedAt(
+  slot: ExplorerSlot,
+  nowSeconds: bigint,
+): bigint | null {
+  // The contract returns zero owed when nobody is seated, rather than
+  // accruing against an empty slot.
+  if (!slot.isOccupied) return 0n;
+  // A row from before the column existed. `null` is "cannot say", and every
+  // caller renders that as nothing rather than as a number.
+  if (slot.lastSettled === null) return null;
+
+  const settled = BigInt(slot.lastSettled);
+  // The indexer's head can sit a block behind the row it just wrote, which
+  // would otherwise make `elapsed` negative and the division underflow.
+  if (nowSeconds <= settled) return 0n;
+
+  return (
+    (BigInt(slot.price) * BigInt(slot.taxBps) * (nowSeconds - settled)) /
+    (MONTH_SECONDS * BASIS_POINTS)
+  );
+}
+
+/** Whether the occupant's debt has caught up with their escrow. */
+export function isInsolventAt(slot: ExplorerSlot, nowSeconds: bigint): boolean {
+  const owed = taxOwedAt(slot, nowSeconds);
+  if (owed === null) return false;
+  return owed >= BigInt(slot.deposit);
+}
+
+/**
+ * The chain's clock, as the indexer last saw it.
+ *
+ * Deliberately not `eth_blockNumber`: the whole point of computing solvency
+ * locally is that a listing costs no RPC, and reaching for the chain to find
+ * out what time it is would put the per-row call back one level up. The
+ * indexer reports the head it has processed, which is the right clock anyway —
+ * a row's `lastSettled` and this timestamp then come from the same source, so
+ * the badge can never be computed against a clock ahead of the data.
+ *
+ * Null while the first read is in flight, which callers render as "no badge"
+ * rather than guessing with the browser's own clock.
+ */
+export function useChainClock(): bigint | null {
+  const { data } = useIndexerMeta();
+  const ts = data?.block?.timestamp;
+  return ts === undefined || ts === null ? null : BigInt(ts);
 }
