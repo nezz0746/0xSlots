@@ -44,8 +44,7 @@
       "persistent": true,
       "with": [
         "@0xslots/ponder#dev:index",
-        "landing#dev",
-        "market#dev"
+        "landing#dev"
       ]
     },
     "@0xslots/ponder#dev:index": {
