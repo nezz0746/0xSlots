@@ -1,14 +1,18 @@
 import { appChains } from "@0xslots/config/chains";
-import { alchemyTransports } from "@0xslots/config/transports";
+import { proxyTransports } from "@0xslots/config/transports";
 import { walletStorage } from "@0xslots/wallet/config";
 import { createConfig } from "wagmi";
 import { anvilConnectors } from "@/config/anvil-connectors";
-import { alchemyKey } from "@/constants";
 
-const transports = alchemyTransports(
-  appChains.map((c) => c.id),
-  alchemyKey,
-);
+/**
+ * Every read goes through `/api/rpc/<chainId>`, not to Alchemy directly.
+ *
+ * The key used to be `NEXT_PUBLIC_ALCHEMY_API_KEY` and therefore in the bundle
+ * every visitor downloads. See the note in `@0xslots/config/transports` for why
+ * that is worse than it looks, and the route itself for what the server does
+ * with it.
+ */
+const transports = proxyTransports(appChains.map((c) => c.id));
 
 // Local click-to-send accounts, development only. `NODE_ENV` is inlined by the
 // bundler, so a production build drops both the connectors and the module.

@@ -17,8 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useChain } from "@/context/chain";
-import { useSlotState } from "@/hooks/slots/use-slots";
-import type { ExplorerSlot } from "@/hooks/use-explorer";
+import { type ExplorerSlot, isInsolventAt } from "@/hooks/use-explorer";
 import { formatPrice, truncateAddress } from "@/utils";
 
 /**
@@ -44,21 +43,32 @@ import { formatPrice, truncateAddress } from "@/utils";
  */
 export function SlotRow({
   slot,
+  now,
   onSelect,
 }: {
   slot: ExplorerSlot;
+  /**
+   * The chain's clock, from the indexer. One per table rather than one per
+   * row: every row needs the same instant, and asking each of them for it is
+   * how this component ended up making a chain call apiece.
+   */
+  now: bigint | null;
   onSelect: (id: string) => void;
 }) {
   const { chainId } = useChain();
-  // Slower than the detail page's 5s: this is a list, and a stale-by-seconds
-  // solvency badge on a row you are scrolling past costs nothing.
-  const { data: state } = useSlotState(slot.id as Address, {
-    refetchInterval: 20_000,
-  });
 
   const occupant = slot.occupant ?? null;
   const account = slot.occupantAccountRef;
-  const insolvent = state?.isInsolvent ?? false;
+  /*
+   * Computed from the indexed row, not read from the chain.
+   *
+   * This was `useSlotState(slot.id, { refetchInterval: 20_000 })` — one
+   * `eth_call` per row, per twenty seconds, per open tab, for the single
+   * boolean this component took from it. Everything else in the row was
+   * already indexed. See `isInsolventAt` for the arithmetic, and for why an
+   * unknown clock or `lastSettled` renders no badge instead of a guess.
+   */
+  const insolvent = now === null ? false : isInsolventAt(slot, now);
 
   /**
    * Native ETH has no ERC-20 to read a symbol from, so the indexer stores null

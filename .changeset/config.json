@@ -12,7 +12,6 @@
     "@0xslots/config",
     "@0xslots/ponder",
     "landing",
-    "market",
     "api",
     "@0xslots/protocol"
   ]

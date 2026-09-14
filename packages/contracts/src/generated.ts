@@ -1037,7 +1037,7 @@ export const adLandAbi = [
  */
 export const adLandAddress = {
   8453: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
-  31337: '0x6ECDEAd3adcE6789EDAC392d7145e31cCc9158bA',
+  31337: '0xE739d3dBd10CeCE45c73c408B3e22543Ff609aAD',
   84532: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
   11155111: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
 } as const
@@ -5318,4 +5318,68 @@ export const slotsTestTokenAddress = {
 export const slotsTestTokenConfig = {
   address: slotsTestTokenAddress,
   abi: slotsTestTokenAbi,
+} as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// DeployBlocks
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The block each contract was deployed at, by chain id.
+ *
+ * Written by the deploy script, read here, and the lower bound for
+ * every historical log query. See `deployBlockOf` in ./slots.ts.
+ */
+export const deployBlocks = {
+  AdLand: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  MinimumTenureHook: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  OfferBook: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  Slot: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  SlotBoundNFTFactory: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  SlotCollective: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  SlotCollectiveFactory: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  SlotFactory: {
+    '8453': 51090927,
+    '31337': 0,
+    '84532': 46601439,
+    '11155111': 11669103,
+  },
+  SlotsTestToken: {
+    '31337': 0,
+  },
 } as const

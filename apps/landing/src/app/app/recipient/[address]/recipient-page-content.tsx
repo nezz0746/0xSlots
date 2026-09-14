@@ -2,7 +2,8 @@
 
 import { Banknote, Check, Copy, HandCoins, LandPlot } from "lucide-react";
 import { useState } from "react";
-import { getAddress, isAddress } from "viem";
+import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
+import { type Address, getAddress, isAddress, zeroAddress } from "viem";
 import { AccountTypeIcon } from "@/components/account-type-icon";
 import { Blockie } from "@/components/blockie";
 import { PageHeader } from "@/components/page-header";
@@ -21,10 +22,14 @@ import {
 } from "@/components/ui/table";
 import { useChain } from "@/context/chain";
 import { NavLink, useNavigation } from "@/context/navigation";
-import { useCurrencyMeta, useSlotState } from "@/hooks/slots/use-slots";
-import { useExplorerSlots } from "@/hooks/use-explorer";
+import {
+  type ExplorerSlot,
+  isInsolventAt,
+  taxOwedAt,
+  useChainClock,
+  useExplorerSlots,
+} from "@/hooks/use-explorer";
 import { useEnsAvatar, useEnsName } from "@/lib/ens";
-import type { AccountType } from "@/lib/indexer";
 import { formatBalance, formatBps, truncateAddress } from "@/utils";
 
 /**
@@ -50,6 +55,8 @@ export function RecipientPageContent({ address }: { address: string }) {
   const valid = isAddress(address, { strict: false });
   const recipient = valid ? getAddress(address) : undefined;
 
+  // One clock for every row — see `RecipientSlotRow`.
+  const now = useChainClock();
   const { data, isLoading } = useExplorerSlots(
     recipient ? { recipient: recipient.toLowerCase() } : undefined,
     undefined,
@@ -200,9 +207,8 @@ export function RecipientPageContent({ address }: { address: string }) {
                 {paged.map((s) => (
                   <RecipientSlotRow
                     key={s.id}
-                    id={s.id}
-                    currency={s.currency}
-                    occupantType={s.occupantAccountRef?.type}
+                    slot={s}
+                    now={now}
                     onOpen={() => push(`/app/slots/${s.id}`)}
                   />
                 ))}
@@ -224,27 +230,55 @@ export function RecipientPageContent({ address }: { address: string }) {
 }
 
 /**
- * One row, reading its own live figures.
+ * One row, rendered from the indexed row it was handed.
  *
- * Per row rather than one batched read: each row needs its currency's decimals,
- * which is a second read keyed on a value only the first returns, and the list
- * is a page at a time.
+ * ── It used to read its own live figures, and that was the whole cost ───────
+ *
+ * This took an `id` and called `useSlotState(id, { refetchInterval: 15_000 })`
+ * plus `useCurrencyMeta(currency)` — two chain reads per row, per fifteen
+ * seconds, per open tab. The page had ALREADY fetched every one of those
+ * values from the indexer a few lines up and thrown them away: occupancy,
+ * price, tax rate, deposit and the currency's symbol and decimals are all
+ * columns on the row `useExplorerSlots` returns.
+ *
+ * Only `taxOwed` was genuinely absent, because it is a function of
+ * `block.timestamp` rather than of any event — and it is arithmetic over
+ * `lastSettled`, `price` and `taxBps`, which the indexer does have. So it is
+ * computed here, from the same formula the contract uses, against one clock
+ * shared by the whole page.
  */
 function RecipientSlotRow({
-  id,
-  currency,
-  occupantType,
+  slot,
+  now,
   onOpen,
 }: {
-  id: `0x${string}`;
-  currency: `0x${string}`;
-  occupantType?: AccountType;
+  slot: ExplorerSlot;
+  /** The chain's clock, from the indexer. One per page, not one per row. */
+  now: bigint | null;
   onOpen: () => void;
 }) {
-  const { data: state } = useSlotState(id, { refetchInterval: 15_000 });
-  const meta = useCurrencyMeta(currency);
-  const amount = (v: bigint) =>
-    `${formatBalance(v, meta.decimals)} ${meta.symbol}`;
+  const id = slot.id;
+  const occupantType = slot.occupantAccountRef?.type;
+
+  /*
+   * Native ETH has no ERC-20 to name it, so the indexer stores null. Mirrors
+   * how `explorer/slot-row.tsx` resolves the same gap.
+   */
+  const symbol =
+    slot.currencyRef?.symbol ??
+    (isNativeCurrency(slot.currency as Address) ? NATIVE_CURRENCY.symbol : "");
+  const decimals = slot.currencyRef?.decimals ?? 18;
+  const amount = (v: bigint) => `${formatBalance(v, decimals)} ${symbol}`;
+
+  const owed = now === null ? null : taxOwedAt(slot, now);
+  const state = {
+    isVacant: !slot.isOccupied,
+    occupant: (slot.occupant ?? zeroAddress) as Address,
+    isInsolvent: now === null ? false : isInsolventAt(slot, now),
+    price: BigInt(slot.price),
+    taxBps: BigInt(slot.taxBps),
+    deposit: BigInt(slot.deposit),
+  };
 
   return (
     <TableRow className="cursor-pointer" onClick={onOpen}>
@@ -281,7 +315,7 @@ function RecipientSlotRow({
         {state ? amount(state.deposit) : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
-        {state ? amount(state.taxOwed) : "…"}
+        {owed === null ? "—" : amount(owed)}
       </TableCell>
     </TableRow>
   );

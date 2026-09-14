@@ -218,6 +218,11 @@ ponder.on("Slot:Bought", async ({ event, context }) => {
       tenureId: tenure,
       price: event.args.price,
       deposit: event.args.deposit,
+      // Re-planted, not inherited. The `Settled` that preceded this buy was
+      // attributed to the OUTGOING occupant (see the ordering note at the top
+      // of this file), so leaving the old anchor in place would bill the new
+      // occupant for their predecessor's tenure from the first second.
+      lastSettled: event.block.timestamp,
       updatedAt: event.block.timestamp,
     });
 
@@ -454,6 +459,10 @@ ponder.on("Slot:Settled", async ({ event, context }) => {
     .set((row) => ({
       deposit: event.args.depositLeft,
       collectedTax: row.collectedTax + event.args.paid,
+      // The accrual anchor. `Settled` is the only event that means "tax has
+      // been realised up to here", which is why it is written here and not
+      // alongside every `updatedAt` — see the column's note in the schema.
+      lastSettled: event.block.timestamp,
       updatedAt: event.block.timestamp,
     }));
 

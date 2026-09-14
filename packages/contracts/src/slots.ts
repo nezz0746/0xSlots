@@ -52,6 +52,33 @@ export const slotCollectiveImplementationAddress = map("slotCollectiveAddress");
 export const slotsTestTokenAddress = map("slotsTestTokenAddress");
 
 /**
+ * The block a contract was deployed at, or `undefined` where no record exists.
+ *
+ * The lower bound for any historical log query, and the reason this is exported
+ * at all. `getLogs` with no `fromBlock` means the chain's GENESIS — 51 million
+ * blocks on Base — and the explorer had one of those on an eight-second timer,
+ * which is a full-history scan per poll, per open tab.
+ *
+ * `undefined` is a real answer and callers must handle it: a contract deployed
+ * nowhere has no block, and a machine that has never seeded has no local record.
+ * Returning 0 instead would be the genesis scan wearing a fix.
+ *
+ * Named by CONTRACT rather than by address map, because the generated maps are
+ * renamed here (`slotAddress` → `slotImplementationAddress`) while the records
+ * keep the Foundry name.
+ */
+export function deployBlockOf(
+  contract: keyof typeof generated.deployBlocks,
+  chainId: number,
+): bigint | undefined {
+  const byChain = generated.deployBlocks[contract] as
+    | Partial<Record<number, number>>
+    | undefined;
+  const block = byChain?.[chainId];
+  return block === undefined ? undefined : BigInt(block);
+}
+
+/**
  * The one `MinimumTenureHook` per chain.
  *
  * ONE, now, where there used to be one per duration behind a CREATE2 factory.

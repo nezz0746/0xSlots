@@ -1,6 +1,10 @@
 "use client";
 
-import { slotFactoryAbi, slotFactoryAddress } from "@0xslots/contracts/slots";
+import {
+  deployBlockOf,
+  slotFactoryAbi,
+  slotFactoryAddress,
+} from "@0xslots/contracts/slots";
 import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
 import type { SlotState } from "@0xslots/sdk/slots";
 import { useSlotsClient } from "@0xslots/sdk/slots/react";
@@ -39,96 +43,6 @@ export function useSlots() {
   return useSlotsClient({ factoryAddress, chainId });
 }
 
-export interface CreatedSlot {
-  address: Address;
-  recipient: Address;
-  creator: Address;
-  currency: Address;
-  hook: Address;
-  blockNumber: bigint;
-}
-
-/**
- * Every slot this factory has made, newest first.
- *
- * `SlotCreated` logs, not an enumeration call: the factory keeps a
- * `mapping(address => bool)` and a count, neither of which can be walked. The
- * scan starts at block 0, which is correct locally and is why this protocol
- * needs an indexer before it goes anywhere with real history.
- */
-export function useCreatedSlots(filter?: {
-  recipient?: Address;
-  creator?: Address;
-}) {
-  const { chainId } = useChain();
-  const factory = useSlotsFactory();
-  const publicClient = usePublicClient({ chainId });
-
-  return useQuery({
-    queryKey: [
-      "slots",
-      "created",
-      chainId,
-      factory,
-      filter?.recipient,
-      filter?.creator,
-    ],
-    enabled: !!factory && !!publicClient,
-    refetchInterval: 8_000,
-    queryFn: async (): Promise<CreatedSlot[]> => {
-      const logs = await publicClient!.getLogs({
-        address: factory!,
-        event: {
-          type: "event",
-          name: "SlotCreated",
-          inputs: [
-            { name: "slot", type: "address", indexed: true },
-            { name: "recipient", type: "address", indexed: true },
-            { name: "creator", type: "address", indexed: true },
-            { name: "currency", type: "address", indexed: false },
-            { name: "hook", type: "address", indexed: false },
-          ],
-        },
-        args: {
-          ...(filter?.recipient ? { recipient: filter.recipient } : {}),
-          ...(filter?.creator ? { creator: filter.creator } : {}),
-        },
-        fromBlock: 0n,
-        toBlock: "latest",
-      });
-
-      return logs
-        .map((log) => ({
-          address: log.args.slot as Address,
-          recipient: log.args.recipient as Address,
-          creator: log.args.creator as Address,
-          currency: log.args.currency as Address,
-          hook: log.args.hook as Address,
-          blockNumber: log.blockNumber ?? 0n,
-        }))
-        .reverse();
-    },
-  });
-}
-
-/** How many slots the factory has made. Cheap enough to poll beside the list. */
-export function useSlotCount() {
-  const { chainId } = useChain();
-  const factory = useSlotsFactory();
-  const publicClient = usePublicClient({ chainId });
-
-  return useQuery({
-    queryKey: ["slots", "count", chainId, factory],
-    enabled: !!factory && !!publicClient,
-    refetchInterval: 8_000,
-    queryFn: () =>
-      publicClient!.readContract({
-        address: factory!,
-        abi: slotFactoryAbi,
-        functionName: "slotCount",
-      }) as Promise<bigint>,
-  });
-}
 
 /**
  * How far the chain's clock runs ahead of this browser's, in seconds.

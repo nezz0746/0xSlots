@@ -367,6 +367,24 @@ export const slot = onchainTable(
     /// `Deposited`, `Withdrawn` and the transition events, all of which report
     /// the resulting balance directly.
     deposit: t.bigint().notNull(),
+    /// The contract's `lastSettled` — when tax was last realised out of
+    /// `deposit`, mirrored from the chain rather than derived.
+    ///
+    /// The anchor for accrual: tax owed right now is
+    /// `price * taxBps * (now - lastSettled) / (30 days * 10_000)`, so a client
+    /// can show solvency from an indexed row without asking the chain.
+    ///
+    /// `updatedAt` is NOT a substitute and using it is a correctness bug, not
+    /// an approximation. Several entry points move the row without settling —
+    /// `setOperator` (SlotEscrow.sol) and the whole terms path never call
+    /// `_settle()` — so an operator change would reset the accrual clock and
+    /// report an insolvent slot as solvent, which is the direction that hides
+    /// the liquidation the badge exists to surface.
+    ///
+    /// NULL on a row written before this column existed, which is why every
+    /// reader must treat absence as "cannot say" rather than as zero: zero
+    /// means the epoch, and the tax owed since 1970 exceeds any deposit.
+    lastSettled: t.bigint(),
 
     // ── money ─────────────────────────────────────────────────────────────
     /// Tax realised out of deposits and not yet flushed to `recipient`.

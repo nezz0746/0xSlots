@@ -5,7 +5,6 @@ import { ArrowDown, ArrowUp, Check, Filter, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { isAddress } from "viem";
 import { SlotRow } from "@/components/explorer/slot-row";
-import { SlotsTable as ChainSlotsTable } from "@/components/slots/slots-table";
 import { TablePagination } from "@/components/table-pagination";
 import { TableEmpty, TableSkeleton } from "@/components/table-states";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +30,11 @@ import {
 import { useChain } from "@/context/chain";
 import { useNavigation } from "@/context/navigation";
 import type { SlotFilters, SlotSort } from "@/hooks/use-explorer";
-import { useExplorerSlots, useHooks } from "@/hooks/use-explorer";
+import {
+  useChainClock,
+  useExplorerSlots,
+  useHooks,
+} from "@/hooks/use-explorer";
 import { loadStorage, saveStorage } from "@/lib/storage";
 import { truncateAddress } from "@/utils";
 
@@ -48,15 +51,24 @@ const STORAGE_KEY = "0xslots:slot-filters:hooks";
 /**
  * The explorer's slots table: filtered, sorted and paged by the indexer.
  *
- * The other table — `components/slots/slots-table.tsx` — reads `SlotCreated`
- * logs straight from the node and asks each slot for its own state. Both are
- * kept, and this one falls back to it, because they fail in opposite
- * directions: the log-reading table cannot filter, sort or page and scans from
- * block zero, but it works with no indexer at all; this one works at any size
- * and shows nothing when the indexer is down or has not caught up. Which is why
- * an indexer error here renders the other rather than an empty state — a live
- * chain with a cold indexer is the normal condition right after a deploy, and
- * "no slots found" would be a lie.
+ * ── One table, not two ──────────────────────────────────────────────────────
+ *
+ * There was a second one — `components/slots/slots-table.tsx` — that read
+ * `SlotCreated` logs off the chain and asked each slot for its own state, and
+ * this table fell back to it whenever the indexer errored. Both are gone.
+ *
+ * The reasoning that kept it was sound about the symptom and wrong about the
+ * cure. A live chain with a cold indexer IS normal right after a deploy, and
+ * "no slots found" would be a lie — but the fallback told a different lie: it
+ * could not filter, sort or page, so it rendered a table that quietly ignored
+ * the controls sitting above it. And it paid for the privilege, scanning from
+ * the factory's deployment block on a timer in every open tab at once, during
+ * precisely the fleet-wide outage that had put every tab on that path.
+ *
+ * So the listing is indexer-only and the error state says what is actually
+ * wrong. Live figures still come from the chain where they must — but on the
+ * SINGLE slot page, where it is one slot and one reader, rather than per row
+ * of a paginated list.
  */
 export function SlotsTable() {
   const { push } = useNavigation();
@@ -68,6 +80,8 @@ export function SlotsTable() {
     "recipient" | "occupant" | null
   >(null);
   const { data: hooks } = useHooks();
+  // One clock for every row — see `SlotRow`.
+  const now = useChainClock();
 
   useEffect(() => {
     setFilters(loadStorage<SlotFilters>(STORAGE_KEY, {}));
@@ -185,14 +199,31 @@ export function SlotsTable() {
 
   if (isLoading && !data) return <TableSkeleton />;
 
+  /*
+   * An unreachable indexer says so, and shows nothing.
+   *
+   * This used to fall back to a table that read `SlotCreated` logs off the
+   * chain. That path is gone: it could not filter, sort or page — so the
+   * controls above it lied — and it scanned from the factory's deployment
+   * block on a timer, in every open tab at once, at the exact moment a
+   * fleet-wide outage meant every tab was on it.
+   *
+   * Saying "the indexer is down" is more honest than a degraded table that
+   * silently ignores the filters someone just set. A live chain with a cold
+   * indexer is still normal right after a deploy — this is what that looks
+   * like now, and `useIndexerMeta` on the page above reports how far behind
+   * it is.
+   */
   if (isError) {
     return (
-      <div>
-        <p className="mb-2 text-xs text-muted-foreground">
-          The indexer is unreachable, so filtering and sorting are unavailable.
-          Reading slots from the chain instead.
+      <div className="border p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          The indexer is unreachable, so slots cannot be listed right now.
         </p>
-        <ChainSlotsTable emptyMessage="No slots on this chain yet. Create the first one." />
+        <p className="mt-1 text-xs text-muted-foreground">
+          This is usually brief, and normal just after a deploy while it catches
+          up.
+        </p>
       </div>
     );
   }
@@ -436,6 +467,7 @@ export function SlotsTable() {
                 <SlotRow
                   key={slot.id}
                   slot={slot}
+                  now={now}
                   onSelect={(id) => push(`/app/slots/${id}`)}
                 />
               ))}

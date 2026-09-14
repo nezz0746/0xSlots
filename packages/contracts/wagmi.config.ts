@@ -45,15 +45,26 @@ const INCLUDE = [
 ] as const;
 
 /**
- * Addresses, read from what the deploy script wrote.
+ * Every deployment record, read once.
  *
  * `version` is the discriminator and it is load-bearing: the retired protocol's
  * scripts wrote these same filenames, so records for chains it reached still
  * hold PRE-PORT addresses. Only `DeployProtocol` and `SeedSlots` write
  * `version`, so only what they wrote is read.
+ *
+ * Address and start block come out of the SAME pass on purpose. They were two
+ * reads of one file, and two readers of one file drift: a consumer that has the
+ * address but not the block is exactly the shape that made the app scan from
+ * block zero — see `deployBlocks` below.
  */
-function deployments(): Record<string, Record<number, `0x${string}`>> {
-  const out: Record<string, Record<number, `0x${string}`>> = {};
+function records(): Record<
+  string,
+  Record<number, { address: `0x${string}`; startBlock: number }>
+> {
+  const out: Record<
+    string,
+    Record<number, { address: `0x${string}`; startBlock: number }>
+  > = {};
   if (!existsSync(DEPLOYMENTS)) return out;
 
   for (const chainId of readdirSync(DEPLOYMENTS)) {
@@ -61,7 +72,7 @@ function deployments(): Record<string, Record<number, `0x${string}`>> {
     for (const file of readdirSync(join(DEPLOYMENTS, chainId))) {
       if (!file.endsWith(".json")) continue;
       const name = file.slice(0, -5);
-      let rec: { address?: string; version?: number };
+      let rec: { address?: string; version?: number; startBlock?: number };
       try {
         rec = JSON.parse(
           readFileSync(join(DEPLOYMENTS, chainId, file), "utf8"),
@@ -71,10 +82,71 @@ function deployments(): Record<string, Record<number, `0x${string}`>> {
       }
       if (rec.version === undefined || !rec.address) continue;
       if (/^0x0+$/i.test(rec.address)) continue;
-      (out[name] ??= {})[Number(chainId)] = rec.address as `0x${string}`;
+      (out[name] ??= {})[Number(chainId)] = {
+        address: rec.address as `0x${string}`,
+        // Absent means "we do not know", and 0 is the honest answer for a
+        // local chain whose genesis IS the deploy. A remote chain missing one
+        // is the case the consumer must handle, not one to paper over with a
+        // guess — see `deployBlockOf` in src/slots.ts.
+        startBlock: rec.startBlock ?? 0,
+      };
     }
   }
   return out;
+}
+
+const RECORDS = records();
+
+/** Just the addresses, in the shape the foundry plugin wants. */
+function deployments(): Record<string, Record<number, `0x${string}`>> {
+  return Object.fromEntries(
+    Object.entries(RECORDS).map(([name, byChain]) => [
+      name,
+      Object.fromEntries(
+        Object.entries(byChain).map(([id, r]) => [Number(id), r.address]),
+      ),
+    ]),
+  );
+}
+
+/**
+ * The block each contract was deployed at, emitted beside its address.
+ *
+ * This exists because a `getLogs` without a lower bound defaults to the
+ * chain's genesis, and the app had one of those on an 8-second timer — a
+ * full-history scan per poll, per tab. The bound has to come from somewhere
+ * that cannot go stale, and the deploy script already writes it into the same
+ * record the address is read from. Generated rather than hand-copied for the
+ * reason every other address in this package is: a hand-copied one is wrong
+ * silently, and the symptom here is a bill rather than an error.
+ */
+function deployBlocksPlugin() {
+  const blocks = Object.fromEntries(
+    Object.entries(RECORDS).map(([name, byChain]) => [
+      name,
+      Object.fromEntries(
+        Object.entries(byChain).map(([id, r]) => [Number(id), r.startBlock]),
+      ),
+    ]),
+  );
+
+  return {
+    name: "DeployBlocks",
+    async run() {
+      return {
+        content: [
+          "/**",
+          " * The block each contract was deployed at, by chain id.",
+          " *",
+          " * Written by the deploy script, read here, and the lower bound for",
+          " * every historical log query. See `deployBlockOf` in ./slots.ts.",
+          " */",
+          `export const deployBlocks = ${JSON.stringify(blocks, null, 2)} as const;`,
+          "",
+        ].join("\n"),
+      };
+    },
+  };
 }
 
 export default defineConfig({
@@ -95,5 +167,6 @@ export default defineConfig({
       forge: { build: false },
       deployments: deployments(),
     }),
+    deployBlocksPlugin(),
   ],
 });

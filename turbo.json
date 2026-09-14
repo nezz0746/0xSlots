@@ -14,6 +14,7 @@
         "dist/**"
       ],
       "passThroughEnv": [
+        "ALCHEMY_API_KEY",
         "ALCHEMY_KEY",
         "CHAIN_ID",
         "PONDER_PUBLIC_RPCS"
@@ -33,6 +34,7 @@
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
+        "ALCHEMY_API_KEY",
         "ALCHEMY_KEY",
         "CHAIN_ID",
         "PONDER_PUBLIC_RPCS"
@@ -44,8 +46,7 @@
       "persistent": true,
       "with": [
         "@0xslots/ponder#dev:index",
-        "landing#dev",
-        "market#dev"
+        "landing#dev"
       ]
     },
     "@0xslots/ponder#dev:index": {

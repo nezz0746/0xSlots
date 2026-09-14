@@ -3,17 +3,25 @@
 import { useAccount } from "wagmi";
 import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/page-header";
-import { SlotsTable } from "@/components/slots/slots-table";
+import { SlotList } from "@/components/slots/slot-list";
 
 /**
  * Your slots.
  *
- * Two questions the factory's own logs can answer — which slots you made, and
- * which pay their tax to you, both indexed topics on `SlotCreated`. "Slots you
- * occupy" is deliberately absent: occupancy is not in any log this protocol
- * emits from the factory, so answering it means reading every slot on the
- * chain. That is an indexer's job, and there is no indexer for this protocol
- * yet.
+ * Which slots you made, and which pay their tax to you — read from the
+ * indexer, paged, with the filter applied server-side.
+ *
+ * This asked the chain until recently: `SlotCreated` carries `creator` and
+ * `recipient` as indexed topics, so both questions could be answered from
+ * logs, and for a while that was the only way — the port to the hook protocol
+ * left the generated GraphQL types describing the retired schema. The cost was
+ * a full-history log scan per poll that returned every slot ever created and
+ * could not page. `SlotList` reads the indexer instead.
+ *
+ * "Slots you occupy" is still absent, and is now merely unbuilt rather than
+ * impossible: the note that used to be here said occupancy was in no log the
+ * factory emits and needed an indexer, which there now is — `occupant` is an
+ * indexed column and `SlotFilters` already carries the filter.
  */
 export default function ProfilePage() {
   const { address, isConnected } = useAccount();
@@ -43,7 +51,7 @@ export default function ProfilePage() {
           <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Created by you
           </h2>
-          <SlotsTable
+          <SlotList
             filter={{ creator: address }}
             emptyMessage="You have not created a slot on this chain."
           />
@@ -53,7 +61,7 @@ export default function ProfilePage() {
           <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Paying tax to you
           </h2>
-          <SlotsTable
+          <SlotList
             filter={{ recipient: address }}
             emptyMessage="No slot on this chain names you as its recipient."
           />
