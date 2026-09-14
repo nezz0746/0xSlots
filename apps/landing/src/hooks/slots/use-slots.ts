@@ -1,6 +1,10 @@
 "use client";
 
-import { slotFactoryAbi, slotFactoryAddress } from "@0xslots/contracts/slots";
+import {
+  deployBlockOf,
+  slotFactoryAbi,
+  slotFactoryAddress,
+} from "@0xslots/contracts/slots";
 import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
 import type { SlotState } from "@0xslots/sdk/slots";
 import { useSlotsClient } from "@0xslots/sdk/slots/react";
@@ -49,20 +53,55 @@ export interface CreatedSlot {
 }
 
 /**
+ * How often the created-slots scan repeats.
+ *
+ * Slots are created by a human sending a transaction, minutes apart at best,
+ * and every page that shows this list also invalidates it on its own writes
+ * (see `useInvalidateSlot`). Eight seconds bought nothing anybody could see and
+ * cost an `eth_getLogs` — the single most expensive method on the plan — every
+ * eight seconds, per open tab, forever.
+ *
+ * A minute is still faster than slots are actually made. The fallback path in
+ * the explorer passes something slower still.
+ */
+const CREATED_SLOTS_POLL_MS = 60_000;
+
+/**
  * Every slot this factory has made, newest first.
  *
  * `SlotCreated` logs, not an enumeration call: the factory keeps a
- * `mapping(address => bool)` and a count, neither of which can be walked. The
- * scan starts at block 0, which is correct locally and is why this protocol
- * needs an indexer before it goes anywhere with real history.
+ * `mapping(address => bool)` and a count, neither of which can be walked.
+ *
+ * ── The scan is bounded, and that is load-bearing ────────────────────────────
+ *
+ * This read `fromBlock: 0n`. Correct on a local anvil whose genesis is the
+ * deploy, and ruinous anywhere else: Base mainnet is ~51 million blocks, so
+ * every poll asked a provider to walk the entire chain for logs that can only
+ * exist after the factory had code. On a metered endpoint that is the most
+ * expensive request available, issued on a timer, by every visitor at once.
+ *
+ * The bound is the factory's own deployment block, which the deploy script
+ * writes and codegen carries into `@0xslots/contracts` — not a constant typed
+ * in here, because a redeploy moves it and a stale lower bound loses slots
+ * silently, which is the one failure mode worse than the cost.
+ *
+ * A chain with no deployment record gets no query at all rather than an
+ * unbounded one: `enabled` already required a factory address, and a factory
+ * with no known block is a chain we cannot scan cheaply.
  */
-export function useCreatedSlots(filter?: {
-  recipient?: Address;
-  creator?: Address;
-}) {
+export function useCreatedSlots(
+  filter?: {
+    recipient?: Address;
+    creator?: Address;
+  },
+  {
+    refetchInterval = CREATED_SLOTS_POLL_MS,
+  }: { refetchInterval?: number } = {},
+) {
   const { chainId } = useChain();
   const factory = useSlotsFactory();
   const publicClient = usePublicClient({ chainId });
+  const fromBlock = deployBlockOf("SlotFactory", chainId);
 
   return useQuery({
     queryKey: [
@@ -73,8 +112,8 @@ export function useCreatedSlots(filter?: {
       filter?.recipient,
       filter?.creator,
     ],
-    enabled: !!factory && !!publicClient,
-    refetchInterval: 8_000,
+    enabled: !!factory && !!publicClient && fromBlock !== undefined,
+    refetchInterval,
     queryFn: async (): Promise<CreatedSlot[]> => {
       const logs = await publicClient!.getLogs({
         address: factory!,
@@ -93,7 +132,7 @@ export function useCreatedSlots(filter?: {
           ...(filter?.recipient ? { recipient: filter.recipient } : {}),
           ...(filter?.creator ? { creator: filter.creator } : {}),
         },
-        fromBlock: 0n,
+        fromBlock,
         toBlock: "latest",
       });
 

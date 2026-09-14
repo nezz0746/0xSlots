@@ -57,12 +57,16 @@ function StatusCell({
  * already needs its currency's decimals — which is a second read keyed on a
  * value only the first read returns.
  */
-function SlotRow({ slot }: { slot: CreatedSlot }) {
+function SlotRow({
+  slot,
+  refetchInterval,
+}: {
+  slot: CreatedSlot;
+  refetchInterval: number;
+}) {
   const { chainId } = useChain();
   const { push } = useNavigation();
-  const { data: state } = useSlotState(slot.address, {
-    refetchInterval: 15_000,
-  });
+  const { data: state } = useSlotState(slot.address, { refetchInterval });
   const currency = useCurrencyMeta(slot.currency);
   const hook = findKnownHook(chainId, slot.hook);
 
@@ -117,15 +121,40 @@ function SlotRow({ slot }: { slot: CreatedSlot }) {
   );
 }
 
+/**
+ * How often each row re-reads its own state.
+ *
+ * Per row, so a page showing twenty slots issues twenty reads per window. The
+ * explorer passes something slower when it renders this as a fallback — see
+ * the note on `pollMs`.
+ */
+const ROW_POLL_MS = 15_000;
+
 export function SlotsTable({
   filter,
   emptyMessage = "No slots yet.",
+  pollMs,
 }: {
   filter?: { recipient?: Address; creator?: Address };
   emptyMessage?: string;
+  /**
+   * Override the polling cadence for this mount.
+   *
+   * Exists for the explorer's fallback path. When the indexer is unreachable
+   * every open explorer tab lands here at once, and that is precisely the
+   * moment to read the chain LESS eagerly, not more: nothing about a cold
+   * indexer makes the chain's own data change faster, and the fallback used to
+   * inherit the foreground cadence and multiply it by however many tabs were
+   * open.
+   */
+  pollMs?: number;
 }) {
   const factory = useSlotsFactory();
-  const { data, isLoading, error } = useCreatedSlots(filter);
+  const rowPoll = pollMs ?? ROW_POLL_MS;
+  const { data, isLoading, error } = useCreatedSlots(
+    filter,
+    pollMs ? { refetchInterval: pollMs } : {},
+  );
 
   if (!factory)
     return (
@@ -172,7 +201,7 @@ export function SlotsTable({
         </TableHeader>
         <TableBody>
           {data.map((slot) => (
-            <SlotRow key={slot.address} slot={slot} />
+            <SlotRow key={slot.address} slot={slot} refetchInterval={rowPoll} />
           ))}
         </TableBody>
       </Table>

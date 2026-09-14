@@ -192,7 +192,21 @@ export function SlotsTable() {
           The indexer is unreachable, so filtering and sorting are unavailable.
           Reading slots from the chain instead.
         </p>
-        <ChainSlotsTable emptyMessage="No slots on this chain yet. Create the first one." />
+        {/*
+         * Slower on the fallback path, deliberately.
+         *
+         * A cold indexer is a FLEET-WIDE condition — it is unreachable for
+         * everyone at once — so this branch does not render on one tab, it
+         * renders on all of them, and each one starts reading the chain
+         * directly. Inheriting the foreground cadence here turned one outage
+         * into every visitor polling a metered endpoint simultaneously, which
+         * is the moment the bill is least affordable and the data is no more
+         * urgent than usual.
+         */}
+        <ChainSlotsTable
+          pollMs={120_000}
+          emptyMessage="No slots on this chain yet. Create the first one."
+        />
       </div>
     );
   }
