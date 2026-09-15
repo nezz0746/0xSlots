@@ -409,7 +409,7 @@ const COLLECTION_CREATED_EVENT = parseAbiItem(
 );
 
 const WRAPPER_CREATED_EVENT = parseAbiItem(
-  "event WrapperCreated(address indexed wrapper, address indexed creator, string name, string symbol)",
+  "event WrapperCreated(address indexed wrapper, address indexed creator, address indexed owner, string name, string symbol, uint256 wrapFeeWei)",
 );
 
 // ──────────────────────────────────────────

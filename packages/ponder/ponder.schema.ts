@@ -289,6 +289,13 @@ export const wrapper = onchainTable(
     symbol: t.text(),
     totalWrapped: t.integer().notNull(),
 
+    /// Takes the wrap fee and has no other power. Zero means this wrapper is
+    /// feeless forever and has no privileged party at all.
+    owner: t.hex().notNull(),
+    /// The flat fee a wrap pays RIGHT NOW. Changing it reaches future wraps
+    /// only — what each token actually paid is `wrappedToken.fee`.
+    wrapFeeWei: t.bigint().notNull(),
+
     createdAt: t.bigint().notNull(),
     updatedAt: t.bigint().notNull(),
   }),
@@ -327,6 +334,9 @@ export const wrappedToken = onchainTable(
     /// it when nobody else is occupying. Fixed at wrap.
     mode: t.integer().notNull(),
     taxBps: t.bigint().notNull(),
+    /// What this wrap paid the owner, fixed at the moment it happened. The
+    /// wrapper's current fee may since have moved.
+    fee: t.bigint().notNull(),
 
     /// The underlying has been withdrawn. The slot is dead and refuses buys.
     retired: t.boolean().notNull(),

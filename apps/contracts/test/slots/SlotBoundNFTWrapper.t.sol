@@ -39,6 +39,7 @@ contract SlotBoundNFTWrapperTest is Test {
 
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
+    address wrapperOwner = makeAddr("wrapperOwner");
 
     uint256 constant TAX = 1000; // 10%
     uint256 constant VALUATION = 1 ether;
@@ -52,11 +53,7 @@ contract SlotBoundNFTWrapperTest is Test {
         factory = SlotFactory(address(new ERC1967Proxy(address(fi),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
 
-        SlotBoundNFTWrapper wImpl = new SlotBoundNFTWrapper();
-        UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
-        wrapper = SlotBoundNFTWrapper(address(new BeaconProxy(address(beacon),
-            abi.encodeCall(SlotBoundNFTWrapper.initialize,
-                ("Wrapped Slots", "WSLOT", factory)))));
+        wrapper = _deployWrapper(wrapperOwner, 0);
 
         nft = new MockNFT();
         nft.mint(alice, 1);
@@ -69,8 +66,21 @@ contract SlotBoundNFTWrapperTest is Test {
         slot = Slot(payable(wrapper.slotOf(tokenId)));
     }
 
-    function _deposit(uint256 valuation) internal view returns (uint256) {
-        return wrapper.quoteWrap(valuation, TAX);
+    /// @dev A fresh wrapper behind its own beacon, as the factory builds them.
+    function _deployWrapper(
+        address owner_,
+        uint256 feeWei
+    ) internal returns (SlotBoundNFTWrapper) {
+        SlotBoundNFTWrapper wImpl = new SlotBoundNFTWrapper();
+        UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
+        return SlotBoundNFTWrapper(address(new BeaconProxy(address(beacon),
+            abi.encodeCall(SlotBoundNFTWrapper.initialize,
+                ("Wrapped Slots", "WSLOT", factory, owner_, feeWei)))));
+    }
+
+    /// @dev What a wrap costs in total — the escrow plus whatever fee is set.
+    function _deposit(uint256 valuation) internal view returns (uint256 total) {
+        (total, , ) = wrapper.quoteWrap(valuation, TAX);
     }
 
     function _wrap(address who, uint256 id, Mode mode) internal returns (uint256 newId) {
@@ -342,9 +352,111 @@ contract SlotBoundNFTWrapperTest is Test {
         wrapper.tokenURI(99);
     }
 
-    /// @notice There is no privileged party at all — no owner, no base URI.
-    function test_TheWrapperHasNoOwner() public {
-        (bool ok, ) = address(wrapper).staticcall(abi.encodeWithSignature("owner()"));
-        assertFalse(ok, "no Ownable surface");
+    // ── the wrap fee ────────────────────────────────────────────────────────
+
+    /// @notice The owner's only power: a flat fee on the way in. They hold
+    ///         nothing over the slots and nothing over anyone already wrapped.
+    function test_TheOwnerChargesAFlatFeeOnWrap() public {
+        vm.prank(wrapperOwner);
+        wrapper.setWrapFee(0.01 ether);
+
+        (uint256 total, uint256 deposit, uint256 fee) = wrapper.quoteWrap(VALUATION, TAX);
+        assertEq(fee, 0.01 ether);
+        assertEq(total, deposit + fee, "the quote splits it for the UI");
+
+        uint256 before = wrapperOwner.balance;
+        _wrap(alice, 2, Mode.Permanent);
+
+        assertEq(wrapperOwner.balance - before, 0.01 ether, "paid through");
+        assertEq(address(wrapper).balance, 0, "and never parked here");
+    }
+
+    /// @notice Forwarded in the same transaction, so there is no balance to
+    ///         sweep and no sweeper to abuse.
+    function test_TheFeeIsForwardedNotAccumulated() public {
+        vm.prank(wrapperOwner);
+        wrapper.setWrapFee(0.05 ether);
+
+        _wrap(alice, 2, Mode.Permanent);
+        assertEq(address(wrapper).balance, 0);
+    }
+
+    function test_AWrapThatDoesNotCoverTheFeeIsRefused() public {
+        vm.prank(wrapperOwner);
+        wrapper.setWrapFee(1 ether);
+
+        vm.startPrank(alice);
+        nft.approve(address(wrapper), 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISlotBoundNFTWrapper.FeeUnpaid.selector, 1 ether)
+        );
+        wrapper.wrap{value: 0.5 ether}(
+            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
+        );
+        vm.stopPrank();
+    }
+
+    /// @notice A fee change reaches future wraps only — which is safe because
+    ///         wrapping is a one-time act. Nobody already in can be charged
+    ///         again, and there is no fee on the way out at all.
+    function test_AFeeChangeCannotReachAnExistingWrap() public {
+        uint256 id = _wrap(alice, 2, Mode.Reclaimable); // wrapped while feeless
+        uint256 ownerBefore = wrapperOwner.balance;
+
+        vm.prank(wrapperOwner);
+        wrapper.setWrapFee(100 ether);
+
+        vm.prank(alice);
+        wrapper.withdraw(id);
+
+        assertEq(wrapperOwner.balance, ownerBefore, "reclaiming is free, always");
+        assertEq(nft.ownerOf(2), alice, "and the asset came home regardless");
+    }
+
+    function test_NobodyElseSetsTheFee() public {
+        vm.prank(bob);
+        vm.expectRevert(ISlotBoundNFTWrapper.NotOwner.selector);
+        wrapper.setWrapFee(1 ether);
+    }
+
+    function test_TheOwnerCanHandOver() public {
+        vm.prank(wrapperOwner);
+        wrapper.transferOwnership(bob);
+        assertEq(wrapper.owner(), bob);
+
+        vm.prank(bob);
+        wrapper.setWrapFee(1 ether);
+        (, , uint256 fee) = wrapper.quoteWrap(VALUATION, TAX);
+        assertEq(fee, 1 ether);
+    }
+
+    /// @notice A zero owner fixes the wrapper feeless forever — the same
+    ///         idiom `SlotBoundNFT` uses for a zero manager. This is how you
+    ///         ship one with no privileged party at all.
+    function test_AZeroOwnerFixesItFeelessForever() public {
+        SlotBoundNFTWrapper free = _deployWrapper(address(0), 0);
+
+        assertEq(free.owner(), address(0));
+        (, , uint256 fee) = free.quoteWrap(VALUATION, TAX);
+        assertEq(fee, 0);
+
+        vm.prank(wrapperOwner);
+        vm.expectRevert(ISlotBoundNFTWrapper.NotOwner.selector);
+        free.setWrapFee(1 ether);
+    }
+
+    function test_AZeroOwnerCannotShipWithAFee() public {
+        // Built out by hand rather than through `_deployWrapper`: that helper
+        // deploys an implementation and a beacon first, and `expectRevert`
+        // would arm against the implementation's own creation, which succeeds.
+        SlotBoundNFTWrapper wImpl = new SlotBoundNFTWrapper();
+        UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
+        bytes memory initData = abi.encodeCall(
+            SlotBoundNFTWrapper.initialize,
+            ("Free", "FREE", factory, address(0), uint256(1 ether))
+        );
+
+        vm.expectRevert(ISlotBoundNFTWrapper.NotOwner.selector);
+        new BeaconProxy(address(beacon), initData);
     }
 }

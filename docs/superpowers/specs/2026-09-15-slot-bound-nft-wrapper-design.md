@@ -208,8 +208,8 @@ returning `""` on failure — the underlying is arbitrary and may revert, and a
 wrapper token that cannot render is better than one that cannot be read at all.
 Reverts `NoSuchToken` for an unwrapped or retired id.
 
-This removes `Ownable`, `setBaseURI`, `_baseURI` and the metadata owner role
-entirely. A wrapper has no privileged party at all.
+This removes `setBaseURI`, `_baseURI` and the metadata owner role entirely. The
+only owner a wrapper has is the fee recipient below, and it may be nobody.
 
 ## Accepting deposits
 
@@ -217,6 +217,42 @@ entirely. A wrapper has no privileged party at all.
 a transient flag in the manner of `_syncing`, and reverts `UnsolicitedTransfer()`
 otherwise. A wrapper that accepts anything sent to it strands NFTs that arrive
 with no wrap record, and it has no rescue path by design.
+
+## The wrap fee
+
+A wrapper may charge a **flat fee in wei on `wrap`, and on nothing else**.
+`WrapperInit` carries `owner` and `wrapFeeWei`; `wrap` requires
+`msg.value >= fee`, escrows the remainder, and `quoteWrap` returns
+`(total, deposit, fee)` so a UI can show the split.
+
+**Forwarded, never accumulated.** The fee leaves in the same transaction, after
+the seating. So the wrapper still holds no ETH at any point — which is the whole
+reason it needs no sweeper and no ETH withdrawal function. A rescue function
+would be a privileged role over a balance on a contract whose only other power
+is setting a number. `test_TheWrapperNeverHoldsEth` and
+`test_APlainTransferToTheWrapperReverts` pin it; there is no `receive` and no
+`fallback`, so ETH cannot even be sent here.
+
+**A percentage was not an option.** The only number at wrap time is the escrow
+deposit, and a cut of that would silently underfund the slot — the deposit is
+rent the occupant spends, not a price. The rent stream is not reachable either:
+the slot pays `recipient` directly and `recipient` is the depositor, so skimming
+it would mean making the recipient a splitter rather than a person.
+
+**A fee on wrap is safe to change; a fee on reclaim would be a hostage.**
+Wrapping is a one-time act, so `setWrapFee` can only ever reach FUTURE wraps —
+nobody already in can be charged again, which is what makes an owner-adjustable
+fee defensible at all. A reclaim fee is the exact inverse: wrap under a zero
+fee, watch the owner set it to 50 ETH, and the asset is held to ransom. So
+**reclaiming is free, unconditionally**, and `test_AFeeChangeCannotReachAnExistingWrap`
+holds that line.
+
+**A zero owner fixes a wrapper feeless forever** — the idiom `SlotBoundNFT`
+already uses for a zero manager. `initialize` refuses a fee with no owner (it
+would be burnt on every wrap), `onlyOwner` fails closed against `address(0)`,
+and `transferOwnership(address(0))` zeroes the fee on the way out. That is how
+you ship a wrapper with no privileged party at all, which is what the original
+design assumed and is now a choice rather than the only shape.
 
 ## Storage
 

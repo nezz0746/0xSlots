@@ -9,6 +9,7 @@ import {IERC721Metadata} from
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 
 import {ISlotHook, HookFlags, SlotContext} from "../../ISlotHook.sol";
 import {SlotFactory} from "../../SlotFactory.sol";
@@ -50,6 +51,25 @@ contract SlotBoundNFTWrapper is
 
     SlotFactory public slotFactory;
 
+    /**
+     * @notice Takes the wrap fee, and has no other power. Zero fixes this
+     *         wrapper feeless forever — the idiom {SlotBoundNFT} uses for a
+     *         zero manager, and how you ship one with no privileged party.
+     *
+     * @dev Holds nothing over the slots, the tokens, or anyone's underlying.
+     *      The fee is charged at wrap and forwarded in the same transaction, so
+     *      there is no balance here to sweep and no sweeper to abuse.
+     */
+    address public owner;
+
+    /// @notice A flat fee in wei, charged on {wrap} and on nothing else.
+    /// @dev Changing it reaches FUTURE wraps only, which is safe because
+    ///      wrapping is a one-time act: nobody already in can be charged again.
+    ///      There is deliberately no fee on the way out — a reclaim fee could
+    ///      be raised on someone whose asset is already in escrow, which is a
+    ///      hostage, not a business model.
+    uint256 public wrapFeeWei;
+
     mapping(uint256 tokenId => Wrap) internal _wrapped;
     mapping(uint256 tokenId => address slot) public slotOf;
     /// @dev Zero means the slot is not one of ours.
@@ -74,6 +94,13 @@ contract SlotBoundNFTWrapper is
         _disableInitializers();
     }
 
+    modifier onlyOwner() {
+        // A zero owner is nobody, so this closes rather than opening: a
+        // feeless wrapper stays feeless even to `address(0)` callers.
+        if (msg.sender != owner || owner == address(0)) revert NotOwner();
+        _;
+    }
+
     /// @inheritdoc Versioned
     function version() public pure override returns (uint64) {
         return 1;
@@ -82,11 +109,36 @@ contract SlotBoundNFTWrapper is
     function initialize(
         string memory name_,
         string memory symbol_,
-        SlotFactory factory_
+        SlotFactory factory_,
+        address owner_,
+        uint256 wrapFeeWei_
     ) external initializer {
         if (address(factory_) == address(0)) revert InvalidFactory();
+        // A fee with nobody to collect it would be burnt on every wrap.
+        if (owner_ == address(0) && wrapFeeWei_ != 0) revert NotOwner();
+
         __ERC721_init(name_, symbol_);
         slotFactory = factory_;
+        owner = owner_;
+        wrapFeeWei = wrapFeeWei_;
+
+        if (owner_ != address(0)) emit OwnershipTransferred(address(0), owner_);
+        if (wrapFeeWei_ != 0) emit WrapFeeSet(wrapFeeWei_);
+    }
+
+    /// @notice Set the fee future wraps pay. Existing wraps are untouchable.
+    function setWrapFee(uint256 feeWei) external onlyOwner {
+        wrapFeeWei = feeWei;
+        emit WrapFeeSet(feeWei);
+    }
+
+    /// @dev One-step, and to a zero address deliberately: handing ownership to
+    ///      nobody is how an owner gives up the fee for good, and it is the
+    ///      only direction that cannot be undone.
+    function transferOwnership(address next) external onlyOwner {
+        if (next == address(0)) wrapFeeWei = 0;
+        emit OwnershipTransferred(owner, next);
+        owner = next;
     }
 
     /// @notice Escrow an ERC-721, open a slot on your own terms, and take the
@@ -101,6 +153,15 @@ contract SlotBoundNFTWrapper is
         uint256 valuation,
         Mode mode
     ) external payable nonReentrant returns (uint256 tokenId, address slot) {
+        // Read once: the owner could change it between quote and execution, and
+        // a wrap should pay the fee it was priced at within this frame.
+        uint256 fee = wrapFeeWei;
+        if (msg.value < fee) revert FeeUnpaid(fee);
+        // Everything above the fee is escrow. The slot enforces its own floor
+        // on that remainder, and anything past the floor is simply longer
+        // runway — the same latitude a feeless wrap has.
+        uint256 deposit = msg.value - fee;
+
         // Plain `transferFrom`: no receiver callback, so no arbitrary code runs
         // inside this frame. See {onERC721Received}.
         underlying.transferFrom(msg.sender, address(this), underlyingId);
@@ -147,24 +208,34 @@ contract SlotBoundNFTWrapper is
             address(underlying),
             underlyingId,
             mode,
-            taxBps
+            taxBps,
+            fee
         );
 
-        ISlotOccupancy(slot).buy{value: msg.value}(
+        ISlotOccupancy(slot).buy{value: deposit}(
             msg.sender,
             valuation,
-            msg.value,
+            deposit,
             0
         );
+
+        // Last, and forwarded rather than kept: this contract holds no ETH, so
+        // there is nothing here to rescue and no rescue function to abuse.
+        // `sendValue` reverts on a recipient that refuses — loudly, and only
+        // for an owner who set a fee they cannot receive.
+        if (fee > 0) Address.sendValue(payable(owner), fee);
     }
 
-    /// @notice What a wrap costs. For a UI: the slot enforces the real floor.
+    /// @notice What a wrap costs and how it splits. For a UI: {wrap} asks the
+    ///         slot for the real floor rather than trusting this.
     /// @dev Exists because the slot does not yet exist when a caller needs this.
     function quoteWrap(
         uint256 valuation,
         uint256 taxBps
-    ) external pure returns (uint256 deposit) {
-        return SlotMath.depositFor(valuation, taxBps, MIN_DEPOSIT_SECONDS);
+    ) external view returns (uint256 total, uint256 deposit, uint256 fee) {
+        deposit = SlotMath.depositFor(valuation, taxBps, MIN_DEPOSIT_SECONDS);
+        fee = wrapFeeWei;
+        return (deposit + fee, deposit, fee);
     }
 
     /// @notice Take your underlying back. `Reclaimable` wraps only, and only

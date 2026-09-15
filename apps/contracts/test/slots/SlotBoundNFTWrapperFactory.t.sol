@@ -58,7 +58,7 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
 
     function test_TheFactoryDeploysAWorkingWrapper() public {
         _enableWrappers();
-        address w = nftFactory.createWrapper(WrapperInit({name: "Wrapped", symbol: "WRP"}));
+        address w = nftFactory.createWrapper(WrapperInit({name: "Wrapped", symbol: "WRP", owner: admin, wrapFeeWei: 0}));
 
         assertTrue(nftFactory.isWrapper(w));
         assertEq(nftFactory.wrapperCount(), 1);
@@ -68,10 +68,31 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
         assertEq(SlotBoundNFTWrapper(w).version(), 1);
     }
 
+    /// @notice The fee config reaches the wrapper through the factory.
+    function test_TheFactorySetsTheWrapperOwnerAndFee() public {
+        _enableWrappers();
+        address w = nftFactory.createWrapper(WrapperInit({
+            name: "Paid", symbol: "PAID", owner: admin, wrapFeeWei: 0.02 ether
+        }));
+
+        assertEq(SlotBoundNFTWrapper(w).owner(), admin);
+        assertEq(SlotBoundNFTWrapper(w).wrapFeeWei(), 0.02 ether);
+    }
+
+    /// @notice A fee nobody can collect would be burnt on every wrap, so the
+    ///         wrapper refuses the combination at construction.
+    function test_AFeeWithNoOwnerIsRefused() public {
+        _enableWrappers();
+        vm.expectRevert();
+        nftFactory.createWrapper(WrapperInit({
+            name: "Bad", symbol: "BAD", owner: address(0), wrapFeeWei: 1 ether
+        }));
+    }
+
     function test_TwoWrappersGetTwoAddresses() public {
         _enableWrappers();
-        address a = nftFactory.createWrapper(WrapperInit({name: "A", symbol: "A"}));
-        address b = nftFactory.createWrapper(WrapperInit({name: "B", symbol: "B"}));
+        address a = nftFactory.createWrapper(WrapperInit({name: "A", symbol: "A", owner: admin, wrapFeeWei: 0}));
+        address b = nftFactory.createWrapper(WrapperInit({name: "B", symbol: "B", owner: admin, wrapFeeWei: 0}));
         assertTrue(a != b);
     }
 

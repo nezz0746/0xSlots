@@ -38,6 +38,8 @@ ponder.on("SlotBoundNFTFactory:WrapperCreated", async ({ event, context }) => {
     name: event.args.name,
     symbol: event.args.symbol,
     totalWrapped: 0,
+    owner: lower(event.args.owner),
+    wrapFeeWei: event.args.wrapFeeWei,
     createdAt: event.block.timestamp,
     updatedAt: event.block.timestamp,
   });
@@ -68,6 +70,7 @@ ponder.on("SlotBoundNFTWrapper:Wrapped", async ({ event, context }) => {
     underlyingId: event.args.underlyingId,
     mode: event.args.mode,
     taxBps: event.args.taxBps,
+    fee: event.args.fee,
     retired: false,
     retiredAt: null,
     wrappedAt: event.block.timestamp,
@@ -80,6 +83,38 @@ ponder.on("SlotBoundNFTWrapper:Wrapped", async ({ event, context }) => {
       totalWrapped: row.totalWrapped + 1,
       updatedAt: event.block.timestamp,
     }));
+});
+
+/**
+ * The owner re-priced future wraps.
+ *
+ * This moves the wrapper's CURRENT fee only. What each existing token paid is
+ * its own `fee`, written when it was wrapped and never revised — a fee change
+ * cannot reach someone already in.
+ */
+ponder.on("SlotBoundNFTWrapper:WrapFeeSet", async ({ event, context }) => {
+  await context.db
+    .update(wrapper, {
+      id: lower(event.log.address),
+      chainId: context.chain.id,
+    })
+    .set({ wrapFeeWei: event.args.fee, updatedAt: event.block.timestamp });
+});
+
+ponder.on("SlotBoundNFTWrapper:OwnershipTransferred", async ({ event, context }) => {
+  // The initializer emits this too, from the zero address, before the factory's
+  // own `WrapperCreated` has inserted the row. Nothing to update yet, and
+  // `WrapperCreated` carries the same owner.
+  const id = lower(event.log.address);
+  const existing = await context.db.find(wrapper, { id, chainId: context.chain.id });
+  if (!existing) return;
+
+  if (event.args.to !== zeroAddress) {
+    await getOrCreateAccount(context, event.args.to);
+  }
+  await context.db
+    .update(wrapper, { id, chainId: context.chain.id })
+    .set({ owner: lower(event.args.to), updatedAt: event.block.timestamp });
 });
 
 /**

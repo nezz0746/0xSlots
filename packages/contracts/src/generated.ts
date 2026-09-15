@@ -3508,6 +3508,8 @@ export const slotBoundNftFactoryAbi = [
         components: [
           { name: 'name', internalType: 'string', type: 'string' },
           { name: 'symbol', internalType: 'string', type: 'string' },
+          { name: 'owner', internalType: 'address', type: 'address' },
+          { name: 'wrapFeeWei', internalType: 'uint256', type: 'uint256' },
         ],
       },
     ],
@@ -3729,11 +3731,23 @@ export const slotBoundNftFactoryAbi = [
         type: 'address',
         indexed: true,
       },
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
       { name: 'name', internalType: 'string', type: 'string', indexed: false },
       {
         name: 'symbol',
         internalType: 'string',
         type: 'string',
+        indexed: false,
+      },
+      {
+        name: 'wrapFeeWei',
+        internalType: 'uint256',
+        type: 'uint256',
         indexed: false,
       },
     ],
@@ -3998,6 +4012,8 @@ export const slotBoundNftWrapperAbi = [
         internalType: 'contract SlotFactory',
         type: 'address',
       },
+      { name: 'owner_', internalType: 'address', type: 'address' },
+      { name: 'wrapFeeWei_', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'initialize',
     outputs: [],
@@ -4034,6 +4050,13 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
     name: 'ownerOf',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
@@ -4046,8 +4069,12 @@ export const slotBoundNftWrapperAbi = [
       { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'quoteWrap',
-    outputs: [{ name: 'deposit', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'pure',
+    outputs: [
+      { name: 'total', internalType: 'uint256', type: 'uint256' },
+      { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+      { name: 'fee', internalType: 'uint256', type: 'uint256' },
+    ],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -4079,6 +4106,13 @@ export const slotBoundNftWrapperAbi = [
       { name: 'approved', internalType: 'bool', type: 'bool' },
     ],
     name: 'setApprovalForAll',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'feeWei', internalType: 'uint256', type: 'uint256' }],
+    name: 'setWrapFee',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -4178,6 +4212,13 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'next', internalType: 'address', type: 'address' }],
+    name: 'transferOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     name: 'validateHookData',
     outputs: [],
@@ -4212,6 +4253,13 @@ export const slotBoundNftWrapperAbi = [
       { name: 'slot', internalType: 'address', type: 'address' },
     ],
     stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'wrapFeeWei',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -4297,6 +4345,15 @@ export const slotBoundNftWrapperAbi = [
     inputs: [
       { name: 'from', internalType: 'address', type: 'address', indexed: true },
       { name: 'to', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'OwnershipTransferred',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'from', internalType: 'address', type: 'address', indexed: true },
+      { name: 'to', internalType: 'address', type: 'address', indexed: true },
       {
         name: 'tokenId',
         internalType: 'uint256',
@@ -4342,6 +4399,14 @@ export const slotBoundNftWrapperAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'fee', internalType: 'uint256', type: 'uint256', indexed: false },
+    ],
+    name: 'WrapFeeSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
       {
         name: 'tokenId',
         internalType: 'uint256',
@@ -4379,6 +4444,7 @@ export const slotBoundNftWrapperAbi = [
         type: 'uint256',
         indexed: false,
       },
+      { name: 'fee', internalType: 'uint256', type: 'uint256', indexed: false },
     ],
     name: 'Wrapped',
   },
@@ -4429,6 +4495,20 @@ export const slotBoundNftWrapperAbi = [
     inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
     name: 'ERC721NonexistentToken',
   },
+  { type: 'error', inputs: [], name: 'FailedCall' },
+  {
+    type: 'error',
+    inputs: [{ name: 'required', internalType: 'uint256', type: 'uint256' }],
+    name: 'FeeUnpaid',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'balance', internalType: 'uint256', type: 'uint256' },
+      { name: 'needed', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'InsufficientBalance',
+  },
   { type: 'error', inputs: [], name: 'InvalidFactory' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   {
@@ -4438,6 +4518,7 @@ export const slotBoundNftWrapperAbi = [
   },
   { type: 'error', inputs: [], name: 'NotDepositor' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
+  { type: 'error', inputs: [], name: 'NotOwner' },
   { type: 'error', inputs: [], name: 'NotReclaimable' },
   { type: 'error', inputs: [], name: 'NotTransferable' },
   { type: 'error', inputs: [], name: 'Occupied' },

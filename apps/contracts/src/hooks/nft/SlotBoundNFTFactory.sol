@@ -32,6 +32,11 @@ struct CollectionInit {
 struct WrapperInit {
     string name;
     string symbol;
+    /// Takes the wrap fee and nothing else. Zero fixes the wrapper feeless.
+    address owner;
+    /// A flat fee in wei on {SlotBoundNFTWrapper-wrap}. Must be zero when
+    /// `owner` is.
+    uint256 wrapFeeWei;
 }
 
 /**
@@ -165,8 +170,10 @@ contract SlotBoundNFTFactory is VersionedUUPS {
     event WrapperCreated(
         address indexed wrapper,
         address indexed creator,
+        address indexed owner,
         string name,
-        string symbol
+        string symbol,
+        uint256 wrapFeeWei
     );
     event WrapperBeaconUpgraded(address indexed newImplementation);
 
@@ -192,7 +199,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
     ) external returns (address wrapper) {
         bytes memory initData = abi.encodeCall(
             SlotBoundNFTWrapper.initialize,
-            (init.name, init.symbol, slotFactory)
+            (init.name, init.symbol, slotFactory, init.owner, init.wrapFeeWei)
         );
         // CREATE2, salted with the chain id and the wrapper's index — the same
         // reasoning as `SlotFactory.createSlot`, written out in full there. The
@@ -211,7 +218,14 @@ contract SlotBoundNFTFactory is VersionedUUPS {
         unchecked {
             ++wrapperCount;
         }
-        emit WrapperCreated(wrapper, msg.sender, init.name, init.symbol);
+        emit WrapperCreated(
+            wrapper,
+            msg.sender,
+            init.owner,
+            init.name,
+            init.symbol,
+            init.wrapFeeWei
+        );
     }
 
     /// @dev Read the note above `wrapperBeacon` before using this.

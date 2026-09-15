@@ -36,8 +36,12 @@ interface ISlotBoundNFTWrapper {
         address underlying,
         uint256 underlyingId,
         Mode mode,
-        uint256 taxBps
+        uint256 taxBps,
+        uint256 fee
     );
+
+    event WrapFeeSet(uint256 fee);
+    event OwnershipTransferred(address indexed from, address indexed to);
 
     event Withdrawn(
         uint256 indexed tokenId,
@@ -61,4 +65,7 @@ interface ISlotBoundNFTWrapper {
     /// @dev Reached this contract other than through {wrap}.
     error UnsolicitedTransfer();
     error InvalidFactory();
+    error NotOwner();
+    /// @dev `msg.value` did not cover the wrap fee.
+    error FeeUnpaid(uint256 required);
 }

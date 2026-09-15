@@ -59,7 +59,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
         wrapper = SlotBoundNFTWrapper(address(new BeaconProxy(address(beacon),
             abi.encodeCall(SlotBoundNFTWrapper.initialize,
-                ("Wrapped Slots", "WSLOT", factory)))));
+                ("Wrapped Slots", "WSLOT", factory, address(0), uint256(0))))));
 
         nft = new MockNFT();
         for (uint256 i = 1; i <= 5; ++i) nft.mint(alice, i);
@@ -68,8 +68,9 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         vm.warp(1_000_000);
     }
 
-    function _dep(uint256 v) internal view returns (uint256) {
-        return wrapper.quoteWrap(v, TAX);
+    /// @dev This wrapper is feeless, so total and deposit are the same number.
+    function _dep(uint256 v) internal view returns (uint256 deposit) {
+        (, deposit, ) = wrapper.quoteWrap(v, TAX);
     }
 
     function _wrap(uint256 id, Mode mode) internal returns (uint256 tokenId, Slot slot) {
