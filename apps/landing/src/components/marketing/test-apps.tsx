@@ -11,6 +11,10 @@ import Image from "next/image";
  * Access-Control-Allow-Origin header either, so a client-side fetch would have
  * been blocked whatever it was fetching.
  *
+ * Each description is the app's own, given by its author rather than written
+ * here — these are other people's products and this page does not get to
+ * decide what they are.
+ *
  * The marks are each app's own icon, copied in rather than hotlinked: a
  * marketing page should not go blank in one corner because another deployment
  * is mid-restart, and the browser is not asked to reach three more origins.
@@ -28,8 +32,7 @@ const APPS = [
     href: "https://adland.space",
     icon: "/apps/adland.png",
     chains: ["Base"],
-    blurb:
-      "Sponsored placements on buildings and websites, settled in USDC. One script tag renders whoever holds the slot right now.",
+    blurb: "Collective distribution network for onchain content.",
   },
   {
     name: "Nameslots",
@@ -38,7 +41,7 @@ const APPS = [
     icon: "/apps/nameslots.svg",
     chains: ["Sepolia"],
     blurb:
-      "ENS subnames as slots. Each one is held at a price its holder set, so a name nobody is using does not sit idle.",
+      "Turn precious or specialized subnames into fairly priced productive assets for your users, and revenue for you through an ownership tax.",
   },
   {
     name: "OpenCollections",
@@ -46,8 +49,8 @@ const APPS = [
     href: "https://collections.0xslots.org",
     icon: "/apps/collections.svg",
     chains: ["Base", "Base Sepolia"],
-    blurb:
-      "A marketplace where nothing is ever off the market. Every work is bound to a slot and pays rent on its holder's own valuation.",
+    // Placeholder, by request, until the product has a line of its own.
+    blurb: "New & wrapped slot collectibles.",
   },
 ] as const;
 
