@@ -6,39 +6,51 @@
     "bytes": 20
   },
   {
-    "label": "admin",
+    "label": "owner",
     "slot": "1",
     "offset": 0,
     "bytes": 20
   },
   {
-    "label": "isCollection",
+    "label": "wrapFeeWei",
     "slot": "2",
     "offset": 0,
     "bytes": 32
   },
   {
-    "label": "collectionCount",
+    "label": "_wrapped",
     "slot": "3",
     "offset": 0,
     "bytes": 32
   },
   {
-    "label": "wrapperBeacon",
+    "label": "slotOf",
     "slot": "4",
     "offset": 0,
-    "bytes": 20
+    "bytes": 32
   },
   {
-    "label": "isWrapper",
+    "label": "tokenOf",
     "slot": "5",
     "offset": 0,
     "bytes": 32
   },
   {
-    "label": "wrapperCount",
+    "label": "_byUnderlying",
     "slot": "6",
     "offset": 0,
     "bytes": 32
+  },
+  {
+    "label": "totalWrapped",
+    "slot": "7",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "_moving",
+    "slot": "8",
+    "offset": 0,
+    "bytes": 1
   }
 ]

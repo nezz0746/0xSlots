@@ -3807,6 +3807,11 @@ export const slotBoundNftFactoryConfig = {
 // SlotBoundNFTWrapper
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ */
 export const slotBoundNftWrapperAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
   {
@@ -4526,6 +4531,27 @@ export const slotBoundNftWrapperAbi = [
   { type: 'error', inputs: [], name: 'SlotRetired' },
   { type: 'error', inputs: [], name: 'UnsolicitedTransfer' },
 ] as const
+
+/**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ */
+export const slotBoundNftWrapperAddress = {
+  8453: '0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0',
+  84532: '0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0',
+  11155111: '0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0',
+} as const
+
+/**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ */
+export const slotBoundNftWrapperConfig = {
+  address: slotBoundNftWrapperAddress,
+  abi: slotBoundNftWrapperAbi,
+} as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SlotCollective
@@ -6199,6 +6225,11 @@ export const deployBlocks = {
     '31337': 0,
     '84532': 46601439,
     '11155111': 11669103,
+  },
+  SlotBoundNFTWrapper: {
+    '8453': 51354933,
+    '84532': 46865448,
+    '11155111': 11711775,
   },
   SlotCollective: {
     '8453': 51090927,

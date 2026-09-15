@@ -22,5 +22,23 @@
     "slot": "3",
     "offset": 0,
     "bytes": 32
+  },
+  {
+    "label": "wrapperBeacon",
+    "slot": "4",
+    "offset": 0,
+    "bytes": 20
+  },
+  {
+    "label": "isWrapper",
+    "slot": "5",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "wrapperCount",
+    "slot": "6",
+    "offset": 0,
+    "bytes": 32
   }
 ]
