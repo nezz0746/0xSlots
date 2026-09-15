@@ -280,6 +280,57 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         assertTrue(address(firstSlot) != address(secondSlot));
     }
 
+    // ── the wrapper is not an ETH account ───────────────────────────────────
+
+    /// @notice It never holds ETH, at any point in a wrap's life. `wrap`
+    ///         forwards `msg.value` whole into the slot's `buy`, which demands
+    ///         an exact amount, so there is never a remainder to strand.
+    ///
+    ///         This is why there is no sweeper and no ETH withdrawal: a rescue
+    ///         function would be a privileged role on a contract that
+    ///         deliberately has none at all.
+    function test_TheWrapperNeverHoldsEth() public {
+        assertEq(address(wrapper).balance, 0, "before");
+
+        (uint256 id, Slot slot) = _wrap(1, Mode.Reclaimable);
+        assertEq(address(wrapper).balance, 0, "after a wrap");
+
+        _buy(bob, slot, 2 ether);
+        assertEq(address(wrapper).balance, 0, "after a buy");
+
+        vm.prank(bob);
+        slot.release();
+        assertEq(address(wrapper).balance, 0, "after a release, holding the token");
+
+        vm.prank(alice);
+        wrapper.withdraw(id);
+        assertEq(address(wrapper).balance, 0, "after a withdrawal");
+    }
+
+    /// @notice An overfunded wrap puts the whole amount in escrow as runway.
+    ///         None of it stays here.
+    function test_AnOverfundedWrapLeavesNothingBehind() public {
+        vm.startPrank(alice);
+        nft.approve(address(wrapper), 1);
+        (, address s) = wrapper.wrap{value: _dep(VALUATION) * 3}(
+            IERC721(address(nft)), 1, TAX, VALUATION, Mode.Permanent
+        );
+        vm.stopPrank();
+
+        assertEq(Slot(payable(s)).deposit(), _dep(VALUATION) * 3, "all of it is runway");
+        assertEq(address(wrapper).balance, 0);
+    }
+
+    /// @notice And ETH cannot be sent here in the first place: no `receive`,
+    ///         no `fallback`.
+    function test_APlainTransferToTheWrapperReverts() public {
+        vm.deal(bob, 1 ether);
+        vm.prank(bob);
+        (bool ok, ) = address(wrapper).call{value: 1 ether}("");
+        assertFalse(ok, "no receive, no fallback");
+        assertEq(address(wrapper).balance, 0);
+    }
+
     // ── hostile underlyings ─────────────────────────────────────────────────
 
     function test_AReentrantUnderlyingCannotReenterWithdraw() public {
