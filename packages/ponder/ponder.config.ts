@@ -8,6 +8,7 @@ import {
   SlotCollectiveAbi,
   SlotBoundNftAbi,
   SlotBoundNftFactoryAbi,
+  SlotBoundNftWrapperAbi,
   SlotCollectiveFactoryAbi,
   SlotFactoryAbi,
 } from "./abis";
@@ -407,6 +408,10 @@ const COLLECTION_CREATED_EVENT = parseAbiItem(
   "event CollectionCreated(address indexed collection, address indexed creator, address indexed recipient, address currency, uint256 maxSupply)",
 );
 
+const WRAPPER_CREATED_EVENT = parseAbiItem(
+  "event WrapperCreated(address indexed wrapper, address indexed creator, string name, string symbol)",
+);
+
 // ──────────────────────────────────────────
 // RPC endpoints
 //
@@ -792,6 +797,39 @@ const remoteConfig = createConfig({
         },
       },
     },
+    // Every wrapper the same factory has made. Beacon proxies, discovered the
+    // same way — and from the SAME factory address as the collections above,
+    // so there is no new deployment record and no new env var. Wrappers simply
+    // do not appear in the log until `initializeWrappers` has been called.
+    SlotBoundNFTWrapper: {
+      abi: SlotBoundNftWrapperAbi,
+      chain: {
+        baseSepolia: {
+          address: factory({
+            address: BASE_SEPOLIA_NFT_FACTORY.address,
+            event: WRAPPER_CREATED_EVENT,
+            parameter: "wrapper",
+          }),
+          startBlock: BASE_SEPOLIA_NFT_FACTORY.startBlock,
+        },
+        base: {
+          address: factory({
+            address: BASE_NFT_FACTORY.address,
+            event: WRAPPER_CREATED_EVENT,
+            parameter: "wrapper",
+          }),
+          startBlock: BASE_NFT_FACTORY.startBlock,
+        },
+        sepolia: {
+          address: factory({
+            address: SEPOLIA_NFT_FACTORY.address,
+            event: WRAPPER_CREATED_EVENT,
+            parameter: "wrapper",
+          }),
+          startBlock: SEPOLIA_NFT_FACTORY.startBlock,
+        },
+      },
+    },
     // Every collective the factory has made. Same shape as `Slot` above and
     // for the same reason: collectives are BeaconProxies, so their addresses
     // exist only in the factory's own log.
@@ -899,6 +937,19 @@ function buildLocalConfig() {
               address: nftAt.address,
               event: COLLECTION_CREATED_EVENT,
               parameter: "collection",
+            }),
+            startBlock: nftAt.startBlock,
+          },
+        },
+      },
+      SlotBoundNFTWrapper: {
+        abi: SlotBoundNftWrapperAbi,
+        chain: {
+          anvil: {
+            address: factory({
+              address: nftAt.address,
+              event: WRAPPER_CREATED_EVENT,
+              parameter: "wrapper",
             }),
             startBlock: nftAt.startBlock,
           },

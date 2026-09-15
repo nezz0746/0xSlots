@@ -266,6 +266,85 @@ export const collection = onchainTable(
  * IS the occupancy, so a query for "what does this account hold" would
  * otherwise have to join every slot in the collection.
  */
+/**
+ * A wrapper: one contract holding many people's escrowed NFTs.
+ *
+ * Thinner than {collection} on purpose. A collection fixes its terms once for
+ * every token it will ever mint, so they belong on the collection row; a
+ * wrapper fixes almost nothing, because each wrap brings its own asset, its own
+ * rate and its own mode. Those live on {wrappedToken} instead.
+ *
+ * Every column here comes out of `WrapperCreated` itself — unlike the
+ * collection, which has to be read back off the contract.
+ */
+export const wrapper = onchainTable(
+  "wrapper",
+  (t) => ({
+    id: t.hex().notNull(),
+    chainId: t.integer().notNull(),
+    factory: t.hex().notNull(),
+    creator: t.hex().notNull(),
+
+    name: t.text(),
+    symbol: t.text(),
+    totalWrapped: t.integer().notNull(),
+
+    createdAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.id, table.chainId] }),
+    chainIdx: index().on(table.chainId),
+    factoryIdx: index().on(table.factory),
+  }),
+);
+
+/**
+ * One wrapped NFT, and the slot whose occupancy its token follows.
+ *
+ * `underlying` is indexed because "every wrapped token from collection X" is
+ * the question integrations actually ask — the index's answer to the
+ * contract's own `tokenIdOf`.
+ */
+export const wrappedToken = onchainTable(
+  "wrapped_token",
+  (t) => ({
+    id: t.text().primaryKey(), // `${chainId}:${wrapper}:${tokenId}`
+    chainId: t.integer().notNull(),
+    wrapper: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    /// The slot whose occupancy this token follows. One per token, for ever.
+    slot: t.hex().notNull(),
+    /// Whoever occupies that slot; the wrapper itself while vacant, and the
+    /// zero address once the wrap is retired and the token burned.
+    owner: t.hex().notNull(),
+
+    /// Put the asset in, and is the slot's recipient and manager for life.
+    depositor: t.hex().notNull(),
+    underlying: t.hex().notNull(),
+    underlyingId: t.bigint().notNull(),
+    /// 0 Permanent — never leaves. 1 Reclaimable — the depositor may withdraw
+    /// it when nobody else is occupying. Fixed at wrap.
+    mode: t.integer().notNull(),
+    taxBps: t.bigint().notNull(),
+
+    /// The underlying has been withdrawn. The slot is dead and refuses buys.
+    retired: t.boolean().notNull(),
+    retiredAt: t.bigint(),
+
+    wrappedAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    wrapperIdx: index().on(table.wrapper),
+    ownerIdx: index().on(table.owner),
+    slotIdx: index().on(table.slot),
+    depositorIdx: index().on(table.depositor),
+    underlyingIdx: index().on(table.underlying),
+  }),
+);
+
 export const collectionToken = onchainTable(
   "collection_token",
   (t) => ({
