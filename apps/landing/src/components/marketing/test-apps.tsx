@@ -22,8 +22,8 @@ import Image from "next/image";
  * `apps/web/src/app/icon.svg`.
  *
  * The chain is the part a reader needs and cannot infer, and it is not always
- * one — OpenCollections serves Base and Base Sepolia both. The dot answers the
- * only binary question worth asking: is any of this on a mainnet.
+ * one, which is why it is a list. The dot answers the only binary question
+ * worth asking: is any of this on a mainnet. Two of the three are not.
  */
 const APPS = [
   {
@@ -48,7 +48,9 @@ const APPS = [
     domain: "collections.0xslots.org",
     href: "https://collections.0xslots.org",
     icon: "/apps/collections.svg",
-    chains: ["Base", "Base Sepolia"],
+    // Base Sepolia only until the protocol is opened on Base — the app's own
+    // chain list was narrowed to match, so this is not aspirational.
+    chains: ["Base Sepolia"],
     // Placeholder, by request, until the product has a line of its own.
     blurb: "New & wrapped slot collectibles.",
   },

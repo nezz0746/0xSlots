@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { Wordmark } from "@/components/marketing/mark";
 import { MARKETING_LINKS } from "@/lib/external-links";
-import { studio } from "@/lib/site";
 
 // The explorer is on-site now, so it is a Link; the rest still leave and keep
 // the ↗ the site uses for that. /blog is deliberately absent — the route still
@@ -44,19 +43,6 @@ export function SiteFooter() {
             </a>
           ))}
         </nav>
-
-        {/* The studio that builds this — same credit, less furniture. */}
-        <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-          Made by{" "}
-          <a
-            href={studio.url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-foreground transition-colors hover:text-destructive"
-          >
-            {studio.name}
-          </a>
-        </p>
       </div>
     </footer>
   );
