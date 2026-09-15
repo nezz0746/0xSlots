@@ -283,6 +283,16 @@ contract SlotBoundNFTWrapperTest is Test {
         assertEq(slot.taxBps(), 5000, "lands at the transition, never before");
     }
 
+    /// @notice The retirement veto cannot be added later. The slot packs these
+    ///         flags into `_hookFlags` at its own `initialize` and reads the
+    ///         bit thereafter, so a wrapper shipped without `beforeBuy` leaves
+    ///         every slot it ever creates permanently unable to refuse a buy —
+    ///         and no beacon upgrade can retrofit it.
+    function test_TheRetirementVetoIsSubscribedFromTheFirstWrap() public view {
+        assertTrue(wrapper.subscriptions().beforeBuy, "or the veto is dead code");
+        assertTrue(slot.hookFlags().beforeBuy, "and the slot cached it at creation");
+    }
+
     function test_TheHookIsStrict() public view {
         assertTrue(wrapper.subscriptions().strict, "so the move cannot be starved");
         assertTrue(wrapper.subscriptions().afterBuy);

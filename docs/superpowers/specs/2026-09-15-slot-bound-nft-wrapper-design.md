@@ -132,9 +132,9 @@ buried in `hookData`.
 Copied wholesale, because it is correct and because divergence here would be a
 second thing to keep right:
 
-- `subscriptions()` declares `afterBuy`, `afterRelease`, `afterLiquidate`, and
-  **`strict`** — the flag that makes holding real ERC-721 ownership state safe,
-  since the move cannot be starved.
+- `subscriptions()` declares `beforeBuy`, `afterBuy`, `afterRelease`,
+  `afterLiquidate`, and **`strict`** — the flag that makes holding real ERC-721
+  ownership state safe, since the move cannot be starved.
 - `_sync(slot)` reads `occupant()` **live**, never from `ctx`. The `after` entry
   points are world-callable, so a forged context must be able to change nothing.
   Vacant syncs the token back to the wrapper.
@@ -187,6 +187,14 @@ ordering, which is not where a security property belongs.
 `beforeBuy` resolves the slot from `msg.sender`, not from `ctx.slot`. The slot is
 the caller when the veto matters, and a veto read out of a caller-supplied
 struct is a veto someone can arrange to miss.
+
+**And `subscriptions()` must declare `beforeBuy`, from the very first wrap.**
+`_readHookFlags` packs the flags into the slot's `_hookFlags` at its own
+`initialize`, and `_before` consults that bit forever after. A wrapper shipped
+without the subscription leaves every slot it ever creates permanently unable
+to refuse a buy, and **no beacon upgrade can retrofit it** — the bit is
+per-slot storage, written once. Found in implementation, not in review:
+`test_TheRetirementVetoIsSubscribedFromTheFirstWrap` pins both halves.
 
 **`_sync` returns early when retired.** `release()` and `liquidate()` must still
 settle after a withdrawal. Without this, a depositor who withdraws while

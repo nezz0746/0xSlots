@@ -159,6 +159,45 @@ contract SlotBoundNFTWrapper is
         return SlotMath.depositFor(valuation, taxBps, MIN_DEPOSIT_SECONDS);
     }
 
+    /// @notice Take your underlying back. `Reclaimable` wraps only, and only
+    ///         when nobody else holds the slot.
+    ///
+    /// @dev The second arm of the occupancy check — the depositor occupying
+    ///      their own slot — closes a real race. Without it a depositor must
+    ///      release and then withdraw in a second transaction, and anyone may
+    ///      take the vacant slot in between for the price of their own deposit.
+    ///      It costs nothing in safety: while they hold the seat, no third
+    ///      party has a claim on it.
+    function withdraw(uint256 tokenId) external nonReentrant {
+        Wrap memory w = _wrapped[tokenId];
+        if (w.underlying == address(0)) revert ISlotBoundNFT.NoSuchToken(tokenId);
+        if (w.retired) revert SlotRetired();
+        if (w.mode != Mode.Reclaimable) revert NotReclaimable();
+        if (msg.sender != w.depositor) revert NotDepositor();
+
+        address slot = slotOf[tokenId];
+
+        // Read live. An insolvent occupant still reads non-zero, so this blocks
+        // until someone actually liquidates — the safe direction.
+        address occupant = ISlotOccupancy(slot).occupant();
+        if (occupant != address(0) && occupant != w.depositor) revert Occupied();
+
+        // Retire and burn BEFORE the underlying moves: it is arbitrary code.
+        _wrapped[tokenId].retired = true;
+
+        _moving = true;
+        _burn(tokenId);
+        _moving = false;
+
+        emit Withdrawn(tokenId, slot, w.depositor, w.underlying, w.underlyingId);
+
+        IERC721(w.underlying).transferFrom(
+            address(this),
+            w.depositor,
+            w.underlyingId
+        );
+    }
+
     function wrapOf(uint256 tokenId) external view returns (Wrap memory) {
         Wrap memory w = _wrapped[tokenId];
         if (w.underlying == address(0)) revert ISlotBoundNFT.NoSuchToken(tokenId);
@@ -173,7 +212,7 @@ contract SlotBoundNFTWrapper is
         uint256 tokenId
     ) public view override returns (string memory) {
         Wrap memory w = _wrapped[tokenId];
-        if (w.underlying == address(0)) revert ISlotBoundNFT.NoSuchToken(tokenId);
+        if (w.underlying == address(0) || w.retired) revert ISlotBoundNFT.NoSuchToken(tokenId);
 
         try IERC721Metadata(w.underlying).tokenURI(w.underlyingId) returns (
             string memory uri
@@ -186,7 +225,13 @@ contract SlotBoundNFTWrapper is
 
     // ─── hook ───────────────────────────────────────────────────────────────
 
+    /// @dev `beforeBuy` is not optional and cannot be added later: the slot
+    ///      packs these into `_hookFlags` at its own `initialize` and reads
+    ///      the bit thereafter, so a beacon upgrade could never retrofit the
+    ///      retirement veto onto slots already created. Without it,
+    ///      {beforeBuy} is never called and a retired slot stays buyable.
     function subscriptions() external pure returns (HookFlags memory f) {
+        f.beforeBuy = true; // the retirement veto
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
@@ -195,7 +240,17 @@ contract SlotBoundNFTWrapper is
 
     function validateHookData(bytes32) external view {}
 
-    function beforeBuy(SlotContext calldata) external view {}
+    /// @dev The one thing that stops a retired slot being sold. Merely clearing
+    ///      `tokenOf` would send {_sync} down its "not ours" path and let the
+    ///      buy SUCCEED, against a slot with nothing behind it.
+    ///
+    ///      Resolved from `msg.sender`, not `ctx`: the slot is the caller when
+    ///      the veto matters, and a veto read out of a caller-supplied struct
+    ///      is one somebody can arrange to miss.
+    function beforeBuy(SlotContext calldata) external view {
+        uint256 tokenId = tokenOf[msg.sender];
+        if (tokenId != 0 && _wrapped[tokenId].retired) revert SlotRetired();
+    }
 
     function beforeSelfAssess(SlotContext calldata) external view {}
 
@@ -218,6 +273,11 @@ contract SlotBoundNFTWrapper is
     function _sync(address slot) internal {
         uint256 tokenId = tokenOf[slot];
         if (tokenId == 0) return; // not ours; never revert on a stranger
+
+        // Retired: the token is burned and nothing should move. Returning
+        // rather than reverting is what lets `release` and `liquidate` still
+        // settle — under `strict` a revert here would strand the deposit.
+        if (_wrapped[tokenId].retired) return;
 
         address want = ISlotOccupancy(slot).occupant();
         if (want == address(0)) want = address(this);
