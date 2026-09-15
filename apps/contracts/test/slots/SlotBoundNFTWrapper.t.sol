@@ -289,4 +289,38 @@ contract SlotBoundNFTWrapperTest is Test {
         assertTrue(wrapper.subscriptions().afterRelease);
         assertTrue(wrapper.subscriptions().afterLiquidate);
     }
+
+    // ── metadata ────────────────────────────────────────────────────────────
+
+    /// @notice A wrapper token shows what it wraps.
+    function test_TokenURIProxiesToTheUnderlying() public view {
+        assertEq(wrapper.tokenURI(tokenId), "ipfs://underlying");
+    }
+
+    /// @notice The underlying is arbitrary and may misbehave. A token that
+    ///         cannot render beats one that cannot be read at all.
+    function test_ARevertingUnderlyingRendersEmptyRatherThanReverting() public {
+        RevertingURINFT bad = new RevertingURINFT();
+        bad.mint(alice, 7);
+
+        vm.startPrank(alice);
+        bad.approve(address(wrapper), 7);
+        (uint256 badId, ) = wrapper.wrap{value: _deposit(VALUATION)}(
+            IERC721(address(bad)), 7, TAX, VALUATION, Mode.Permanent
+        );
+        vm.stopPrank();
+
+        assertEq(wrapper.tokenURI(badId), "");
+    }
+
+    function test_AnUnwrappedTokenIsNamedNotGuessedAt() public {
+        vm.expectRevert(abi.encodeWithSelector(ISlotBoundNFT.NoSuchToken.selector, uint256(99)));
+        wrapper.tokenURI(99);
+    }
+
+    /// @notice There is no privileged party at all — no owner, no base URI.
+    function test_TheWrapperHasNoOwner() public {
+        (bool ok, ) = address(wrapper).staticcall(abi.encodeWithSignature("owner()"));
+        assertFalse(ok, "no Ownable surface");
+    }
 }

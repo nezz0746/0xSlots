@@ -165,6 +165,25 @@ contract SlotBoundNFTWrapper is
         return w;
     }
 
+    /// @notice The underlying's own metadata. A wrapper should look like what
+    ///         it wraps.
+    /// @dev `try`/`catch` because the underlying is arbitrary: a reverting
+    ///      `tokenURI` must not make the wrapper token unreadable.
+    function tokenURI(
+        uint256 tokenId
+    ) public view override returns (string memory) {
+        Wrap memory w = _wrapped[tokenId];
+        if (w.underlying == address(0)) revert ISlotBoundNFT.NoSuchToken(tokenId);
+
+        try IERC721Metadata(w.underlying).tokenURI(w.underlyingId) returns (
+            string memory uri
+        ) {
+            return uri;
+        } catch {
+            return "";
+        }
+    }
+
     // ─── hook ───────────────────────────────────────────────────────────────
 
     function subscriptions() external pure returns (HookFlags memory f) {
