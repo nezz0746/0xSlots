@@ -9,6 +9,7 @@ import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {SlotBoundNFTFactory} from "../../src/hooks/nft/SlotBoundNFTFactory.sol";
+import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
@@ -120,6 +121,13 @@ contract DeployProtocol is ProtocolConfig {
             v.nftFactory,
             type(SlotBoundNFTFactory).creationCode
         );
+        // A BEACON implementation, so it is named plainly like `Slot` and
+        // `SlotCollective` rather than suffixed `Impl` like the proxies above.
+        address wrapperImpl = _deploy2(
+            "SlotBoundNFTWrapper",
+            v.wrapper,
+            type(SlotBoundNFTWrapper).creationCode
+        );
 
         // ── proxies ───────────────────────────────────────────────────────
         address factory = _proxy(
@@ -171,6 +179,24 @@ contract DeployProtocol is ProtocolConfig {
         _beacon("Slot", factory, slotImpl);
         _beacon("SlotCollective", collectiveFactory, collectiveImpl);
 
+        // The wrapper beacon is stood up SEPARATELY from the factory's
+        // `initialize`, which had already run on chains that predate wrappers.
+        // `initializeWrappers` is a `reinitializer` and reverts on a second
+        // call, so it is guarded by the beacon it creates rather than by a
+        // flag — and the guard doubles as the first-deploy path, where
+        // `wrapperBeacon()` is zero because nothing has created it yet.
+        if (address(SlotBoundNFTFactory(nftFactory).wrapperBeacon()) == address(0)) {
+            SlotBoundNFTFactory(nftFactory).initializeWrappers(wrapperImpl);
+            console2.log("wrappers ", "SlotBoundNFTWrapper", wrapperImpl);
+        }
+        _beacon(
+            "SlotBoundNFTWrapper",
+            nftFactory,
+            wrapperImpl,
+            "wrapperBeacon()",
+            "upgradeWrapperBeacon(address)"
+        );
+
         // ── hooks ─────────────────────────────────────────────────────────
         address adLandImpl = _deploy2(
             "AdLandImpl",
@@ -215,6 +241,11 @@ contract DeployProtocol is ProtocolConfig {
             nftFactory,
             SlotBoundNFTFactory(nftFactory).version()
         );
+        record(
+            "SlotBoundNFTWrapper",
+            wrapperImpl,
+            SlotBoundNFTWrapper(wrapperImpl).version()
+        );
 
         console2.log("");
         console2.log("SlotFactory          ", factory);
@@ -223,6 +254,7 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("AdLand               ", adLand);
         console2.log("MinimumTenureHook    ", tenureHook);
         console2.log("SlotBoundNFTFactory  ", nftFactory);
+        console2.log("SlotBoundNFTWrapper  ", wrapperImpl);
     }
 
     struct Versions {
@@ -233,6 +265,7 @@ contract DeployProtocol is ProtocolConfig {
         uint64 collectiveFactory;
         uint64 adLand;
         uint64 nftFactory;
+        uint64 wrapper;
     }
 
     /**
@@ -267,6 +300,7 @@ contract DeployProtocol is ProtocolConfig {
         v.collectiveFactory = new SlotCollectiveFactory().version();
         v.adLand = new AdLand().version();
         v.nftFactory = new SlotBoundNFTFactory().version();
+        v.wrapper = new SlotBoundNFTWrapper().version();
     }
 
     /// @dev `MinimumTenureHook` has no `version()` of its own — it is not
@@ -316,11 +350,25 @@ contract DeployProtocol is ProtocolConfig {
         address factory_,
         address impl
     ) internal {
+        _beacon(name, factory_, impl, "beacon()", "upgradeBeacon(address)");
+    }
+
+    /// @dev The same, for a factory that owns MORE than one beacon and so
+    ///      cannot name its getter `beacon()`. `SlotBoundNFTFactory` is the
+    ///      first: collections are a plain `new` with no beacon at all, and the
+    ///      wrapper beacon it does own is reached through `wrapperBeacon()`.
+    function _beacon(
+        string memory name,
+        address factory_,
+        address impl,
+        string memory getter,
+        string memory upgradeFn
+    ) internal {
         (bool ok, bytes memory data) = factory_.staticcall(
             abi.encodeWithSignature("implementation()")
         );
         if (!ok || data.length < 32) {
-            (ok, data) = factory_.staticcall(abi.encodeWithSignature("beacon()"));
+            (ok, data) = factory_.staticcall(abi.encodeWithSignature(getter));
             require(ok && data.length >= 32, "no beacon on factory");
             address b = abi.decode(data, (address));
             (ok, data) = b.staticcall(abi.encodeWithSignature("implementation()"));
@@ -332,9 +380,7 @@ contract DeployProtocol is ProtocolConfig {
             console2.log("current  ", name, impl);
             return;
         }
-        (ok, ) = factory_.call(
-            abi.encodeWithSignature("upgradeBeacon(address)", impl)
-        );
+        (ok, ) = factory_.call(abi.encodeWithSignature(upgradeFn, impl));
         require(ok, "upgradeBeacon failed");
         console2.log("beacon   ", name, impl);
     }

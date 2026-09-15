@@ -9,6 +9,7 @@ export {
   slotAbi as SlotAbi,
   slotBoundNftAbi as SlotBoundNftAbi,
   slotBoundNftFactoryAbi as SlotBoundNftFactoryAbi,
+  slotBoundNftWrapperAbi as SlotBoundNftWrapperAbi,
   slotCollectiveAbi as SlotCollectiveAbi,
   slotCollectiveFactoryAbi as SlotCollectiveFactoryAbi,
   slotFactoryAbi as SlotFactoryAbi,

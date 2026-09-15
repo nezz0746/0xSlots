@@ -37,6 +37,7 @@ const INCLUDE = [
   "MinimumTenureHook",
   "SlotBoundNFTFactory",
   "SlotBoundNFT",
+  "SlotBoundNFTWrapper",
   // Local only, and deployed by `SeedSlots` rather than `DeployProtocol`. It is
   // here for its ADDRESS: plain CREATE means it moves whenever the seed changes
   // what it deploys, and it was hand-typed in the SDK until it pointed at an
