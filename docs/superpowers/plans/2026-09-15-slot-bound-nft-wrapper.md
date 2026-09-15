@@ -1485,10 +1485,13 @@ In `packages/contracts/wagmi.config.ts`, add two entries to `INCLUDE` after `"Sl
 `SlotBoundNFTFactory` is already listed, so its new functions come through on the next generation. Then:
 
 ```bash
-cd packages/contracts && pnpm build
+cd packages/contracts && pnpm codegen && pnpm build
 ```
 
-Expected: the build succeeds and the generated output mentions `SlotBoundNFTWrapper`.
+`codegen` is the generate step (`wagmi generate`); `build` alone only runs
+`tsup` and would regenerate nothing. Expected: `src/generated.ts` gains
+`slotBoundNftWrapperAbi` — note wagmi camel-cases the acronym to `Nft`, so
+grepping for `NFT` finds nothing and proves nothing.
 
 - [ ] **Step 8: Commit**
 
