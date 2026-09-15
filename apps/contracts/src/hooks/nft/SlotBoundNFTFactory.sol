@@ -7,7 +7,10 @@ import {SlotFactory} from "../../SlotFactory.sol";
 import {VersionedUUPS} from "../../VersionedUUPS.sol";
 import {Versioned} from "../../Versioned.sol";
 import {InvalidRecipient} from "../../SlotErrors.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {SlotBoundNFT} from "./SlotBoundNFT.sol";
+import {SlotBoundNFTWrapper} from "./SlotBoundNFTWrapper.sol";
 
 /// @notice Everything a collection is fixed with. See {SlotBoundNFT}.
 struct CollectionInit {
@@ -22,6 +25,13 @@ struct CollectionInit {
     address manager;
     /// Holds the metadata, and nothing else.
     address owner;
+}
+
+/// @notice Everything a wrapper is fixed with — which is almost nothing. Each
+///         wrap brings its own asset, its own rate and its own mode.
+struct WrapperInit {
+    string name;
+    string symbol;
 }
 
 /**
@@ -46,7 +56,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
 
     /// @inheritdoc Versioned
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 3;
     }
 
     /// @notice The slot factory every collection creates its slots through.
@@ -133,6 +143,81 @@ contract SlotBoundNFTFactory is VersionedUUPS {
             address(init.currency),
             init.maxSupply
         );
+    }
+
+    // ─── wrappers ───────────────────────────────────────────────────────────
+    //
+    // Appended, never inserted: this factory is live and slots 0-3 are spoken
+    // for by `slotFactory`, `admin`, `isCollection`, `collectionCount`.
+    //
+    // Collections are a plain `new` and permanently so — the reasoning is at
+    // the top of this file and it has not changed. Wrappers take the opposite
+    // trade knowingly: they hold OTHER PEOPLE'S escrowed assets, so this
+    // beacon's key can rewrite `withdraw` as well as `ownerOf`. Accepted, and
+    // recorded in the design spec rather than mitigated here.
+
+    /// @notice The beacon every wrapper proxy points at.
+    UpgradeableBeacon public wrapperBeacon;
+
+    mapping(address => bool) public isWrapper;
+    uint256 public wrapperCount;
+
+    event WrapperCreated(
+        address indexed wrapper,
+        address indexed creator,
+        string name,
+        string symbol
+    );
+    event WrapperBeaconUpgraded(address indexed newImplementation);
+
+    /// @notice Stand up the wrapper beacon on an already-deployed factory.
+    ///
+    /// @dev Cannot live in `initialize`, which already ran on the live proxy.
+    ///      `onlyAdmin` is load-bearing: a `reinitializer` on an external
+    ///      function is otherwise callable by anyone, and the caller would be
+    ///      choosing the implementation behind every wrapper.
+    function initializeWrappers(
+        address wrapperImplementation
+    ) external reinitializer(2) onlyAdmin {
+        if (wrapperImplementation == address(0)) revert InvalidRecipient();
+        wrapperBeacon = new UpgradeableBeacon(
+            wrapperImplementation,
+            address(this)
+        );
+    }
+
+    /// @notice Deploy a wrapper. Anyone may; it has no privileged party.
+    function createWrapper(
+        WrapperInit calldata init
+    ) external returns (address wrapper) {
+        bytes memory initData = abi.encodeCall(
+            SlotBoundNFTWrapper.initialize,
+            (init.name, init.symbol, slotFactory)
+        );
+        // CREATE2, salted with the chain id and the wrapper's index — the same
+        // reasoning as `SlotFactory.createSlot`, written out in full there. The
+        // literal is a domain separator: this counter and `collectionCount`
+        // both start at zero, and while the differing initcode already parts
+        // the two addresses, a reader should not have to derive that.
+        wrapper = address(
+            new BeaconProxy{
+                salt: keccak256(
+                    abi.encode(block.chainid, "wrapper", wrapperCount)
+                )
+            }(address(wrapperBeacon), initData)
+        );
+
+        isWrapper[wrapper] = true;
+        unchecked {
+            ++wrapperCount;
+        }
+        emit WrapperCreated(wrapper, msg.sender, init.name, init.symbol);
+    }
+
+    /// @dev Read the note above `wrapperBeacon` before using this.
+    function upgradeWrapperBeacon(address newImplementation) external onlyAdmin {
+        wrapperBeacon.upgradeTo(newImplementation);
+        emit WrapperBeaconUpgraded(newImplementation);
     }
 
     function transferAdmin(address next) external onlyAdmin {
