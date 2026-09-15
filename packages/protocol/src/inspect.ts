@@ -23,6 +23,11 @@ export interface Upgradeable {
   kind: "uups" | "beacon";
   /** For beacons: the record naming the factory that owns the beacon. */
   owner?: string;
+  /**
+   * For beacons whose owner serves more than one, and so cannot call the
+   * getter `beacon()`. Defaults to `beacon()`.
+   */
+  beaconGetter?: string;
 }
 
 /**
@@ -61,6 +66,20 @@ export const PROXIES: Record<string, Upgradeable> = {
     target: "src/collectives/SlotCollective.sol:SlotCollective",
     kind: "beacon",
     owner: "SlotCollectiveFactory",
+  },
+  /**
+   * The wrapper, and the sharpest beacon key in the protocol: it escrows
+   * OTHER PEOPLE'S NFTs, so whoever holds this key can rewrite `withdraw` as
+   * well as `ownerOf`. Taken knowingly — see the design spec.
+   *
+   * Its owner already deploys collections by plain `new`, so the beacon it
+   * owns cannot be reached through the usual `beacon()`.
+   */
+  SlotBoundNFTWrapper: {
+    target: "src/hooks/nft/SlotBoundNFTWrapper.sol:SlotBoundNFTWrapper",
+    kind: "beacon",
+    owner: "SlotBoundNFTFactory",
+    beaconGetter: "wrapperBeacon()",
   },
 };
 
@@ -252,12 +271,13 @@ export function beaconImplementation(
   recordDir: string,
   ownerName: string,
   rpc: string,
+  getter = "beacon()",
 ): string | null {
   const owner = recordedAddress(recordDir, ownerName);
   if (!owner) return null;
   const direct = cast(["call", owner, "implementation()(address)", "--rpc-url", rpc]);
   if (direct) return direct;
-  const beacon = cast(["call", owner, "beacon()(address)", "--rpc-url", rpc]);
+  const beacon = cast(["call", owner, `${getter}(address)`, "--rpc-url", rpc]);
   if (!beacon) return null;
   return cast(["call", beacon, "implementation()(address)", "--rpc-url", rpc]);
 }

@@ -261,7 +261,7 @@ function preflight(mode: Mode, cfg: ChainConfig, step: Step): Preflight {
     const at =
       spec.kind === "uups"
         ? recordedAddress(recordDir, name)
-        : beaconImplementation(recordDir, spec.owner!, rpc);
+        : beaconImplementation(recordDir, spec.owner!, rpc, spec.beaconGetter);
 
     if (!at) {
       // A contract that is not there yet is the LARGEST change available, and
