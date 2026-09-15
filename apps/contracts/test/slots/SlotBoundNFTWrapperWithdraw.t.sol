@@ -240,6 +240,46 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         wrapper.tokenURI(id);
     }
 
+    // ── the underlying lookup ───────────────────────────────────────────────
+
+    function test_WithdrawingClearsTheLookup() public {
+        (uint256 id, ) = _wrap(1, Mode.Reclaimable);
+        assertEq(wrapper.tokenIdOf(IERC721(address(nft)), 1), id);
+
+        vm.prank(alice);
+        wrapper.withdraw(id);
+
+        assertEq(wrapper.tokenIdOf(IERC721(address(nft)), 1), 0, "no longer held");
+    }
+
+    /// @notice The case that ruled out deriving the id from the underlying. A
+    ///         re-wrap gets a FRESH id, so the retired first wrap keeps its own
+    ///         `retired` flag and its dead slot stays dead. A derived id would
+    ///         have collided the two and reopened the retired slot to buyers.
+    function test_ReWrappingAfterAWithdrawalGetsAFreshId() public {
+        (uint256 first, Slot firstSlot) = _wrap(1, Mode.Reclaimable);
+        vm.prank(alice);
+        wrapper.withdraw(first);
+
+        (uint256 second, Slot secondSlot) = _wrap(1, Mode.Reclaimable);
+
+        assertTrue(first != second, "a fresh identity");
+        assertEq(wrapper.tokenIdOf(IERC721(address(nft)), 1), second, "points at the live one");
+        assertEq(wrapper.ownerOf(second), alice);
+
+        // And the first wrap's slot is still retired, unbuyable, untouched.
+        assertTrue(wrapper.wrapOf(first).retired);
+        assertFalse(wrapper.wrapOf(second).retired);
+
+        uint256 dep = _dep(2 ether);
+        uint256 pay = firstSlot.price() + dep;
+        vm.prank(bob);
+        vm.expectRevert(ISlotBoundNFTWrapper.SlotRetired.selector);
+        firstSlot.buy{value: pay}(bob, 2 ether, dep, 0);
+
+        assertTrue(address(firstSlot) != address(secondSlot));
+    }
+
     // ── hostile underlyings ─────────────────────────────────────────────────
 
     function test_AReentrantUnderlyingCannotReenterWithdraw() public {

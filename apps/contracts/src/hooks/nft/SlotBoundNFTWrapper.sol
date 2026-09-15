@@ -55,6 +55,13 @@ contract SlotBoundNFTWrapper is
     /// @dev Zero means the slot is not one of ours.
     mapping(address slot => uint256 tokenId) public tokenOf;
 
+    /// @dev `keccak(underlying, underlyingId)` => the live wrapper token, or
+    ///      zero. The reverse of {wrapOf}, and the reason the token id itself
+    ///      stays a plain counter: deriving it from the underlying would give a
+    ///      re-wrap the SAME id as the retired wrap before it, and one
+    ///      `retired` flag cannot serve two slots. See the design spec.
+    mapping(bytes32 => uint256) private _byUnderlying;
+
     uint256 public totalWrapped;
 
     /// @dev Open only while THIS contract moves or burns a token of its own.
@@ -130,6 +137,7 @@ contract SlotBoundNFTWrapper is
             depositor: msg.sender,
             underlyingId: underlyingId
         });
+        _byUnderlying[_key(address(underlying), underlyingId)] = tokenId;
 
         _mint(address(this), tokenId);
         emit Wrapped(
@@ -184,6 +192,7 @@ contract SlotBoundNFTWrapper is
 
         // Retire and burn BEFORE the underlying moves: it is arbitrary code.
         _wrapped[tokenId].retired = true;
+        delete _byUnderlying[_key(w.underlying, w.underlyingId)];
 
         _moving = true;
         _burn(tokenId);
@@ -196,6 +205,24 @@ contract SlotBoundNFTWrapper is
             w.depositor,
             w.underlyingId
         );
+    }
+
+    /// @notice The live wrapper token backed by `underlyingId` of
+    ///         `underlying`, or zero if this wrapper does not hold it.
+    /// @dev Zero is unambiguous because ids start at one — the same sentinel
+    ///      `tokenOf` relies on.
+    function tokenIdOf(
+        IERC721 underlying,
+        uint256 underlyingId
+    ) external view returns (uint256) {
+        return _byUnderlying[_key(address(underlying), underlyingId)];
+    }
+
+    function _key(
+        address underlying,
+        uint256 underlyingId
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(underlying, underlyingId));
     }
 
     function wrapOf(uint256 tokenId) external view returns (Wrap memory) {

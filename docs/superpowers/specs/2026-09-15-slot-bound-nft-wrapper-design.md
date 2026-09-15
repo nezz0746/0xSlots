@@ -237,6 +237,32 @@ mapping(address slot => uint256 tokenId) public tokenOf;  // zero means not ours
 uint256 public totalWrapped;
 ```
 
+## Finding a wrapper token from its underlying
+
+`tokenIdOf(underlying, underlyingId)` returns the live wrapper token, or zero.
+Backed by `mapping(bytes32 => uint256)` keyed on `keccak(underlying, id)`, set
+in `wrap` and deleted in `withdraw`.
+
+**Why the token id stays a plain counter.** Deriving it from the underlying —
+`keccak(underlying, id)`, or a packed `uint160(underlying) << 96 | uint96(id)`
+you could decode by eye — would let an integration compute it offline. It also
+breaks re-wrapping, which `Reclaimable` makes a first-class flow.
+
+A derived id gives a re-wrap the SAME id as the retired wrap before it. Its
+`retired` flag is still set, so the new wrap is born vetoed and un-withdrawable.
+Reset the record to fix that and the old slot becomes the casualty:
+`tokenOf[oldSlot]` still points at that id, `beforeBuy` now reads the new wrap's
+`retired == false`, and **the dead slot is buyable again** — failure mode one,
+resurrected. One `retired` flag cannot serve two slots.
+
+It is fixable by keying retirement on the slot rather than the token, and the
+packed variant additionally truncates ids to 96 bits or refuses the collections
+that overflow. Neither cost buys much: the `Wrapped` event already carries
+`tokenId`, `slot`, `depositor`, `underlying` and `underlyingId` together, so
+indexers have the mapping for free and clients are making RPC calls anyway.
+A counter plus one lookup is the cheaper correct answer.
+`test_ReWrappingAfterAWithdrawalGetsAFreshId` pins the scenario.
+
 ## Factory changes
 
 `SlotBoundNFTFactory` is live on Base at

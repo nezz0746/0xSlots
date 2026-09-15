@@ -300,6 +300,20 @@ contract SlotBoundNFTWrapperTest is Test {
         assertTrue(wrapper.subscriptions().afterLiquidate);
     }
 
+    // ── finding a wrapper token from its underlying ─────────────────────────
+
+    /// @notice The integration path: "I hold this NFT — which wrapper token is
+    ///         it?" One call, no index, no event replay.
+    function test_TokenIdOfFindsTheWrapperToken() public view {
+        assertEq(wrapper.tokenIdOf(IERC721(address(nft)), 1), tokenId);
+    }
+
+    /// @notice Zero for something never wrapped — the same sentinel `tokenOf`
+    ///         uses, and sound for the same reason: ids start at one.
+    function test_TokenIdOfIsZeroForSomethingNeverWrapped() public view {
+        assertEq(wrapper.tokenIdOf(IERC721(address(nft)), 2), 0);
+    }
+
     // ── metadata ────────────────────────────────────────────────────────────
 
     /// @notice A wrapper token shows what it wraps.

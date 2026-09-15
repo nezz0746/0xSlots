@@ -4136,6 +4136,16 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'underlying', internalType: 'contract IERC721', type: 'address' },
+      { name: 'underlyingId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'tokenIdOf',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'tokenOf',
     outputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
