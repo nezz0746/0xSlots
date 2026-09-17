@@ -7,9 +7,17 @@ import {
   useWaitForTransactionReceipt,
   useWalletClient,
 } from "wagmi";
-import type { BuyParams, HookOffer, ProposeTermsParams, SlotInit } from "./client";
+import type {
+  BuyParams,
+  HookOffer,
+  PostOfferParams,
+  ProposeTermsParams,
+  SlotInit,
+} from "./client";
+import { decodedRevert } from "../errors";
 import { ALL_TERMS, TERMS } from "./client";
 import { SlotsClient } from "./client";
+import { CollectivesClient } from "./collectives";
 
 // ─── Client ───────────────────────────────────────────────────────────────────
 
@@ -45,32 +53,32 @@ export function useSlotsClient(config: UseSlotsClientConfig = {}): SlotsClient {
   );
 }
 
-// ─── Actions ──────────────────────────────────────────────────────────────────
-
-/**
- * The custom error a revert actually carried, if viem could decode one.
- *
- * viem puts the decoded error on a `ContractFunctionRevertedError` several
- * links down the cause chain, and leaves `shortMessage` at the useless
- * `The contract function "buy" reverted.` — so a hook's `TenureNotElapsed`
- * reads identically to running out of gas unless this is dug out. Walks the
- * chain rather than reaching for a fixed depth, because how deep it sits
- * depends on whether the call was a simulation or a send.
- */
-function decodedRevert(error: unknown): string | undefined {
-  let node = error as Record<string, unknown> | undefined;
-  for (let depth = 0; node && typeof node === "object" && depth < 8; depth++) {
-    const data = node.data as Record<string, unknown> | undefined;
-    if (data && typeof data.errorName === "string") {
-      const args = Array.isArray(data.args) ? data.args : [];
-      return args.length
-        ? `${data.errorName}(${args.map((a) => String(a)).join(", ")})`
-        : data.errorName;
-    }
-    node = node.cause as Record<string, unknown> | undefined;
-  }
-  return undefined;
+export interface UseCollectivesClientConfig {
+  /** The `SlotCollectiveFactory`. Defaults to the one deployed on the connected chain. */
+  factoryAddress?: Address;
+  /** Chain override. Defaults to the connected chain. */
+  chainId?: number;
 }
+
+/** A memoized {@link CollectivesClient} built from wagmi's public and wallet clients. */
+export function useCollectivesClient(
+  config: UseCollectivesClientConfig = {},
+): CollectivesClient {
+  const publicClient = usePublicClient({ chainId: config.chainId });
+  const { data: walletClient } = useWalletClient({ chainId: config.chainId });
+
+  return useMemo(
+    () =>
+      new CollectivesClient({
+        factoryAddress: config.factoryAddress,
+        publicClient: publicClient ?? undefined,
+        walletClient: walletClient ?? undefined,
+      }),
+    [config.factoryAddress, publicClient, walletClient],
+  );
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
 
 /**
  * Reverts whose SELECTOR is not the useful part of the answer.
@@ -240,6 +248,11 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     (slot: Address) => exec("Liquidate", () => client.liquidate(slot)),
     [exec, client],
   );
+  const liquidateAndBuy = useCallback(
+    (params: BuyParams) =>
+      exec("Liquidate and buy", () => client.liquidateAndBuy(params)),
+    [exec, client],
+  );
 
   // ─── Holding ──────────────────────────────────────────────────────────────
 
@@ -333,6 +346,23 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     [exec, client],
   );
 
+  const postOffer = useCallback(
+    (params: PostOfferParams) => exec("Post offer", () => client.postOffer(params)),
+    [exec, client],
+  );
+
+  const cancelOffer = useCallback(
+    (slot: Address, id: bigint) =>
+      exec("Cancel offer", () => client.cancelOffer(slot, id)),
+    [exec, client],
+  );
+
+  const authorizeOfferBook = useCallback(
+    (slot: Address) =>
+      exec("Authorize offer book", () => client.authorizeOfferBook(slot)),
+    [exec, client],
+  );
+
   const acceptHookOffer = useCallback(
     (slot: Address, expected: HookOffer) =>
       exec("Accept hook offer", () => client.acceptHookOffer(slot, expected)),
@@ -372,6 +402,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     buy,
     release,
     liquidate,
+    liquidateAndBuy,
     // Holding
     selfAssess,
     topUp,
@@ -388,6 +419,9 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     acceptHookOffer,
     setManager,
     // Orders
+    postOffer,
+    cancelOffer,
+    authorizeOfferBook,
     acceptOffer,
     // Escape hatches
     client,

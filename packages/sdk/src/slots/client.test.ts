@@ -2,6 +2,7 @@ import { slotAbi } from "@0xslots/contracts/slots";
 import { encodeFunctionData } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { NATIVE_CURRENCY_ADDRESS } from "../native";
+import { decodeFunctionData } from "viem";
 import {
   ALL_TERMS,
   assertSlotInit,
@@ -28,6 +29,7 @@ const FACTORY = "0x5555555555555555555555555555555555555555" as const;
 const MANAGER = "0x6666666666666666666666666666666666666666" as const;
 const TAKER = "0x9999999999999999999999999999999999999999" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
+const OFFER_BOOK = "0x8888888888888888888888888888888888888888" as const;
 
 const CHAIN_ID = 8453;
 
@@ -77,6 +79,7 @@ function harness(
 
   const client = new SlotsClient({
     factoryAddress: FACTORY,
+    offerBookAddress: OFFER_BOOK,
     // Evict-and-take is periphery now. Wired here so every test exercises the
     // real routing rather than a client that quietly has nowhere to send it.
     publicClient: {
@@ -1083,5 +1086,131 @@ describe("acceptOffer", () => {
     const { client, writeContract } = bookClient();
     await expect(client.acceptOffer(SLOT, 3n, 0n)).rejects.toThrow(/minPrice/);
     expect(writeContract).not.toHaveBeenCalled();
+  });
+});
+
+describe("offer book", () => {
+  const raw = (bidder: string, price: bigint) => ({
+    bidder,
+    price,
+    deposit: 10n,
+    expiry: 9_999_999_999n,
+    cancelled: false,
+    filled: false,
+  });
+
+  it("offerBoard keeps the book's live verdict and sorts by price", async () => {
+    const { client, readContract } = harness({
+      board: [[raw(ACCOUNT, 50n), raw(MANAGER, 90n), raw(TAKER, 70n)], [true, true, false]],
+      liveCount: 2n,
+      best: [true, 1n, raw(MANAGER, 90n)],
+    });
+    const board = await client.offerBoard(SLOT);
+    expect(board.offers.map((o) => o.id)).toEqual([1n, 0n]);
+    expect(board.liveCount).toBe(2n);
+    expect(board.best).toMatchObject({ id: 1n, bidder: MANAGER, price: 90n });
+    expect(readContract.mock.calls.every((c: any[]) => c[0].address === OFFER_BOOK)).toBe(true);
+  });
+
+  it("offerBoard has no best when the book found none", async () => {
+    const { client } = harness({ board: [[], []], liveCount: 0n, best: [false, 0n, raw(ZERO, 0n)] });
+    expect((await client.offerBoard(SLOT)).best).toBeUndefined();
+  });
+
+  it("postOffer sends to the book and refuses a past expiry", async () => {
+    const { client, writeContract } = harness({});
+    await client.postOffer({ slot: SLOT, price: 100n, deposit: 5n, expiry: 9_999_999_999n });
+    expect(sent(writeContract, "offer")).toMatchObject({
+      address: OFFER_BOOK,
+      args: [SLOT, 100n, 5n, 9_999_999_999n],
+    });
+    await expect(
+      client.postOffer({ slot: SLOT, price: 100n, deposit: 5n, expiry: 1n }),
+    ).rejects.toThrow(/expiry/);
+  });
+
+  it("offerCost includes the bidder's debt on the slot", async () => {
+    const { client } = harness({ debtOf: 7n });
+    expect(await client.offerCost(SLOT, ACCOUNT, 100n, 5n)).toBe(112n);
+  });
+
+  it("authorizeOfferBook makes the book the occupant's operator", async () => {
+    const { client, writeContract } = harness({});
+    await client.authorizeOfferBook(SLOT);
+    expect(sent(writeContract, "setOperator")).toMatchObject({
+      address: SLOT,
+      args: [OFFER_BOOK, true],
+    });
+  });
+
+  it("approveOfferBook approves the book, not the slot", async () => {
+    const { client, writeContract } = harness({ currency: ERC20, allowance: 0n });
+    await client.approveOfferBook(SLOT, 100n);
+    expect(sent(writeContract, "approve")).toMatchObject({ address: ERC20, args: [OFFER_BOOK, 100n] });
+  });
+});
+
+describe("hook reads", () => {
+  it("checkHookConfig resolves ok when the hook accepts", async () => {
+    const { client } = harness({ validateHookConfig: undefined });
+    expect(await client.checkHookConfig(HOOK, ZERO_HOOK_DATA)).toEqual({ ok: true });
+  });
+
+  it("checkHookConfig resolves with the reason when the hook refuses", async () => {
+    const { client } = harness({});
+    const check = await client.checkHookConfig(HOOK, ZERO_HOOK_DATA);
+    expect(check.ok).toBe(false);
+  });
+
+  it("hookDescriptors is empty for a hook that does not describe itself", async () => {
+    const { client } = harness({});
+    expect(await client.hookDescriptors(HOOK)).toEqual([]);
+  });
+
+  it("readHookOffer asks the hook for a config", async () => {
+    const offer = { permissions: 4, feeBps: 0, feeRecipient: ZERO };
+    const { client, readContract } = harness({ hookOffer: offer });
+    expect(await client.readHookOffer(HOOK, ZERO_HOOK_DATA)).toEqual(offer);
+    const call = readContract.mock.calls.at(-1)![0];
+    expect(call.address).toBe(HOOK);
+    expect(call.args).toEqual([ZERO_HOOK_DATA]);
+  });
+});
+
+describe("liquidateAndBuy", () => {
+  const params = {
+    slot: SLOT,
+    account: TAKER,
+    depositAmount: 100n,
+    selfAssessedPrice: 1_000n,
+  };
+
+  it("batches liquidate and buy, pinning deposit plus debt", async () => {
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      isInsolvent: true,
+      debtOf: 3n,
+      allowance: 10n ** 30n,
+    });
+    await client.liquidateAndBuy(params);
+    const call = sent(writeContract, "multicall");
+    expect(call.address).toBe(SLOT);
+    const [liq, buy] = call.args[0].map((data: `0x${string}`) =>
+      decodeFunctionData({ abi: slotAbi, data }),
+    );
+    expect(liq.functionName).toBe("liquidate");
+    expect(buy.functionName).toBe("buy");
+    expect(buy.args).toEqual([TAKER, 1_000n, 100n, 103n]);
+  });
+
+  it("refuses a native slot, whose buy cannot ride a multicall", async () => {
+    const { client, writeContract } = harness({ currency: ZERO, isInsolvent: true, debtOf: 0n });
+    await expect(client.liquidateAndBuy(params)).rejects.toThrow(/native/);
+    expect(writeContract).not.toHaveBeenCalled();
+  });
+
+  it("refuses a solvent occupant before sending", async () => {
+    const { client } = harness({ currency: ERC20, isInsolvent: false, debtOf: 0n });
+    await expect(client.liquidateAndBuy(params)).rejects.toThrow(/not insolvent/);
   });
 });

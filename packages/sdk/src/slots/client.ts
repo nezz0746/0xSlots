@@ -16,7 +16,7 @@ import {
   type WalletClient,
   zeroAddress,
 } from "viem";
-import { SlotsError } from "../errors";
+import { decodedRevert, SlotsError } from "../errors";
 import { isNativeCurrency } from "../native";
 
 // ─── Protocol constants ───────────────────────────────────────────────────────
@@ -272,6 +272,56 @@ export interface ProposeTermsParams {
   hookTerms?: Partial<HookTerms> & { target: Address };
 }
 
+/** Every term in force. Mirrors `Terms`. */
+export interface SlotTerms {
+  taxTerms: TaxTerms;
+  hookTerms: HookTerms;
+  hookOffer: HookOffer;
+}
+
+/** A hook's self-description. Mirrors `IDescribedHook.HookDescriptor`. */
+export interface HookDescriptor {
+  family: Hex;
+  version: number;
+  signature: string;
+  data: Hex;
+  metadataURI: string;
+}
+
+/** Whether a hook accepts a configuration, and why not. */
+export type HookConfigCheck = { ok: true } | { ok: false; reason: string };
+
+/** One entry on the OfferBook. `id` is what `acceptOffer` and `cancelOffer` take. */
+export interface BookOffer {
+  id: bigint;
+  bidder: Address;
+  price: bigint;
+  deposit: bigint;
+  expiry: bigint;
+  cancelled: boolean;
+  filled: boolean;
+}
+
+/** A slot's standing offers, as the book judges them. */
+export interface OfferBoard {
+  /** Live offers only, highest price first. */
+  offers: BookOffer[];
+  /** `liveCount`: what a badge should show. */
+  liveCount: bigint;
+  /** The book's best live, funded offer, if any. */
+  best?: BookOffer;
+}
+
+/** A standing bid to post. Posting moves no funds. */
+export interface PostOfferParams {
+  slot: Address;
+  price: bigint;
+  /** The escrow the bidder will fund if accepted. */
+  deposit: bigint;
+  /** Unix seconds. */
+  expiry: bigint;
+}
+
 /** The slot's accepted hook offer beside what the hook offers today. */
 export interface HookOfferStatus {
   accepted: HookOffer;
@@ -412,6 +462,9 @@ export interface SlotsClientConfig {
  * is the honest floor for an open extension point, and it is strictly more than
  * a mined revert with no reason at all.
  */
+/** `OfferBook.Offer` as viem decodes it. */
+type RawOffer = Omit<BookOffer, "id">;
+
 const SIMULATION_ABI = [
   ...slotAbi,
   ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
@@ -463,6 +516,7 @@ export class SlotsClient {
     return this._factory;
   }
 
+  /** The OfferBook this client sends to. */
   private get offerBook(): Address {
     const book = this._offerBook ?? offerBookAddress[this.chain.id];
     if (!book)
@@ -695,6 +749,98 @@ export class SlotsClient {
    */
   tenureId(slot: Address): Promise<bigint> {
     return this.read<bigint>(slot, "tenureId");
+  }
+
+  /** Every term in force: tax terms, hook terms and the accepted hook offer. */
+  terms(slot: Address): Promise<SlotTerms> {
+    return this.read<SlotTerms>(slot, "terms");
+  }
+
+  /** The hook's offer as this slot accepted it. */
+  hookOffer(slot: Address): Promise<HookOffer> {
+    return this.read<HookOffer>(slot, "hookOffer");
+  }
+
+  /** Who may propose terms. Zero when nothing about the slot can change. */
+  manager(slot: Address): Promise<Address> {
+    return this.read<Address>(slot, "manager");
+  }
+
+  /** Tax settled into the slot and not yet paid out. */
+  collectedTax(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "collectedTax");
+  }
+
+  /** Unix seconds tax has been settled up to. */
+  lastSettled(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "lastSettled");
+  }
+
+  /** Unix seconds the current tenure began. Zero when vacant. */
+  occupiedSince(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "occupiedSince");
+  }
+
+  /** Runway a buyer must fund, in seconds. */
+  minRunwaySeconds(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "minRunwaySeconds");
+  }
+
+  // ─── Hooks ──────────────────────────────────────────────────────────────────
+
+  /**
+   * What `hook` asks of a slot configured with `config`, as it declares it
+   * today. Not what any slot has accepted: that is {@link hookOffer}.
+   */
+  readHookOffer(hook: Address, config: Hex = ZERO_HOOK_DATA): Promise<HookOffer> {
+    return this.publicClient.readContract({
+      address: hook,
+      abi: minimumTenureHookAbi,
+      functionName: "hookOffer",
+      args: [config],
+    }) as Promise<HookOffer>;
+  }
+
+  /**
+   * Ask `hook` whether it accepts `config`, the same check a slot runs when the
+   * hook is proposed or attached. Resolves with the hook's reason instead of
+   * throwing, so a form can show it.
+   */
+  async checkHookConfig(hook: Address, config: Hex): Promise<HookConfigCheck> {
+    try {
+      await this.publicClient.readContract({
+        address: hook,
+        abi: minimumTenureHookAbi,
+        functionName: "validateHookConfig",
+        args: [config],
+      });
+      return { ok: true };
+    } catch (error) {
+      const short = (error as { shortMessage?: unknown }).shortMessage;
+      return {
+        ok: false,
+        reason:
+          decodedRevert(error) ??
+          (typeof short === "string" ? short : String(error).split("\n")[0]),
+      };
+    }
+  }
+
+  /**
+   * A hook's self-description (`IDescribedHook.descriptors`). Empty for a hook
+   * that does not describe itself.
+   */
+  async hookDescriptors(hook: Address): Promise<HookDescriptor[]> {
+    try {
+      const result = await this.publicClient.readContract({
+        address: hook,
+        abi: minimumTenureHookAbi,
+        functionName: "descriptors",
+      });
+      return [...(result as readonly HookDescriptor[])];
+    } catch {
+      return [];
+    }
   }
 
   /** The whole slot, as of one block, in one call. */
@@ -1038,18 +1184,58 @@ export class SlotsClient {
   /**
    * Evict an occupant whose deposit is empty. Anyone may call.
    *
-   * There is no bounty — the reward is the slot, and claiming it is a second
-   * transaction. Evicting without wanting the slot hands the vacancy to whoever
-   * is watching the mempool.
-   *
-   * An atomic evict-and-take used to live here, through a periphery `SlotTaker`
-   * on native slots and the slot's own `multicall` on ERC-20 ones. Both are
-   * gone: `liquidate()` and `buy(…)` are public, so anyone who wants them in one
-   * transaction can compose them — and on an ERC-20 slot the slot's inherited
-   * `multicall` still does exactly that, without this client's help.
+   * There is no bounty — the reward is the slot. Evicting without taking it
+   * hands the vacancy to whoever is watching the mempool; see
+   * {@link liquidateAndBuy}.
    */
   liquidate(slot: Address): Promise<Hash> {
     return this.write(slot, "liquidate", []);
+  }
+
+  /**
+   * Evict an insolvent occupant and take the slot in one transaction, through
+   * the slot's `multicall`. ERC-20 slots only: `multicall` is not payable, so a
+   * native slot needs `liquidate` then `buy`.
+   *
+   * The vacated slot charges the deposit plus any debt `account` owes, and that
+   * figure is pinned as `maxPayment`.
+   */
+  async liquidateAndBuy(params: BuyParams): Promise<Hash> {
+    this.assertPositive(params.depositAmount, "depositAmount");
+    this.assertPrice(params.selfAssessedPrice, "selfAssessedPrice");
+    if (params.account === zeroAddress)
+      throw new SlotsError("liquidateAndBuy", "account must not be the zero address");
+
+    const [currency, insolvent, debt] = await Promise.all([
+      this.currency(params.slot),
+      this.isInsolvent(params.slot),
+      this.debtOf(params.slot, params.account),
+    ]);
+    if (isNativeCurrency(currency))
+      throw new SlotsError(
+        "liquidateAndBuy",
+        "native slots cannot batch a payable buy; call liquidate, then buy",
+      );
+    if (!insolvent)
+      throw new SlotsError("liquidateAndBuy", "the occupant is not insolvent");
+
+    const amount = params.depositAmount + debt;
+    await this.ensureAllowance(currency, params.slot, amount);
+    return this.write(params.slot, "multicall", [
+      [
+        encodeFunctionData({ abi: slotAbi, functionName: "liquidate" }),
+        encodeFunctionData({
+          abi: slotAbi,
+          functionName: "buy",
+          args: [
+            params.account,
+            params.selfAssessedPrice,
+            params.depositAmount,
+            params.maxPayment ?? amount,
+          ],
+        }),
+      ],
+    ]);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1101,6 +1287,118 @@ export class SlotsClient {
     allowed: boolean,
   ): Promise<Hash> {
     return this.write(slot, "setOperator", [operator, allowed]);
+  }
+
+  // ─── OfferBook ──────────────────────────────────────────────────────────────
+
+  private bookRead<T>(functionName: string, args: readonly unknown[]) {
+    return this.publicClient.readContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName,
+      args,
+    } as never) as Promise<T>;
+  }
+
+  /**
+   * A slot's live offers, the book's live count and its best funded offer, as
+   * the book itself judges them. Filled, cancelled and expired offers are left
+   * out by the book's own verdict, never recomputed here.
+   */
+  async offerBoard(slot: Address): Promise<OfferBoard> {
+    const [[list, live], liveCount, [found, bestId, best]] = await Promise.all([
+      this.bookRead<readonly [readonly RawOffer[], readonly boolean[]]>("board", [slot]),
+      this.bookRead<bigint>("liveCount", [slot]),
+      this.bookRead<readonly [boolean, bigint, RawOffer]>("best", [slot]),
+    ]);
+    const offers = list
+      .map((o, i) => ({ ...o, id: BigInt(i) }))
+      .filter((o) => live[Number(o.id)] === true)
+      .sort((a, b) => (b.price > a.price ? 1 : b.price < a.price ? -1 : 0));
+    return {
+      offers,
+      liveCount,
+      ...(found ? { best: { ...best, id: bestId } } : {}),
+    };
+  }
+
+  /** One offer by id, whatever its state. */
+  async offerAt(slot: Address, id: bigint): Promise<BookOffer> {
+    const o = await this.bookRead<RawOffer>("offerAt", [slot, id]);
+    return { ...o, id };
+  }
+
+  /** Whether the bidder's balance and allowance to the book still cover the offer. */
+  isOfferFundable(slot: Address, id: bigint): Promise<boolean> {
+    return this.bookRead<boolean>("isFundable", [slot, id]);
+  }
+
+  /**
+   * What accepting an offer at `price` and `deposit` would pull from `bidder`:
+   * the price, the deposit and any debt the bidder owes on this slot. The
+   * bidder's allowance to the book must cover it.
+   */
+  async offerCost(
+    slot: Address,
+    bidder: Address,
+    price: bigint,
+    deposit: bigint,
+  ): Promise<bigint> {
+    return price + deposit + (await this.debtOf(slot, bidder));
+  }
+
+  /**
+   * Post or replace the connected account's standing bid on `slot`. Posting
+   * moves nothing; the book pulls payment only when the occupant accepts, so
+   * {@link approveOfferBook} for {@link offerCost} first or the offer is not
+   * fundable. Replacing keeps the same id.
+   */
+  async postOffer(params: PostOfferParams): Promise<Hash> {
+    this.assertPrice(params.price, "price");
+    if (params.deposit < 0n)
+      throw new SlotsError("postOffer", "deposit must not be negative");
+    if (params.expiry <= BigInt(Math.floor(Date.now() / 1000)))
+      throw new SlotsError("postOffer", "expiry must be in the future");
+    return this.wallet.writeContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName: "offer",
+      args: [params.slot, params.price, params.deposit, params.expiry],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /** Withdraw the connected account's offer. Bidder only. */
+  cancelOffer(slot: Address, id: bigint): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName: "cancel",
+      args: [slot, id],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Let the book pull up to `amount` of the slot's currency from the connected
+   * account when an offer is accepted. Waits until the allowance is visible.
+   */
+  async approveOfferBook(slot: Address, amount: bigint): Promise<void> {
+    this.assertPositive(amount, "amount");
+    const currency = await this.currency(slot);
+    if (isNativeCurrency(currency))
+      throw new SlotsError("approveOfferBook", "the OfferBook does not trade native slots");
+    await this.ensureAllowance(currency, this.offerBook, amount);
+  }
+
+  /**
+   * Make the book the occupant's operator, so it can reprice the slot when an
+   * offer is accepted. Lapses when the tenure ends.
+   */
+  authorizeOfferBook(slot: Address): Promise<Hash> {
+    return this.setOperator(slot, this.offerBook, true);
   }
 
   /**
