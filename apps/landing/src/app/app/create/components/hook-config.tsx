@@ -24,14 +24,14 @@ import { TIME_MULTIPLIERS, type TimeUnit, timeUnits } from "../sections";
  * This is now the ONLY configuration form. The minimum-tenure hook used to
  * have a second, hand-written one — a value and a unit, encoded at submit —
  * and the two disagreed about the same `uint256 window`: one was checked
- * against `validateHookTerms` and the other was not, so a duration the hook
+ * against `validateHookConfig` and the other was not, so a duration the hook
  * would refuse could still be submitted. A hook that describes itself does not
  * need a bespoke screen, and having one meant maintaining the declaration and
  * the form separately, which is the thing descriptors exist to stop.
  *
  * Two things are separated on purpose. The BOUNDS came from the descriptor and
  * are advice: they shape the control and catch a wrong value early. The
- * VERDICT comes from `validateHookTerms` on the chain, and it is the authority
+ * VERDICT comes from `validateHookConfig` on the chain, and it is the authority
  * — the same function the slot runs at attach. When they disagree the chain
  * wins, and the message says what the chain said.
  */

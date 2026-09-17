@@ -218,7 +218,7 @@ export function SectionHook() {
  *
  * Read from `descriptors()`: the type comes from a plain ABI signature, the
  * label, unit and bounds from the hook's published constants, and the verdict
- * from simulating `validateHookTerms` — the same function the slot will run.
+ * from simulating `validateHookConfig` — the same function the slot will run.
  *
  * A hook that publishes nothing renders nothing, which is most of them and is
  * why this is silent rather than empty. There is no second, hand-written form

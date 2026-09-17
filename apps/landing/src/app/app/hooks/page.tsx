@@ -36,7 +36,7 @@ import {
  * Everything on a card is read from the chain at the address, not from this
  * app: the callbacks from `hookOffer()`, the configuration from
  * `descriptors()`, and whether that configuration is optional from
- * `validateHookTerms` itself. The name and the sentence are the only editorial
+ * `validateHookConfig` itself. The name and the sentence are the only editorial
  * content, and they are the only part that could ever be out of date.
  */
 export default function HooksPage() {
@@ -277,7 +277,7 @@ function HookCard({
  * One configurable family, as the hook describes it.
  *
  * The signature gives the type, the bounds give the label, the unit and the
- * range, and `validateHookTerms` on the empty word gives the one thing neither
+ * range, and `validateHookConfig` on the empty word gives the one thing neither
  * can express: whether a slot may attach this hook without configuring it.
  */
 function FamilyRow({

@@ -9,9 +9,9 @@ import {
   type Address,
   decodeAbiParameters,
   encodeAbiParameters,
+  type Hex,
   isAddress,
   parseAbiParameters,
-  zeroAddress,
 } from "viem";
 import { usePublicClient, useReadContracts } from "wagmi";
 import { useChain } from "@/context/chain";
@@ -57,20 +57,9 @@ const describedHookAbi = [
   },
   {
     type: "function",
-    name: "validateHookTerms",
+    name: "validateHookConfig",
     stateMutability: "view",
-    inputs: [
-      {
-        name: "terms",
-        type: "tuple",
-        components: [
-          { name: "hook", type: "address" },
-          { name: "feeBps", type: "uint16" },
-          { name: "feeRecipient", type: "address" },
-          { name: "data", type: "bytes32" },
-        ],
-      },
-    ],
+    inputs: [{ name: "config", type: "bytes32" }],
     outputs: [],
   },
 ] as const satisfies Abi;
@@ -264,7 +253,7 @@ export function useHookDataCheck(
    * The check now runs against the public client, so it is right before anyone
    * connects, which is when a creator is filling this in.
    *
-   * `validateHookTerms` returns nothing, so the query resolves to `true` rather
+   * `validateHookConfig` returns nothing, so the query resolves to `true` rather
    * than to the call's own `undefined` — which react-query treats as a failure.
    */
   const { data, error, isLoading } = useQuery({
@@ -276,15 +265,8 @@ export function useHookDataCheck(
       await client.readContract({
         address: address as Address,
         abi: checkAbi,
-        functionName: "validateHookTerms",
-        args: [
-          {
-            hook: address as Address,
-            feeBps: 0,
-            feeRecipient: zeroAddress,
-            data: settled,
-          },
-        ],
+        functionName: "validateHookConfig",
+        args: [settled as Hex],
       });
       return true as const;
     },
