@@ -217,12 +217,12 @@ function HookCard({
 
       <div className="space-y-1.5">
         <h3 className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-          Callbacks
+          Permissions
         </h3>
         {/* The same row the create form and the slot page draw, from the same
             `hookOffer()` call — so a hook looks identical here, while it is
             being attached, and after it is attached. */}
-        <HookPermissionRow permissions={check.data?.permissions} />
+        <HookPermissionRow permissions={check.data?.permissions} fee={check.data?.fee} />
       </div>
 
       <div className="space-y-1.5">

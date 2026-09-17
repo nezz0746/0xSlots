@@ -1,7 +1,7 @@
 "use client";
 
 import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
-import { ZERO_HOOK_DATA } from "@0xslots/sdk/slots";
+import { unpackHookPermissions, ZERO_HOOK_DATA } from "@0xslots/sdk/slots";
 import { AlertCircle, Loader2, Plug } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
@@ -56,6 +56,7 @@ export function SectionHook() {
   // hook itself, so a hook picked by name deserves the same scrutiny as one
   // pasted in — arguably more, since nobody typed its address.
   const check = useHookCheck(hook, chainId);
+  const offer = useDeclaredHookOffer(hook);
 
   return (
     <FormField
@@ -112,7 +113,13 @@ export function SectionHook() {
                 same row as one pasted in, and it is the same row the slot page
                 draws once it is attached. */}
             {check.data?.status === "ok" && (
-              <HookPermissionRow permissions={check.data.permissions} className="mt-2" />
+              <HookPermissionRow
+                permissions={
+                  offer ? unpackHookPermissions(offer.permissions) : check.data.permissions
+                }
+                fee={offer}
+                className="mt-2"
+              />
             )}
 
             {chosenKnown && (
@@ -201,10 +208,6 @@ export function SectionHook() {
               <HookDeclaredConfig key={field.value} hook={field.value} />
             )}
 
-            {(hookMode === "known" || hookMode === "custom") && (
-              <DeclaredHookFee hook={field.value} />
-            )}
-
             <FormMessage />
           </FormItem>
         );
@@ -291,30 +294,22 @@ function HookDeclaredConfig({ hook }: { hook: string }) {
 }
 
 /**
- * What the hook takes from rent, as the hook itself declares it. The slot reads
- * this once when the hook attaches; nobody creating a slot chooses it.
+ * What the hook asks of a slot configured with the form's current word: its
+ * permissions and its fee, as the hook itself declares them. The slot copies
+ * this when the hook attaches; nobody creating a slot chooses it.
  */
-function DeclaredHookFee({ hook }: { hook: string }) {
+function useDeclaredHookOffer(hook: string) {
   const { chainId } = useChain();
   const data = useFormContext<CreateSlotFormValues>().watch("customHookData");
   const valid = isAddress(hook);
-  const { data: offer } = useReadContract({
+  return useReadContract({
     address: valid ? (hook as Address) : undefined,
     abi: HOOK_OFFER_ABI,
     functionName: "hookOffer",
     args: [(data || ZERO_HOOK_DATA) as Hex],
     chainId,
     query: { enabled: valid },
-  });
-
-  if (!offer) return null;
-  return (
-    <p className="mt-2 text-[11px] text-muted-foreground">
-      {offer.feeBps === 0
-        ? "This hook takes no share of rent."
-        : `This hook takes ${offer.feeBps / 100}% of rent, paid to ${offer.feeRecipient.slice(0, 6)}…${offer.feeRecipient.slice(-4)}.`}
-    </p>
-  );
+  }).data;
 }
 
 const HOOK_OFFER_ABI = [

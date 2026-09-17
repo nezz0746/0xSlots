@@ -59,6 +59,8 @@ export interface HookCheckData {
   status: HookCheckStatus;
   /** The raw declared set, for rendering. */
   permissions: HookPermissionSet;
+  /** The fee it declares for an empty configuration. Null when it did not answer. */
+  fee: { feeBps: number; feeRecipient: Address } | null;
   /** Declared `strict`: its `after` calls are uncapped and may revert. */
   strict: boolean;
   /** The callbacks it declared, in the order `HookPermissions` declares them. */
@@ -127,6 +129,7 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
       return {
         address: checksummed,
         status: "no-code",
+        fee: null,
         ...describePermissions(null),
       };
 
@@ -135,16 +138,21 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
       return {
         address: checksummed,
         status: "not-a-hook",
+        fee: null,
         ...describePermissions(null),
       };
 
-    const described = describePermissions(
-      unpackHookPermissions((offerRes.result as { permissions: number }).permissions),
-    );
+    const offer = offerRes.result as {
+      permissions: number;
+      feeBps: number;
+      feeRecipient: Address;
+    };
+    const described = describePermissions(unpackHookPermissions(offer.permissions));
 
     return {
       address: checksummed,
       status: described.granted.length === 0 ? "inert" : "ok",
+      fee: { feeBps: offer.feeBps, feeRecipient: offer.feeRecipient },
       ...described,
     };
   })();

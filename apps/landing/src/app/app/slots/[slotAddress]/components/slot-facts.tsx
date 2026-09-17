@@ -16,7 +16,6 @@ import { useNow } from "@/hooks/use-duration";
 import type { LiveAccrual } from "@/hooks/use-live-accrual";
 import { useTenureWindow } from "@/hooks/use-tenure-window";
 import { cn } from "@/lib/utils";
-import { formatBps } from "@/utils";
 import { HoldingCost } from "./holding-cost";
 import { AddressText } from "./panel";
 
@@ -306,11 +305,6 @@ export function SlotDetails({
             <span className="inline-flex items-center gap-1.5">
               {known?.name ?? "unrecognised"}
               <AddressText address={state.hook} />
-              {state.hookOffer.feeBps > 0 ? (
-                <span className="text-[10px] text-muted-foreground">
-                  takes {formatBps(state.hookOffer.feeBps)} of rent
-                </span>
-              ) : null}
             </span>
           ) : (
             <span className="text-muted-foreground">none</span>
@@ -349,7 +343,7 @@ export function SlotDetails({
             what this slot obeys rather than what the hook currently claims. */}
         {attached && (
           <div className="w-full space-y-1">
-            <HookPermissionRow permissions={state.hookPermissions} />
+            <HookPermissionRow permissions={state.hookPermissions} fee={state.hookOffer} />
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
                 Unrecognised hook — read its code before buying.
