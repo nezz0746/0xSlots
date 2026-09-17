@@ -7,7 +7,8 @@ import {
   useWaitForTransactionReceipt,
   useWalletClient,
 } from "wagmi";
-import type { BuyParams, ProposeTermsParams, SlotInit } from "./client";
+import type { BuyParams, HookOffer, ProposeTermsParams, SlotInit } from "./client";
+import { ALL_TERMS, TERMS } from "./client";
 import { SlotsClient } from "./client";
 
 // ─── Client ───────────────────────────────────────────────────────────────────
@@ -21,6 +22,8 @@ export interface UseSlotsClientConfig {
    * factory would deploy the wrong kind of slot without complaining.
    */
   factoryAddress?: Address;
+  /** The `OfferBook`. Defaults to the one deployed on the connected chain. */
+  offerBookAddress?: Address;
   /** Chain override. Defaults to the connected chain. */
   chainId?: number;
 }
@@ -34,10 +37,11 @@ export function useSlotsClient(config: UseSlotsClientConfig = {}): SlotsClient {
     () =>
       new SlotsClient({
         factoryAddress: config.factoryAddress,
+        offerBookAddress: config.offerBookAddress,
         publicClient: publicClient ?? undefined,
         walletClient: walletClient ?? undefined,
       }),
-    [config.factoryAddress, publicClient, walletClient],
+    [config.factoryAddress, config.offerBookAddress, publicClient, walletClient],
   );
 }
 
@@ -302,7 +306,9 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
   const collectAll = useCallback(
     (slots: readonly Address[]) =>
       exec(
-        slots.length === 1 ? "Collect tax" : `Collect tax from ${slots.length} slots`,
+        slots.length === 1
+          ? "Collect tax"
+          : `Collect tax from ${slots.length} slots`,
         () => client.collectAll(slots),
       ),
     [exec, client],
@@ -314,6 +320,24 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
   );
 
   // ─── Manager ──────────────────────────────────────────────────────────────
+
+  const setManager = useCallback(
+    (slot: Address, manager: Address) =>
+      exec("Set manager", () => client.setManager(slot, manager)),
+    [exec, client],
+  );
+
+  const acceptOffer = useCallback(
+    (slot: Address, id: bigint, minPrice: bigint) =>
+      exec("Accept offer", () => client.acceptOffer(slot, id, minPrice)),
+    [exec, client],
+  );
+
+  const acceptHookOffer = useCallback(
+    (slot: Address, expected: HookOffer) =>
+      exec("Accept hook offer", () => client.acceptHookOffer(slot, expected)),
+    [exec, client],
+  );
 
   const proposeTerms = useCallback(
     (slot: Address, params: ProposeTermsParams) =>
@@ -329,15 +353,8 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
    * cannot tell which retraction is actually in flight.
    */
   const cancelTerms = useCallback(
-    (slot: Address, cancelTax = true, cancelHook = true) =>
-      exec(
-        cancelTax && cancelHook
-          ? "Cancel proposal"
-          : cancelTax
-            ? "Cancel tax update"
-            : "Cancel hook update",
-        () => client.cancelTerms(slot, cancelTax, cancelHook),
-      ),
+    (slot: Address, mask: number = ALL_TERMS) =>
+      exec(cancelLabel(mask), () => client.cancelTerms(slot, mask)),
     [exec, client],
   );
 
@@ -368,7 +385,10 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     // Manager
     proposeTerms,
     cancelTerms,
+    acceptHookOffer,
+    setManager,
     // Orders
+    acceptOffer,
     // Escape hatches
     client,
     exec,
@@ -380,4 +400,25 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     isSuccess,
     activeAction,
   };
+}
+
+/**
+ * The label `activeAction` reports for a cancel, so a per-term spinner lands on
+ * the retraction actually in flight.
+ */
+export function cancelLabel(mask: number): string {
+  switch (mask) {
+    case TERMS.TAX_RATE:
+      return "Cancel tax update";
+    case TERMS.RECIPIENT:
+      return "Cancel recipient update";
+    case TERMS.MIN_RUNWAY:
+      return "Cancel minimum deposit update";
+    case TERMS.HOOK:
+      return "Cancel hook update";
+    case TERMS.HOOK_PERMISSIONS:
+      return "Cancel hook permissions update";
+    default:
+      return "Cancel proposal";
+  }
 }

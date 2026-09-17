@@ -13,21 +13,30 @@
 export { SlotsError } from "../errors";
 export { isNativeCurrency, NATIVE_CURRENCY_ADDRESS } from "../native";
 export {
+  ALL_TERMS,
   assertSlotInit,
   BASIS_POINTS,
   type BuyParams,
   createSlotsClient,
-  type HookFlags,
+  HOOK_PERMISSION_BITS,
+  type HookOffer,
+  type HookOfferStatus,
+  type HookPermissions,
+  type HookTerms,
+  NO_HOOK,
   MAX_PRICE,
   MAX_TAX_BPS,
   MONTH_SECONDS,
   type PendingTerms,
   type ProposeTermsParams,
+  type TaxTerms,
   type SlotInit,
   type SlotState,
   SlotsClient,
   type SlotsClientConfig,
+  TERMS,
   TERMS_DELAY_SECONDS,
+  unpackHookPermissions,
   ZERO_HOOK_DATA,
 } from "./client";
 

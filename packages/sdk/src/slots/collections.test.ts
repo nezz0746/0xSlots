@@ -40,14 +40,16 @@ function harness(reads: Record<string, unknown>) {
 }
 
 const terms = (currency: string) => ({
-  recipient: ACCOUNT,
   currency,
   manager: ZERO,
-  hook: COLLECTION,
-  taxBps: 1000n,
-  minDepositSeconds: 604800n,
   mutableTax: false,
+  mutableRecipient: false,
   mutableHook: false,
+  taxTerms: { recipient: ACCOUNT, rateBps: 1000, minRunwaySeconds: 604800 },
+  hookTerms: {
+    target: COLLECTION,
+    config: "0x0000000000000000000000000000000000000000000000000000000000000000",
+  },
 });
 
 const sent = (w: ReturnType<typeof vi.fn>, name: string) =>
@@ -138,7 +140,7 @@ describe("reading a collection", () => {
     expect(c.name).toBe("Bound");
     expect(c.maxSupply).toBe(100n);
     expect(c.totalMinted).toBe(7n);
-    expect(c.terms.taxBps).toBe(1000n);
+    expect(c.terms.taxTerms.rateBps).toBe(1000);
   });
 
   it("the quote is read from the contract, not recomputed", async () => {
@@ -157,8 +159,8 @@ describe("assertCollectionInit", () => {
     symbol: "N",
     maxSupply: 10n,
     currency: ERC20,
-    taxBps: 1000n,
-    minDepositSeconds: 604800n,
+    taxRateBps: 1000,
+    minRunwaySeconds: 604800,
     recipient: ACCOUNT,
     manager: ZERO,
     owner: ACCOUNT,
@@ -172,7 +174,7 @@ describe("assertCollectionInit", () => {
    *  liquidatable, so every token would be evictable in its mint block. */
   it("refuses a zero window", () => {
     expect(() =>
-      assertCollectionInit({ ...ok, minDepositSeconds: 0n }),
+      assertCollectionInit({ ...ok, minRunwaySeconds: 0 }),
     ).toThrow(/liquidatable/);
   });
 
@@ -183,9 +185,9 @@ describe("assertCollectionInit", () => {
   });
 
   it("refuses an out-of-range tax", () => {
-    expect(() => assertCollectionInit({ ...ok, taxBps: 0n })).toThrow(/taxBps/);
-    expect(() => assertCollectionInit({ ...ok, taxBps: 10_001n })).toThrow(
-      /taxBps/,
+    expect(() => assertCollectionInit({ ...ok, taxRateBps: 0 })).toThrow(/taxRateBps/);
+    expect(() => assertCollectionInit({ ...ok, taxRateBps: 10_001 })).toThrow(
+      /taxRateBps/,
     );
   });
 

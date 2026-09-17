@@ -1,5 +1,7 @@
 import {
   minimumTenureHookAbi,
+  offerBookAbi,
+  offerBookAddress,
   slotAbi,
   slotFactoryAbi,
 } from "@0xslots/contracts/slots";
@@ -42,135 +44,160 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
  */
 export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
 
-/**
- * "This slot configured nothing" — 32 zero bytes.
- *
- * The counterpart to {@link zeroAddress} for `hookData`, and it means the same
- * thing: absence. A slot with no hook must carry this, and a hook that takes
- * configuration is entitled to refuse it.
- */
+/** "This hook configured nothing" — 32 zero bytes. */
 export const ZERO_HOOK_DATA =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+
+/**
+ * Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
+ * `HOOK` always covers the whole {@link HookTerms}. `HOOK_PERMISSIONS` is never
+ * proposed: it is queued by {@link SlotsClient.acceptHookOffer}.
+ */
+export const TERMS = {
+  TAX_RATE: 1,
+  RECIPIENT: 2,
+  MIN_RUNWAY: 4,
+  HOOK: 8,
+  HOOK_PERMISSIONS: 16,
+} as const;
+export const ALL_TERMS = 31;
+
+// ─── Terms ────────────────────────────────────────────────────────────────────
+
+/** What the slot charges and who receives it. Mirrors `TaxTerms`. */
+export interface TaxTerms {
+  /** Receives the rent, less any hook fee. Never zero. */
+  recipient: Address;
+  /** Basis points of the declared price per 30 days. 1..10000. */
+  rateBps: number;
+  /** Runway a buyer must fund, in seconds. Zero means no minimum. */
+  minRunwaySeconds: number;
+}
+
+/** The slot's hook and its configuration. Mirrors `HookTerms`. */
+export interface HookTerms {
+  /** The hook contract. {@link zeroAddress} for none, with `config` zero too. */
+  target: Address;
+  /** This slot's configuration for the hook. Opaque to the slot. */
+  config: Hex;
+}
+
+/**
+ * What a hook asks of a slot: its callbacks and a share of rent. Declared by the
+ * hook; the slot keeps a copy from when it attached or its manager last
+ * accepted. Mirrors `HookOffer`.
+ */
+export interface HookOffer {
+  /** Callbacks, as {@link HOOK_PERMISSION_BITS}. See {@link unpackHookPermissions}. */
+  permissions: number;
+  /** Basis points of collected rent. 0..10000. */
+  feeBps: number;
+  feeRecipient: Address;
+}
+
+/** Bits of {@link HookOffer.permissions}. Mirrors `HookPermissionsLib`. */
+export const HOOK_PERMISSION_BITS = {
+  beforeBuy: 1,
+  beforeSelfAssess: 2,
+  afterBuy: 4,
+  afterRelease: 8,
+  afterLiquidate: 16,
+  afterSettle: 32,
+  strict: 64,
+} as const;
+
+export const NO_HOOK: HookTerms = { target: zeroAddress, config: ZERO_HOOK_DATA };
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
 /**
- * Everything a slot needs at birth. Mirrors `SlotInit` in SlotAccounting.sol.
+ * Everything a slot needs at birth. Mirrors `SlotInit`.
  *
- * Two fields are load-bearing in a way the types cannot express, both checked
- * in `initialize`:
- *
- * - `manager` is required exactly when something is mutable and FORBIDDEN
- *   otherwise. "Immutable" is a fact about the slot, not a promise about
- *   somebody's restraint — so a manager on an all-immutable slot reverts rather
- *   than sitting there looking authoritative. {@link assertSlotInit} checks this
- *   before you spend gas finding out.
- * - `taxBps` may not be zero. A zero-tax slot would accrue nothing, so
- *   nobody could ever be liquidated off it.
+ * `manager` is required exactly when any `mutable*` flag is set, and must be
+ * the zero address otherwise. {@link assertSlotInit} checks this before gas.
  */
 export interface SlotInit {
-  /** Where tax goes. Never zero. */
-  recipient: Address;
   /** The token tax and price are denominated in. {@link zeroAddress} = native ETH. */
   currency: Address;
-  /** May change what this slot allows. Zero on a fully immutable slot. */
   manager: Address;
-  /** The single extension point. Zero for none. */
-  hook: Address;
-  /**
-   * This slot's configuration FOR THAT HOOK — 32 bytes the slot stores and
-   * hands back on every callback. Omit for none.
-   *
-   * What lets one hook deployment serve every configuration. A minimum-tenure
-   * hook reads its window here, so a seven-day slot and a thirty-day slot point
-   * at the SAME contract. Meaningless to the slot, which never interprets it.
-   *
-   * Only legal alongside a hook, and only in a form that hook accepts — it is
-   * asked, at creation, and refuses rather than misbehaving later.
-   */
-  hookData?: Hex;
-  /** Basis points per 30 days. 1..10000. */
-  taxBps: bigint;
-  /** Minimum runway, in seconds, a buyer must fund. Zero means no minimum. */
-  minDepositSeconds: bigint;
+  /** Tax rate and minimum runway can change. */
   mutableTax: boolean;
+  mutableRecipient: boolean;
   mutableHook: boolean;
+  taxTerms: TaxTerms;
+  /** Omit for no hook. */
+  hookTerms?: Partial<HookTerms> & { target: Address };
 }
 
-/**
- * Build the exact tuple the factory expects.
- *
- * viem encodes a struct argument BY COMPONENT NAME, so a stray or misspelled key
- * encodes a zero for the field it was meant to fill and says nothing about it.
- * Listing the nine fields here makes a missing one a type error in this file
- * rather than a zero address on-chain — which is how the previous SDK and its
- * checked-in ABIs once drifted together, agreeing with each other and
- * disagreeing with the chain.
- */
+function fullHook(hook?: Partial<HookTerms> & { target: Address }): HookTerms {
+  return {
+    target: hook?.target ?? zeroAddress,
+    config: hook?.config ?? ZERO_HOOK_DATA,
+  };
+}
+
+/** The exact tuple the factory expects. viem encodes structs by name. */
 function encodeSlotInit(init: SlotInit) {
   return {
-    recipient: init.recipient,
     currency: init.currency,
     manager: init.manager,
-    hook: init.hook,
-    hookData: init.hookData ?? ZERO_HOOK_DATA,
-    taxBps: init.taxBps,
-    minDepositSeconds: init.minDepositSeconds,
     mutableTax: init.mutableTax,
+    mutableRecipient: init.mutableRecipient,
     mutableHook: init.mutableHook,
+    taxTerms: {
+      recipient: init.taxTerms.recipient,
+      rateBps: init.taxTerms.rateBps,
+      minRunwaySeconds: init.taxTerms.minRunwaySeconds,
+    },
+    hookTerms: fullHook(init.hookTerms),
   } as const;
+}
+
+function assertTaxTerms(taxTerms: Partial<TaxTerms>, mask: number, where: string) {
+  if (mask & TERMS.RECIPIENT && (!taxTerms.recipient || taxTerms.recipient === zeroAddress))
+    throw new SlotsError(where, "recipient must not be the zero address");
+  if (mask & TERMS.TAX_RATE) {
+    const tax = taxTerms.rateBps ?? 0;
+    if (tax <= 0 || tax > Number(MAX_TAX_BPS))
+      throw new SlotsError(where, `rateBps must be 1..${MAX_TAX_BPS} basis points per 30 days`);
+  }
+  if (mask & TERMS.MIN_RUNWAY) {
+    const min = taxTerms.minRunwaySeconds ?? 0;
+    if (min < 0 || min > 0xffffffff)
+      throw new SlotsError(where, "minRunwaySeconds must fit in uint32");
+  }
+}
+
+function assertHook(hook: HookTerms, where: string) {
+  if (hook.target === zeroAddress && hook.config !== ZERO_HOOK_DATA)
+    throw new SlotsError(where, "hook config needs a hook — pass a target, or drop the config");
 }
 
 /** Throw on the initialisations `Slot.initialize` refuses, before spending gas. */
 export function assertSlotInit(init: SlotInit): void {
-  if (init.recipient === zeroAddress)
-    throw new SlotsError(
-      "createSlot",
-      "recipient must not be the zero address",
-    );
-  if (init.taxBps <= 0n || init.taxBps > MAX_TAX_BPS)
-    throw new SlotsError(
-      "createSlot",
-      `taxBps must be 1..${MAX_TAX_BPS} basis points per 30 days`,
-    );
-
-  const mutable = init.mutableTax || init.mutableHook;
-  if (mutable && init.manager === zeroAddress)
-    throw new SlotsError(
-      "createSlot",
-      "a slot with mutableTax or mutableHook needs a manager",
-    );
-  if (!mutable && init.manager !== zeroAddress)
+  const anyMutable = init.mutableTax || init.mutableRecipient || init.mutableHook;
+  if (anyMutable && init.manager === zeroAddress)
+    throw new SlotsError("createSlot", "a slot with anything mutable needs a manager");
+  if (!anyMutable && init.manager !== zeroAddress)
     throw new SlotsError(
       "createSlot",
       "a fully immutable slot must have no manager — the zero address is what makes it immutable",
     );
-
-  // Configuration for a hook that is not there. Nothing would ever read it, so
-  // it can only be a mistake — and one that goes live the day a hook is
-  // attached without its own data.
-  if (
-    init.hook === zeroAddress &&
-    init.hookData !== undefined &&
-    init.hookData !== ZERO_HOOK_DATA
-  )
-    throw new SlotsError(
-      "createSlot",
-      "hookData needs a hook to interpret it — pass a hook, or drop the data",
-    );
+  assertTaxTerms(init.taxTerms, ALL_TERMS, "createSlot");
+  assertHook(fullHook(init.hookTerms), "createSlot");
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 /**
- * A hook's declared subscriptions, as the slot snapshotted them when it was
+ * A hook's permissions, as the slot accepted them when it was
  * attached — not as the hook reports them today.
  *
  * `before` decides and may refuse; `after` records and cannot. That is the whole
  * interface. A flag being false means the callback is skipped entirely, so an
  * `afterBuy` that never fires is usually a hook that forgot to declare it.
  */
-export interface HookFlags {
+export interface HookPermissions {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
@@ -188,56 +215,74 @@ export interface HookFlags {
   strict: boolean;
 }
 
+/** {@link HookOffer.permissions} as {@link HookPermissions}. */
+export function unpackHookPermissions(permissions: number): HookPermissions {
+  const has = (bit: number) => (permissions & bit) !== 0;
+  return {
+    beforeBuy: has(HOOK_PERMISSION_BITS.beforeBuy),
+    beforeSelfAssess: has(HOOK_PERMISSION_BITS.beforeSelfAssess),
+    afterBuy: has(HOOK_PERMISSION_BITS.afterBuy),
+    afterRelease: has(HOOK_PERMISSION_BITS.afterRelease),
+    afterLiquidate: has(HOOK_PERMISSION_BITS.afterLiquidate),
+    afterSettle: has(HOOK_PERMISSION_BITS.afterSettle),
+    strict: has(HOOK_PERMISSION_BITS.strict),
+  };
+}
+
 /** Terms the manager has queued, landing at the next occupancy transition. */
 export interface PendingTerms {
-  taxBps: bigint;
-  hook: Address;
-  /** The queued hook's configuration. Travels with `hook`, never apart. */
-  hookData: Hex;
-  hasTax: boolean;
+  /** Only the fields named by `mask` are meaningful. */
+  taxTerms: TaxTerms;
+  /** Meaningful when `hasHook`. */
+  hookTerms: HookTerms;
+  /** Meaningful when `hasHookPermissions`: permissions accepted from the attached hook. */
+  hookPermissions: number;
+  /** Which terms are queued. See {@link TERMS}. */
+  mask: number;
+  hasTaxRate: boolean;
+  hasRecipient: boolean;
+  hasMinRunway: boolean;
   hasHook: boolean;
+  hasHookPermissions: boolean;
   proposedAt: bigint;
   /**
-   * The instant this becomes ripe — `proposedAt + TERMS_DELAY`.
-   *
-   * Zero when nothing is queued. Derived locally, so it is the right thing to
-   * RENDER ("applies after…") and the wrong thing to branch on; branch on
-   * {@link applies}, which the chain answered against its own clock.
+   * The instant this becomes ripe — `proposedAt + TERMS_DELAY`. Zero when
+   * nothing is queued. Render it; branch on {@link applies}.
    */
   appliesAt: bigint;
   /**
    * `hasRipeTerms()` — whether the next occupancy transition will actually
-   * land these terms.
-   *
-   * FALSE IS THE INTERESTING CASE and it is new. A proposal used to bind the
-   * moment it was made, so "queued" and "in force at the next transition" were
-   * the same fact; `TERMS_DELAY` split them. A buyer told "buying now applies
-   * these to you" inside the delay window is being told something the contract
-   * will refuse to do.
+   * land these terms, answered against the chain's clock.
    */
   applies: boolean;
-  /** True when nothing is queued — both `hasTax` and `hasHook` are false. */
+  /** True when nothing is queued. */
   isEmpty: boolean;
 }
 
 /**
- * A change of terms to queue.
- *
- * Presence is the signal, not truthiness: `{ hook: zeroAddress }` means "detach
- * the hook", which is a real intention and the exact case a `if (params.hook)`
- * check would silently drop.
+ * A change of terms to queue. Presence is the signal, not truthiness:
+ * `{ hookTerms: NO_HOOK }` means "detach the hook".
  */
 export interface ProposeTermsParams {
-  /** Basis points per 30 days. Omit to leave the tax alone. */
-  taxBps?: bigint;
-  /** The new hook, or {@link zeroAddress} to detach. Omit to leave it alone. */
-  hook?: Address;
+  /** Basis points per 30 days. */
+  taxRateBps?: number;
+  recipient?: Address;
+  minRunwaySeconds?: number;
+  /** The whole hook terms. The offer is the hook's own, read when it attaches. */
+  hookTerms?: Partial<HookTerms> & { target: Address };
+}
+
+/** The slot's accepted hook offer beside what the hook offers today. */
+export interface HookOfferStatus {
+  accepted: HookOffer;
+  offered: HookOffer;
+  /** Accepting would change the fee, at once. */
+  feeDiffers: boolean;
   /**
-   * The new hook's configuration. Only meaningful alongside `hook`, and read
-   * only when `hook` is present — the two are one decision, and setting data
-   * for a hook you did not name is setting a word meant for its predecessor.
+   * Accepting would queue new permissions for the next occupancy transition. Always
+   * false when the slot's hook is immutable, or those permissions are already queued.
    */
-  hookData?: Hex;
+  permissionsDiffer: boolean;
 }
 
 // ─── Selling ──────────────────────────────────────────────────────────────────
@@ -293,30 +338,21 @@ export interface SlotState {
   /** `2^256 - 1` when the occupant can never run dry, or the slot is vacant. */
   secondsUntilLiquidation: bigint;
   currency: Address;
-  taxBps: bigint;
-  minDepositSeconds: bigint;
+  taxRateBps: bigint;
+  minRunwaySeconds: bigint;
   recipient: Address;
+  /** Zero means nothing can ever change. */
   manager: Address;
-  hook: Address;
-  /**
-   * The 32 bytes this slot hands its hook on every callback.
-   *
-   * Where a hook's per-slot configuration lives — a minimum-tenure window, say.
-   * Opaque here: only the hook knows what it means, and a slot with no hook has
-   * none.
-   */
-  hookData: Hex;
-  hookFlags: HookFlags;
-  pending: PendingTerms;
-  /**
-   * Which terms the manager may propose a change to.
-   *
-   * Part of the state rather than something a caller reads separately, because
-   * these two decide whether `manager` is meaningful at all: a slot with both
-   * false HAS no manager, and one with either true is required to have one.
-   */
   mutableTax: boolean;
+  mutableRecipient: boolean;
   mutableHook: boolean;
+  hook: Address;
+  /** The hook's configuration: 32 bytes only the hook can interpret. */
+  hookConfig: Hex;
+  /** What the hook asks — callbacks and fee — as this slot accepted it. */
+  hookOffer: HookOffer;
+  hookPermissions: HookPermissions;
+  pending: PendingTerms;
   /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
   occupiedSince: bigint;
   /**
@@ -335,7 +371,7 @@ export interface SlotState {
    *
    * Exposed because `taxOwed` is a pure function of it and the block timestamp:
    *
-   *   price * taxBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
+   *   price * taxRateBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
    *
    * so a client holding this can reproduce the figure for any instant without
    * asking the chain again. That is what lets a runway actually count down
@@ -352,6 +388,11 @@ export interface SlotState {
 export interface SlotsClientConfig {
   /** The hook-protocol `SlotFactory`. Only `createSlot` needs it. */
   factoryAddress?: Address;
+  /**
+   * The `OfferBook`. Only {@link SlotsClient.acceptOffer} needs it, and it
+   * defaults to the book deployed on the wallet's chain.
+   */
+  offerBookAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
@@ -393,11 +434,13 @@ export class SlotsClient {
   private readonly _publicClient?: PublicClient;
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
+  private readonly _offerBook?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
+    this._offerBook = config.offerBookAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -418,6 +461,13 @@ export class SlotsClient {
     if (!this._factory)
       throw new SlotsError("SlotsClient", "No factoryAddress provided");
     return this._factory;
+  }
+
+  private get offerBook(): Address {
+    const book = this._offerBook ?? offerBookAddress[this.chain.id];
+    if (!book)
+      throw new SlotsError("SlotsClient", "No offerBookAddress provided or deployed on this chain");
+    return book;
   }
 
   private get account(): Address {
@@ -554,8 +604,8 @@ export class SlotsClient {
    * SEATED, not for the one paying: they need not be the same, and the debt
    * follows the seat's occupant.
    */
-  arrearsOf(slot: Address, account: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "arrearsOf", [account]);
+  debtOf(slot: Address, account: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "debtOf", [account]);
   }
 
   /**
@@ -579,14 +629,14 @@ export class SlotsClient {
   }
 
   /**
-   * The hook's subscriptions AS SNAPSHOTTED when it was attached.
+   * The hook's permissions AS ACCEPTED by this slot.
    *
    * Not what the hook's own `hooks()` says today: the snapshot is deliberate, so
    * a hook cannot widen its reach mid-tenure and start spending an occupant's
    * gas on callbacks they never agreed to.
    */
-  hookFlags(slot: Address): Promise<HookFlags> {
-    return this.read<HookFlags>(slot, "hookFlags");
+  hookPermissions(slot: Address): Promise<HookPermissions> {
+    return this.read<HookPermissions>(slot, "hookPermissions");
   }
 
   /**
@@ -599,26 +649,9 @@ export class SlotsClient {
    * inferring it against the wrong clock.
    */
   async pending(slot: Address): Promise<PendingTerms> {
-    const [[taxBps, hook, hasTax, hasHook, proposedAt, hookData], applies] =
-      await Promise.all([
-        this.read<readonly [bigint, Address, boolean, boolean, bigint, Hex]>(
-          slot,
-          "pending",
-        ),
-        this.hasRipeTerms(slot),
-      ]);
-    const isEmpty = !hasTax && !hasHook;
-    return {
-      taxBps,
-      hook,
-      hookData,
-      hasTax,
-      hasHook,
-      proposedAt,
-      appliesAt: isEmpty ? 0n : proposedAt + TERMS_DELAY_SECONDS,
-      applies,
-      isEmpty,
-    };
+    return toPendingTerms(
+      await this.read<PendingTermsResult>(slot, "pendingTerms"),
+    );
   }
 
   /** The token this slot is denominated in. {@link zeroAddress} means native ETH. */
@@ -627,8 +660,8 @@ export class SlotsClient {
   }
 
   /** Basis points per 30 days. */
-  taxBps(slot: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "taxBps");
+  taxRateBps(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "taxRateBps");
   }
 
   /** Owed to an address a push payment could not reach. Take it with {@link claim}. */
@@ -664,84 +697,40 @@ export class SlotsClient {
     return this.read<bigint>(slot, "tenureId");
   }
 
-  /** Everything above, in parallel. */
+  /** The whole slot, as of one block, in one call. */
   async slotState(slot: Address): Promise<SlotState> {
-    const [
-      occupant,
-      price,
-      deposit,
-      taxOwed,
-      isVacant,
-      isInsolvent,
-      secondsUntilLiquidation,
-      currency,
-      taxBps,
-      minDepositSeconds,
-      recipient,
-      manager,
-      hook,
-      hookData,
-      hookFlags,
-      pending,
-      mutableTax,
-      mutableHook,
-      occupiedSince,
-      lastSettled,
-      collectedTax,
-      tenureId,
-    ] = await Promise.all([
-      this.occupant(slot),
-      this.price(slot),
-      this.deposit(slot),
-      this.taxOwed(slot),
-      this.isVacant(slot),
-      this.isInsolvent(slot),
-      this.secondsUntilLiquidation(slot),
-      this.currency(slot),
-      this.taxBps(slot),
-      this.read<bigint>(slot, "minDepositSeconds"),
-      this.read<Address>(slot, "recipient"),
-      this.read<Address>(slot, "manager"),
-      this.hook(slot),
-      this.read<Hex>(slot, "hookData"),
-      this.hookFlags(slot),
-      this.pending(slot),
-      this.read<boolean>(slot, "mutableTax"),
-      this.read<boolean>(slot, "mutableHook"),
-      this.read<bigint>(slot, "occupiedSince"),
-      this.read<bigint>(slot, "lastSettled"),
-      this.read<bigint>(slot, "collectedTax"),
-      this.tenureId(slot),
-    ]);
-
+    const i = await this.read<SlotInfoResult>(slot, "getSlotInfo");
     return {
-      occupant,
-      price,
-      deposit,
-      taxOwed,
-      isVacant,
-      isInsolvent,
-      secondsUntilLiquidation,
-      currency,
-      taxBps,
-      minDepositSeconds,
-      recipient,
-      manager,
-      hook,
-      hookData,
-      hookFlags,
-      pending,
-      mutableTax,
-      mutableHook,
-      occupiedSince,
-      lastSettled,
-      collectedTax,
-      tenureId,
+      occupant: i.occupant,
+      price: i.price,
+      deposit: i.deposit,
+      taxOwed: i.taxOwed,
+      isVacant: i.isVacant,
+      isInsolvent: i.isInsolvent,
+      secondsUntilLiquidation: i.secondsUntilLiquidation,
+      currency: i.currency,
+      taxRateBps: BigInt(i.terms.taxTerms.rateBps),
+      minRunwaySeconds: BigInt(i.terms.taxTerms.minRunwaySeconds),
+      recipient: i.terms.taxTerms.recipient,
+      manager: i.manager,
+      mutableTax: i.mutableTax,
+      mutableRecipient: i.mutableRecipient,
+      mutableHook: i.mutableHook,
+      hook: i.terms.hookTerms.target,
+      hookConfig: i.terms.hookTerms.config,
+      hookOffer: i.terms.hookOffer,
+      hookPermissions: i.hookPermissions,
+      pending: toPendingTerms(i.pending),
+      occupiedSince: i.occupiedSince,
+      lastSettled: i.lastSettled,
+      collectedTax: i.collectedTax,
+      tenureId: i.tenureId,
     };
   }
 
+
   /**
-   * The smallest deposit `minDepositSeconds` requires at `price`.
+   * The smallest deposit `minRunwaySeconds` requires at `price`.
    *
    * Local arithmetic, matching `_minDepositFor` including its `ceilDiv` — a
    * short window on a low price rounds DOWN to zero, and rounding down is what
@@ -754,7 +743,7 @@ export class SlotsClient {
    * Prefer this over {@link minDepositFor} anywhere a BUY is being sized.
    * Entry is an occupancy transition, so `_applyPending` runs before the
    * funding check — a buyer funds the terms they are buying INTO, not the ones
-   * currently on display. Sizing from `taxBps()` underquotes through
+   * currently on display. Sizing from `taxRateBps()` underquotes through
    * exactly the window where a tax rise is queued, and the buy then reverts
    * `InvalidDeposit` for reasons nothing on screen explains.
    *
@@ -768,11 +757,11 @@ export class SlotsClient {
 
   minDepositFor(
     price: bigint,
-    taxBps: bigint,
-    minDepositSeconds: bigint,
+    taxRateBps: bigint,
+    minRunwaySeconds: bigint,
   ): bigint {
-    if (minDepositSeconds === 0n) return 0n;
-    const numerator = price * taxBps * minDepositSeconds;
+    if (minRunwaySeconds === 0n) return 0n;
+    const numerator = price * taxRateBps * minRunwaySeconds;
     const denominator = MONTH_SECONDS * BASIS_POINTS;
     return (numerator + denominator - 1n) / denominator;
   }
@@ -863,7 +852,7 @@ export class SlotsClient {
    *
    * Amounts are capped by each slot's deposit rather than being its raw
    * `taxOwed`: an insolvent slot pays what escrow it has and the remainder is
-   * carried as arrears against the occupant, never transferred to the recipient.
+   * carried as debt against the occupant, never transferred to the recipient.
    */
   async simulateCollectAll(slots: readonly Address[]): Promise<bigint[]> {
     this.assertSomeSlots(slots, "simulateCollectAll");
@@ -941,7 +930,7 @@ export class SlotsClient {
     if (params.account === zeroAddress)
       throw new SlotsError("buy", "account must not be the zero address");
 
-    // Quoted for the account being SEATED. Arrears live on that account, and
+    // Quoted for the account being SEATED. Debt lives on that account, and
     // quoting for the payer instead would miss a debt the buy is about to
     // charge — or invent one the seated account does not owe.
     const amount = await this.quoteBuy(
@@ -1092,7 +1081,7 @@ export class SlotsClient {
     });
   }
 
-  /** Take back part of your escrow, keeping whatever `minDepositSeconds` requires. */
+  /** Take back part of your escrow, keeping whatever `minRunwaySeconds` requires. */
   async withdraw(slot: Address, amount: bigint): Promise<Hash> {
     this.assertPositive(amount, "amount");
     return this.write(slot, "withdraw", [amount]);
@@ -1112,6 +1101,26 @@ export class SlotsClient {
     allowed: boolean,
   ): Promise<Hash> {
     return this.write(slot, "setOperator", [operator, allowed]);
+  }
+
+  /**
+   * Sell the slot to a standing offer on the OfferBook. Occupant only, and the
+   * book must be the occupant's operator ({@link setOperator}).
+   *
+   * `minPrice` is the price the seller reviewed. A bidder edits an offer in
+   * place under the same id, so the fill reverts `PriceBelowMinimum` if the
+   * offer has been lowered since. Pass the offer's price as it was shown.
+   */
+  async acceptOffer(slot: Address, id: bigint, minPrice: bigint): Promise<Hash> {
+    this.assertPositive(minPrice, "minPrice");
+    return this.wallet.writeContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName: "acceptOffer",
+      args: [slot, id, minPrice],
+      account: this.account,
+      chain: this.chain,
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1148,59 +1157,65 @@ export class SlotsClient {
    * hook, which is why presence rather than truthiness decides.
    */
   async proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
-    const changeTax = params.taxBps !== undefined;
-    const changeHook = params.hook !== undefined;
-    if (!changeTax && !changeHook)
+    const mask =
+      (params.taxRateBps !== undefined ? TERMS.TAX_RATE : 0) |
+      (params.recipient !== undefined ? TERMS.RECIPIENT : 0) |
+      (params.minRunwaySeconds !== undefined ? TERMS.MIN_RUNWAY : 0) |
+      (params.hookTerms !== undefined ? TERMS.HOOK : 0);
+    if (mask === 0)
       throw new SlotsError(
         "proposeTerms",
-        "nothing to propose — pass taxBps, hook, or both",
+        "nothing to propose — pass taxRateBps, recipient, minRunwaySeconds or hookTerms",
       );
-    if (changeTax) {
-      const tax = params.taxBps as bigint;
-      if (tax <= 0n || tax > MAX_TAX_BPS)
-        throw new SlotsError(
-          "proposeTerms",
-          `taxBps must be 1..${MAX_TAX_BPS} basis points per 30 days`,
-        );
-    }
-    if (!changeHook && params.hookData !== undefined)
-      throw new SlotsError(
-        "proposeTerms",
-        "hookData travels with hook — name the hook it configures",
-      );
-    return this.write(slot, "proposeTerms", [
-      params.taxBps ?? 0n,
-      params.hook ?? zeroAddress,
-      params.hookData ?? ZERO_HOOK_DATA,
-      changeTax,
-      changeHook,
-    ]);
+    const taxTerms: TaxTerms = {
+      recipient: params.recipient ?? zeroAddress,
+      rateBps: params.taxRateBps ?? 0,
+      minRunwaySeconds: params.minRunwaySeconds ?? 0,
+    };
+    assertTaxTerms(taxTerms, mask, "proposeTerms");
+    const hookTerms = fullHook(params.hookTerms);
+    if (mask & TERMS.HOOK) assertHook(hookTerms, "proposeTerms");
+    return this.write(slot, "proposeTerms", [taxTerms, hookTerms, mask]);
+  }
+
+  /** The slot's accepted hook offer beside what the hook offers today. */
+  async hookOfferStatus(slot: Address): Promise<HookOfferStatus> {
+    const [accepted, offered, feeDiffers, permissionsDiffer] = await this.read<
+      readonly [HookOffer, HookOffer, boolean, boolean]
+    >(slot, "hookOfferStatus");
+    return { accepted, offered, feeDiffers, permissionsDiffer };
   }
 
   /**
-   * Retract queued terms, one dimension at a time. Manager only.
+   * Accept the hook's current offer. Manager only.
    *
-   * Two flags rather than an all-or-nothing cancel, mirroring the contract:
-   * the two dimensions are proposed independently and may belong to different
-   * people. A collective splits tax and hook across separate roles, and a
-   * blanket cancel would let the hook manager destroy the tax manager's queued
-   * change as a side effect of retracting their own, with nothing to signal it
-   * happened. Cancelling must not reach further than proposing does.
-   *
-   * Defaults to both, which is the right answer for the single-manager case
-   * and matches what a caller passing nothing plainly means.
+   * A new fee applies at once. New permissions queue for the next occupancy
+   * transition, and only when the slot's hook is mutable. `expected` is the
+   * offer the manager reviewed; the call reverts `HookOfferChanged` if the hook
+   * declares anything else by the time it lands, and `NothingToAccept` if it
+   * would change nothing.
    */
-  async cancelTerms(
-    slot: Address,
-    cancelTax = true,
-    cancelHook = true,
-  ): Promise<Hash> {
-    if (!cancelTax && !cancelHook)
-      throw new SlotsError(
-        "cancelTerms",
-        "nothing to cancel — pass cancelTax, cancelHook, or both",
-      );
-    return this.write(slot, "cancelTerms", [cancelTax, cancelHook]);
+  async acceptHookOffer(slot: Address, expected: HookOffer): Promise<Hash> {
+    return this.write(slot, "acceptHookOffer", [expected]);
+  }
+
+  /** Hand the slot to another manager, immediately. Manager only. */
+  async setManager(slot: Address, manager: Address): Promise<Hash> {
+    if (manager === zeroAddress)
+      throw new SlotsError("setManager", "manager cannot be zero");
+    return this.write(slot, "setManager", [manager]);
+  }
+
+  /**
+   * Retract queued terms. Manager only.
+   *
+   * Clears whichever of `mask` is queued and leaves the rest, so one party
+   * retracting their change never erases another's. Defaults to everything.
+   */
+  async cancelTerms(slot: Address, mask: number = ALL_TERMS): Promise<Hash> {
+    if (mask === 0)
+      throw new SlotsError("cancelTerms", "nothing to cancel — pass a mask");
+    return this.write(slot, "cancelTerms", [mask]);
   }
 
   /**
@@ -1458,4 +1473,56 @@ export class SlotsClient {
 
 export function createSlotsClient(config: SlotsClientConfig): SlotsClient {
   return new SlotsClient(config);
+}
+
+/** `pendingTerms()` as viem decodes it. */
+interface PendingTermsResult {
+  taxTerms: TaxTerms;
+  hookTerms: HookTerms;
+  hookPermissions: number;
+  mask: number;
+  proposedAt: bigint;
+  ripe: boolean;
+}
+
+/** `getSlotInfo()` as viem decodes it. */
+interface SlotInfoResult {
+  currency: Address;
+  manager: Address;
+  mutableTax: boolean;
+  mutableRecipient: boolean;
+  mutableHook: boolean;
+  terms: { taxTerms: TaxTerms; hookTerms: HookTerms; hookOffer: HookOffer };
+  hookPermissions: HookPermissions;
+  occupant: Address;
+  price: bigint;
+  deposit: bigint;
+  occupiedSince: bigint;
+  tenureId: bigint;
+  lastSettled: bigint;
+  taxOwed: bigint;
+  collectedTax: bigint;
+  isVacant: boolean;
+  isInsolvent: boolean;
+  secondsUntilLiquidation: bigint;
+  pending: PendingTermsResult;
+}
+
+function toPendingTerms(p: PendingTermsResult): PendingTerms {
+  const isEmpty = p.mask === 0;
+  return {
+    taxTerms: p.taxTerms,
+    hookTerms: p.hookTerms,
+    hookPermissions: p.hookPermissions,
+    mask: p.mask,
+    hasTaxRate: (p.mask & TERMS.TAX_RATE) !== 0,
+    hasRecipient: (p.mask & TERMS.RECIPIENT) !== 0,
+    hasMinRunway: (p.mask & TERMS.MIN_RUNWAY) !== 0,
+    hasHook: (p.mask & TERMS.HOOK) !== 0,
+    hasHookPermissions: (p.mask & TERMS.HOOK_PERMISSIONS) !== 0,
+    proposedAt: p.proposedAt,
+    appliesAt: isEmpty ? 0n : p.proposedAt + TERMS_DELAY_SECONDS,
+    applies: p.ripe,
+    isEmpty,
+  };
 }

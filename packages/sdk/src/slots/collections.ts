@@ -1,3 +1,4 @@
+import type { HookTerms, SlotInit } from "./client";
 import {
   slotBoundNftAbi,
   slotBoundNftFactoryAbi,
@@ -37,9 +38,9 @@ export interface CollectionInit {
   /** Zero address for native ETH. */
   currency: Address;
   /** Rent per 30 days, in basis points of the valuation. */
-  taxBps: bigint;
+  taxRateBps: number;
   /** The runway a mint must fund. Must be non-zero. */
-  minDepositSeconds: bigint;
+  minRunwaySeconds: number;
   recipient: Address;
   /** May change the rent, on the slots directly. Zero fixes it forever. */
   manager: Address;
@@ -47,17 +48,8 @@ export interface CollectionInit {
   owner: Address;
 }
 
-/** The terms every slot in a collection is created with. */
-export interface CollectionTerms {
-  recipient: Address;
-  currency: Address;
-  manager: Address;
-  hook: Address;
-  taxBps: bigint;
-  minDepositSeconds: bigint;
-  mutableTax: boolean;
-  mutableHook: boolean;
-}
+/** The terms every slot in a collection is created with: its `SlotInit`. */
+export type CollectionTerms = SlotInit & { hookTerms: HookTerms };
 
 /** What a mint costs, and where each half goes. */
 export interface MintQuote {
@@ -340,12 +332,12 @@ export class CollectionsClient {
  */
 export function depositFor(
   price: bigint,
-  taxBps: bigint,
+  taxRateBps: bigint,
   window: bigint,
 ): bigint {
   if (window === 0n) return 0n;
   const den = MONTH_SECONDS * BASIS_POINTS;
-  const num = price * taxBps * window;
+  const num = price * taxRateBps * window;
   return num === 0n ? 0n : (num + den - 1n) / den; // ceil
 }
 
@@ -353,13 +345,13 @@ export function depositFor(
 export function assertCollectionInit(init: CollectionInit): void {
   if (init.maxSupply <= 0n)
     throw new SlotsError("createCollection", "maxSupply must be > 0");
-  if (init.minDepositSeconds <= 0n)
+  if (init.minRunwaySeconds <= 0)
     throw new SlotsError(
       "createCollection",
-      "minDepositSeconds must be > 0, or every mint is instantly liquidatable",
+      "minRunwaySeconds must be > 0, or every mint is instantly liquidatable",
     );
-  if (init.taxBps <= 0n || init.taxBps > 10_000n)
-    throw new SlotsError("createCollection", "taxBps must be 1..10000");
+  if (init.taxRateBps <= 0 || init.taxRateBps > 10_000)
+    throw new SlotsError("createCollection", "taxRateBps must be 1..10000");
   if (init.recipient === zeroAddress)
     throw new SlotsError("createCollection", "recipient must not be zero");
   if (init.owner === zeroAddress)
@@ -379,8 +371,8 @@ function encodeCollectionInit(init: CollectionInit) {
     symbol: init.symbol,
     maxSupply: init.maxSupply,
     currency: init.currency,
-    taxBps: init.taxBps,
-    minDepositSeconds: init.minDepositSeconds,
+    taxRateBps: init.taxRateBps,
+    minRunwaySeconds: init.minRunwaySeconds,
     recipient: init.recipient,
     manager: init.manager,
     owner: init.owner,
