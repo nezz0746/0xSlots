@@ -5926,6 +5926,13 @@ export const slotCollectiveAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'data', internalType: 'bytes[]', type: 'bytes[]' }],
+    name: 'multicall',
+    outputs: [{ name: 'results', internalType: 'bytes[]', type: 'bytes[]' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [
       { name: '', internalType: 'address', type: 'address' },
       { name: '', internalType: 'address', type: 'address' },
@@ -6432,8 +6439,14 @@ export const slotCollectiveAbi = [
     ],
     name: 'AccessControlUnauthorizedAccount',
   },
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
   { type: 'error', inputs: [], name: 'AdminRequired' },
   { type: 'error', inputs: [], name: 'EmptySplit' },
+  { type: 'error', inputs: [], name: 'FailedCall' },
   {
     type: 'error',
     inputs: [
@@ -6476,7 +6489,7 @@ export const slotCollectiveAbi = [
  *
  */
 export const slotCollectiveAddress = {
-  31337: '0xA080dF67018Fbee52F0Da384D4cbFb2f2f8d6D09',
+  31337: '0xCffCA5F6A8b05c518EdFcF6654ea69ee8E832F72',
 } as const
 
 /**
@@ -6756,7 +6769,7 @@ export const slotCollectiveFactoryAbi = [
  *
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0x17a6AE19697F7fC0a1Bc336207608B30DF8F53a8',
+  31337: '0xF21B4453631131476378026E8C4856a2B6874D4f',
 } as const
 
 /**

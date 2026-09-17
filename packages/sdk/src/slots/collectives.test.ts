@@ -1,4 +1,5 @@
-import { keccak256, toBytes, zeroHash } from "viem";
+import { decodeFunctionData, keccak256, toBytes, zeroHash } from "viem";
+import { slotCollectiveAbi } from "@0xslots/contracts/slots";
 import { describe, expect, it, vi } from "vitest";
 
 import { NO_HOOK } from "./client";
@@ -147,5 +148,27 @@ describe("split and hook offers", () => {
       functionName: "acceptHookOffer",
       args: [SLOT_A, offer],
     });
+  });
+});
+
+describe("batch", () => {
+  it("encodes each call into the collective's multicall", async () => {
+    const { client, last } = harness();
+    await client.batch(COLLECTIVE, [
+      { functionName: "proposeTax", args: [SLOT_A, 750] },
+      { functionName: "sweep", args: [[SLOT_A, SLOT_B]] },
+    ]);
+    const call = last();
+    expect(call.functionName).toBe("multicall");
+    const decoded = call.args[0].map((data: `0x${string}`) =>
+      decodeFunctionData({ abi: slotCollectiveAbi, data }),
+    );
+    expect(decoded[0]).toMatchObject({ functionName: "proposeTax", args: [SLOT_A, 750] });
+    expect(decoded[1]).toMatchObject({ functionName: "sweep", args: [[SLOT_A, SLOT_B]] });
+  });
+
+  it("refuses an empty batch", async () => {
+    const { client } = harness();
+    await expect(client.batch(COLLECTIVE, [])).rejects.toThrow(/at least one/);
   });
 });

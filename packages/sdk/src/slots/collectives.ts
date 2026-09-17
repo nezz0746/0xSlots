@@ -6,6 +6,7 @@ import {
 import {
   type Address,
   type Chain,
+  encodeFunctionData,
   type Hash,
   type Hex,
   keccak256,
@@ -349,6 +350,29 @@ export class CollectivesClient {
   /** Pause or resume distributions. Split managers or admin. */
   setPaused(collective: Address, paused: boolean): Promise<Hash> {
     return this.write(collective, "setPaused", [paused]);
+  }
+
+  /**
+   * Run several collective calls in one transaction, through the collective's
+   * `multicall`. Each call passes its own role check; if one reverts, all do.
+   *
+   * @example
+   * ```ts
+   * await collectives.batch(collective, [
+   *   { functionName: "proposeTax", args: [slot, 750] },
+   *   { functionName: "sweep", args: [[slot]] },
+   * ]);
+   * ```
+   */
+  async batch(
+    collective: Address,
+    calls: readonly { functionName: string; args: readonly unknown[] }[],
+  ): Promise<Hash> {
+    if (calls.length === 0) throw new SlotsError("batch", "pass at least one call");
+    const data = calls.map((c) =>
+      encodeFunctionData({ abi: slotCollectiveAbi, functionName: c.functionName, args: c.args } as never),
+    );
+    return this.write(collective, "multicall", [data]);
   }
 
   // ─── Roles and state ────────────────────────────────────────────────────────
