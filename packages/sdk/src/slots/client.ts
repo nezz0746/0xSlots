@@ -781,6 +781,14 @@ export class SlotsClient {
     return this.read<bigint>(slot, "occupiedSince");
   }
 
+  /**
+   * The escrow floor at `price` under the terms in force: what `selfAssess` and
+   * `withdraw` enforce. {@link minDepositForBuy} uses ripe queued terms instead.
+   */
+  minDepositToHold(slot: Address, price: bigint): Promise<bigint> {
+    return this.read<bigint>(slot, "minDepositToHold", [price]);
+  }
+
   /** Runway a buyer must fund, in seconds. */
   minRunwaySeconds(slot: Address): Promise<bigint> {
     return this.read<bigint>(slot, "minRunwaySeconds");

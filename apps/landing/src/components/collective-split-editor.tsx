@@ -1,10 +1,11 @@
 "use client";
 
 import { slotCollectiveAbi } from "@0xslots/contracts";
+import { SPLITS_NATIVE_TOKEN } from "@0xslots/sdk/slots";
 import { Pencil, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { type Address, isAddress } from "viem";
+import { type Address, isAddress, zeroAddress } from "viem";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { Input } from "@/components/ui/input";
 import type { SplitRecipient } from "@/hooks/use-collectives";
@@ -24,11 +25,14 @@ import { cn } from "@/lib/utils";
 export function CollectiveSplitEditor({
   collective,
   recipients,
+  currencies,
   canManage,
   onChanged,
 }: {
   collective: Address;
   recipients: SplitRecipient[];
+  /** The currencies its slots pay it in; each is paid out under the old split first. */
+  currencies: Address[];
   canManage: boolean;
   onChanged: () => void;
 }) {
@@ -113,12 +117,28 @@ export function CollectiveSplitEditor({
 
   const save = () => {
     if (!valid) return;
+    // `setSplit` pays out what is held under the split in force before
+    // replacing it, so it needs that split and every token worth paying out:
+    // native ETH always, plus whatever currencies the collective's slots use.
+    const current = {
+      recipients: recipients.map((r) => r.account),
+      allocations: recipients.map((r) => BigInt(r.allocation)),
+      totalAllocation: recipients.reduce((s, r) => s + BigInt(r.allocation), 0n),
+      distributionIncentive: 0,
+    };
+    const tokens = [
+      ...new Set<Address>([
+        SPLITS_NATIVE_TOKEN,
+        ...currencies.filter((c) => c.toLowerCase() !== zeroAddress),
+      ]),
+    ];
     writeContract(
       {
         address: collective,
         abi: slotCollectiveAbi,
         functionName: "setSplit",
         args: [
+          current,
           {
             recipients: parsed.map((r) => r.account as Address),
             // `rawShares` is validated to a positive integer string above, so
@@ -130,6 +150,7 @@ export function CollectiveSplitEditor({
             // there is nothing to preserve; 0 is the only value in play.
             distributionIncentive: 0,
           },
+          tokens,
         ],
       },
       { onError: (e) => toast.error(e.message.split("\n")[0] ?? "Failed") },

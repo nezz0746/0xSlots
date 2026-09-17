@@ -1407,7 +1407,7 @@ export const adLandAbi = [
  *
  */
 export const adLandAddress = {
-  31337: '0xe2F88f165DFdB725FfdAa6908f9dA80178D02045',
+  31337: '0x8d1cBDD4a1fDcA4bF735b9f73eecDbaB691E41aF',
 } as const
 
 /**
@@ -2135,7 +2135,7 @@ export const offerBookAbi = [
  *
  */
 export const offerBookAddress = {
-  31337: '0xAF7363c3B42AFA2cF76C880D5e666d36a4605ae4',
+  31337: '0x36AefC818746f1b761912F4e1d347d9E7F11800F',
 } as const
 
 /**
@@ -2681,6 +2681,13 @@ export const slotAbi = [
     type: 'function',
     inputs: [{ name: 'price_', internalType: 'uint256', type: 'uint256' }],
     name: 'minDepositForBuy',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'price_', internalType: 'uint256', type: 'uint256' }],
+    name: 'minDepositToHold',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -3563,7 +3570,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x04d0567ff8e8cC2564e9e07D3C7312773466aEA1',
+  31337: '0x0fC7ccf08ce3D67e55c5D9D631a970F7fD8407C0',
 } as const
 
 /**
@@ -4767,7 +4774,7 @@ export const slotBoundNftFactoryAbi = [
  *
  */
 export const slotBoundNftFactoryAddress = {
-  31337: '0xec7f3D7023a12eC0210B7dc0F1477d7b01689c69',
+  31337: '0x93F9a6a36EA6fE5522602FfF1F1DfBDa02e75D58',
 } as const
 
 /**
@@ -5635,6 +5642,25 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
+      {
+        name: 'expected',
+        internalType: 'struct HookOffer',
+        type: 'tuple',
+        components: [
+          { name: 'permissions', internalType: 'uint8', type: 'uint8' },
+          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'feeRecipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    name: 'acceptHookOffer',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
     ],
     name: 'cancelAllProposals',
     outputs: [],
@@ -6052,7 +6078,7 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       {
-        name: 'split',
+        name: 'current',
         internalType: 'struct SplitV2Lib.Split',
         type: 'tuple',
         components: [
@@ -6066,6 +6092,22 @@ export const slotCollectiveAbi = [
           },
         ],
       },
+      {
+        name: 'next',
+        internalType: 'struct SplitV2Lib.Split',
+        type: 'tuple',
+        components: [
+          { name: 'recipients', internalType: 'address[]', type: 'address[]' },
+          { name: 'allocations', internalType: 'uint256[]', type: 'uint256[]' },
+          { name: 'totalAllocation', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'distributionIncentive',
+            internalType: 'uint16',
+            type: 'uint16',
+          },
+        ],
+      },
+      { name: 'tokens', internalType: 'address[]', type: 'address[]' },
     ],
     name: 'setSplit',
     outputs: [],
@@ -6176,6 +6218,26 @@ export const slotCollectiveAbi = [
       },
     ],
     name: 'ExecCalls',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'by', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'offer',
+        internalType: 'struct HookOffer',
+        type: 'tuple',
+        components: [
+          { name: 'permissions', internalType: 'uint8', type: 'uint8' },
+          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'feeRecipient', internalType: 'address', type: 'address' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'HookOfferAcceptRelayed',
   },
   {
     type: 'event',
@@ -6414,7 +6476,7 @@ export const slotCollectiveAbi = [
  *
  */
 export const slotCollectiveAddress = {
-  31337: '0x04205d83562cf44A184ADE9dA96EbdD39FEa9809',
+  31337: '0xA080dF67018Fbee52F0Da384D4cbFb2f2f8d6D09',
 } as const
 
 /**
@@ -6694,7 +6756,7 @@ export const slotCollectiveFactoryAbi = [
  *
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0xfF775d1d71220Dd9B70FA0e92a5b2cEAd7D6e456',
+  31337: '0x17a6AE19697F7fC0a1Bc336207608B30DF8F53a8',
 } as const
 
 /**
@@ -6988,7 +7050,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0x20e2DA8a712EF93666e40392e0277cBB8A9969b5',
+  31337: '0x708C5DcAffce6C49328e733A050952667a6CD43c',
 } as const
 
 /**

@@ -6,6 +6,7 @@ import {
   COLLECTIVE_ROLES,
   type CollectiveSplit,
   CollectivesClient,
+  SPLITS_NATIVE_TOKEN,
 } from "./collectives";
 
 const FACTORY = "0x5555555555555555555555555555555555555555" as const;
@@ -119,5 +120,32 @@ describe("money and roles", () => {
     const { client, readContract } = harness({ hasRole: true });
     expect(await client.hasRole(COLLECTIVE, "split", BOB)).toBe(true);
     expect(readContract.mock.calls.at(-1)![0].args).toEqual([COLLECTIVE_ROLES.split, BOB]);
+  });
+});
+
+describe("split and hook offers", () => {
+  it("setSplit sends the current split, the next one and native plus listed tokens", async () => {
+    const { client, last } = harness();
+    const next: CollectiveSplit = { recipients: [ALICE], allocations: [1n] };
+    await client.setSplit(COLLECTIVE, split, next, [BOB]);
+    expect(last()).toMatchObject({
+      functionName: "setSplit",
+      args: [
+        { totalAllocation: 100n },
+        { recipients: [ALICE], totalAllocation: 1n },
+        [SPLITS_NATIVE_TOKEN, BOB],
+      ],
+    });
+  });
+
+  it("acceptHookOffer relays through the collective", async () => {
+    const { client, last } = harness();
+    const offer = { permissions: 4, feeBps: 100, feeRecipient: ALICE };
+    await client.acceptHookOffer(COLLECTIVE, SLOT_A, offer);
+    expect(last()).toMatchObject({
+      address: COLLECTIVE,
+      functionName: "acceptHookOffer",
+      args: [SLOT_A, offer],
+    });
   });
 });

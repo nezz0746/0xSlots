@@ -197,6 +197,8 @@ export interface CollectiveDetail {
   createdAt: string;
   createdTx: string;
   recipients: SplitRecipient[];
+  /** Every currency the collective's slots pay it in. Zero is native ETH. */
+  currencies: Address[];
 }
 
 const DETAIL_QUERY = /* GraphQL */ `
@@ -221,6 +223,11 @@ const DETAIL_QUERY = /* GraphQL */ `
         account
         allocation
         shareBps
+      }
+    }
+    slots(where: { recipient: $id, chainId: $chainId }, limit: 1000) {
+      items {
+        currency
       }
     }
   }
@@ -266,7 +273,15 @@ export function useCollective(address: string | undefined) {
         json.data?.collectiveSplitRecipients?.items ?? []
       ).sort((a: SplitRecipient, b: SplitRecipient) => a.index - b.index);
 
-      return { ...row, recipients };
+      const currencies = [
+        ...new Set<Address>(
+          (json.data?.slots?.items ?? []).map(
+            (s: { currency: Address }) => s.currency,
+          ),
+        ),
+      ];
+
+      return { ...row, recipients, currencies };
     },
   });
 }

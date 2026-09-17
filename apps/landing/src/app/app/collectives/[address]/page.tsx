@@ -223,6 +223,7 @@ export default function CollectivePage() {
               <CollectiveSplitEditor
                 collective={address as Address}
                 recipients={collective.recipients}
+                currencies={collective.currencies}
                 canManage={canManageSplit}
                 onChanged={handleChanged}
               />

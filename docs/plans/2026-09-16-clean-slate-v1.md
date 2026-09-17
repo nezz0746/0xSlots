@@ -98,16 +98,16 @@ HOOK_PERMISSIONS  = 1 << 4   accepted hook permissions (never proposed)
 
 Done, uncommitted: steps 1–4 and the adland side of 6.
 
-- Contracts rewritten; 465 tests pass. `DeployProtocol` uses namespace `0xslots.v1.2026-09`
+- Contracts rewritten; 474 tests pass. `DeployProtocol` uses namespace `0xslots.v1.2026-09`
   and sets AdLand's factory. Fork dry runs predict, on Base and Base Sepolia (these move if
   any contract code changes):
-  - SlotFactory `0xfFB4C3959b4896aA127DAa6f6B9b3FAbd42D7DAf`
-  - AdLand `0x47971a3308E448D7CE3ADe0AB8Eb9150892c25A4`
-  - SlotCollectiveFactory `0xf8B1BEc9BF8E7010080EE1C050DC4871E5ee6c36`
-  - SlotBoundNFTFactory `0x07eEfAc305c4adEBE482b009679D809928D63705`
+  - SlotFactory `0xdbCFbA3bD28615414A8d0407656a27A63AE0442f`
+  - AdLand `0x264247e881F4b6FbDd42b1Cbd63102bEC79344Fc`
+  - SlotCollectiveFactory `0xe90BC2aA073DBac4F2e460f54a3F584AdC9684F2`
+  - SlotBoundNFTFactory `0x1a5585fad18146195AA1E565E0fa069ebB485524`
   - SlotBoundNFTWrapper `0x3C6bB301e2A54717b984A72BabE1449469D74faC`
   - MinimumTenureHook `0x7E9D5E96b21b6D067C3121e5e476c88e84119E2D`
-  - OfferBook `0xAF7363c3B42AFA2cF76C880D5e666d36a4605ae4`
+  - OfferBook `0x36AefC818746f1b761912F4e1d347d9E7F11800F`
 - Local records (31337) written from a fresh anvil; deploy, seed and indexer verified end to end.
 - SDK (72 tests), indexer, explorer, adland web/react/agent/api typecheck against the new ABI.
 - Changesets: one major for `@0xslots/contracts` + `@0xslots/sdk`; minor for

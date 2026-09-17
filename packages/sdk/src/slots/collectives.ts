@@ -16,7 +16,7 @@ import {
   zeroHash,
 } from "viem";
 import { SlotsError } from "../errors";
-import type { HookTerms } from "./client";
+import type { HookOffer, HookTerms } from "./client";
 import { NO_HOOK } from "./client";
 
 /**
@@ -266,6 +266,14 @@ export class CollectivesClient {
       : this.write(collective, "proposeHookBatch", [list, hookTerms]);
   }
 
+  /**
+   * Accept the attached hook's current offer on `slot`. Hook managers or admin.
+   * `expected` is the offer reviewed; see `SlotsClient.hookOfferStatus`.
+   */
+  acceptHookOffer(collective: Address, slot: Address, expected: HookOffer): Promise<Hash> {
+    return this.write(collective, "acceptHookOffer", [slot, expected]);
+  }
+
   /** Drop a queued tax change. */
   cancelTaxProposal(collective: Address, slots: Address | readonly Address[]): Promise<Hash> {
     return this.cancel(collective, slots, "cancelTaxProposal");
@@ -319,10 +327,23 @@ export class CollectivesClient {
     return this.write(collective, "distribute", [encodeSplit(split), token, distributor]);
   }
 
-  /** Replace the split. Split managers or admin. */
-  async setSplit(collective: Address, split: CollectiveSplit): Promise<Hash> {
-    assertCollectiveSplit(split, "setSplit");
-    return this.write(collective, "setSplit", [encodeSplit(split)]);
+  /**
+   * Replace the split. Split managers or admin.
+   *
+   * Pays out every listed token under `current` first, so rent already
+   * collected for the old recipients is not paid to the new ones. Native ETH
+   * is always included; list every currency the collective's slots pay in.
+   * Reverts while paused.
+   */
+  async setSplit(
+    collective: Address,
+    current: CollectiveSplit,
+    next: CollectiveSplit,
+    tokens: readonly Address[] = [],
+  ): Promise<Hash> {
+    assertCollectiveSplit(next, "setSplit");
+    const all = [...new Set<Address>([SPLITS_NATIVE_TOKEN, ...tokens])];
+    return this.write(collective, "setSplit", [encodeSplit(current), encodeSplit(next), all]);
   }
 
   /** Pause or resume distributions. Split managers or admin. */
