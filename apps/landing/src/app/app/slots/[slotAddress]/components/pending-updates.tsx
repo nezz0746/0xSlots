@@ -1,7 +1,7 @@
 "use client";
 
 import { findKnownHook } from "@0xslots/contracts/slots";
-import type { SlotState } from "@0xslots/sdk/slots";
+import { type SlotState, TERMS, unpackHookPermissions } from "@0xslots/sdk/slots";
 import { Info, Loader2 } from "lucide-react";
 import { type Address, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
@@ -9,16 +9,21 @@ import { useChain } from "@/context/chain";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { cn } from "@/lib/utils";
-import { formatBps, truncateAddress } from "@/utils";
+import { describePermissions } from "@/lib/hook-permissions";
+import { formatBps, formatDuration, truncateAddress } from "@/utils";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
- * Which of the two dimensions a queued change touches. `proposeTerms` takes a
- * flag per dimension and `cancelTerms` takes one per dimension, so a retraction
- * has to name which — the two may belong to different roles in a collective.
+ * Which term a queued change touches. `cancelTerms` takes a mask, so a
+ * retraction names which — terms may belong to different roles in a collective.
  */
-export type PendingDimension = "tax" | "hook";
+export type PendingDimension =
+  | "tax"
+  | "recipient"
+  | "minDeposit"
+  | "hook"
+  | "hookPermissions";
 
 /**
  * This file owns one subject — terms queued but not yet in force — in the two
@@ -78,13 +83,29 @@ export function pendingChanges(
   const rows: PendingRow[] = [];
   const { pending } = state;
 
-  if (pending.hasTax) {
+  if (pending.hasTaxRate) {
     rows.push({
       dimension: "tax",
       label: "Tax rate",
-      current: `${formatBps(Number(state.taxBps))}`,
-      next: `${formatBps(Number(pending.taxBps))} / mo`,
-      direction: pending.taxBps > state.taxBps ? "up" : "down",
+      current: `${formatBps(Number(state.taxRateBps))}`,
+      next: `${formatBps(pending.taxTerms.rateBps)} / mo`,
+      direction: BigInt(pending.taxTerms.rateBps) > state.taxRateBps ? "up" : "down",
+    });
+  }
+  if (pending.hasRecipient) {
+    rows.push({
+      dimension: "recipient",
+      label: "Recipient",
+      current: truncateAddress(state.recipient),
+      next: truncateAddress(pending.taxTerms.recipient),
+    });
+  }
+  if (pending.hasMinRunway) {
+    rows.push({
+      dimension: "minDeposit",
+      label: "Minimum runway",
+      current: formatDuration(Number(state.minRunwaySeconds)),
+      next: formatDuration(pending.taxTerms.minRunwaySeconds),
     });
   }
   if (pending.hasHook) {
@@ -92,7 +113,17 @@ export function pendingChanges(
       dimension: "hook",
       label: "Hook",
       current: hookLabel(chainId, state.hook),
-      next: hookLabel(chainId, pending.hook),
+      next: hookLabel(chainId, pending.hookTerms.target),
+    });
+  }
+  if (pending.hasHookPermissions) {
+    const callbacks = (permissions: number) =>
+      describePermissions(unpackHookPermissions(permissions)).granted.join(", ") || "none";
+    rows.push({
+      dimension: "hookPermissions",
+      label: "Hook permissions",
+      current: callbacks(state.hookOffer.permissions),
+      next: callbacks(pending.hookPermissions),
     });
   }
 
@@ -104,12 +135,26 @@ export function pendingChanges(
  *  both at once. See `cancelTerms` in the SDK's react bindings. */
 const CANCEL_LABEL: Record<PendingDimension, string> = {
   tax: "Cancel tax update",
+  recipient: "Cancel recipient update",
+  minDeposit: "Cancel minimum deposit update",
   hook: "Cancel hook update",
+  hookPermissions: "Cancel hook permissions update",
+};
+
+const MASK: Record<PendingDimension, number> = {
+  tax: TERMS.TAX_RATE,
+  recipient: TERMS.RECIPIENT,
+  minDeposit: TERMS.MIN_RUNWAY,
+  hook: TERMS.HOOK,
+  hookPermissions: TERMS.HOOK_PERMISSIONS,
 };
 
 const CANCEL_TEXT: Record<PendingDimension, string> = {
   tax: "Cancel tax change",
+  recipient: "Cancel recipient change",
+  minDeposit: "Cancel runway change",
   hook: "Cancel hook change",
+  hookPermissions: "Cancel permissions change",
 };
 
 /** The changed value, tinted by direction. Shared so the two views cannot
@@ -312,11 +357,7 @@ export function QueuedTermsControls({
                   // Per-dimension, mirroring the contract. The two may belong
                   // to different roles, so an all-or-nothing cancel would let
                   // one retraction silently destroy the other's queued change.
-                  actions.cancelTerms(
-                    slot,
-                    row.dimension === "tax",
-                    row.dimension === "hook",
-                  )
+                  actions.cancelTerms(slot, MASK[row.dimension])
                 }
               >
                 {working && (

@@ -1,9 +1,10 @@
 "use client";
 
+import { unpackHookPermissions, ZERO_HOOK_DATA } from "@0xslots/sdk/slots";
 import { type Abi, type Address, getAddress, isAddress } from "viem";
 import { useBytecode, useReadContracts } from "wagmi";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
-import { describeFlags, type HookFlagSet } from "@/lib/hook-flags";
+import { describePermissions, type HookPermissionSet } from "@/lib/hook-permissions";
 
 /**
  * The successor to the old `useModuleCheck`.
@@ -11,7 +12,7 @@ import { describeFlags, type HookFlagSet } from "@/lib/hook-flags";
  * Modules advertised themselves through ERC-165, so probing one meant asking
  * whether it claimed an interface id — and that id rotted every time the
  * interface changed, silently downgrading every genuine module to "probable".
- * A hook declares itself differently and better: `hooks()` returns the exact
+ * A hook declares itself differently and better: `hookOffer()` returns the exact
  * set of callbacks it wants, which is data rather than a claim, and the slot
  * snapshots that set once at attach time. So the probe here asks the same
  * question the slot will ask, and there is no constant to keep in sync.
@@ -21,9 +22,9 @@ import { describeFlags, type HookFlagSet } from "@/lib/hook-flags";
  *
  *  - `no-code`   — nothing deployed at this address ON THIS CHAIN. Overwhelmingly
  *                  a hook address copied from another network.
- *  - `not-a-hook`— has code, but `hooks()` does not answer. An ERC-20, a proxy
+ *  - `not-a-hook`— has code, but `hookOffer()` does not answer. An ERC-20, a proxy
  *                  pointing nowhere, the wrong contract entirely.
- *  - `inert`     — answers, but subscribes to nothing. The slot REJECTS this
+ *  - `inert`     — answers, but asks for no permissions. The slot REJECTS this
  *                  outright rather than attaching a hook that can never fire,
  *                  so it is a hard error here too, not a warning.
  *
@@ -35,20 +36,16 @@ import { describeFlags, type HookFlagSet } from "@/lib/hook-flags";
 const hookProbeAbi = [
   {
     type: "function",
-    name: "subscriptions",
+    name: "hookOffer",
     stateMutability: "view",
-    inputs: [],
+    inputs: [{ name: "config", type: "bytes32" }],
     outputs: [
       {
         type: "tuple",
         components: [
-          { name: "beforeBuy", type: "bool" },
-          { name: "beforeSelfAssess", type: "bool" },
-          { name: "afterBuy", type: "bool" },
-          { name: "afterRelease", type: "bool" },
-          { name: "afterLiquidate", type: "bool" },
-          { name: "afterSettle", type: "bool" },
-          { name: "strict", type: "bool" },
+          { name: "permissions", type: "uint8" },
+          { name: "feeBps", type: "uint16" },
+          { name: "feeRecipient", type: "address" },
         ],
       },
     ],
@@ -61,11 +58,11 @@ export interface HookCheckData {
   address: Address;
   status: HookCheckStatus;
   /** The raw declared set, for rendering. */
-  flags: HookFlagSet;
+  permissions: HookPermissionSet;
   /** Declared `strict`: its `after` calls are uncapped and may revert. */
   strict: boolean;
-  /** The callbacks it declared, in the order `HookFlags` declares them. */
-  subscriptions: string[];
+  /** The callbacks it declared, in the order `HookPermissions` declares them. */
+  granted: string[];
   /**
    * What it may REFUSE, and what it is merely told about.
    *
@@ -91,8 +88,8 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
     // not an address — nothing to probe
   }
 
-  // Asked separately from `hooks()` because a revert cannot tell the two apart:
-  // an address with no code and an address whose `hooks()` reverts both come
+  // Asked separately from `hookOffer()` because a revert cannot tell the two apart:
+  // an address with no code and an address whose `hookOffer()` reverts both come
   // back as a failed call, and they call for opposite advice.
   const bytecode = useBytecode({
     address: checksummed ?? undefined,
@@ -107,7 +104,8 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
             {
               address: checksummed,
               abi: hookProbeAbi,
-              functionName: "subscriptions",
+              functionName: "hookOffer",
+              args: [ZERO_HOOK_DATA],
               chainId,
             } as const,
           ]
@@ -129,24 +127,24 @@ export function useHookCheck(rawAddress: string, chainId?: number) {
       return {
         address: checksummed,
         status: "no-code",
-        ...describeFlags(null),
+        ...describePermissions(null),
       };
 
-    const flagsRes = data[0];
-    if (!flagsRes || flagsRes.status !== "success")
+    const offerRes = data[0];
+    if (!offerRes || offerRes.status !== "success")
       return {
         address: checksummed,
         status: "not-a-hook",
-        ...describeFlags(null),
+        ...describePermissions(null),
       };
 
-    const described = describeFlags(
-      flagsRes.result as unknown as Record<string, boolean>,
+    const described = describePermissions(
+      unpackHookPermissions((offerRes.result as { permissions: number }).permissions),
     );
 
     return {
       address: checksummed,
-      status: described.subscriptions.length === 0 ? "inert" : "ok",
+      status: described.granted.length === 0 ? "inert" : "ok",
       ...described,
     };
   })();

@@ -1,37 +1,37 @@
 "use client";
 
-import { FLAG_LABELS, FLAG_ORDER, type HookFlagSet } from "@/lib/hook-flags";
+import { PERMISSION_LABELS, PERMISSION_ORDER, type HookPermissionSet } from "@/lib/hook-permissions";
 import { cn } from "@/lib/utils";
 
 /**
- * A hook's declared flags, drawn rather than described.
+ * A hook's declared permissions, drawn rather than described.
  *
  * ALL of them, always, with the inactive ones greyed. A list of only what is on
  * cannot be read as a set — it leaves the reader to remember which five it did
- * not say, and a flag being OFF is the more reassuring fact of the two.
+ * not say, and a permission being OFF is the more reassuring fact of the two.
  *
  * No tooltips and no prose. Every phrasing of what a callback "can" or "cannot"
  * do turned out to cost more than it explained: these are new concepts, and a
- * sentence per flag is six sentences of load for a reader who mostly needs to
+ * sentence per permission is six sentences of load for a reader who mostly needs to
  * see the SHAPE. On or off, in a fixed order, is the whole thing.
  *
  * The same component in the create form and on the slot page, so a hook looks
  * identical while you are attaching it and after it is attached.
  *
- * `HookFlagRow`, not `HookFlags` — the SDK already exports that name for the
+ * `HookPermissionRow`, not `HookPermissions` — the SDK already exports that name for the
  * struct, and a component sharing it makes every importing file choose.
  */
-export function HookFlagRow({
-  flags,
+export function HookPermissionRow({
+  permissions,
   className,
 }: {
-  flags: Partial<HookFlagSet> | undefined | null;
+  permissions: Partial<HookPermissionSet> | undefined | null;
   className?: string;
 }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-1", className)}>
-      {FLAG_ORDER.map((key) => {
-        const on = !!flags?.[key];
+      {PERMISSION_ORDER.map((key) => {
+        const on = !!permissions?.[key];
         return (
           <span
             key={key}
@@ -46,7 +46,7 @@ export function HookFlagRow({
                 : "bg-muted text-muted-foreground/50",
             )}
           >
-            {FLAG_LABELS[key] ?? key}
+            {PERMISSION_LABELS[key] ?? key}
           </span>
         );
       })}

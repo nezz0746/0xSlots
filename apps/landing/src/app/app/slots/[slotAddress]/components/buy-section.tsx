@@ -14,7 +14,7 @@ import { PriceInput } from "@/components/ui/price-input";
 import { useChain } from "@/context/chain";
 import type { CurrencyMeta } from "@/hooks/slots/use-slots";
 import {
-  useArrears,
+  useDebt,
   useMinDepositForBuy,
   useTakeQuote,
 } from "@/hooks/slots/use-slots";
@@ -44,7 +44,7 @@ const ZERO = 0n;
  *
  * - The COST comes from `quoteBuy`, never from `price()`. An occupied slot
  *   charges the sitting occupant's asking price plus your deposit; a vacant one
- *   charges the deposit alone; and either way the seated account's arrears are
+ *   charges the deposit alone; and either way the seated account's debt is
  *   folded in. A native slot checks `msg.value` for EQUALITY, not sufficiency,
  *   so a figure derived here rather than quoted reverts the moment the two
  *   disagree.
@@ -170,7 +170,9 @@ export function BuySection({
    * for them either way.
    */
   const effectiveTax =
-    !isOccupant && state.pending.hasTax ? state.pending.taxBps : state.taxBps;
+    !isOccupant && state.pending.hasTaxRate
+      ? BigInt(state.pending.taxTerms.rateBps)
+      : state.taxRateBps;
 
   /**
    * The contract's own minimum at this price — the unit every option is a
@@ -186,8 +188,8 @@ export function BuySection({
    * instant tax accrues. Falling back to a week keeps the three options real
    * amounts of runway rather than three zeroes.
    */
-  const base = state.minDepositSeconds > ZERO ? state.minDepositSeconds : WEEK;
-  const noMinimum = state.minDepositSeconds === ZERO;
+  const base = state.minRunwaySeconds > ZERO ? state.minRunwaySeconds : WEEK;
+  const noMinimum = state.minRunwaySeconds === ZERO;
 
   /**
    * What ×m costs.
@@ -218,7 +220,7 @@ export function BuySection({
   const overMaxPrice = bounds ? price > bounds.maxPrice : false;
 
   // Declared before the quotes, because both are asked FOR this address: it is
-  // the one being seated, it is the one carrying arrears, and it is not
+  // the one being seated, it is the one carrying debt, and it is not
   // necessarily the one paying.
   const seatAddress = (showSeat && seat.trim() ? seat.trim() : address) as
     | Address
@@ -245,14 +247,14 @@ export function BuySection({
    * default as someone paying a higher price, which is the one reading that
    * makes the charge look like a bug.
    */
-  const { data: arrears } = useArrears(slot, quoteFor);
-  const debt = arrears ?? ZERO;
+  const { data: debtOwed } = useDebt(slot, quoteFor);
+  const debt = debtOwed ?? ZERO;
 
   // Derived from the quote rather than from `price`, so it is right on all
   // paths without this panel having to know the rule: an eviction charges the
-  // deposit alone and the purchase half is simply zero. The arrears come out
-  // first — they are in the quote, and they are not part of what the occupant
-  // is being paid.
+  // deposit alone and the purchase half is simply zero. The debt comes out
+  // first — it is in the quote, and it is not part of what the occupant is
+  // being paid.
   const quotedPurchase =
     quote === undefined
       ? ZERO
@@ -265,7 +267,7 @@ export function BuySection({
 
   const usdPurchase = usdOfRaw(purchase);
   const usdDeposit = usdOfRaw(deposit);
-  const usdArrears = usdOfRaw(debt);
+  const usdDebt = usdOfRaw(debt);
   const usdTotal = usdOfRaw(total);
 
   const ready =
@@ -358,7 +360,7 @@ export function BuySection({
           value={price}
           onChange={updatePrice}
           decimals={decimals}
-          taxBps={effectiveTax}
+          taxRateBps={effectiveTax}
           symbol={symbol}
           disabled={actions.busy}
           hint={`Current: ${formatBalance(state.price, decimals)} ${symbol}`}
@@ -409,7 +411,7 @@ export function BuySection({
         value={price}
         onChange={updatePrice}
         decimals={decimals}
-        taxBps={effectiveTax}
+        taxRateBps={effectiveTax}
         symbol={symbol}
         disabled={actions.busy}
         hint="What the next holder pays to take it from you"
@@ -447,9 +449,9 @@ export function BuySection({
           // buy is funded at the rate already on display, and the banner under
           // the figures has said what is queued and when. A note here too was
           // the same sentence three times on one screen.
-          state.pending.hasTax && state.pending.applies
+          state.pending.hasTaxRate && state.pending.applies
             ? `Sized at the queued ${formatBps(
-                Number(state.pending.taxBps),
+                state.pending.taxTerms.rateBps,
               )}/mo, which takes effect on this buy`
             : noMinimum
               ? "This slot demands no minimum. These are one, two and three weeks of runway — a zero deposit is liquidatable the instant tax accrues."
@@ -523,12 +525,12 @@ export function BuySection({
         {debt > ZERO && (
           <div className="flex justify-between text-xs">
             <span className="text-amber-700 dark:text-amber-400">
-              Arrears owed
+              Debt owed
             </span>
             <span className="tabular-nums text-amber-700 dark:text-amber-400">
               {formatBalance(debt, decimals)} {symbol}
-              {usdArrears && (
-                <span className="opacity-70"> ≈ {usdArrears}</span>
+              {usdDebt && (
+                <span className="opacity-70"> ≈ {usdDebt}</span>
               )}
             </span>
           </div>

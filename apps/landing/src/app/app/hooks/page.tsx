@@ -5,7 +5,7 @@ import { ExternalLink, Plug } from "lucide-react";
 import Image from "next/image";
 import type { Address } from "viem";
 import { CopyAddress } from "@/components/copy-address";
-import { HookFlagRow } from "@/components/hook-flags";
+import { HookPermissionRow } from "@/components/hook-permissions";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
@@ -34,9 +34,9 @@ import {
  * what somebody already chose.
  *
  * Everything on a card is read from the chain at the address, not from this
- * app: the callbacks from `subscriptions()`, the configuration from
+ * app: the callbacks from `hookOffer()`, the configuration from
  * `descriptors()`, and whether that configuration is optional from
- * `validateHookData` itself. The name and the sentence are the only editorial
+ * `validateHookTerms` itself. The name and the sentence are the only editorial
  * content, and they are the only part that could ever be out of date.
  */
 export default function HooksPage() {
@@ -220,9 +220,9 @@ function HookCard({
           Callbacks
         </h3>
         {/* The same row the create form and the slot page draw, from the same
-            `subscriptions()` call — so a hook looks identical here, while it is
+            `hookOffer()` call — so a hook looks identical here, while it is
             being attached, and after it is attached. */}
-        <HookFlagRow flags={check.data?.flags} />
+        <HookPermissionRow permissions={check.data?.permissions} />
       </div>
 
       <div className="space-y-1.5">
@@ -277,7 +277,7 @@ function HookCard({
  * One configurable family, as the hook describes it.
  *
  * The signature gives the type, the bounds give the label, the unit and the
- * range, and `validateHookData` on the empty word gives the one thing neither
+ * range, and `validateHookTerms` on the empty word gives the one thing neither
  * can express: whether a slot may attach this hook without configuring it.
  */
 function FamilyRow({

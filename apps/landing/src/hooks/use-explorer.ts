@@ -127,20 +127,15 @@ export interface ExplorerSlot {
   currencyRef: CurrencyRef | null;
   price: string;
   deposit: string;
-  taxBps: string;
-  minDepositSeconds: string;
+  taxRateBps: string;
+  minRunwaySeconds: string;
   /** Null is an ordinary configuration — the plain Harberger slot. */
   hook: Address | null;
   hookRef: HookRow | null;
   mutableTax: boolean;
   mutableHook: boolean;
-  /**
-   * A queued term change. Two independent dimensions sharing one deferral, so
-   * both booleans are read: a queued hook change TO the zero address means
-   * "detach the hook", which `pendingHook` alone cannot express.
-   */
-  pendingHasTax: boolean;
-  pendingHasHook: boolean;
+  /** Which terms are queued. Non-zero means a change is waiting. */
+  pendingMask: number;
   createdAt: string;
   /**
    * When tax was last realised out of `deposit`. Null on rows written before
@@ -177,8 +172,8 @@ const SLOT_FIELDS = /* GraphQL */ `
   }
   price
   deposit
-  taxBps
-  minDepositSeconds
+  taxRateBps
+  minRunwaySeconds
   hook
   hookRef {
     id
@@ -188,8 +183,7 @@ const SLOT_FIELDS = /* GraphQL */ `
   }
   mutableTax
   mutableHook
-  pendingHasTax
-  pendingHasHook
+  pendingMask
   createdAt
   lastSettled
 `;
@@ -403,7 +397,7 @@ const SORTABLE = new Set([
   "createdAt",
   "isOccupied",
   "price",
-  "taxBps",
+  "taxRateBps",
   "updatedAt",
 ]);
 
@@ -767,7 +761,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         manager
         changeTax
         changeHook
-        taxBps
+        taxRateBps
         hook
         timestamp
         tx
@@ -782,7 +776,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
       items {
         id
         slot
-        taxBps
+        taxRateBps
         hook
         previousTaxPercentage
         previousHook
@@ -930,7 +924,7 @@ export function useIndexerMeta() {
 // Solvency, without asking the chain
 // ──────────────────────────────────────────
 
-/** The contract's denominator. `taxBps` is basis points per 30 days. */
+/** The contract's denominator. `taxRateBps` is basis points per 30 days. */
 const BASIS_POINTS = 10_000n;
 
 /**
@@ -949,7 +943,7 @@ const BASIS_POINTS = 10_000n;
  *
  * The arithmetic is the contract's own, from `SlotMath.taxFor`:
  *
- *   owed = price * taxBps * elapsed / (30 days * 10_000)
+ *   owed = price * taxRateBps * elapsed / (30 days * 10_000)
  *
  * evaluated against `lastSettled`, which is what `SlotAccounting.taxOwed()`
  * measures from. BigInt throughout and the division last, mirroring the
@@ -983,7 +977,7 @@ export function taxOwedAt(
   if (nowSeconds <= settled) return 0n;
 
   return (
-    (BigInt(slot.price) * BigInt(slot.taxBps) * (nowSeconds - settled)) /
+    (BigInt(slot.price) * BigInt(slot.taxRateBps) * (nowSeconds - settled)) /
     (MONTH_SECONDS * BASIS_POINTS)
   );
 }

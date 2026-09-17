@@ -1,12 +1,14 @@
 "use client";
 
 import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
+import { ZERO_HOOK_DATA } from "@0xslots/sdk/slots";
 import { AlertCircle, Loader2, Plug } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
-import type { Address } from "viem";
-import { HookFlagRow } from "@/components/hook-flags";
+import { type Address, type Hex, isAddress } from "viem";
+import { useReadContract } from "wagmi";
+import { HookPermissionRow } from "@/components/hook-permissions";
 import {
   FormField,
   FormItem,
@@ -110,7 +112,7 @@ export function SectionHook() {
                 same row as one pasted in, and it is the same row the slot page
                 draws once it is attached. */}
             {check.data?.status === "ok" && (
-              <HookFlagRow flags={check.data.flags} className="mt-2" />
+              <HookPermissionRow permissions={check.data.permissions} className="mt-2" />
             )}
 
             {chosenKnown && (
@@ -173,7 +175,7 @@ export function SectionHook() {
                 {check.data?.status === "not-a-hook" && (
                   <p className="flex items-start gap-1.5 text-[10px] text-destructive">
                     <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                    Not a hook — no <code>subscriptions()</code>.
+                    Not a hook — no <code>hookOffer()</code>.
                   </p>
                 )}
 
@@ -199,6 +201,10 @@ export function SectionHook() {
               <HookDeclaredConfig key={field.value} hook={field.value} />
             )}
 
+            {(hookMode === "known" || hookMode === "custom") && (
+              <DeclaredHookFee hook={field.value} />
+            )}
+
             <FormMessage />
           </FormItem>
         );
@@ -212,7 +218,7 @@ export function SectionHook() {
  *
  * Read from `descriptors()`: the type comes from a plain ABI signature, the
  * label, unit and bounds from the hook's published constants, and the verdict
- * from simulating `validateHookData` — the same function the slot will run.
+ * from simulating `validateHookTerms` — the same function the slot will run.
  *
  * A hook that publishes nothing renders nothing, which is most of them and is
  * why this is silent rather than empty. There is no second, hand-written form
@@ -283,3 +289,50 @@ function HookDeclaredConfig({ hook }: { hook: string }) {
     </div>
   );
 }
+
+/**
+ * What the hook takes from rent, as the hook itself declares it. The slot reads
+ * this once when the hook attaches; nobody creating a slot chooses it.
+ */
+function DeclaredHookFee({ hook }: { hook: string }) {
+  const { chainId } = useChain();
+  const data = useFormContext<CreateSlotFormValues>().watch("customHookData");
+  const valid = isAddress(hook);
+  const { data: offer } = useReadContract({
+    address: valid ? (hook as Address) : undefined,
+    abi: HOOK_OFFER_ABI,
+    functionName: "hookOffer",
+    args: [(data || ZERO_HOOK_DATA) as Hex],
+    chainId,
+    query: { enabled: valid },
+  });
+
+  if (!offer) return null;
+  return (
+    <p className="mt-2 text-[11px] text-muted-foreground">
+      {offer.feeBps === 0
+        ? "This hook takes no share of rent."
+        : `This hook takes ${offer.feeBps / 100}% of rent, paid to ${offer.feeRecipient.slice(0, 6)}…${offer.feeRecipient.slice(-4)}.`}
+    </p>
+  );
+}
+
+const HOOK_OFFER_ABI = [
+  {
+    type: "function",
+    name: "hookOffer",
+    stateMutability: "view",
+    inputs: [{ name: "config", type: "bytes32" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "permissions", type: "uint8" },
+          { name: "feeBps", type: "uint16" },
+          { name: "feeRecipient", type: "address" },
+        ],
+      },
+    ],
+  },
+] as const;

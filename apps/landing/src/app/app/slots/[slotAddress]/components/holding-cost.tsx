@@ -22,7 +22,7 @@ import { formatBalance, formatBps, formatDuration } from "@/utils";
  */
 export function HoldingCost({
   price,
-  taxBps,
+  taxRateBps,
   decimals,
   symbol,
   deposit,
@@ -32,14 +32,14 @@ export function HoldingCost({
   isVacant,
   isInsolvent,
   rising,
-  minDepositSeconds,
+  minRunwaySeconds,
   minDeposit,
   taxLock,
   className,
 }: {
   price: bigint;
   /** The slot's monthly rate in basis points. */
-  taxBps: bigint;
+  taxRateBps: bigint;
   decimals: number;
   symbol: string;
   /** Escrow posted by the occupant. */
@@ -55,7 +55,7 @@ export function HoldingCost({
   /** Tints the accruing figure for a beat each time it moves. */
   rising?: boolean;
   /** The runway a buy must fund. Zero means the slot demands no minimum. */
-  minDepositSeconds: bigint;
+  minRunwaySeconds: bigint;
   /** That runway priced at the CURRENT valuation. */
   minDeposit: bigint;
   /**
@@ -67,7 +67,7 @@ export function HoldingCost({
 }) {
   // The contract's own formula: basis points of the declared price per 30 days.
   // Integer arithmetic, so this cannot drift from `SlotMath.taxFor`.
-  const rentPerMonth = (price * taxBps) / 10_000n;
+  const rentPerMonth = (price * taxRateBps) / 10_000n;
   const runway = describeRunway(secondsUntilLiquidation, isVacant, isInsolvent);
   const amount = (v: bigint) => `${formatBalance(v, decimals)} ${symbol}`;
   const dash = "—";
@@ -83,12 +83,12 @@ export function HoldingCost({
       <Figure label="Valuation" value={isVacant ? dash : amount(price)} />
       <Figure
         label="Rent / month"
-        qualifier={formatBps(Number(taxBps))}
+        qualifier={formatBps(Number(taxRateBps))}
         badge={taxLock}
         value={isVacant ? dash : amount(rentPerMonth)}
       />
       {/* The two minimums footnote the cells they constrain rather than sitting
-          in a list below. `minDepositSeconds` IS a floor on the runway, and the
+          in a list below. `minRunwaySeconds` IS a floor on the runway, and the
           deposit it prices is a floor on the deposit — as their own rows they
           read as two more unrelated figures, and the reader had to work out
           which of the six they bounded. */}
@@ -97,8 +97,8 @@ export function HoldingCost({
         value={runway.value}
         tone={runway.tone}
         foot={
-          minDepositSeconds > 0n
-            ? `min ${formatDuration(Number(minDepositSeconds))}`
+          minRunwaySeconds > 0n
+            ? `min ${formatDuration(Number(minRunwaySeconds))}`
             : undefined
         }
       />
@@ -111,7 +111,7 @@ export function HoldingCost({
         // which reads as "free" when in fact the next buyer sets the price and
         // the floor follows it. The buy form computes it from their input.
         foot={
-          !isVacant && minDepositSeconds > 0n
+          !isVacant && minRunwaySeconds > 0n
             ? `min ${amount(minDeposit)}`
             : undefined
         }

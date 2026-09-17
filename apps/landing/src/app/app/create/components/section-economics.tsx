@@ -32,7 +32,7 @@ export function SectionEconomics() {
     <>
       <FormField
         control={form.control}
-        name="taxBps"
+        name="taxRateBps"
         render={({ field }) => (
           <FormItem>
             <div className="flex items-center justify-between">

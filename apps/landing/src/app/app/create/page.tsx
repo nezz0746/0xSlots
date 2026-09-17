@@ -79,13 +79,14 @@ export default function CreatePage() {
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxBps = form.watch("taxBps");
+  const taxRateBps = form.watch("taxRateBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const hookMode = form.watch("hookMode");
   const hook = form.watch("hook");
   const manager = form.watch("manager");
   const mutableTax = form.watch("mutableTax");
+  const mutableRecipient = form.watch("mutableRecipient");
   const mutableHook = form.watch("mutableHook");
 
   // ENS resolution, for submission and for the preflight below.
@@ -94,17 +95,9 @@ export default function CreatePage() {
   const hookResolved = useResolveAddress(hook);
   const managerResolved = useResolveAddress(manager);
 
-  // ── The one invariant a form gets wrong by default ────────────────────────
-  //
-  // A manager is REQUIRED when something is mutable and FORBIDDEN when nothing
-  // is: `initialize` reverts both ways. So the manager field is not "optional"
-  // — it is a function of the two checkboxes above it, and a form that always
-  // sent the connected wallet would revert the moment someone unticked both.
-  //
-  // Enforced HERE, at the single point where the value is produced, rather than
-  // in the section that renders the field: the section can hide an input, but
-  // only this can decide what is sent.
-  const needsManager = mutableTax || mutableHook;
+  // A manager is required when something is mutable and forbidden otherwise,
+  // so an immutable slot sends the zero address whatever sits in the field.
+  const needsManager = mutableTax || mutableRecipient || mutableHook;
   const resolvedManager = (
     needsManager ? managerResolved.resolved : zeroAddress
   ) as Address;
@@ -147,14 +140,17 @@ export default function CreatePage() {
     if (needsManager && !isAddress(resolvedManager, { strict: false }))
       return null;
     return {
-      recipient: previewRecipient,
       currency: resolvedCurrency,
       manager: resolvedManager,
-      hook: resolvedHook,
-      taxBps: percentToBps(taxBps),
-      minDepositSeconds: toSeconds(minDepositValue, minDepositUnit),
       mutableTax,
+      mutableRecipient,
       mutableHook,
+      taxTerms: {
+        recipient: previewRecipient,
+        rateBps: Number(percentToBps(taxRateBps)),
+        minRunwaySeconds: Number(toSeconds(minDepositValue, minDepositUnit)),
+      },
+      hookTerms: { target: resolvedHook },
     };
   }, [
     previewRecipient,
@@ -162,10 +158,11 @@ export default function CreatePage() {
     resolvedManager,
     resolvedHook,
     needsManager,
-    taxBps,
+    taxRateBps,
     minDepositValue,
     minDepositUnit,
     mutableTax,
+    mutableRecipient,
     mutableHook,
   ]);
 
@@ -326,7 +323,7 @@ export default function CreatePage() {
      * One branch, for every hook. Minimum tenure used to have a second one
      * here — its duration was a pair of form fields converted to seconds at
      * submit — which meant the same `uint256 window` had two encoders and only
-     * the descriptor's was ever put to `validateHookData`. Empty is a legal
+     * the descriptor's was ever put to `validateHookTerms`. Empty is a legal
      * answer and stays one: a hook that refuses it says so through the form,
      * which is what disarms the button.
      */
@@ -339,24 +336,32 @@ export default function CreatePage() {
       return;
 
     const managerAddress = (
-      data.mutableTax || data.mutableHook
+      data.mutableTax || data.mutableRecipient || data.mutableHook
         ? managerResolved.resolved || data.manager
         : zeroAddress
     ) as Address;
 
     const slotInit: SlotInit = {
-      recipient: getAddress(recipientAddress),
       currency: getAddress(currency),
       manager:
         managerAddress === zeroAddress
           ? zeroAddress
           : getAddress(managerAddress),
-      hook: hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
-      hookData,
-      taxBps: percentToBps(data.taxBps),
-      minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
       mutableTax: data.mutableTax,
+      mutableRecipient: data.mutableRecipient,
       mutableHook: data.mutableHook,
+      taxTerms: {
+        recipient: getAddress(recipientAddress),
+        rateBps: Number(percentToBps(data.taxRateBps)),
+        minRunwaySeconds: Number(
+          toSeconds(data.minDepositValue, data.minDepositUnit),
+        ),
+      },
+      hookTerms: {
+        target:
+          hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
+        config: hookAddress === zeroAddress ? ZERO_HOOK_DATA : hookData,
+      },
     };
 
     // The last gate before gas. `createSlot` asserts this again inside the SDK,

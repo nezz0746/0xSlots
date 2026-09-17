@@ -251,7 +251,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
         type: "Tax Proposed",
         slot: getSlot(e),
         actor: e.manager,
-        detail: `→ ${(Number(e.taxBps) / 100).toFixed(1)}%/mo`,
+        detail: `→ ${(Number(e.taxRateBps) / 100).toFixed(1)}%/mo`,
         timestamp: Number(e.timestamp),
         tx: e.tx,
       });
@@ -276,7 +276,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     const changes: string[] = [];
     if (e.taxChanged)
       changes.push(
-        `tax ${(Number(e.previousTaxPercentage) / 100).toFixed(1)}% → ${(Number(e.taxBps) / 100).toFixed(1)}%/mo`,
+        `tax ${(Number(e.previousTaxPercentage) / 100).toFixed(1)}% → ${(Number(e.taxRateBps) / 100).toFixed(1)}%/mo`,
       );
     if (e.hookChanged)
       changes.push(

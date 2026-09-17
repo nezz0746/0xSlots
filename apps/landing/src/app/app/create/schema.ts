@@ -73,7 +73,7 @@ export const createSlotSchema = z
     // The FLOOR is the one worth stating out loud: a zero-tax slot accrues
     // nothing, so nobody could ever be liquidated off it — it would be a slot
     // that can be taken once and then held for free forever.
-    taxBps: z
+    taxRateBps: z
       .string()
       .min(1, "Required")
       .refine(
@@ -108,7 +108,7 @@ export const createSlotSchema = z
     /**
      * Whether the hook has ACCEPTED the word above.
      *
-     * Written by the configuration form from `validateHookData` on chain —
+     * Written by the configuration form from `validateHookTerms` on chain —
      * the same function the slot runs at attach — and true when there is
      * nothing to configure. A boolean rather than a rule, because the rule
      * belongs to the hook and this schema cannot know it: what counts as a
@@ -120,23 +120,20 @@ export const createSlotSchema = z
      * refusal arrived as a reverted transaction.
      */
     hookDataOk: z.boolean(),
+    /** Tax rate and minimum runway. */
     mutableTax: z.boolean(),
+    mutableRecipient: z.boolean(),
     mutableHook: z.boolean(),
     manager: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
   })
-  // The manager rule, in the only form a schema can express it.
-  //
-  // `assertSlotInit` enforces BOTH halves — a manager is required when
-  // something is mutable and forbidden when nothing is. Only the first half
-  // belongs here: the second is satisfied by construction, because the form
-  // sends `zeroAddress` rather than whatever is sitting in a hidden field.
+  // A manager is required when something is mutable. The other half, no manager
+  // when nothing is, holds by construction: the form sends the zero address.
   .refine(
-    (d) => {
-      if (d.mutableTax || d.mutableHook) return d.manager.trim().length > 0;
-      return true;
-    },
+    (d) =>
+      !(d.mutableTax || d.mutableRecipient || d.mutableHook) ||
+      d.manager.trim().length > 0,
     {
       message: "A manager is required when something is mutable",
       path: ["manager"],
@@ -239,7 +236,7 @@ export const defaultValues: CreateSlotFormValues = {
   customCurrency: "",
   // 1% per 30 days, funded a day ahead: a slot that plainly works, and every
   // number visible on first paint rather than a form of empty required fields.
-  taxBps: "1",
+  taxRateBps: "1",
   minDepositValue: "1",
   minDepositUnit: "days",
   // No hook — a plain instant-buy slot. An untouched form produces the
@@ -251,6 +248,7 @@ export const defaultValues: CreateSlotFormValues = {
   hookDataOk: true,
   hook: "",
   mutableTax: false,
+  mutableRecipient: false,
   mutableHook: false,
   manager: "",
 };

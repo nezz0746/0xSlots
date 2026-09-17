@@ -64,13 +64,14 @@ export function MobileBottomBar({
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxBps = form.watch("taxBps");
+  const taxRateBps = form.watch("taxRateBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
   const hookMode = form.watch("hookMode");
   const hook = form.watch("hook");
   const mutableTax = form.watch("mutableTax");
+  const mutableRecipient = form.watch("mutableRecipient");
   const mutableHook = form.watch("mutableHook");
   const manager = form.watch("manager");
 
@@ -98,7 +99,7 @@ export function MobileBottomBar({
         : null;
 
   const knownHook = findKnownHook(chainId, hook as Address);
-  const hasMutable = mutableTax || mutableHook;
+  const hasMutable = mutableTax || mutableRecipient || mutableHook;
   // Nothing is sequential any more, so "ready" means the form actually
   // validates — not that you reached the last of three steps.
   const ready = submitState.isFormValid && !submitState.initError;
@@ -206,7 +207,7 @@ export function MobileBottomBar({
                 icon={<HandCoins className="size-3" />}
                 onJump={jumpTo}
               >
-                {taxBps || "0"}% / 30d
+                {taxRateBps || "0"}% / 30d
               </SummaryRow>
 
               {/* Min Deposit */}
@@ -246,12 +247,14 @@ export function MobileBottomBar({
                 onJump={jumpTo}
               >
                 {hasMutable
-                  ? mutableTax && mutableHook
-                    ? "Tax + Hook"
-                    : mutableTax
-                      ? "Tax"
-                      : "Hook"
-                  : "Nothing — immutable"}
+                  ? [
+                      mutableTax && "Tax",
+                      mutableRecipient && "Recipient",
+                      mutableHook && "Hook",
+                    ]
+                      .filter(Boolean)
+                      .join(", ")
+                  : "Nothing — fixed forever"}
               </SummaryRow>
 
               {hasMutable && (

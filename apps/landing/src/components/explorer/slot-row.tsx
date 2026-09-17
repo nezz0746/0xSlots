@@ -86,7 +86,7 @@ export function SlotRow({
 
   const decimals = slot.currencyRef?.decimals ?? 18;
   const knownHook = findKnownHook(chainId, slot.hook as Address | undefined);
-  const pending = slot.pendingHasTax || slot.pendingHasHook;
+  const pending = slot.pendingMask !== 0;
 
   return (
     <TableRow className="cursor-pointer" onClick={() => onSelect(slot.id)}>
@@ -131,7 +131,7 @@ export function SlotRow({
           {currencySymbol}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
-          ({Number(slot.taxBps) / 100}%/mo)
+          ({Number(slot.taxRateBps) / 100}%/mo)
         </span>
       </TableCell>
 

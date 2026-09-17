@@ -229,7 +229,7 @@ export function useIsOperator(
 /**
  * The smallest deposit a BUY will accept at `price`, asked of the slot itself.
  *
- * NOT `minDepositFor(price, taxBps, minDepositSeconds)`. Entry is an
+ * NOT `minDepositFor(price, taxRateBps, minRunwaySeconds)`. Entry is an
  * occupancy transition, so `_applyPending` runs before the funding check — a
  * buyer funds the terms they are buying INTO. Where a tax rise is queued, the
  * local formula sizes from the visible rate, under-quotes, and the buy reverts
@@ -256,7 +256,7 @@ export function useMinDepositForBuy(slot: Address | undefined, price: bigint) {
  * What taking the slot will actually charge, asked of the slot itself.
  *
  * NOT `price() + deposit`. The payment rule is the contract's promise and it
- * folds in the seated account's arrears; a native slot checks `msg.value` for
+ * folds in the seated account's debt; a native slot checks `msg.value` for
  * EQUALITY, so a figure derived here rather than quoted would revert whenever
  * the two disagreed.
  */
@@ -265,7 +265,7 @@ export function useTakeQuote(
   /**
    * The address being SEATED, not the one paying.
    *
-   * Both quotes include that account's arrears, and the two need not be the
+   * Both quotes include that account's debt, and the two need not be the
    * same address — this app lets a buyer seat someone else. Quoting for the
    * payer under-quotes a debtor's re-entry, and on a native slot, where
    * `msg.value` is checked for EQUALITY, an under-quote is a revert.
@@ -302,7 +302,7 @@ export function useTakeQuote(
  * paying it deserves to see it as its own line rather than folded into a total
  * that is quietly larger than the price plus the deposit.
  */
-export function useArrears(
+export function useDebt(
   slot: Address | undefined,
   account: Address | undefined,
 ) {
@@ -310,9 +310,9 @@ export function useArrears(
   const client = useSlots();
 
   return useQuery({
-    queryKey: ["slots", "arrears", chainId, slot, account],
+    queryKey: ["slots", "debt", chainId, slot, account],
     enabled: !!slot && !!account,
     refetchInterval: 10_000,
-    queryFn: () => client.arrearsOf(slot!, account!),
+    queryFn: () => client.debtOf(slot!, account!),
   });
 }

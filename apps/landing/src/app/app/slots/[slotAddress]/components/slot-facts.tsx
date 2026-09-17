@@ -1,12 +1,12 @@
 "use client";
 
 import { findKnownHook } from "@0xslots/contracts/slots";
-import type { HookFlags, SlotState } from "@0xslots/sdk/slots";
+import type { HookPermissions, SlotState } from "@0xslots/sdk/slots";
 import { AlertTriangle, Clock, ShieldCheck } from "lucide-react";
 import { zeroAddress } from "viem";
 import { MutabilityChip } from "@/components/detail-group";
 import { EnsIdentity } from "@/components/ens-identity";
-import { HookFlagRow } from "@/components/hook-flags";
+import { HookPermissionRow } from "@/components/hook-permissions";
 import { TenureMeter } from "@/components/occupancy-timeline";
 import { Badge } from "@/components/ui/badge";
 import { useChain } from "@/context/chain";
@@ -16,6 +16,7 @@ import { useNow } from "@/hooks/use-duration";
 import type { LiveAccrual } from "@/hooks/use-live-accrual";
 import { useTenureWindow } from "@/hooks/use-tenure-window";
 import { cn } from "@/lib/utils";
+import { formatBps } from "@/utils";
 import { HoldingCost } from "./holding-cost";
 import { AddressText } from "./panel";
 
@@ -40,7 +41,7 @@ function boughtAgo(occupiedSince: bigint, chainNow: number): string {
 }
 
 /**
- * @param insolvent Overrides the snapshot's own flag with the interpolated one,
+ * @param insolvent Overrides the snapshot's own permission with the interpolated one,
  *   so a slot that tips over while the page is open says so on the same tick
  *   the runway hits zero rather than at the next poll. Omit to trust the read.
  */
@@ -70,11 +71,11 @@ export function SlotStatus({
   );
 }
 
-const _DECIDES: [keyof HookFlags, string][] = [
+const _DECIDES: [keyof HookPermissions, string][] = [
   ["beforeBuy", "beforeBuy"],
   ["beforeSelfAssess", "beforeSelfAssess"],
 ];
-const _RECORDS: [keyof HookFlags, string][] = [
+const _RECORDS: [keyof HookPermissions, string][] = [
   ["afterBuy", "afterBuy"],
   ["afterRelease", "afterRelease"],
   ["afterLiquidate", "afterLiquidate"],
@@ -82,18 +83,18 @@ const _RECORDS: [keyof HookFlags, string][] = [
 ];
 
 /**
- * A hook's declared subscriptions, struck through where it did not subscribe.
+ * A hook's declared permissions, struck through where it was not granted one.
  *
  * Both halves are always drawn, present and absent alike. A list of only what a
  * hook DOES leaves the reader unable to tell "this hook cannot refuse a buy"
  * from "this app did not check" — and the first is a guarantee worth having.
  */
-function _FlagList({
-  flags,
+function _PermissionList({
+  permissions,
   entries,
 }: {
-  flags: HookFlags;
-  entries: [keyof HookFlags, string][];
+  permissions: HookPermissions;
+  entries: [keyof HookPermissions, string][];
 }) {
   return (
     <div className="flex flex-wrap gap-1">
@@ -102,7 +103,7 @@ function _FlagList({
           key={key}
           className={cn(
             "px-1.5 py-0.5 text-[10px]",
-            flags[key]
+            permissions[key]
               ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
               : "bg-muted/60 text-muted-foreground/50 line-through",
           )}
@@ -161,7 +162,7 @@ export function SlotDetails({
   currency: CurrencyMeta;
   /** Interpolated between polls, so the accruing figures move. */
   accrual: LiveAccrual;
-  /** The deposit `minDepositSeconds` demands at the CURRENT price. */
+  /** The deposit `minRunwaySeconds` demands at the CURRENT price. */
   minDeposit: bigint;
   isManager: boolean;
   isOccupant: boolean;
@@ -178,7 +179,7 @@ export function SlotDetails({
   const known = findKnownHook(chainId, attached ? state.hook : undefined);
   const tenureSeconds = useTenureWindow(
     attached ? state.hook : undefined,
-    attached ? state.hookData : undefined,
+    attached ? state.hookConfig : undefined,
   );
   const now = useNow(!!tenureSeconds && !state.isVacant, 1000);
   /**
@@ -190,7 +191,7 @@ export function SlotDetails({
   const skew = useChainTimeSkew();
   const chainNow = Math.floor(Date.now() / 1000) + skew;
 
-  const mutableTerms = state.mutableTax || state.mutableHook;
+  const managed = state.manager !== zeroAddress;
 
   return (
     /**
@@ -274,7 +275,7 @@ export function SlotDetails({
 
       <HoldingCost
         price={state.price}
-        taxBps={state.taxBps}
+        taxRateBps={state.taxRateBps}
         decimals={currency.decimals}
         symbol={currency.symbol}
         deposit={state.deposit}
@@ -284,7 +285,7 @@ export function SlotDetails({
         isVacant={state.isVacant}
         isInsolvent={accrual.insolvent}
         rising={accrual.rising}
-        minDepositSeconds={state.minDepositSeconds}
+        minRunwaySeconds={state.minRunwaySeconds}
         minDeposit={minDeposit}
         taxLock={<MutabilityChip mutable={state.mutableTax} what="tax rate" />}
         className="border-b-0"
@@ -305,14 +306,28 @@ export function SlotDetails({
             <span className="inline-flex items-center gap-1.5">
               {known?.name ?? "unrecognised"}
               <AddressText address={state.hook} />
+              {state.hookOffer.feeBps > 0 ? (
+                <span className="text-[10px] text-muted-foreground">
+                  takes {formatBps(state.hookOffer.feeBps)} of rent
+                </span>
+              ) : null}
             </span>
           ) : (
             <span className="text-muted-foreground">none</span>
           )}
         </Term>
 
+        <Term
+          label="Recipient"
+          lock={
+            <MutabilityChip mutable={state.mutableRecipient} what="recipient" />
+          }
+        >
+          <AddressText address={state.recipient} className="text-foreground" />
+        </Term>
+
         <Term label="Manager">
-          {mutableTerms ? (
+          {managed ? (
             <span className="inline-flex items-center gap-1.5">
               <AddressText
                 address={state.manager}
@@ -334,7 +349,7 @@ export function SlotDetails({
             what this slot obeys rather than what the hook currently claims. */}
         {attached && (
           <div className="w-full space-y-1">
-            <HookFlagRow flags={state.hookFlags} />
+            <HookPermissionRow permissions={state.hookPermissions} />
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
                 Unrecognised hook — read its code before buying.

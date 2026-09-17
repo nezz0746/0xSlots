@@ -37,7 +37,7 @@ import { AddressText } from "./components/panel";
 import { PendingTermsBanner } from "./components/pending-updates";
 import { OccupantPanel } from "./components/slot-actions";
 import { SlotDetails, SlotStatus } from "./components/slot-facts";
-import { ManageTermsPanel } from "./components/slot-terms";
+import { ManageTermsPanel, OwnershipPanel } from "./components/slot-terms";
 import { useOrders } from "./hooks/use-orders";
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -93,7 +93,7 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
   const minDepositFor = useCallback(
     (price: bigint) =>
       state
-        ? client.minDepositFor(price, state.taxBps, state.minDepositSeconds)
+        ? client.minDepositFor(price, state.taxRateBps, state.minRunwaySeconds)
         : 0n,
     [client, state],
   );
@@ -265,8 +265,13 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
                 )}
 
                 {activeTab === "manage" && isManager && (
-                  <div className="p-4">
+                  <div className="space-y-4 p-4">
                     <ManageTermsPanel
+                      slot={slot!}
+                      state={state}
+                      actions={actions}
+                    />
+                    <OwnershipPanel
                       slot={slot!}
                       state={state}
                       actions={actions}

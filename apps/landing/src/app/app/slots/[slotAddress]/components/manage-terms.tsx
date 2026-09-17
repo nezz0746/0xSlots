@@ -84,18 +84,18 @@ const RUNWAY_STEPS = [
  */
 export function depositForSeconds(
   price: bigint,
-  taxBps: bigint,
+  taxRateBps: bigint,
   seconds: bigint,
 ): bigint {
-  const numerator = price * taxBps * seconds;
+  const numerator = price * taxRateBps * seconds;
   if (numerator <= ZERO) return ZERO;
   const denominator = MONTH_SECONDS * BASIS_POINTS;
   return (numerator + denominator - 1n) / denominator;
 }
 
 /** How long `deposit` keeps a slot at `price` solvent, in seconds. */
-function runwaySeconds(deposit: bigint, price: bigint, taxBps: bigint): bigint {
-  const perMonth = price * taxBps;
+function runwaySeconds(deposit: bigint, price: bigint, taxRateBps: bigint): bigint {
+  const perMonth = price * taxRateBps;
   if (perMonth === ZERO || deposit <= ZERO) return ZERO;
   return (deposit * MONTH_SECONDS * BASIS_POINTS) / perMonth;
 }
@@ -124,7 +124,7 @@ export function ManageTerms({
   trailing?: React.ReactNode;
 }) {
   const { decimals, symbol } = currency;
-  const taxBps = state.taxBps;
+  const taxRateBps = state.taxRateBps;
   const { chainId } = useChain();
   const { toUsd } = useUsdPrice(state.currency, chainId);
   const walletBalance = useCurrencyBalance(state.currency);
@@ -164,11 +164,11 @@ export function ManageTerms({
    * transition, applies nothing, and is checked against the terms in force.
    */
   const floor =
-    state.minDepositSeconds > ZERO
+    state.minRunwaySeconds > ZERO
       ? depositForSeconds(
           newPrice,
-          taxBps,
-          state.minDepositSeconds + SETTLE_MARGIN_SECONDS,
+          taxRateBps,
+          state.minRunwaySeconds + SETTLE_MARGIN_SECONDS,
         )
       : ZERO;
 
@@ -195,7 +195,7 @@ export function ManageTerms({
 
   const wanted = depositForSeconds(
     newPrice,
-    taxBps,
+    taxRateBps,
     delta < ZERO ? -delta : delta,
   );
 
@@ -232,7 +232,7 @@ export function ManageTerms({
   const runwayAfter = runwaySeconds(
     settledDeposit + topUpAmount - withdrawAmount,
     newPrice,
-    taxBps,
+    taxRateBps,
   );
 
   const moved = topUpAmount > ZERO ? topUpAmount : withdrawAmount;
@@ -272,7 +272,7 @@ export function ManageTerms({
         value={newPrice}
         onChange={setPriceWei}
         decimals={decimals}
-        taxBps={taxBps}
+        taxRateBps={taxRateBps}
         symbol={symbol}
         disabled={working}
         hint="What the next holder pays to take it from you"
