@@ -22,6 +22,8 @@ import {
   termsAppliedEvent,
   termsCancelledEvent,
   termsProposedEvent,
+  debtRepaidEvent,
+  hookFeePaidEvent,
   withdrawnEvent,
 } from "ponder:schema";
 import type { Hex } from "viem";
@@ -31,10 +33,9 @@ import {
   evtId,
   getOrCreateAccount,
   getOrCreateAccountSlot,
-  hookFlagColumns,
+  hookPermissionColumns,
   lower,
-  NO_HOOK_FLAGS,
-  readSlotTerms,
+  unpackPermissions,
   ZERO_ADDR,
   ZERO_DATA,
 } from "./helpers";
@@ -722,36 +723,40 @@ ponder.on("Slot:OperatorSet", async ({ event, context }) => {
 
 // ─── deferred terms ────────────────────────────────────────────────────────
 
+const TERM_TAX = 1;
+const TERM_RECIPIENT = 2;
+const TERM_MIN_DEPOSIT = 4;
+const TERM_HOOK = 8;
+const TERM_HOOK_FLAGS = 16;
+
 /**
- * Terms queued by the manager.
- *
- * The event carries BOTH values on every emission regardless of which
- * dimension was touched, so `tax` / `hook_` are the only way to tell what was
- * actually proposed. Each dimension is written independently — proposing a tax
- * change does not clear a hook change already queued, and the contract's
- * `Pending` struct behaves the same way.
+ * Terms queued by the manager. Only the masked fields are written; anything
+ * already queued under another bit stays, as it does on chain.
  */
 ponder.on("Slot:TermsProposed", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const proposedHook = lower(event.args.hook);
+  const { taxTerms, hookTerms: h, mask } = event.args;
+  const tax = (mask & TERM_TAX) !== 0;
+  const rec = (mask & TERM_RECIPIENT) !== 0;
+  const min = (mask & TERM_MIN_DEPOSIT) !== 0;
+  const hk = (mask & TERM_HOOK) !== 0;
 
   await context.db
     .update(slot, { id: slotAddr, chainId: context.chain.id })
     .set((row) => ({
-      pendingHasTax: event.args.changeTax || row.pendingHasTax,
-      pendingTaxBps: event.args.changeTax
-        ? event.args.taxBps
-        : row.pendingTaxBps,
-      pendingHasHook: event.args.changeHook || row.pendingHasHook,
-      // The zero address is a real proposed value — "detach the hook" — which is
-      // why `pendingHasHook` exists rather than testing this column for null.
-      pendingHook: event.args.changeHook ? proposedHook : row.pendingHook,
-      // Under the same flag as the address, because the contract queues them
-      // together: a proposal that named a hook also named its configuration.
-      pendingHookData: event.args.changeHook
-        ? lower(event.args.hookData)
-        : row.pendingHookData,
+      pendingMask: row.pendingMask | mask,
+      pendingHasTaxRate: tax || row.pendingHasTaxRate,
+      pendingTaxRateBps: tax ? BigInt(taxTerms.rateBps) : row.pendingTaxRateBps,
+      pendingHasRecipient: rec || row.pendingHasRecipient,
+      pendingRecipient: rec ? lower(taxTerms.recipient) : row.pendingRecipient,
+      pendingHasMinRunway: min || row.pendingHasMinRunway,
+      pendingMinRunwaySeconds: min
+        ? BigInt(taxTerms.minRunwaySeconds)
+        : row.pendingMinRunwaySeconds,
+      pendingHasHook: hk || row.pendingHasHook,
+      pendingHook: hk ? lower(h.target) : row.pendingHook,
+      pendingHookConfig: hk ? lower(h.config) : row.pendingHookConfig,
       pendingProposedAt: event.block.timestamp,
       updatedAt: event.block.timestamp,
     }));
@@ -761,11 +766,16 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     chainId: context.chain.id,
     slot: slotAddr,
     manager: s.manager ?? lower(event.transaction.from),
-    changeTax: event.args.changeTax,
-    changeHook: event.args.changeHook,
-    taxBps: event.args.taxBps,
-    hook: proposedHook,
-    hookData: lower(event.args.hookData),
+    mask,
+    changeTax: tax,
+    changeRecipient: rec,
+    changeMinDeposit: min,
+    changeHook: hk,
+    taxRateBps: BigInt(taxTerms.rateBps),
+    recipient: lower(taxTerms.recipient),
+    minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
+    hook: lower(h.target),
+    hookConfig: lower(h.config),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -773,42 +783,26 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
 });
 
 /**
- * Queued terms landing at an occupancy transition.
- *
- * Reports the slot's FINAL values including the dimension that did not move,
- * so what changed is computed by diffing against the row.
- *
- * The hook flag snapshot is re-read here rather than carried over: the contract
- * calls `_readHookFlags` again at apply time precisely because the hook could
- * have been upgraded since it was proposed, and the snapshot must describe the
- * code that will actually run.
+ * Queued terms landing at an occupancy transition. The event carries the terms
+ * now in force, hook offer included.
  */
 ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
+  const { taxTerms, hookTerms: h, hookOffer: offer, mask } = event.args;
 
-  const nextHook = lower(event.args.hook);
-  const nextHookData = lower(event.args.hookData);
+  const nextHook = lower(h.target);
+  const nextHookConfig = lower(h.config);
+  const nextRecipient = lower(taxTerms.recipient);
   const prevHook = s.hook;
-  const prevHookData = s.hookData ?? ZERO_DATA;
+  const prevHookConfig = s.hookConfig ?? ZERO_DATA;
   const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
-  const hookDataChanged = prevHookData !== nextHookData;
-  const taxChanged = s.taxBps !== event.args.taxBps;
+  const hookDataChanged = prevHookConfig !== nextHookConfig;
+  const taxChanged = s.taxRateBps !== BigInt(taxTerms.rateBps);
+  const recipientChanged = s.recipient !== nextRecipient;
 
-  // Re-read unconditionally, never carried over from the row.
-  //
-  // `_applyPending` calls `_tryReadHookFlags` every time it applies, precisely
-  // because a hook could have been upgraded since it was proposed — so the
-  // snapshot the slot just took is the only authority on what it obeys. This
-  // used to reuse the row whenever the ADDRESS was unchanged, which is exactly
-  // the case an upgradeable hook presents: same address, different code,
-  // different flags, and the row drifting permanently.
-  let flags = NO_HOOK_FLAGS;
-  if (nextHook !== ZERO_ADDR) {
-    const terms = await readSlotTerms(context, slotAddr);
-    flags = terms.flags;
-  }
+  const permissions = unpackPermissions(offer.permissions);
 
   if (hookChanged) {
     if (prevHook) {
@@ -819,35 +813,74 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     }
   }
 
-  await context.db
-    .update(slot, { id: slotAddr, chainId: context.chain.id })
-    .set({
-      taxBps: event.args.taxBps,
-      hook: nextHook === ZERO_ADDR ? null : nextHook,
-      // Detaching clears it on chain, so mirroring the event rather than
-      // preserving the old value is what keeps this row honest.
-      hookData: nextHook === ZERO_ADDR ? null : nextHookData,
-      ...hookFlagColumns(flags),
-      pendingHasTax: false,
-      pendingTaxBps: null,
-      pendingHasHook: false,
-      pendingHook: null,
-      pendingHookData: null,
-      pendingProposedAt: null,
-      updatedAt: event.block.timestamp,
+  // The slot, and its occupancy if seated, move to the new recipient.
+  let recipientAccount = s.recipientAccount;
+  if (recipientChanged) {
+    const seated = s.occupant != null && s.occupant !== ZERO_ADDR;
+    const next = await getOrCreateAccount(context, taxTerms.recipient);
+    recipientAccount = next.id;
+    await context.db
+      .update(account, { id: s.recipient })
+      .set((row) => ({ slotCount: row.slotCount - 1 }));
+    await context.db
+      .update(account, { id: next.id })
+      .set((row) => ({ slotCount: row.slotCount + 1 }));
+    await bumpAccountChain(context, s.recipient as Hex, chainId, {
+      slotCount: -1,
+      occupiedAsRecipient: seated ? -1 : 0,
     });
+    await bumpAccountChain(context, taxTerms.recipient, chainId, {
+      slotCount: 1,
+      occupiedAsRecipient: seated ? 1 : 0,
+    });
+  }
+
+  const noHook = nextHook === ZERO_ADDR;
+  await context.db.update(slot, { id: slotAddr, chainId }).set({
+    taxRateBps: BigInt(taxTerms.rateBps),
+    recipient: nextRecipient,
+    recipientAccount,
+    minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
+    hook: noHook ? null : nextHook,
+    hookConfig: noHook ? null : nextHookConfig,
+    hookFeeBps: offer.feeBps,
+    hookFeeRecipient: offer.feeBps === 0 ? null : lower(offer.feeRecipient),
+    ...hookPermissionColumns(permissions),
+    pendingMask: 0,
+    pendingHasTaxRate: false,
+    pendingTaxRateBps: null,
+    pendingHasRecipient: false,
+    pendingRecipient: null,
+    pendingHasMinRunway: false,
+    pendingMinRunwaySeconds: null,
+    pendingHasHook: false,
+    pendingHook: null,
+    pendingHookConfig: null,
+    pendingHasHookPermissions: false,
+    pendingHookPermissions: null,
+    pendingProposedAt: null,
+    updatedAt: event.block.timestamp,
+  });
 
   await context.db.insert(termsAppliedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
-    taxBps: event.args.taxBps,
+    mask,
+    taxRateBps: BigInt(taxTerms.rateBps),
+    recipient: nextRecipient,
+    minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
     hook: nextHook,
-    hookData: nextHookData,
-    previousTaxPercentage: s.taxBps,
+    hookConfig: nextHookConfig,
+    hookPermissions: offer.permissions,
+    hookFeeBps: offer.feeBps,
+    hookFeeRecipient: lower(offer.feeRecipient),
+    previousTaxPercentage: s.taxRateBps,
+    previousRecipient: s.recipient,
     previousHook: prevHook ?? ZERO_ADDR,
-    previousHookData: prevHookData,
+    previousHookConfig: prevHookConfig,
     taxChanged,
+    recipientChanged,
     hookChanged,
     hookDataChanged,
     timestamp: event.block.timestamp,
@@ -857,44 +890,36 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
 });
 
 /**
- * A queued proposal retracted, per dimension.
- *
- * `cancelTerms` takes the same two flags `proposeTerms` does — so this
- * clears only the dimensions the event names, and a slot with a tax change and
- * a hook change queued keeps whichever one was not cancelled. Clearing both
- * unconditionally here would reintroduce, in the indexer, exactly the
- * all-or-nothing behaviour the contract was fixed to stop doing: under a
- * collective, tax and hook belong to different roles.
- *
- * `pendingProposedAt` follows the contract's own rule — zeroed only when
- * nothing is left queued, because a surviving proposal keeps its clock.
- *
- * The pre-clear values are copied into the event row. The chain does not carry
- * them here (`TermsCancelled` names the flags and nothing else), so if they
- * are not captured before the update, what was retracted is unrecoverable
- * without replaying the preceding `TermsProposed`.
+ * Queued terms retracted. The event's mask is what was actually dropped, so
+ * only those columns clear; whatever else is queued keeps its clock.
  */
 ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { cancelTax: tax, cancelHook: hookFlag } = event.args;
-
-  const hadTax = s.pendingHasTax && tax;
-  const hadHook = s.pendingHasHook && hookFlag;
-
-  const nextHasTax = tax ? false : s.pendingHasTax;
-  const nextHasHook = hookFlag ? false : s.pendingHasHook;
+  const { mask } = event.args;
+  const tax = (mask & TERM_TAX) !== 0;
+  const rec = (mask & TERM_RECIPIENT) !== 0;
+  const min = (mask & TERM_MIN_DEPOSIT) !== 0;
+  const hk = (mask & TERM_HOOK) !== 0;
+  const hf = (mask & TERM_HOOK_FLAGS) !== 0;
+  const left = s.pendingMask & ~mask;
 
   await context.db
     .update(slot, { id: slotAddr, chainId: context.chain.id })
     .set({
-      pendingHasTax: nextHasTax,
-      pendingTaxBps: tax ? null : s.pendingTaxBps,
-      pendingHasHook: nextHasHook,
-      pendingHook: hookFlag ? null : s.pendingHook,
-      pendingHookData: hookFlag ? null : s.pendingHookData,
-      // Mirrors `if (!pending.hasTax && !pending.hasHook) pending.proposedAt = 0`.
-      pendingProposedAt: nextHasTax || nextHasHook ? s.pendingProposedAt : null,
+      pendingMask: left,
+      pendingHasTaxRate: tax ? false : s.pendingHasTaxRate,
+      pendingTaxRateBps: tax ? null : s.pendingTaxRateBps,
+      pendingHasRecipient: rec ? false : s.pendingHasRecipient,
+      pendingRecipient: rec ? null : s.pendingRecipient,
+      pendingHasMinRunway: min ? false : s.pendingHasMinRunway,
+      pendingMinRunwaySeconds: min ? null : s.pendingMinRunwaySeconds,
+      pendingHasHook: hk ? false : s.pendingHasHook,
+      pendingHook: hk ? null : s.pendingHook,
+      pendingHookConfig: hk ? null : s.pendingHookConfig,
+      pendingHasHookPermissions: hf ? false : s.pendingHasHookPermissions,
+      pendingHookPermissions: hf ? null : s.pendingHookPermissions,
+      pendingProposedAt: left === 0 ? null : s.pendingProposedAt,
       updatedAt: event.block.timestamp,
     });
 
@@ -902,14 +927,70 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId: context.chain.id,
     slot: slotAddr,
-    // `cancelTerms` is `onlyManager`, so the manager on the row IS the
-    // canceller. `transaction.from` is the fallback only for the impossible
-    // case of a slot with no manager, where nothing could have emitted this.
     manager: s.manager ?? lower(event.transaction.from),
+    mask,
     cancelTax: tax,
-    cancelHook: hookFlag,
-    cancelledTaxPercentage: hadTax ? s.pendingTaxBps : null,
-    cancelledHook: hadHook ? s.pendingHook : null,
+    cancelRecipient: rec,
+    cancelMinDeposit: min,
+    cancelHook: hk,
+    cancelledTaxPercentage: tax ? s.pendingTaxRateBps : null,
+    cancelledRecipient: rec ? s.pendingRecipient : null,
+    cancelledHook: hk ? s.pendingHook : null,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+/** The hook's share of a payout. Emitted just before `TaxCollected`. */
+ponder.on("Slot:HookFeePaid", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const s = await loadSlot(context, slotAddr);
+
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      hookFeesTotal: row.hookFeesTotal + event.args.amount,
+      updatedAt: event.block.timestamp,
+    }));
+
+  await getOrCreateAccount(context, event.args.recipient);
+
+  await context.db.insert(hookFeePaidEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    slot: slotAddr,
+    hook: lower(event.args.hook),
+    recipient: lower(event.args.recipient),
+    currency: s.currency,
+    amount: event.args.amount,
+    timestamp: event.block.timestamp,
+    blockNumber: event.block.number,
+    tx: event.transaction.hash,
+  });
+});
+
+/** Debt repaid into collected tax, by a rebuy, a buyout or a top-up. */
+ponder.on("Slot:DebtRepaid", async ({ event, context }) => {
+  const slotAddr = lower(event.log.address);
+  const s = await loadSlot(context, slotAddr);
+
+  await context.db
+    .update(slot, { id: slotAddr, chainId: context.chain.id })
+    .set((row) => ({
+      debtRepaidTotal: row.debtRepaidTotal + event.args.amount,
+      updatedAt: event.block.timestamp,
+    }));
+
+  await getOrCreateAccount(context, event.args.account);
+
+  await context.db.insert(debtRepaidEvent).values({
+    id: evtId(event.transaction.hash, event.log.logIndex),
+    chainId: context.chain.id,
+    slot: slotAddr,
+    account: lower(event.args.account),
+    currency: s.currency,
+    amount: event.args.amount,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -956,5 +1037,40 @@ ponder.on("Slot:HookCallFailed", async ({ event, context }) => {
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
+  });
+});
+
+ponder.on("Slot:ManagerSet", async ({ event, context }) => {
+  await getOrCreateAccount(context, event.args.next);
+  await context.db
+    .update(slot, { id: lower(event.log.address), chainId: context.chain.id })
+    .set({ manager: lower(event.args.next), updatedAt: event.block.timestamp });
+});
+
+/**
+ * The manager accepted the hook's current offer. A new fee applies now; new
+ * permissions queue for the next occupancy transition, restarting the queue's clock.
+ */
+ponder.on("Slot:HookOfferAccepted", async ({ event, context }) => {
+  const { offer, feeApplied, permissionsQueued } = event.args;
+  const slotAddr = lower(event.log.address);
+  const s = await loadSlot(context, slotAddr);
+  await context.db.update(slot, { id: slotAddr, chainId: context.chain.id }).set({
+    ...(feeApplied
+      ? {
+          hookFeeBps: offer.feeBps,
+          hookFeeRecipient:
+            offer.feeBps === 0 ? null : lower(offer.feeRecipient),
+        }
+      : {}),
+    ...(permissionsQueued
+      ? {
+          pendingMask: s.pendingMask | TERM_HOOK_FLAGS,
+          pendingHasHookPermissions: true,
+          pendingHookPermissions: offer.permissions,
+          pendingProposedAt: event.block.timestamp,
+        }
+      : {}),
+    updatedAt: event.block.timestamp,
   });
 });

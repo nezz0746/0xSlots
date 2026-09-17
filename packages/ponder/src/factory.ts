@@ -14,9 +14,9 @@ import {
   getOrCreateAccount,
   getOrCreateCurrency,
   getOrCreateHook,
-  hookFlagColumns,
+  hookPermissionColumns,
   lower,
-  NO_HOOK_FLAGS,
+  NO_HOOK_PERMISSIONS,
   readSlotTerms,
   ZERO_ADDR,
 } from "./helpers";
@@ -65,9 +65,8 @@ async function touchFactory(
  * A new slot.
  *
  * `SlotCreated` carries slot, recipient, creator, currency and hook — and
- * nothing about the terms. Tax, the deposit floor, the two mutability flags and
- * the manager are read back from the slot with `readSlotTerms`, which is six
- * eth_calls at the creation block.
+ * nothing about the terms. They are read back from the slot with
+ * `readSlotTerms` at the creation block.
  *
  * That read is the one avoidable cost in this indexer. Putting the four scalars
  * in the event would remove it entirely, and they are all known at emit time —
@@ -123,13 +122,18 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     currency: cur.id,
     manager: terms.manager,
     creator: lower(event.args.creator),
-    taxBps: terms.taxBps,
-    minDepositSeconds: terms.minDepositSeconds,
+    taxRateBps: terms.taxRateBps,
+    minRunwaySeconds: terms.minRunwaySeconds,
     mutableTax: terms.mutableTax,
+    mutableRecipient: terms.mutableRecipient,
     mutableHook: terms.mutableHook,
     hook: hasHook ? hookAddr : null,
-    hookData: hasHook ? terms.hookData : null,
-    ...hookFlagColumns(hasHook ? terms.flags : NO_HOOK_FLAGS),
+    hookConfig: hasHook ? terms.hookConfig : null,
+    hookFeeBps: terms.hookFeeBps,
+    hookFeeRecipient: terms.hookFeeRecipient,
+    hookFeesTotal: 0n,
+    debtRepaidTotal: 0n,
+    ...hookPermissionColumns(hasHook ? terms.permissions : NO_HOOK_PERMISSIONS),
     occupant: null,
     occupantAccount: null,
     isOccupied: false,
@@ -143,11 +147,18 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     taxPaidTotal: 0n,
     totalCollected: 0n,
     creditedTotal: 0n,
-    pendingHasTax: false,
-    pendingTaxBps: null,
+    pendingMask: 0,
+    pendingHasTaxRate: false,
+    pendingTaxRateBps: null,
+    pendingHasRecipient: false,
+    pendingRecipient: null,
+    pendingHasMinRunway: false,
+    pendingMinRunwaySeconds: null,
     pendingHasHook: false,
     pendingHook: null,
-    pendingHookData: null,
+    pendingHookConfig: null,
+    pendingHasHookPermissions: false,
+    pendingHookPermissions: null,
     pendingProposedAt: null,
     createdAt: event.block.timestamp,
     createdTx: event.transaction.hash,
@@ -164,11 +175,14 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     creator: lower(event.args.creator),
     currency: cur.id,
     hook: hookAddr,
-    hookData: terms.hookData,
-    taxBps: terms.taxBps,
-    minDepositSeconds: terms.minDepositSeconds,
+    hookConfig: terms.hookConfig,
+    taxRateBps: terms.taxRateBps,
+    minRunwaySeconds: terms.minRunwaySeconds,
     mutableTax: terms.mutableTax,
+    mutableRecipient: terms.mutableRecipient,
     mutableHook: terms.mutableHook,
+    hookFeeBps: terms.hookFeeBps,
+    hookFeeRecipient: terms.hookFeeRecipient,
     manager: terms.manager,
     deployer: lower(event.transaction.from),
     timestamp: event.block.timestamp,

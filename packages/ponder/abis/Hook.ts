@@ -1,7 +1,7 @@
 /**
  * The one function a hook has to answer.
  *
- * `subscriptions()` is what the slot reads and snapshots when a hook is
+ * `hookOffer(config)` is what the slot reads and copies when a hook attaches;
  * it is the only part of ISlotHook this indexer ever calls: everything else on
  * the interface is a callback the slot makes, never something we ask about.
  *
@@ -13,20 +13,16 @@
 export const SlotHookAbi = [
   {
     type: "function",
-    name: "subscriptions",
-    inputs: [],
+    name: "hookOffer",
+    inputs: [{ name: "config", type: "bytes32" }],
     outputs: [
       {
         name: "",
         type: "tuple",
         components: [
-          { name: "beforeBuy", type: "bool" },
-          { name: "beforeSelfAssess", type: "bool" },
-          { name: "afterBuy", type: "bool" },
-          { name: "afterRelease", type: "bool" },
-          { name: "afterLiquidate", type: "bool" },
-          { name: "afterSettle", type: "bool" },
-          { name: "strict", type: "bool" },
+          { name: "permissions", type: "uint8" },
+          { name: "feeBps", type: "uint16" },
+          { name: "feeRecipient", type: "address" },
         ],
       },
     ],

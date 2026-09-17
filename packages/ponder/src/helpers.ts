@@ -22,7 +22,7 @@ const SPLIT_HASH_SELECTOR = toFunctionSelector("splitHash()").slice(2);
 export const ZERO_ADDR =
   "0x0000000000000000000000000000000000000000" as const satisfies Hex;
 
-/// "This slot configured nothing" — the `hookData` counterpart to ZERO_ADDR.
+/// "This slot configured nothing" — the `hookConfig` counterpart to ZERO_ADDR.
 export const ZERO_DATA =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const satisfies Hex;
 
@@ -266,8 +266,8 @@ export async function getOrCreateCurrency(
 // HOOKS, AND THE STATE `SlotCreated` DOES NOT CARRY
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** The eight subscriptions a hook may declare. */
-export type HookFlagSet = {
+/** The permissions a hook may declare. */
+export type HookPermissionSet = {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
@@ -278,7 +278,7 @@ export type HookFlagSet = {
 };
 
 /** What a slot with no hook obeys: nothing. */
-export const NO_HOOK_FLAGS: HookFlagSet = {
+export const NO_HOOK_PERMISSIONS: HookPermissionSet = {
   beforeBuy: false,
   beforeSelfAssess: false,
   afterBuy: false,
@@ -288,16 +288,18 @@ export const NO_HOOK_FLAGS: HookFlagSet = {
   strict: false,
 };
 
-function asFlags(value: unknown): HookFlagSet | null {
-  if (typeof value !== "object" || value === null) return null;
-  const v = value as Record<string, unknown>;
-  const keys = Object.keys(NO_HOOK_FLAGS) as (keyof HookFlagSet)[];
-  const out = { ...NO_HOOK_FLAGS };
-  for (const k of keys) {
-    if (typeof v[k] !== "boolean") return null;
-    out[k] = v[k] as boolean;
-  }
-  return out;
+/** `HookOffer.permissions` as a set. Bits follow `HookPermissionsLib`. */
+export function unpackPermissions(permissions: number): HookPermissionSet {
+  const has = (bit: number) => (permissions & bit) !== 0;
+  return {
+    beforeBuy: has(1),
+    beforeSelfAssess: has(2),
+    afterBuy: has(4),
+    afterRelease: has(8),
+    afterLiquidate: has(16),
+    afterSettle: has(32),
+    strict: has(64),
+  };
 }
 
 /**
@@ -356,78 +358,79 @@ async function readMany(
 }
 
 /**
- * A hook's own declaration of what it subscribes to.
+ * A hook's own declaration of its permissions, for an empty config.
  *
- * `null` when `hooks()` does not answer. That is not a hypothetical: a hook
- * whose `hooks()` reverts is REFUSED at attach time — `_readHookFlags` is
- * deliberately fail-closed — so seeing null here means either a hook that was
+ * `null` when `hookOffer` does not answer. A hook whose offer reverts is
+ * REFUSED at attach time, so seeing null here means either a hook that was
  * seen but never attached, or one that has since been upgraded into
  * something that no longer answers.
  */
-export async function readHookFlags(
+export async function readHookPermissions(
   ctx: Context,
   hookAddr: Hex,
-): Promise<HookFlagSet | null> {
-  const [raw] = await readMany(
-    ctx,
-    getAddress(lower(hookAddr)),
-    SlotHookAbi as unknown as Abi,
-    ["subscriptions"],
-  );
-  return asFlags(raw);
+): Promise<HookPermissionSet | null> {
+  try {
+    const offer = (await ctx.client.readContract({
+      address: getAddress(lower(hookAddr)),
+      abi: SlotHookAbi,
+      functionName: "hookOffer",
+      args: [ZERO_DATA],
+    })) as { permissions: number };
+    return unpackPermissions(offer.permissions);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * The terms `SlotCreated` leaves out.
- *
- * The event carries slot, recipient, creator, currency and hook — and nothing
- * about the economics. Tax, the deposit floor, which dimensions are mutable and
- * who may move them all have to be read back from the slot itself.
- *
- * This is six eth_calls per slot creation, at the event's own block, so the
- * answer is the state as of birth and ponder caches it like any other read.
- * It is also the single most avoidable cost in this indexer — see the note in
- * src/factory.ts.
+ * The terms `SlotCreated` leaves out, read back from the slot at the event's
+ * block: rent, hook terms, manager, lock and the hook-flag snapshot.
  */
 export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
-  const [tax, minDeposit, mutTax, mutHook, manager, flags, hookData] =
+  const [taxTerms, hookTerms, manager, mutTax, mutRecipient, mutHook, offer] =
     await readMany(ctx, address, SlotAbi as unknown as Abi, [
-      "taxBps",
-      "minDepositSeconds",
-      "mutableTax",
-      "mutableHook",
+      "taxTerms",
+      "hookTerms",
       "manager",
-      "hookFlags",
-      "hookData",
+      "mutableTax",
+      "mutableRecipient",
+      "mutableHook",
+      "hookOffer",
     ]);
 
+  const r = taxTerms as
+    | { recipient: Hex; rateBps: number; minRunwaySeconds: number }
+    | undefined;
+  const h = hookTerms as { target: Hex; config: Hex } | undefined;
+  const o = offer as
+    | { permissions: number; feeBps: number; feeRecipient: Hex }
+    | undefined;
   const managerAddr =
     typeof manager === "string" && lower(manager as Hex) !== ZERO_ADDR
       ? lower(manager as Hex)
       : null;
 
   return {
-    taxBps: typeof tax === "bigint" ? tax : 0n,
-    minDepositSeconds: typeof minDeposit === "bigint" ? minDeposit : 0n,
-    mutableTax: mutTax === true,
-    mutableHook: mutHook === true,
-    /// NULL means every term is frozen forever. The contract enforces the
-    /// pairing — `initialize` reverts if a manager is set with nothing mutable,
-    /// and reverts if something is mutable with no manager — so this is a fact
-    /// about the slot, not missing data.
+    taxRateBps: BigInt(r?.rateBps ?? 0),
+    minRunwaySeconds: BigInt(r?.minRunwaySeconds ?? 0),
+    /// NULL means nothing about the slot can ever change.
     manager: managerAddr,
-    /// The snapshot THIS SLOT obeys, which is what `hookFlags()` returns and
-    /// is not re-read from the hook afterwards.
-    flags: asFlags(flags) ?? NO_HOOK_FLAGS,
-    /// Read rather than taken from the event, for the same reason the flags
-    /// are: `SlotCreated` does not carry it, and the slot is the authority.
-    hookData: typeof hookData === "string" ? lower(hookData as Hex) : ZERO_DATA,
+    mutableTax: mutTax === true,
+    mutableRecipient: mutRecipient === true,
+    mutableHook: mutHook === true,
+    /// The hook's fee, as the slot accepted it.
+    hookFeeBps: o?.feeBps ?? 0,
+    hookFeeRecipient:
+      o && lower(o.feeRecipient) !== ZERO_ADDR ? lower(o.feeRecipient) : null,
+    /// The permissions THIS SLOT obeys, as it accepted them.
+    permissions: o ? unpackPermissions(o.permissions) : NO_HOOK_PERMISSIONS,
+    hookConfig: h ? lower(h.config) : ZERO_DATA,
   };
 }
 
 /**
- * The `hook` row, created on first sight with its declared flags read once.
+ * The `hook` row, created on first sight with its declared permissions read once.
  *
  * Keyed by (address, chainId): a hook is code, not an identity, and the same
  * address on two chains is two deployments whose immutables may differ.
@@ -442,8 +445,8 @@ export async function getOrCreateHook(
   const existing = await ctx.db.find(hook, { id, chainId });
   if (existing) return existing;
 
-  const declared = await readHookFlags(ctx, id);
-  const f = declared ?? NO_HOOK_FLAGS;
+  const declared = await readHookPermissions(ctx, id);
+  const f = declared ?? NO_HOOK_PERMISSIONS;
 
   return ctx.db.insert(hook).values({
     id,
@@ -479,13 +482,13 @@ export async function bumpHookSlotCount(
   }));
 }
 
-/** Columns for `slot`, from a flag snapshot. */
-export const hookFlagColumns = (f: HookFlagSet) => ({
-  hookBeforeBuy: f.beforeBuy,
-  hookBeforeSelfAssess: f.beforeSelfAssess,
-  hookAfterBuy: f.afterBuy,
-  hookAfterRelease: f.afterRelease,
-  hookAfterLiquidate: f.afterLiquidate,
-  hookAfterSettle: f.afterSettle,
-  hookStrict: f.strict,
+/** Columns for `slot`, from the accepted permissions. */
+export const hookPermissionColumns = (f: HookPermissionSet) => ({
+  permBeforeBuy: f.beforeBuy,
+  permBeforeSelfAssess: f.beforeSelfAssess,
+  permAfterBuy: f.afterBuy,
+  permAfterRelease: f.afterRelease,
+  permAfterLiquidate: f.afterLiquidate,
+  permAfterSettle: f.afterSettle,
+  permStrict: f.strict,
 });
