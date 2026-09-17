@@ -408,6 +408,35 @@ contract SlotCollectiveTest is Test {
         assertEq(slot.acceptedFeeBps(), 100);
     }
 
+    /// @notice A batch of different calls in one transaction.
+    function test_multicallBatchesDifferentCalls() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
+        calls[1] = abi.encodeCall(
+            mgr.proposeHook,
+            (IManagedSlot(address(slot)), HookTerms({target: address(0), config: bytes32(0)}))
+        );
+        vm.prank(admin);
+        mgr.multicall(calls);
+        assertTrue(slot.hasTax());
+        assertTrue(slot.hasHook());
+    }
+
+    /// @notice Each call in a batch still passes its own role check.
+    function test_multicallKeepsEveryRoleCheck() public {
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
+        calls[1] = abi.encodeCall(
+            mgr.proposeHook,
+            (IManagedSlot(address(slot)), HookTerms({target: address(0), config: bytes32(0)}))
+        );
+        bytes32 hookRole = mgr.POLICY_MANAGER_ROLE();
+        vm.prank(taxMgr);
+        vm.expectRevert(_unauthorized(taxMgr, hookRole));
+        mgr.multicall(calls);
+        assertFalse(slot.hasTax(), "the batch reverted as a whole");
+    }
+
     function test_inheritedUpdateSplitIsUnreachableDirectly() public {
         vm.expectRevert(Ownable.Unauthorized.selector);
         vm.prank(admin);

@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 
 import {PushSplit} from "splits-v2/splitters/push/PushSplit.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
@@ -67,7 +68,12 @@ import {Versioned} from "../utils/Versioned.sol";
 ///      `receive()`, every native-ETH tax push from `Slot._payOrCredit` — a
 ///      deliberately gas-capped `call{gas: 30_000}` — would fail and silently
 ///      degrade into a `withdrawableOf` credit needing a manual `claim`.
-contract SlotCollective is PushSplit, SlotGovernance, Versioned {
+///
+///      ── WHY `multicall` IS SAFE WHERE `execCalls` IS NOT ─────────────────
+///      `multicall` only delegatecalls this contract's own functions, keeping
+///      `msg.sender`, so every call in a batch passes the same role check it
+///      would alone. It cannot reach another contract and is not payable.
+contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
