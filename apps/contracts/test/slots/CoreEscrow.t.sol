@@ -301,6 +301,34 @@ contract CoreEscrowTest is Test {
         assertGt(debt, 0);
     }
 
+    /// @notice Debt repaid at a buyout is paid out under the terms it was owed
+    ///         under, not the ones the buyout brings in.
+    function test_DebtRepaidAtATransitionGoesToTheOutgoingRecipient() public {
+        address next = makeAddr("nextRecipient");
+        Slot s = Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(token)),
+            manager: address(this),
+            mutableTax: false, mutableRecipient: true, mutableHook: false,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
+        }))));
+        _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
+
+        TaxTerms memory t;
+        t.recipient = next;
+        s.proposeTerms(t, HookTerms({target: address(0), config: bytes32(0)}), 2);
+        vm.warp(block.timestamp + 10 days);
+
+        uint256 owed = s.taxOwed();
+        assertGt(owed, s.deposit(), "alice is insolvent");
+
+        _take(s, bob, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
+
+        assertEq(s.recipient(), next, "the recipient changed at the buyout");
+        assertEq(token.balanceOf(recipient), owed, "all of alice's tax, debt included, went to the old recipient");
+        assertEq(token.balanceOf(next), 0);
+    }
+
     /// @notice An insolvent occupant who is bought out pays their debt out of
     ///         the price, instead of walking away with all of it.
     function test_ABuyoutPaysTheSellersDebtFirst() public {

@@ -62,9 +62,15 @@ abstract contract OfferBookInternals is OfferBookStorage {
         // `best`, `board`, `liveCount` and `isLive` reverted for that slot for
         // ever — the array has no removal path and `cancel` is bidder-only, so
         // nobody could clear it.
+        //
+        // The fill also charges any debt the bidder owes on this slot, so a
+        // bidder carrying one is only fundable if they can cover it too.
+        uint256 debt = ISellableSlot(slot).debtOf(o.bidder);
         uint256 owed;
         unchecked { owed = o.price + o.deposit; }
         if (owed < o.price) return false;
+        unchecked { owed += debt; }
+        if (owed < debt) return false;
 
         return
             IERC20(currency).balanceOf(o.bidder) >= owed &&

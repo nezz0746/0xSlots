@@ -192,16 +192,32 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     // SPLIT GOVERNANCE
     // ═══════════════════════════════════════════════════════════
 
-    /// @notice Rewrite the payout configuration.
-    /// @dev Routed through the inherited `updateSplit` by external self-call.
-    ///      `Ownable.onlyOwner` admits `msg.sender == address(this)`, so this
-    ///      passes, and the hash/validation/event logic stays in exactly one
-    ///      place — upstream's — instead of being duplicated and drifting.
-    function setSplit(SplitV2Lib.Split calldata split)
-        external
-        onlyRoleOrAdmin(SPLIT_MANAGER_ROLE)
-    {
-        this.updateSplit(split);
+    /// @notice Pay out what is held under the current split, then rewrite it.
+    ///
+    /// @param current The split in force, as `distribute` requires.
+    /// @param next The split to install.
+    /// @param tokens Every token the collective holds, `NATIVE_TOKEN` for ETH.
+    ///        Each is distributed under `current` first, so rent already
+    ///        collected for the old recipients cannot be paid to the new ones.
+    ///        A token left out is paid under `next`; listing all of them is the
+    ///        split manager's responsibility.
+    ///
+    /// @dev Reverts while paused, because distributing does. Routed through the
+    ///      inherited `updateSplit` by external self-call: `Ownable.onlyOwner`
+    ///      admits `msg.sender == address(this)`, so the hash, validation and
+    ///      event logic stay upstream's.
+    function setSplit(
+        SplitV2Lib.Split calldata current,
+        SplitV2Lib.Split calldata next,
+        address[] calldata tokens
+    ) external onlyRoleOrAdmin(SPLIT_MANAGER_ROLE) {
+        uint256 length = tokens.length;
+        for (uint256 i; i < length; ++i) {
+            (uint256 held, uint256 warehoused) = getSplitBalance(tokens[i]);
+            // `distribute` leaves one unit behind, so one unit is nothing to pay.
+            if (held > 1 || warehoused > 1) this.distribute(current, tokens[i], msg.sender);
+        }
+        this.updateSplit(next);
     }
 
     /// @notice Pause or unpause distribution.

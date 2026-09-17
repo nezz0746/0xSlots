@@ -175,13 +175,11 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTen
 
         if (msg.value != 0) revert UnexpectedValue();
 
-        // Mirrors what the buy will pull: a vacant slot costs the deposit alone,
-        // an occupied one its standing price too. Safe to read ahead of the
-        // call — settling moves the deposit, the collected tax and the settle
-        // timestamp, and nothing else.
-        uint256 owed = ISlotAd(slot).occupant() == address(0)
-            ? depositAmount
-            : ISlotAd(slot).price() + depositAmount;
+        // Exactly what the buy will pull, from the slot itself: the standing
+        // price when occupied, the deposit, and any debt the buyer owes. Safe
+        // to read ahead of the call — settling moves the deposit, the collected
+        // tax and the settle timestamp, and none of those are in the quote.
+        uint256 owed = ISlotAd(slot).quoteBuy(msg.sender, depositAmount);
 
         uint256 held = IERC20(currency).balanceOf(address(this));
 

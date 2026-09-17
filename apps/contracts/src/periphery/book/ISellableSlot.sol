@@ -19,6 +19,8 @@ interface ISellableSlot {
     function price() external view returns (uint256);
     function deposit() external view returns (uint256);
     function currency() external view returns (address);
+    function taxOwed() external view returns (uint256);
+    function debtOf(address account) external view returns (uint256);
 
     /// @dev What `buy` will charge `account` for `depositAmount` of escrow:
     ///      the sitting price, the escrow, and any debt that account owes.
@@ -27,9 +29,9 @@ interface ISellableSlot {
         view
         returns (uint256);
 
-    /// @dev The escrow floor at `price_`. `selfAssess` enforces it, so raising
-    ///      a price can require a top-up first.
-    function minDepositForBuy(uint256 price_) external view returns (uint256);
+    /// @dev The escrow floor at `price_` under the terms in force. `selfAssess`
+    ///      enforces it, so raising a price can require a top-up first.
+    function minDepositToHold(uint256 price_) external view returns (uint256);
 
     /// @dev True while `operator` may reprice on the CURRENT occupant's behalf.
     ///      Keyed by tenure on the far side, so it goes false by itself the

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms, PendingTerms} from "../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, HookTerms, HookOffer, PendingTerms} from "../src/types/SlotTypes.sol";
+import {InvalidHook} from "../src/errors/SlotErrors.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -145,6 +146,14 @@ contract CollectiveGovernsRealSlotTest is Test {
         _ripen();
         _seat(buyer);
         assertEq(slot.taxRateBps(), 750, "landed on the occupancy change");
+    }
+
+    /// @notice Accepting a hook offer reaches a real slot as its manager: the
+    ///         slot answers with its own refusal, not `NotManager`.
+    function test_TheHookOfferRelayReachesARealSlot() public {
+        vm.prank(hookMgr);
+        vm.expectRevert(InvalidHook.selector);
+        collective.acceptHookOffer(IManagedSlot(address(slot)), HookOffer(0, 0, address(0)));
     }
 
     /// @notice The hook manager's lever reaches a real slot, and the real slot

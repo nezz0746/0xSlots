@@ -201,6 +201,8 @@ abstract contract SlotAccounting is SlotHooks {
         bool permissionsChange = !hookChanges && q.mask & TermsLib.HOOK_PERMISSIONS != 0;
         address reading = hookChanges ? next.target : permissionsChange ? current.target : address(0);
 
+        _flush();
+
         // Refuse to answer for a hook we cannot afford to ask.
         //
         // A starved read is indistinguishable from a misbehaving hook — both
@@ -208,12 +210,13 @@ abstract contract SlotAccounting is SlotHooks {
         // calling `liquidate()` with a gas limit tuned to starve the read.
         // Returning early leaves the queue intact and ripe: a griefer can delay
         // a change, never erase it. The 64/63 is EIP-150.
+        //
+        // Checked AFTER the payout, whose token transfer has no gas cap, so the
+        // margin measured here is the margin the read actually gets.
         if (reading != address(0) && gasleft() < (HOOK_GAS * 64) / 63 + HOOK_READ_FLOOR) {
             if (mustApply) revert InsufficientGasForTerms();
             return;
         }
-
-        _flush();
 
         // Read the hook before the copy clears the queue. Re-read here rather
         // than trusted from proposal or acceptance: a hook could have been

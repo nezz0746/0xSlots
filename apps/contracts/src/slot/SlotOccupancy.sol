@@ -55,19 +55,6 @@ abstract contract SlotOccupancy is SlotViews {
 
         uint256 owedToPrev = prev == address(0) ? 0 : o.price;
 
-        // Terms land BEFORE the hook is asked, so the hook judges the terms the
-        // buyer is actually seated under.
-        _applyPending(true);
-        _requireFunded(depositAmount, selfAssessedPrice);
-
-        _before(
-            F_BEFORE_BUY,
-            abi.encodeCall(
-                ISlotHook.beforeBuy,
-                (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
-            )
-        );
-
         // Debt follows the account, not the seat, so running a deposit dry and
         // retaking the vacated seat costs what staying would have.
         Ledger storage l = _ledger();
@@ -98,6 +85,21 @@ abstract contract SlotOccupancy is SlotViews {
         // defaulter bought out before anyone liquidated them would otherwise
         // take the whole price and leave the recipient's tax behind.
         refund -= _repayDebt(prev, refund);
+
+        // Terms land only now: debt repaid above was owed under the outgoing
+        // terms, and applying pays collected tax out under those terms first.
+        // They still land BEFORE the hook is asked, so the hook judges the
+        // terms the buyer is actually seated under.
+        _applyPending(true);
+        _requireFunded(depositAmount, selfAssessedPrice);
+
+        _before(
+            F_BEFORE_BUY,
+            abi.encodeCall(
+                ISlotHook.beforeBuy,
+                (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
+            )
+        );
 
         o.occupant = account;
         unchecked { ++o.tenureId; }

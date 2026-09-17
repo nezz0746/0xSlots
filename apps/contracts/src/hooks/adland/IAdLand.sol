@@ -13,6 +13,7 @@ interface ISlotAd {
     function tenureId() external view returns (uint64);
     function currency() external view returns (address);
     function price() external view returns (uint256);
+    function quoteBuy(address account, uint256 depositAmount) external view returns (uint256);
     function manager() external view returns (address);
     function buy(
         address account,
@@ -148,8 +149,8 @@ interface IAdLand {
 
     function buyAndPublish(
         address slot,
-        uint256 depositAmount,
         uint256 selfAssessedPrice,
+        uint256 depositAmount,
         uint256 maxPayment,
         string calldata uri
     ) external payable;

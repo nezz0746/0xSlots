@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, HookTerms} from "../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -36,6 +36,12 @@ contract MockSlot {
 
     constructor(address _manager) {
         manager = _manager;
+    }
+
+    uint16 public acceptedFeeBps;
+
+    function acceptHookOffer(HookOffer calldata expected) external onlyManager {
+        acceptedFeeBps = expected.feeBps;
     }
 
     modifier onlyManager() {
@@ -345,10 +351,61 @@ contract SlotCollectiveTest is Test {
         bytes32 before = mgr.splitHash();
 
         vm.prank(splitMgr);
-        mgr.setSplit(next);
+        mgr.setSplit(_split(), next, new address[](0));
 
         assertTrue(mgr.splitHash() != before);
         assertEq(mgr.splitHash(), keccak256(abi.encode(next)));
+    }
+
+    /// @notice Rewriting the split pays what is held under the old one first.
+    function test_rewritingTheSplitPaysOutUnderTheOldOneFirst() public {
+        vm.deal(address(mgr), 1 ether);
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = payeeA;
+        uint256[] memory allocations = new uint256[](1);
+        allocations[0] = 100;
+        SplitV2Lib.Split memory allToA = SplitV2Lib.Split({
+            recipients: recipients,
+            allocations: allocations,
+            totalAllocation: 100,
+            distributionIncentive: 0
+        });
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = mgr.NATIVE_TOKEN();
+        vm.prank(splitMgr);
+        mgr.setSplit(_split(), allToA, tokens);
+
+        assertEq(payeeA.balance, 0.6 ether - 1, "payee A got the old share");
+        assertEq(payeeB.balance, 0.4 ether - 1, "payee B was paid before being removed");
+        assertEq(mgr.splitHash(), keccak256(abi.encode(allToA)));
+    }
+
+    /// @notice The split in force must be the one passed as current.
+    function test_rewritingTheSplitNeedsTheCurrentSplit() public {
+        vm.deal(address(mgr), 1 ether);
+        SplitV2Lib.Split memory wrong = _split();
+        wrong.allocations[0] = 10;
+        wrong.allocations[1] = 90;
+        address[] memory tokens = new address[](1);
+        tokens[0] = mgr.NATIVE_TOKEN();
+        vm.prank(splitMgr);
+        vm.expectRevert();
+        mgr.setSplit(wrong, wrong, tokens);
+    }
+
+    function test_hookManagerRelaysHookOfferAcceptance() public {
+        HookOffer memory offer = HookOffer({permissions: 4, feeBps: 100, feeRecipient: payeeA});
+
+        bytes32 hookRole = mgr.POLICY_MANAGER_ROLE();
+        vm.prank(taxMgr);
+        vm.expectRevert(_unauthorized(taxMgr, hookRole));
+        mgr.acceptHookOffer(IManagedSlot(address(slot)), offer);
+
+        vm.prank(hookMgr);
+        mgr.acceptHookOffer(IManagedSlot(address(slot)), offer);
+        assertEq(slot.acceptedFeeBps(), 100);
     }
 
     function test_inheritedUpdateSplitIsUnreachableDirectly() public {

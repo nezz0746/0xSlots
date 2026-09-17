@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {SlotMath} from "../../src/libraries/SlotMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
@@ -11,6 +13,11 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {AdView} from "../../src/hooks/adland/IAdLand.sol";
 import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
+
+contract AdTok is ERC20 {
+    constructor() ERC20("A", "A") {}
+    function mint(address to, uint256 a) external { _mint(to, a); }
+}
 
 /// @dev Smoke coverage for the draft: the stamp, the wipe, the lens, the key.
 contract AdLandTest is Test {
@@ -287,5 +294,39 @@ contract AdLandTest is Test {
         s.buy{value: dep + (s.occupant() == address(0) ? 0 : s.price())}(
             who, price, dep, type(uint256).max
         );
+    }
+
+    /// @notice Buy-and-publish approves what the slot will actually charge,
+    ///         debt included, so an advertiser who owes debt can still use it.
+    function test_BuyAndPublishCoversTheBuyersDebt() public {
+        AdTok tok = new AdTok();
+        tok.mint(alice, 1_000 ether);
+        Slot s = Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(tok)),
+            manager: address(this),
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(adland), config: bytes32(0)})
+        }))));
+        uint256 dep = SlotMath.depositFor(1 ether, 500, 7 days);
+
+        vm.startPrank(alice);
+        tok.approve(address(s), type(uint256).max);
+        s.buy(alice, 1 ether, dep, 0);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 365 days);
+        s.liquidate();
+        uint256 debt = s.debtOf(alice);
+        assertGt(debt, 0);
+
+        vm.startPrank(alice);
+        tok.approve(address(adland), dep + debt);
+        adland.buyAndPublish(address(s), 1 ether, dep, 0, "data:text/plain,back");
+        vm.stopPrank();
+
+        assertEq(s.occupant(), alice);
+        assertEq(s.debtOf(alice), 0, "her debt was paid through AdLand");
+        assertEq(adland.creativeOf(address(s)), "data:text/plain,back");
     }
 }

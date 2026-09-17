@@ -146,6 +146,55 @@ contract OfferBookSlotsTest is Test {
         assertGt(token.balanceOf(alice), before, "alice was paid");
     }
 
+    /// @notice An offer is only fundable if the bidder can also cover the debt
+    ///         the fill will charge them.
+    function test_ABidderWithDebtIsFundableOnlyIfTheyCoverIt() public {
+        // Carol holds the slot, runs dry and is liquidated, leaving a debt.
+        uint256 dep = slot.minDepositForBuy(PRICE);
+        vm.prank(alice);
+        slot.release();
+        vm.prank(carol);
+        slot.buy(carol, PRICE, dep, 0);
+        vm.warp(block.timestamp + 30 days);
+        slot.liquidate();
+        uint256 debt = slot.debtOf(carol);
+        assertGt(debt, 0);
+
+        uint256 aliceDep = slot.minDepositForBuy(PRICE);
+        vm.prank(alice);
+        slot.buy(alice, PRICE, aliceDep, 0);
+
+        uint256 id = _post(carol, 90e18);
+        uint256 cost = 90e18 + slot.minDepositForBuy(90e18);
+        vm.prank(carol);
+        token.approve(address(book), cost);
+        assertFalse(book.isFundable(address(slot), id), "price and deposit alone are not enough");
+
+        vm.prank(carol);
+        token.approve(address(book), cost + debt);
+        assertTrue(book.isFundable(address(slot), id));
+    }
+
+    /// @notice The pre-check measures the floor the way `selfAssess` does:
+    ///         under the terms in force, not ripe queued ones.
+    function test_ARipeTaxRiseDoesNotBlockASaleTheSlotWouldAllow() public {
+        uint256 extra = slot.minDepositForBuy(PRICE) * 4;
+        vm.prank(alice);
+        slot.topUp(extra);
+
+        TaxTerms memory t;
+        t.rateBps = 10_000;
+        slot.proposeTerms(t, HookTerms({target: address(0), config: bytes32(0)}), 1);
+        vm.warp(block.timestamp + 1 days + 1);
+        assertGt(slot.minDepositForBuy(90e18), slot.deposit(), "under the queued rate alice would be short");
+
+        uint256 id = _post(bob, 90e18);
+        _approveBook();
+        vm.prank(alice);
+        book.acceptOffer(address(slot), id, 90e18);
+        assertEq(slot.occupant(), bob);
+    }
+
     /// @notice A bidder edits their offer in place, so the seller pins the
     ///         lowest price they accept.
     function test_ABidderCannotRepriceUnderTheSeller() public {

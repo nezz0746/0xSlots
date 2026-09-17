@@ -208,7 +208,7 @@ contract DeployAndDriveCollective is Script {
         // paper forever.
         SplitV2Lib.Split memory onePayee = _onePayee();
         vm.broadcast(PK_SPLIT_MGR);
-        collective.setSplit(onePayee);
+        collective.setSplit(_twoPayees(), onePayee, new address[](0));
 
         // ── 11. money out ──────────────────────────────────────────────────
         vm.broadcast(PK_ADMIN);

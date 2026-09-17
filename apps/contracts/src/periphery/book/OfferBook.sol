@@ -175,8 +175,13 @@ contract OfferBook is OfferBookInternals {
         // slot — the seller's, not the bidder's. Reported here, with the number
         // needed, rather than surfacing from the slot as a bare
         // `InvalidDeposit` that names neither the cause nor the cure.
-        uint256 floor_ = ISellableSlot(slot).minDepositForBuy(price);
-        uint256 held = ISellableSlot(slot).deposit();
+        //
+        // Measured the way `selfAssess` measures it: against the terms in force,
+        // and against the deposit left once the tax owed so far is settled.
+        uint256 floor_ = ISellableSlot(slot).minDepositToHold(price);
+        uint256 deposit_ = ISellableSlot(slot).deposit();
+        uint256 owedTax = ISellableSlot(slot).taxOwed();
+        uint256 held = deposit_ > owedTax ? deposit_ - owedTax : 0;
         if (held < floor_) revert TopUpRequired(floor_ - held);
 
         // Marked before any external call. The book is about to hand control to

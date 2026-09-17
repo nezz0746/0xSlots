@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {TaxTerms, HookTerms} from "../types/SlotTypes.sol";
+import {TaxTerms, HookTerms, HookOffer} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 
 
@@ -12,6 +12,8 @@ interface IManagedSlot {
     function proposeTerms(TaxTerms calldata taxTerms, HookTerms calldata hook, uint8 mask) external;
 
     function cancelTerms(uint8 mask) external;
+
+    function acceptHookOffer(HookOffer calldata expected) external;
 
     function collect() external;
 
@@ -107,6 +109,13 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         address indexed slot,
         address indexed by,
         Dimension indexed kind
+    );
+
+    /// @notice A hook manager accepted the attached hook's current offer on `slot`.
+    event HookOfferAcceptRelayed(
+        address indexed slot,
+        address indexed by,
+        HookOffer offer
     );
 
     /// @notice An admin dropped every pending proposal on `slot` at once.
@@ -250,6 +259,20 @@ abstract contract SlotGovernance is AccessControl, Initializable {
             Dimension.Hook,
             _asValue(hook.target)
         );
+    }
+
+    /// @notice Accept the attached hook's current offer on `slot`: a new fee at
+    ///         once, new permissions at the next occupancy transition.
+    ///
+    /// @dev The hook manager's decision, like proposing a hook. `expected` is
+    ///      the offer they reviewed; the slot reverts if the hook now offers
+    ///      anything else.
+    function acceptHookOffer(IManagedSlot slot, HookOffer calldata expected)
+        external
+        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
+    {
+        slot.acceptHookOffer(expected);
+        emit HookOfferAcceptRelayed(address(slot), msg.sender, expected);
     }
 
     /// @notice Retract this role's own queued tax proposal on `slot`.

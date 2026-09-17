@@ -267,6 +267,17 @@ abstract contract SlotViews is SlotAccounting {
     }
 
     /**
+     * @notice The escrow floor at `price_` under the terms in force: what
+     *         `selfAssess` and `withdraw` enforce against a sitting occupant.
+     *
+     * @dev Queued terms are ignored, unlike {minDepositForBuy}: neither call is
+     *      an occupancy transition, so neither applies them.
+     */
+    function minDepositToHold(uint256 price_) external view returns (uint256) {
+        return _minDepositFor(price_);
+    }
+
+    /**
      * @notice The smallest deposit `buy` will accept at `price_`.
      *
      * @dev Uses the QUEUED tax and minimum deposit when they are ripe, because
