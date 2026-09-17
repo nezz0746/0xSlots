@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
-import {HookBounds, IDescribedHook, HookDescriptor} from "../../src/IDescribedHook.sol";
+import {ISlotHook, SlotContext, HookPermissions} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
+import {HookBounds, IDescribedHook, HookDescriptor} from "../../src/interfaces/IDescribedHook.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 
 /// @dev A hook that works but describes nothing — the case a client must
 ///      degrade on rather than fail on.
 contract SilentHook is ISlotHook {
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.beforeBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -54,15 +59,11 @@ contract DescribedHookTest is Test {
 
     function _slot(address hook, bytes32 data) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(0xF00D),
             currency: IERC20(address(0)),
             manager: address(this),
-            hook: hook,
-            hookData: data,
-            taxBps: 500,
-            minDepositSeconds: 1 hours,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 hours)}),
+            hookTerms: HookTerms({target: hook, config: data})
         }))));
     }
 
@@ -144,7 +145,7 @@ contract DescribedHookTest is Test {
 
         assertEq(s.occupant(), buyer, "execution is unaffected by discovery");
         assertEq(s.hook(), address(liar));
-        assertTrue(s.hookFlags().beforeBuy, "authority still comes from flags");
+        assertTrue(s.hookPermissions().beforeBuy, "authority still comes from flags");
     }
 
     /// @notice A hook that does not implement discovery at all is equally

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -38,37 +40,30 @@ contract MockSlot {
         _;
     }
 
-    /// @dev Mirrors the real slot: each dimension is set only when its own
-    ///      flag is passed, so two roles can queue independently.
-    function proposeTerms(
-        uint256 newTaxBps,
-        address newHook,
-        bytes32 newHookData,
-        bool changeTax,
-        bool changeHook
-    ) external onlyManager {
-        if (changeTax) {
-            taxPct = newTaxBps;
-            hasTax = true;
-        }
-        if (changeHook) {
-            hookData = newHookData;
-            hookAddr = newHook;
-            hasHook = true;
-        }
-        if (!changeTax && !changeHook) revert NoPendingTerms();
-    }
-
-    /// @dev Reverts on a dimension holding nothing, as the real slot does —
-    ///      which is what makes the admin's cancel-everything relay need to
-    ///      attempt each leg separately.
-    function cancelTerms(bool cancelTax, bool cancelHook)
+    /// @dev Mirrors the real slot: each term is queued only when its bit is
+    ///      set, so two roles can queue independently.
+    function proposeTerms(TaxTerms calldata taxTerms, HookTerms calldata hook, uint8 mask)
         external
         onlyManager
     {
+        if (mask == 0) revert NoPendingTerms();
+        if (mask & 1 != 0) {
+            taxPct = taxTerms.rateBps;
+            hasTax = true;
+        }
+        if (mask & 8 != 0) {
+            hookData = hook.config;
+            hookAddr = hook.target;
+            hasHook = true;
+        }
+    }
+
+    /// @dev Clears whichever of `mask` is queued, and reverts only when none
+    ///      was, as the real slot does.
+    function cancelTerms(uint8 mask) external onlyManager {
+        bool cancelTax = mask & 1 != 0 && hasTax;
+        bool cancelHook = mask & 8 != 0 && hasHook;
         if (!cancelTax && !cancelHook) revert NoPendingTerms();
-        if (cancelTax && !hasTax) revert NoPendingTerms();
-        if (cancelHook && !hasHook) revert NoPendingTerms();
         if (cancelTax) {
             hasTax = false;
             taxPct = 0;
@@ -422,11 +417,11 @@ contract SlotStreamCollectiveTest is Test {
         // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), address(0xBEEF), bytes32(0));
+        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: address(0xBEEF), config: bytes32(0)}));
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposeHook(IManagedSlot(address(slot)), address(0xBEEF), bytes32(0));
+        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: address(0xBEEF), config: bytes32(0)}));
         assertEq(slot.hookAddr(), address(0xBEEF));
 
         // Retracting one dimension leaves the other standing, on this engine

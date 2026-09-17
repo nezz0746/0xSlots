@@ -11,10 +11,17 @@ error NotOccupantOrOperator();
 error InvalidPrice();
 error InvalidTax();
 error InvalidRecipient();
+error InvalidManager();
 error InvalidCurrency();
 error InvalidDeposit();
 error InvalidValue();
 error InvalidHook();
+/// @dev A hook fee with no one to receive it, or above 100% of the rent.
+error InvalidHookFee();
+/// @dev The hook's offer is not the one the manager reviewed.
+error HookOfferChanged();
+/// @dev The hook offers nothing this slot could take.
+error NothingToAccept();
 
 error Vacant();
 error NotInsolvent();
@@ -30,12 +37,14 @@ error TransferFailed();
 error NotMutable();
 /// @dev Nothing is queued, so there is nothing to cancel.
 error NoPendingTerms();
-/// @dev A proposal that proposes nothing — both flags false. The opposite
-///      mistake to `NoPendingTerms`, and they were one error until an audit
-///      pointed out they name different problems to different callers.
+/// @dev An empty mask. The opposite mistake to `NoPendingTerms`.
 error NothingProposed();
+/// @dev A mask bit that names no term.
+error UnknownTerms();
 
 error PaymentAboveMax();
+/// @dev The currency delivered a different amount than was transferred.
+error CurrencyTakesACut(uint256 sent, uint256 received);
 
 /// @dev A buy arrived with too little gas to apply the terms it would be
 ///      seated under. Deferring them is how a buyer used to dodge a hook meant

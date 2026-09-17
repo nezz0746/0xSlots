@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -9,7 +11,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
+import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
@@ -88,7 +91,7 @@ contract CrossChainAddressesTest is Test {
 
         collections = SlotBoundNFTFactory(address(new ERC1967Proxy(
             address(new SlotBoundNFTFactory()),
-            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots))
+            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots, address(new SlotBoundNFTWrapper())))
         )));
 
         vm.warp(1_000_000);
@@ -98,15 +101,11 @@ contract CrossChainAddressesTest is Test {
 
     function _slotInit() internal view returns (SlotInit memory) {
         return SlotInit({
-            recipient: recipient,
             currency: IERC20(address(token)),
             manager: address(0),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 1000,
-            minDepositSeconds: 7 days,
-            mutableTax: false,
-            mutableHook: false
+            mutableTax: false, mutableRecipient: false, mutableHook: false,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
         });
     }
 
@@ -139,8 +138,8 @@ contract CrossChainAddressesTest is Test {
             symbol: "BND",
             maxSupply: 3,
             currency: IERC20(address(token)),
-            taxBps: 1000,
-            minDepositSeconds: 7 days,
+            taxRateBps: 1000,
+            minRunwaySeconds: 7 days,
             recipient: recipient,
             manager: address(0),
             owner: admin

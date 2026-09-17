@@ -36,7 +36,7 @@ interface ISlotBoundNFTWrapper {
         address underlying,
         uint256 underlyingId,
         Mode mode,
-        uint256 taxBps,
+        uint256 taxRateBps,
         uint256 fee
     );
 

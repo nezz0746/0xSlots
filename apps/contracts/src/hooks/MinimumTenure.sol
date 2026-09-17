@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {SlotMath} from "../SlotMath.sol";
-import {HookBounds} from "../IDescribedHook.sol";
-import {SlotContext} from "../ISlotHook.sol";
+import {SlotMath} from "../libraries/SlotMath.sol";
+import {HookBounds} from "../interfaces/IDescribedHook.sol";
+import {SlotContext} from "../interfaces/ISlotHook.sol";
 
 /**
  * @title MinimumTenure
@@ -13,7 +13,7 @@ import {SlotContext} from "../ISlotHook.sol";
  * @dev A slot has exactly one hook, so a work that wants BOTH a tenure window
  *      and something else — AdLand's creatives, say — cannot attach two. The
  *      protocol briefly had a fan-out hook for this and it is gone: one
- *      `bytes32` of `hookData` cannot configure two children, `_afterOn`'s
+ *      `bytes32` of hook data cannot configure two children, `_afterOn`'s
  *      500k gas cap does not divide cleanly, strictness is ambiguous when one
  *      child declares it and another does not, and a veto arrives wearing the
  *      forwarder's name instead of its own.
@@ -36,7 +36,7 @@ import {SlotContext} from "../ISlotHook.sol";
  *
  *      ── What the rule is ────────────────────────────────────────────────
  *
- *      For `tenureOf(hookData)` seconds after acquiring, an occupant can only
+ *      For `tenureOf(config)` seconds after acquiring, an occupant can only
  *      be bought out at {BUYOUT_PREMIUM_BPS} of the price they declared. Entry
  *      must be funded for the whole window, the price cannot be cut while
  *      protected, and whoever vacates cannot walk straight back in. Forced
@@ -53,7 +53,7 @@ abstract contract MinimumTenure {
 
     /// @notice Descriptor version for {TENURE_FAMILY}.
     /// @dev 2 — the window is not part of any contract's address or storage,
-    ///      so the descriptor cannot name it. A consumer reads `Slot.hookData`
+    ///      so the descriptor cannot name it. A consumer reads `Slot.hookTerms().config`
     ///      and calls {tenureOf}, the only source that can be right per slot.
     uint32 public constant TENURE_DESCRIPTOR_VERSION = 2;
 
@@ -79,12 +79,13 @@ abstract contract MinimumTenure {
     error TenureNotElapsed(uint256 allowedAt);
     error PriceCutDuringTenure();
     error BuyoutBelowPremium(uint256 required);
+    error NotTheSlot();
 
     /// @custom:storage-location erc7201:slots.storage.MinimumTenure
     struct TenureStorage {
         /// @dev When an account that just vacated may take a given slot again.
         ///      A record of what happened, never configuration — nothing here
-        ///      decides a slot's rules; `ctx.hookData` does, and the slot owns
+        ///      decides a slot's rules; `ctx.hookTerms.config` does, and the slot owns
         ///      that.
         mapping(address slot => mapping(address account => uint256)) reentryAllowedAt;
     }
@@ -123,9 +124,9 @@ abstract contract MinimumTenure {
     }
 
     /**
-     * @notice The ABI signature of this rule's share of a slot's `hookData`.
+     * @notice The ABI signature of this rule's share of a slot's hook `config`.
      *
-     * @dev One value filling the word, so a client reads `uint256(hookData)`
+     * @dev One value filling the word, so a client reads `uint256(data)`
      *      and writes `bytes32(value)` with no bit arithmetic. A future version
      *      that packs a per-slot premium beside the window would say
      *      `"uint64 window, uint32 premiumBps"` and bump the descriptor's
@@ -167,10 +168,10 @@ abstract contract MinimumTenure {
     /// @notice The escrow a buy must post to fund a whole window at `price`.
     function requiredDeposit(
         uint256 price,
-        uint256 taxBps,
+        uint256 taxRateBps,
         uint256 window
     ) public pure returns (uint256) {
-        return SlotMath.depositFor(price, taxBps, window);
+        return SlotMath.depositFor(price, taxRateBps, window);
     }
 
     // ─── the rule ───────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ abstract contract MinimumTenure {
     /// @dev Refuse a buy that is underfunded, or that lands inside somebody
     ///      else's protection window. Call from `beforeBuy`.
     function _enforceTenureOnBuy(SlotContext calldata ctx) internal view {
-        uint256 window = tenureOf(ctx.hookData);
+        uint256 window = tenureOf(ctx.hookTerms.config);
         _requireFunded(ctx, window);
 
         // The account that just vacated cannot immediately retake it. This is
@@ -210,7 +211,7 @@ abstract contract MinimumTenure {
     function _enforceTenureOnSelfAssess(
         SlotContext calldata ctx
     ) internal view {
-        uint256 window = tenureOf(ctx.hookData);
+        uint256 window = tenureOf(ctx.hookTerms.config);
         if (ctx.occupiedSince == 0) return;
         if (block.timestamp >= ctx.occupiedSince + window) return;
         if (ctx.newPrice < ctx.currentPrice) revert PriceCutDuringTenure();
@@ -224,16 +225,15 @@ abstract contract MinimumTenure {
      *      stay cheap and must not assume it succeeded — a missed write only
      *      means one account is not barred, never that a slot breaks.
      *
-     *      `ctx.slot`, NOT `msg.sender`. The two hold the same address when
-     *      the core calls directly, and diverged under the fan-out hook the
-     *      protocol has since removed: the bar landed under the forwarder and
-     *      the read found nothing. Keyed off the context on both sides, no
-     *      caller can put them out of step again.
+     *      Only the slot itself may write its bar. The `after` entry points are
+     *      world-callable, and a forged context would otherwise bar any account
+     *      from any slot. `ctx.slot` then keys the write and the read alike.
      */
     function _barReentry(SlotContext calldata ctx) internal {
+        if (msg.sender != ctx.slot) revert NotTheSlot();
         _tenure().reentryAllowedAt[ctx.slot][ctx.account] =
             block.timestamp +
-            tenureOf(ctx.hookData);
+            tenureOf(ctx.hookTerms.config);
     }
 
     function _requireFunded(
@@ -243,7 +243,7 @@ abstract contract MinimumTenure {
         uint256 basis = ctx.newPrice > ctx.currentPrice
             ? ctx.newPrice
             : ctx.currentPrice;
-        uint256 required = requiredDeposit(basis, ctx.taxBps, window);
+        uint256 required = requiredDeposit(basis, ctx.taxRateBps, window);
         if (ctx.depositAmount < required) revert TenureUnderfunded(required);
     }
 }

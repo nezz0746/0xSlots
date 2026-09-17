@@ -8,6 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {Slot} from "../../src/Slot.sol";
+import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotBoundNFT} from "../../src/hooks/nft/SlotBoundNFT.sol";
 import {ISlotBoundNFT} from "../../src/hooks/nft/ISlotBoundNFT.sol";
@@ -44,7 +45,7 @@ contract SlotBoundNFTFactoryTest is Test {
 
         SlotBoundNFTFactory fi = new SlotBoundNFTFactory();
         factory = SlotBoundNFTFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots)))));
+            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots, address(new SlotBoundNFTWrapper()))))));
 
         token = new TF();
         token.mint(alice, 1e24);
@@ -54,8 +55,8 @@ contract SlotBoundNFTFactoryTest is Test {
     function _init() internal view returns (CollectionInit memory c) {
         c = CollectionInit({
             name: "Bound", symbol: "BND", maxSupply: 3,
-            currency: IERC20(address(token)), taxBps: 1000,
-            minDepositSeconds: 7 days, recipient: recipient,
+            currency: IERC20(address(token)), taxRateBps: 1000,
+            minRunwaySeconds: 7 days, recipient: recipient,
             manager: manager, owner: owner
         });
     }
@@ -70,7 +71,7 @@ contract SlotBoundNFTFactoryTest is Test {
         assertEq(address(c.FACTORY()), address(slots), "wired to the slot factory");
         assertEq(c.owner(), owner);
         assertEq(c.terms().manager, manager);
-        assertEq(c.terms().recipient, recipient);
+        assertEq(c.terms().taxTerms.recipient, recipient);
 
         vm.startPrank(alice);
         token.approve(address(c), type(uint256).max);
@@ -148,6 +149,6 @@ contract SlotBoundNFTFactoryTest is Test {
     function test_TheImplementationCannotBeInitialized() public {
         SlotBoundNFTFactory bare = new SlotBoundNFTFactory();
         vm.expectRevert();
-        bare.initialize(admin, slots);
+        bare.initialize(admin, slots, address(1));
     }
 }

@@ -16,7 +16,7 @@ contract GuardTest is Test {
             abi.encodeCall(SlotFactory.initialize,(address(this),address(impl))))));
     }
     /// @notice A collection with no funded window is refused at DEPLOY.
-    /// @dev `minDepositSeconds == 0` means a mint escrows nothing, and
+    /// @dev `minRunwaySeconds == 0` means a mint escrows nothing, and
     ///      `liquidate` refuses only while the deposit is non-zero — so every
     ///      token would be evictable in the block it was minted.
     function test_AZeroWindowIsRefusedAtDeploy() public {

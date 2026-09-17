@@ -3,9 +3,10 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ISlotHook} from "./ISlotHook.sol";
-import "./SlotErrors.sol";
+import {ISlotHook} from "../interfaces/ISlotHook.sol";
+import "../errors/SlotErrors.sol";
 import {SlotOccupancy} from "./SlotOccupancy.sol";
+import {Occupancy, Ledger} from "./SlotStorage.sol";
 
 /**
  * @title SlotEscrow
@@ -30,18 +31,19 @@ abstract contract SlotEscrow is SlotOccupancy {
         if (newPrice == 0 || newPrice > MAX_PRICE) revert InvalidPrice();
         _settle();
 
+        Occupancy storage o = _occupancy();
         _before(
             F_BEFORE_SELF_ASSESS,
             abi.encodeCall(
                 ISlotHook.beforeSelfAssess,
-                (_ctx(msg.sender, _occupant, newPrice, _deposit))
+                (_ctx(msg.sender, o.occupant, newPrice, o.deposit))
             )
         );
 
-        _requireFunded(_deposit, newPrice);
+        _requireFunded(o.deposit, newPrice);
 
-        uint256 old = _price;
-        _price = newPrice;
+        uint256 old = o.price;
+        o.price = newPrice;
         emit PriceSet(msg.sender, old, newPrice);
     }
 
@@ -49,7 +51,8 @@ abstract contract SlotEscrow is SlotOccupancy {
     ///         a slot, which is what makes an external keeper possible with no
     ///         protocol permission at all.
     function topUp(uint256 amount) external payable nonReentrant {
-        if (_occupant == address(0)) revert Vacant();
+        Occupancy storage o = _occupancy();
+        if (o.occupant == address(0)) revert Vacant();
         if (_isNative()) {
             if (msg.value != amount) revert InvalidValue();
         } else {
@@ -57,17 +60,21 @@ abstract contract SlotEscrow is SlotOccupancy {
             _pull(msg.sender, amount);
         }
         _settle();
-        _deposit += amount;
-        emit Deposited(msg.sender, amount, _deposit);
+        // Debt first. Without it, an occupant whose deposit ran dry could top
+        // back up to solvency, keep the seat and never pay what they owe.
+        amount -= _repayDebt(o.occupant, amount);
+        o.deposit += amount;
+        emit Deposited(msg.sender, amount, o.deposit);
     }
 
     /// @notice Take back part of your escrow, keeping the required minimum.
     function withdraw(uint256 amount) external nonReentrant onlyOccupant {
         _settle();
-        if (amount == 0 || amount > _deposit) revert NothingToWithdraw();
-        uint256 left = _deposit - amount;
-        _requireFunded(left, _price);
-        _deposit = left;
+        Occupancy storage o = _occupancy();
+        if (amount == 0 || amount > o.deposit) revert NothingToWithdraw();
+        uint256 left = o.deposit - amount;
+        _requireFunded(left, o.price);
+        o.deposit = left;
         _payOrCredit(msg.sender, amount);
         emit Withdrawn(msg.sender, amount, left);
     }
@@ -75,48 +82,44 @@ abstract contract SlotEscrow is SlotOccupancy {
     /**
      * @notice Let somebody else reprice on your behalf.
      *
-     * @dev The approval is scoped to YOUR tenure and dies with it. An approval
-     *      keyed by operator alone would outlive the occupancy that granted
-     *      it: whoever took the slot next would inherit the previous
-     *      occupant's bot as a co-signer on their own asking price, having
-     *      never approved anybody. Nothing else in the contract would notice,
-     *      because the operator's rights read as valid.
-     *
-     *      It does not resurrect either — retaking a slot you once held starts
-     *      a fresh tenure, which approves nobody.
+     * @dev The approval is scoped to YOUR tenure and dies with it, so whoever
+     *      takes the slot next never inherits a previous occupant's operator.
+     *      Retaking a slot you once held starts a fresh tenure, which approves
+     *      nobody.
      */
     function setOperator(address operator, bool allowed)
         external
         onlyOccupant
     {
-        _operatorOf[tenureId][operator] = allowed;
-        emit OperatorSet(operator, allowed, tenureId);
+        uint64 tenure = _occupancy().tenureId;
+        _ledger().operatorOf[tenure][operator] = allowed;
+        emit OperatorSet(operator, allowed, tenure);
     }
-
 
     // ─── money out ──────────────────────────────────────────────────────────
 
-    /// @notice Flush accrued tax to the recipient. Anyone may call.
+    /// @notice Pay out collected rent: the hook fee, then the recipient.
+    ///         Anyone may call.
     function collect() external nonReentrant {
         _settle();
-        if (collectedTax == 0) revert NothingToCollect();
+        if (_ledger().collectedTax == 0) revert NothingToCollect();
         _flush();
     }
 
     /// @notice Take a payout that could not be pushed to you. Anyone may call
     ///         on anyone's behalf; the funds always go to `account`.
     function claim(address account) external nonReentrant {
-        uint256 amount = withdrawableOf[account];
+        Ledger storage l = _ledger();
+        uint256 amount = l.withdrawableOf[account];
         if (amount == 0) revert NothingToClaim();
-        withdrawableOf[account] = 0;
+        l.withdrawableOf[account] = 0;
 
         if (_isNative()) {
             (bool ok, ) = account.call{value: amount}("");
             if (!ok) revert TransferFailed();
         } else {
-            currency.safeTransfer(account, amount);
+            _settings().currency.safeTransfer(account, amount);
         }
         emit Claimed(account, amount);
     }
-
 }

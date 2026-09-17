@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {VersionedUUPS} from "../../VersionedUUPS.sol";
-import {IAdLand, Creative, Pending} from "./IAdLand.sol";
+import {VersionedUUPS} from "../../utils/VersionedUUPS.sol";
+import {IAdLand, Creative, Moderation, Pending} from "./IAdLand.sol";
 
 /**
  * @title AdLandStorage
@@ -30,9 +30,15 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
     bytes32 public constant PRIMARY = "primary";
 
     // ─── state ──────────────────────────────────────────────────────────────
+    //
+    // A UUPS proxy: append new state at the end, never above.
 
-    /// @dev Keyed by slot. Stamped with the tenure it belongs to — see `AdLand`.
-    mapping(address slot => Creative) internal _creative;
+    /// @notice The factory {AdLandCreate-createAdSlot} deploys through.
+    /// @dev Stored rather than taken as an argument: a caller who can name the
+    ///      factory can name one that returns something that is not a slot.
+    address public slotFactory;
+
+    // registry
 
     /// @notice What each key resolves to right now.
     mapping(bytes32 key => address slot) public slotOf;
@@ -41,35 +47,29 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
     mapping(bytes32 key => Pending) public pendingOf;
 
     /**
-     * @notice The factory {AdLandCreate-createAdSlot} deploys through.
-     *
-     * @dev Stored rather than taken as an argument, which is the whole point of
-     *      that function: a caller who can name the factory can name the wrong
-     *      one, and a slot deployed by a factory nobody vetted is not a slot
-     *      this contract should be lending its name to.
-     *
-     *      Appended, and it has to be. This contract is a UUPS proxy with live
-     *      state, so a variable inserted above `_creative` would move every
-     *      mapping beneath it under a deployed contract. New slots go here, at
-     *      the end, always.
-     */
-    address public slotFactory;
-
-    /**
      * @notice Who may repoint each key, besides the owner.
-     *
      * @dev Set once, when a key is claimed through {AdLandCreate-createAdSlot},
-     *      and never cleared. Without it a permissionless claim gives a
-     *      publisher a one-shot binding rather than a name: they could point
-     *      "ethereum" at their slot and then never move it again, so the first
-     *      time that slot was redeployed their name would outlive it pointing
-     *      at nothing — the exact failure this registry exists to prevent,
-     *      relocated onto them.
-     *
-     *      It grants ONE power, over ONE key. It is not ownership of anything
-     *      else, and it does not outrank `owner()`.
-     *
-     *      Appended, and it has to be. See `slotFactory` above.
+     *      and never cleared. It grants one power, over one key, and does not
+     *      outrank `owner()`.
      */
     mapping(bytes32 key => address) public keyOwner;
+
+    // creatives
+
+    /// @dev Keyed by slot. Stamped with the tenure it belongs to — see `AdLand`.
+    mapping(address slot => Creative) internal _creative;
+
+    /**
+     * @notice A creative waiting for the manager, stamped like a live one.
+     *
+     * @dev A SEPARATE mapping from `_creative`, and that is the whole safety
+     *      argument for moderation: every read path reads `_creative` and
+     *      nothing else, so an unapproved submission is not hidden by a check
+     *      somebody could forget; it is simply not where anything looks.
+     *      Approval is the only write that moves it.
+     */
+    mapping(address slot => Creative) internal _pendingCreative;
+
+    /// @notice Each slot's mode. The zero value is `Open`.
+    mapping(address slot => Moderation) internal _moderation;
 }

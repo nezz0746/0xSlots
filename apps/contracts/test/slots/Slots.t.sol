@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
-import "../../src/SlotErrors.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
+import "../../src/errors/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -24,13 +27,15 @@ contract Recorder is ISlotHook {
     uint256 public settles;
     uint256 public lastPaid;
 
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.afterSettle = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
 
     function beforeBuy(SlotContext calldata) external view {}
@@ -47,10 +52,12 @@ contract Recorder is ISlotHook {
 /// @dev Refuses every buy. The canonical `before` hook.
 contract DenyBuys is ISlotHook {
     error Denied();
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.beforeBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view { revert Denied(); }
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -62,13 +69,15 @@ contract DenyBuys is ISlotHook {
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
 contract Hostile is ISlotHook {
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.afterSettle = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -82,11 +91,13 @@ contract Hostile is ISlotHook {
 /// @dev Burns every unit of gas it is handed.
 contract GasBurner is ISlotHook {
     uint256 public sink;
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterLiquidate = true;
         f.afterSettle = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -144,15 +155,11 @@ contract SlotsTest is Test {
     {
         return
             SlotInit({
-                recipient: recipient,
                 currency: IERC20(address(token)),
                 manager: manager,
-                hook: hook,
-                hookData: bytes32(0),
-                taxBps: 1000, // 10% / month
-                minDepositSeconds: minDep,
-                mutableTax: true,
-                mutableHook: true
+                mutableTax: true, mutableRecipient: true, mutableHook: true,
+                taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(minDep)}),
+                hookTerms: HookTerms({target: hook, config: bytes32(0)})
             });
     }
 
@@ -209,13 +216,13 @@ contract SlotsTest is Test {
         _take(s, alice, 100 ether, 100 ether);
 
         vm.prank(manager);
-        s.proposeTerms(2000, address(0), bytes32(0), true, false);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
 
         vm.warp(block.timestamp + 10 days);
-        assertEq(s.taxBps(), 1000, "alice's rate is untouched mid-tenure");
+        assertEq(s.taxRateBps(), 1000, "alice's rate is untouched mid-tenure");
 
         _take(s, bob, 100 ether, 200 ether); // the transition
-        assertEq(s.taxBps(), 2000, "and lands when the seat turns over");
+        assertEq(s.taxRateBps(), 2000, "and lands when the seat turns over");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -259,12 +266,12 @@ contract SlotsTest is Test {
         // If beforeBuy were called despite not being declared, this would still
         // pass — so assert on the flags too.
         _take(s, alice, 1 ether, 100 ether);
-        HookFlags memory f = s.hookFlags();
+        HookPermissions memory f = s.hookPermissions();
         assertFalse(f.beforeBuy, "not declared");
         assertTrue(f.afterBuy, "declared");
     }
 
-    /// @notice A hook that answers `subscriptions()` with nothing is refused outright.
+    /// @notice A hook that answers `hookOffer` with nothing is refused outright.
     /// @dev The one place a bad hook is NOT tolerated. It happens once, while
     ///      attaching, in a call the manager sent on purpose — attaching a hook
     ///      that can never fire is a silent, permanent mistake.
@@ -277,7 +284,7 @@ contract SlotsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(InvalidHook.selector);
-        s.proposeTerms(0, useless, bytes32(0), false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: useless, config: bytes32(0)}), uint8(8));
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -316,9 +323,9 @@ contract SlotsTest is Test {
 
 /// @dev Declares no subscriptions at all.
 contract Nothing is ISlotHook {
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external pure returns (HookFlags memory f) { return f; }
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) { HookPermissions memory f; o.permissions = HookPermissionsLib.pack(f); }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}

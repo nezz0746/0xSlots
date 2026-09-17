@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {AdView} from "../../src/hooks/adland/IAdLand.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
 
 /// @dev Smoke coverage for the draft: the stamp, the wipe, the lens, the key.
 contract AdLandTest is Test {
@@ -41,15 +43,11 @@ contract AdLandTest is Test {
 
 
         slot = Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(this),
             currency: IERC20(address(0)),
             manager: address(this),
-            hook: address(adland),
-            hookData: bytes32(0),
-            taxBps: 500,
-            minDepositSeconds: 7 days,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(adland), config: bytes32(0)})
         }))));
 
         vm.deal(alice, 100 ether);
@@ -98,7 +96,7 @@ contract AdLandTest is Test {
         adland.publish(address(slot), "alice's ad");
 
         // Detach the hook, so no `afterBuy` can possibly run, then reseat.
-        slot.proposeTerms(0, address(0), bytes32(0), false, true);
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(8));
         vm.warp(block.timestamp + 8 days);
         _seat(bob, 1 ether);
 
@@ -144,7 +142,7 @@ contract AdLandTest is Test {
         assertEq(v.uri, "alice's ad");
         assertEq(v.info.occupant, alice);
         assertEq(v.info.price, 1 ether);
-        assertEq(v.info.taxBps, 500);
+        assertEq(v.info.terms.taxTerms.rateBps, 500);
     }
 
     function test_TheLensNeverRevertsOnRubbish() public {
@@ -275,15 +273,11 @@ contract AdLandTest is Test {
     ///      callback ever arrives and the stamp does all the work.
     function _unmanagedSlot() internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(this),
             currency: IERC20(address(0)),
             manager: address(this),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 500,
-            minDepositSeconds: 7 days,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
         }))));
     }
 

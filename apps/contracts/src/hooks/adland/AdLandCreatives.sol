@@ -5,8 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 
-import {ISlotHook, HookFlags, SlotContext} from "../../ISlotHook.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../libraries/HookPermissionsLib.sol";
+import {HookOffer} from "../../types/SlotTypes.sol";
 import {MinimumTenure} from "../MinimumTenure.sol";
+import {AdLandModeration} from "./AdLandModeration.sol";
 import {AdLandStorage} from "./AdLandStorage.sol";
 import {Creative, ISlotAd} from "./IAdLand.sol";
 
@@ -40,7 +43,7 @@ import {Creative, ISlotAd} from "./IAdLand.sol";
  *      comparison alone would keep showing the departed occupant's creative on
  *      an empty slot, which is the one state where a stale ad is worst.
  */
-abstract contract AdLandCreatives is AdLandStorage, MinimumTenure, ISlotHook {
+abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTenure, ISlotHook {
     using SafeERC20 for IERC20;
 
     // ─── publishing ─────────────────────────────────────────────────────────
@@ -118,8 +121,27 @@ abstract contract AdLandCreatives is AdLandStorage, MinimumTenure, ISlotHook {
         _publish(slot, uri);
     }
 
+    /**
+     * @dev Live, or waiting for the manager — see {AdLandModeration}.
+     *
+     *      An EMPTY uri always goes live, whatever the mode. It is the occupant
+     *      taking their own ad down, which is never content anyone needs to
+     *      screen, and making it wait would leave an advertiser unable to stop
+     *      advertising. It also discards anything they had waiting: somebody who
+     *      has just cleared their space should not have an older submission
+     *      approved into it afterwards.
+     */
     function _publish(address slot, string calldata uri) internal {
         uint64 t = ISlotAd(slot).tenureId();
+
+        if (bytes(uri).length == 0) {
+            delete _pendingCreative[slot];
+        } else if (_requiresApproval(slot, t)) {
+            _pendingCreative[slot] = Creative({uri: uri, tenureId: t});
+            emit Submitted(slot, uri, t);
+            return;
+        }
+
         _creative[slot] = Creative({uri: uri, tenureId: t});
         emit Published(slot, uri, t);
     }
@@ -195,7 +217,8 @@ abstract contract AdLandCreatives is AdLandStorage, MinimumTenure, ISlotHook {
 
     // ─── hook surface ───────────────────────────────────────────────────────
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         // Every path that ends a tenure. `afterSettle` is tax moving under a
         // tenure that has not ended.
         f.afterBuy = true;
@@ -210,39 +233,39 @@ abstract contract AdLandCreatives is AdLandStorage, MinimumTenure, ISlotHook {
         // {MinimumTenure}'s, shared with {MinimumTenureHook} so there is one
         // implementation rather than two that drift.
         //
-        // Declared unconditionally because `subscriptions` is `pure` and
+        // Declared unconditionally because `hookOffer` is `pure` and
         // cannot see a slot's data. Slots that configure no window pay one
         // staticcall that returns immediately; the alternative is a flag the
         // hook could not honestly answer.
         f.beforeBuy = true;
         f.beforeSelfAssess = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
 
     /**
      * @dev The word is the minimum-tenure window, in seconds, and ZERO means
      *      no window at all.
      *
-     *      Optional rather than required, and that is what keeps every AdLand
-     *      slot already on chain working: they were attached when this hook
-     *      took no configuration, so their data is zero, and zero has to go on
-     *      meaning "creatives only". {MinimumTenure.tenureOf} rejects zero as
-     *      an unconfigured window, which is right for a hook that exists ONLY
-     *      to enforce tenure and wrong here — so the check is made before it.
+     *      Optional: zero means "creatives only". {MinimumTenure.tenureOf}
+     *      rejects zero as an unconfigured window, which is right for a hook
+     *      that exists only to enforce tenure and wrong here, so the check is
+     *      made before it.
      */
-    function validateHookData(bytes32 data) external pure {
+    function validateHookConfig(bytes32 data) external pure {
         if (data != bytes32(0)) tenureOf(data);
     }
+
 
     /// @notice Refuse a buy that lands inside a protected window, when this
     ///         slot configured one.
     function beforeBuy(SlotContext calldata ctx) external view {
-        if (ctx.hookData == bytes32(0)) return;
+        if (ctx.hookTerms.config == bytes32(0)) return;
         _enforceTenureOnBuy(ctx);
     }
 
     /// @notice No cutting your price while nobody is allowed to take it.
     function beforeSelfAssess(SlotContext calldata ctx) external view {
-        if (ctx.hookData == bytes32(0)) return;
+        if (ctx.hookTerms.config == bytes32(0)) return;
         _enforceTenureOnSelfAssess(ctx);
     }
 
@@ -252,10 +275,20 @@ abstract contract AdLandCreatives is AdLandStorage, MinimumTenure, ISlotHook {
 
     function afterRelease(SlotContext calldata ctx) external {
         _clear(ctx.slot);
+        _barIfWindowed(ctx);
     }
 
     function afterLiquidate(SlotContext calldata ctx) external {
         _clear(ctx.slot);
+        _barIfWindowed(ctx);
+    }
+
+    /// @dev The window is only half enforced by `beforeBuy`: without the bar,
+    ///      whoever leaves can buy the vacant slot back at any price and restart
+    ///      their window. Slots with no window configured have nothing to bar.
+    function _barIfWindowed(SlotContext calldata ctx) private {
+        if (ctx.hookTerms.config == bytes32(0)) return;
+        _barReentry(ctx);
     }
 
     function afterSettle(SlotContext calldata) external {}

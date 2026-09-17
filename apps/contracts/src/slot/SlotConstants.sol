@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotMath} from "./SlotMath.sol";
+import {SlotMath} from "../libraries/SlotMath.sol";
 
 /**
  * @title SlotConstants
@@ -23,7 +23,7 @@ import {SlotMath} from "./SlotMath.sol";
  */
 abstract contract SlotConstants {
     // Ceiling on a self-assessed price.
-    // So `price * taxBps * elapsed` cannot be driven to overflow. That
+    // So `price * taxRateBps * elapsed` cannot be driven to overflow. That
     //      product is computed on every settle, and every entry point settles
     //      first — so an overflow there used to revert `liquidate()` and brick a
     //      slot permanently, for the cost of gas. 2^128-1 is ~3.4e38, past any
@@ -38,8 +38,7 @@ abstract contract SlotConstants {
     uint256 public constant MONTH = SlotMath.MONTH;
 
     // Gas handed to a hook's `after` callbacks.
-    // Bounded because these run inside `buy`, `sell`, `release` and
-    //      `liquidate`. A hook must never be able to price out an eviction.
+    // Bounded because these run inside `buy`, `release` and `liquidate`. A hook must never be able to price out an eviction.
     uint256 public constant HOOK_GAS = 500_000;
 
     // Gas for a native payout before it degrades to a claimable credit.
@@ -60,8 +59,14 @@ abstract contract SlotConstants {
     //
     // Without this, `proposeTerms` in block N binds a buyer in block N: the
     // manager watches the mempool, raises the tax, and the incoming occupant is
-    // seated on terms they never saw. The deferral to a transition was only ever
-    // half the guarantee; this is the other half, and it is what
-    // `pending.proposedAt` was recorded for and never used.
+    // seated on terms they never saw.
     uint64 public constant TERMS_DELAY = 1 days;
+
+    // Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
+    // `TERM_HOOK_PERMISSIONS` is queued by `acceptHookOffer`, never proposed.
+    uint8 public constant TERM_TAX_RATE = 1 << 0;
+    uint8 public constant TERM_RECIPIENT = 1 << 1;
+    uint8 public constant TERM_MIN_RUNWAY = 1 << 2;
+    uint8 public constant TERM_HOOK = 1 << 3;
+    uint8 public constant TERM_HOOK_PERMISSIONS = 1 << 4;
 }

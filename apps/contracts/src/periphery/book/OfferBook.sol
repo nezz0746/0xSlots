@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
-import {Versioned} from "../../Versioned.sol";
+import {Versioned} from "../../utils/Versioned.sol";
 import "./OfferBookErrors.sol";
 
 /// @title OfferBook — standing bids, and the fill that settles them
@@ -79,7 +79,7 @@ contract OfferBook is OfferBookInternals {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 1;
     }
 
     function offer(
@@ -134,7 +134,7 @@ contract OfferBook is OfferBookInternals {
      *        1. `selfAssess(price)` — the occupant's own declared price,
      *           restated to what they have agreed to sell at. Needs the
      *           operator grant.
-     *        2. `buy(bidder, price, deposit, price + deposit + arrears)` — the
+     *        2. `buy(bidder, price, deposit, price + deposit + debt)` — the
      *           ordinary market path. It pays the outgoing occupant their
      *           deposit plus the price, which is exactly what `sell` used to.
      *
@@ -146,8 +146,13 @@ contract OfferBook is OfferBookInternals {
      *      on the reprice and `beforeBuy` on the seating — and either may veto.
      *      That is the point of routing a sale through the market path rather
      *      than around it: there is no second door for a hook to have missed.
+     *
+     * @param minPrice The lowest price the seller accepts. A bidder edits their
+     *        offer in place under the same id, so without it a bidder could
+     *        reprice to one wei between the seller reading the book and the
+     *        fill landing.
      */
-    function acceptOffer(address slot, uint256 id) external {
+    function acceptOffer(address slot, uint256 id, uint256 minPrice) external {
         Offer storage o = _offers[slot][id];
         if (o.bidder == address(0)) revert NoSuchOffer();
 
@@ -163,6 +168,7 @@ contract OfferBook is OfferBookInternals {
         uint256 price = o.price;
         uint256 dep = o.deposit;
         address bidder = o.bidder;
+        if (price < minPrice) revert PriceBelowMinimum(price, minPrice);
 
         // Raising the declared price raises the escrow floor with it, and
         // `selfAssess` enforces that floor against the deposit ALREADY in the

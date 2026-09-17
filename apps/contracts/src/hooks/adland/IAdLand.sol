@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {SlotInfo} from "../../SlotViews.sol";
+import {SlotInfo} from "../../slot/SlotViews.sol";
+import {SlotInit} from "../../types/SlotTypes.sol";
 
 /// @dev The slice of `Slot` AdLand calls. Narrow on purpose: declaring the
 ///      whole surface would recompile this on every unrelated change to it.
@@ -13,6 +13,7 @@ interface ISlotAd {
     function tenureId() external view returns (uint64);
     function currency() external view returns (address);
     function price() external view returns (uint256);
+    function manager() external view returns (address);
     function buy(
         address account,
         uint256 selfAssessedPrice,
@@ -36,6 +37,33 @@ interface ISlotAd {
 struct Creative {
     string uri;
     uint64 tenureId;
+}
+
+/**
+ * @notice How a slot's manager screens creatives before they show.
+ *
+ * @dev Declared in this order on purpose, and it must stay in it. `Open` is
+ *      the zero value, which is what every slot created before moderation
+ *      existed reads back — so those slots behave exactly as they always did,
+ *      and the upgrade changes nothing for anyone who never opts in.
+ */
+enum ModerationMode {
+    /// @notice A published creative shows immediately. The behaviour before v4.
+    Open,
+    /// @notice Each tenure's first creative waits for approval. Once one has
+    ///         been approved in a tenure, that occupant publishes directly.
+    FirstPerTenure,
+    /// @notice Every creative waits for approval. The last approved one keeps
+    ///         showing until the next is approved.
+    Every
+}
+
+/// @notice A slot's moderation mode, and a change scheduled for a later tenure.
+struct Moderation {
+    ModerationMode current;
+    ModerationMode next;
+    /// @dev The tenure `next` takes over from. Zero means nothing scheduled.
+    uint64 nextFromTenure;
 }
 
 /// @notice A key change waiting out its delay.
@@ -85,6 +113,16 @@ interface IAdLand {
     );
     event SlotProposalCancelled(bytes32 indexed key, address indexed slot);
 
+    /// @notice `mode` applies to `slot` from `fromTenure` on. Equal to the
+    ///         current tenure when it applied immediately.
+    event ModerationModeSet(address indexed slot, ModerationMode mode, uint64 fromTenure);
+    /// @notice A creative is waiting for the manager. Not showing.
+    event Submitted(address indexed slot, string uri, uint64 tenureId);
+    /// @notice The manager approved a waiting creative. `Published` follows.
+    event Approved(address indexed slot, string uri, uint64 tenureId);
+    /// @notice The manager turned a waiting creative down.
+    event Rejected(address indexed slot, string uri, uint64 tenureId);
+
     // ─── errors ─────────────────────────────────────────────────────────────
 
     error NotOccupant();
@@ -97,6 +135,12 @@ interface IAdLand {
     error TooEarly(uint64 readyAt);
     error NativeSlotHasNoPermit();
     error UnexpectedValue();
+    /// @notice Only the slot's manager moderates it.
+    error NotSlotManager();
+    /// @notice Nothing is waiting — or what was waiting belongs to an ended tenure.
+    error NothingToModerate();
+    /// @notice The waiting creative is no longer the one the manager reviewed.
+    error SubmissionChanged();
 
     // ─── publishing ─────────────────────────────────────────────────────────
 
@@ -125,26 +169,7 @@ interface IAdLand {
     function primary() external view returns (address);
 }
 
-/**
- * The two things {AdLandCreate} needs of the protocol it deploys into.
- *
- * Declared here rather than imported from `Slot.sol` and `SlotFactory.sol`,
- * which would pull the whole core into this hook's compilation unit — and with
- * it every one of the core's imports into the initcode hash that decides this
- * contract's CREATE2 address.
- */
-struct SlotInit {
-    address recipient;
-    IERC20 currency;
-    address manager;
-    address hook;
-    bytes32 hookData;
-    uint256 taxBps;
-    uint256 minDepositSeconds;
-    bool mutableTax;
-    bool mutableHook;
-}
-
+/// @notice The one thing {AdLandCreate} needs of the protocol it deploys into.
 interface ISlotFactory {
     function createSlot(SlotInit calldata init) external returns (address);
 }

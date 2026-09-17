@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {SlotMath} from "../../src/SlotMath.sol";
+import {SlotMath} from "../../src/libraries/SlotMath.sol";
 
 /// @notice The arithmetic on its own, where the properties are visible.
 contract SlotMathTest is Test {
@@ -41,12 +41,12 @@ contract SlotMathTest is Test {
     ///         per-second rate broke by dividing before multiplying.
     function testFuzz_SecondsForInvertsTaxFor(
         uint128 price,
-        uint16 taxBps,
+        uint16 taxRateBps,
         uint32 elapsed
     ) public pure {
-        vm.assume(price > 0 && taxBps > 0 && taxBps <= 10_000);
-        uint256 owed = SlotMath.taxFor(price, taxBps, elapsed);
-        uint256 back = SlotMath.secondsFor(owed, price, taxBps);
+        vm.assume(price > 0 && taxRateBps > 0 && taxRateBps <= 10_000);
+        uint256 owed = SlotMath.taxFor(price, taxRateBps, elapsed);
+        uint256 back = SlotMath.secondsFor(owed, price, taxRateBps);
         // Never claims MORE time than was paid for.
         assertLe(back, uint256(elapsed));
     }
@@ -55,12 +55,12 @@ contract SlotMathTest is Test {
     ///         reports "never" for a position that is genuinely draining.
     function test_ANaiveRateWouldSayNeverHereAndThisDoesNot() public pure {
         uint256 price = 100e6;   // 100 USDC
-        uint256 taxBps = 100;    // 1%/month
-        assertEq(Math.mulDiv(price, taxBps, DEN), 0, "per-second rate is zero");
+        uint256 taxRateBps = 100;    // 1%/month
+        assertEq(Math.mulDiv(price, taxRateBps, DEN), 0, "per-second rate is zero");
 
-        uint256 runway = SlotMath.secondsFor(1e6, price, taxBps);
+        uint256 runway = SlotMath.secondsFor(1e6, price, taxRateBps);
         assertLt(runway, type(uint256).max, "must be a real number");
-        assertGt(SlotMath.taxFor(price, taxBps, runway + 1), 0, "and it drains");
+        assertGt(SlotMath.taxFor(price, taxRateBps, runway + 1), 0, "and it drains");
     }
 
     function test_AZeroRateIsForever() public pure {
@@ -75,14 +75,14 @@ contract SlotMathTest is Test {
     ///         latent asymmetry rather than a live bug.
     function test_TheNaiveProductIsFineAtRealisticBounds() public pure {
         uint256 price = type(uint128).max;   // MAX_PRICE
-        uint256 taxBps = 10_000;             // MAX_TAX_BPS
+        uint256 taxRateBps = 10_000;             // MAX_TAX_BPS
         uint256 window = 3650 days;          // ten years
 
         unchecked {
-            uint256 naive = price * taxBps * window;
-            assertEq(naive / taxBps / window, price, "no wrap at these bounds");
+            uint256 naive = price * taxRateBps * window;
+            assertEq(naive / taxRateBps / window, price, "no wrap at these bounds");
         }
-        assertGt(SlotMath.depositFor(price, taxBps, window), 0);
+        assertGt(SlotMath.depositFor(price, taxRateBps, window), 0);
     }
 
     /// @notice But `mulDiv` survives where the plain form would wrap, and the
@@ -90,16 +90,16 @@ contract SlotMathTest is Test {
     ///         guarantee is worth having even though no sane config reaches it.
     function test_SurvivesAProductThatWouldOverflow() public pure {
         uint256 price = type(uint128).max;
-        uint256 taxBps = 10_000;
-        uint256 window = 1e35;               // past 2^256 / (price * taxBps)
+        uint256 taxRateBps = 10_000;
+        uint256 window = 1e35;               // past 2^256 / (price * taxRateBps)
 
         unchecked {
-            uint256 naive = price * taxBps * window;
-            assertTrue(naive / taxBps / window != price, "the plain form wraps");
+            uint256 naive = price * taxRateBps * window;
+            assertTrue(naive / taxRateBps / window != price, "the plain form wraps");
         }
 
-        assertGt(SlotMath.depositFor(price, taxBps, window), 0, "mulDiv does not");
-        assertGt(SlotMath.taxFor(price, taxBps, window), 0);
+        assertGt(SlotMath.depositFor(price, taxRateBps, window), 0, "mulDiv does not");
+        assertGt(SlotMath.taxFor(price, taxRateBps, window), 0);
     }
 
 }

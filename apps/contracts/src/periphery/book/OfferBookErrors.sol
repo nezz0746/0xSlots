@@ -31,3 +31,4 @@ error TopUpRequired(uint256 shortfall);
 /// @dev The fill did not seat the bidder. Cannot happen against a canonical
 ///      slot; asserted because the book is repricing somebody else's position.
 error FillFailed();
+error PriceBelowMinimum(uint256 price, uint256 minPrice);

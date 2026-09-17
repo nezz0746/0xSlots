@@ -10,7 +10,7 @@ pragma solidity ^0.8.24;
  *      layout and rendering a confident wrong number.
  *
  *      `signature` is an ABI type list — `"uint256 window"` — describing this
- *      family's share of the slot's `hookData`. `data` is
+ *      family's share of the slot's hook `config`. `data` is
  *      `abi.encode(HookBounds[])`, annotating it field by field, in order.
  *
  *      The signature is its own field rather than a first member inside `data`
@@ -23,7 +23,7 @@ pragma solidity ^0.8.24;
  *      ecosystem already reads: viem's `parseAbiParameters` takes it as-is,
  *      and it is the same choice EAS made — its schema registry stores
  *      `"uint256 eventId, uint8 voteIndex"` and leaves validation to a
- *      separate resolver contract, which is exactly what `validateHookData`
+ *      separate resolver contract, which is exactly what `validateHookTerms`
  *      is here.
  *
  *      Widths come from the types, so a hook that ever packs two values into
@@ -83,7 +83,7 @@ struct HookBounds {
  *
  * @dev ── The rule that keeps this safe ───────────────────────────────────
  *
- *      `Slot` MUST NEVER call `descriptors()`. Not in `_readHookFlags`, not
+ *      `Slot` MUST NEVER call `descriptors()`. Not in `_readHook`, not
  *      anywhere. This is self-reported by an untrusted contract and returns an
  *      unbounded array; the moment the protocol reads it, a label becomes an
  *      attack surface inside the path that has to keep working for liquidation
@@ -91,7 +91,7 @@ struct HookBounds {
  *      also why it costs nothing in gas and is never snapshotted.
  *
  *      It follows that a hook may lie. That is acceptable precisely because
- *      nothing safety-relevant hangs off it: authority comes from `HookFlags`,
+ *      nothing safety-relevant hangs off it: authority comes from `HookPermissions`,
  *      which the slot snapshots and enforces. The honest thing for a UI to say
  *      is "this hook says it is a 7-day minimum tenure", with whatever list
  *      that interface keeps as the upgrade to "and we vouch for that".

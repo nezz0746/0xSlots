@@ -21,7 +21,7 @@ interface ISellableSlot {
     function currency() external view returns (address);
 
     /// @dev What `buy` will charge `account` for `depositAmount` of escrow:
-    ///      the sitting price, the escrow, and any arrears that account owes.
+    ///      the sitting price, the escrow, and any debt that account owes.
     function quoteBuy(address account, uint256 depositAmount)
         external
         view

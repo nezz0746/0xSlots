@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
-import "../../src/SlotErrors.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
+import "../../src/errors/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -23,10 +26,12 @@ contract Tok is ERC20 {
  *      the case the batch has to survive.
  */
 contract StrictBreaker is ISlotHook {
-    function validateHookData(bytes32) external pure {}
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function validateHookConfig(bytes32) external pure {}
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterSettle = true;
         f.strict = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -55,7 +60,7 @@ contract CollectAllTest is Test {
     address recipientA = makeAddr("recipientA");
     address recipientB = makeAddr("recipientB");
 
-    uint256 constant TAX = 1000;      // 10% / 30 days
+    uint256 constant TAX_RATE = 1000;      // 10% / 30 days
     uint256 constant MIN_DEP = 1 days;
 
     function setUp() public {
@@ -70,15 +75,11 @@ contract CollectAllTest is Test {
 
     function _slot(address recipient_, address hook) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient_,
             currency: IERC20(address(token)),
             manager: address(0),
-            hook: hook,
-            hookData: bytes32(0),
-            taxBps: TAX,
-            minDepositSeconds: MIN_DEP,
-            mutableTax: false,
-            mutableHook: false
+            mutableTax: false, mutableRecipient: false, mutableHook: false,
+            taxTerms: TaxTerms({recipient: recipient_, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
+            hookTerms: HookTerms({target: hook, config: bytes32(0)})
         }))));
     }
 
@@ -264,11 +265,5 @@ contract CollectAllTest is Test {
         assertGt(collected[0], 0);
         assertEq(token.balanceOf(stranger), 0, "the caller takes nothing");
         assertEq(token.balanceOf(recipientA), collected[0], "the recipient takes it all");
-    }
-
-    /// @dev The doc says to bump it with any change to this contract.
-    ///      4 is the move from CREATE to CREATE2 in `createSlot`.
-    function test_TheFactoryVersionWasBumped() public view {
-        assertEq(factory.version(), 4);
     }
 }

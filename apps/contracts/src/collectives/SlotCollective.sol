@@ -8,7 +8,7 @@ import {PushSplit} from "splits-v2/splitters/push/PushSplit.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotGovernance, IManagedSlot} from "./SlotGovernance.sol";
-import {Versioned} from "../Versioned.sol";
+import {Versioned} from "../utils/Versioned.sol";
 
 /// @title SlotCollective — a collective that pays out through a 0xSplits split
 ///
@@ -43,7 +43,7 @@ import {Versioned} from "../Versioned.sol";
 ///      that function would completely defeat everything below it: the owner
 ///      would simply call
 ///
-///          execCalls([{ to: slot, data: proposeTerms(9999, …, true, false) }])
+///          execCalls([{ to: slot, data: proposeTerms(rent, hook, TERM_TAX) }])
 ///
 ///      and bypass `TAX_MANAGER_ROLE` entirely. The roles would be decoration.
 ///
@@ -72,7 +72,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 1;
     }
 
     using SplitV2Lib for SplitV2Lib.Split;

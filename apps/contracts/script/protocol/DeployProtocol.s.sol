@@ -163,7 +163,7 @@ contract DeployProtocol is ProtocolConfig {
             nftFactoryImpl,
             abi.encodeCall(
                 SlotBoundNFTFactory.initialize,
-                (cfg.admin, SlotFactory(factory))
+                (cfg.admin, SlotFactory(factory), wrapperImpl)
             )
         );
 
@@ -179,16 +179,6 @@ contract DeployProtocol is ProtocolConfig {
         _beacon("Slot", factory, slotImpl);
         _beacon("SlotCollective", collectiveFactory, collectiveImpl);
 
-        // The wrapper beacon is stood up SEPARATELY from the factory's
-        // `initialize`, which had already run on chains that predate wrappers.
-        // `initializeWrappers` is a `reinitializer` and reverts on a second
-        // call, so it is guarded by the beacon it creates rather than by a
-        // flag — and the guard doubles as the first-deploy path, where
-        // `wrapperBeacon()` is zero because nothing has created it yet.
-        if (address(SlotBoundNFTFactory(nftFactory).wrapperBeacon()) == address(0)) {
-            SlotBoundNFTFactory(nftFactory).initializeWrappers(wrapperImpl);
-            console2.log("wrappers ", "SlotBoundNFTWrapper", wrapperImpl);
-        }
         _beacon(
             "SlotBoundNFTWrapper",
             nftFactory,
@@ -208,6 +198,13 @@ contract DeployProtocol is ProtocolConfig {
             adLandImpl,
             abi.encodeCall(AdLand.initialize, (cfg.admin))
         );
+
+        // `createAdSlot` reverts until AdLand knows the factory. Only its owner
+        // can set it, so a deployer who is not the admin leaves it for them.
+        if (AdLand(adLand).slotFactory() != factory && AdLand(adLand).owner() == msg.sender) {
+            AdLand(adLand).setSlotFactory(factory);
+            console2.log("adland   ", "setSlotFactory", factory);
+        }
 
         // Deployed here, once per chain, rather than per configuration. The
         // window a slot enforces is its own `hookData`, so one contract serves
@@ -304,11 +301,8 @@ contract DeployProtocol is ProtocolConfig {
     }
 
     /// @dev `MinimumTenureHook` has no `version()` of its own — it is not
-    ///      upgradeable — so the salt's discriminator is stated here. Version 1
-    ///      was the shape whose window was an immutable, and it is deliberately
-    ///      NOT the same address: a slot still pointing at one of those has a
-    ///      hook that ignores `hookData` entirely.
-    uint64 internal constant TENURE_HOOK_VERSION = 2;
+    ///      upgradeable — so the salt's discriminator is stated here.
+    uint64 internal constant TENURE_HOOK_VERSION = 1;
 
     /// @dev Deploy at a deterministic address, or return what is already there.
     function _deploy2(

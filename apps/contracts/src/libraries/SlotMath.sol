@@ -46,14 +46,14 @@ library SlotMath {
      * @dev Rounds DOWN, and the caller must not treat the shortfall as paid:
      *      a window too short to price one unit of currency accrues zero, so
      *      advancing a settlement clock to `now` regardless destroys that
-     *      window's tax. See `secondsFor` for the inverse a settler needs.
+     *      window's tax. See `secondsPaidFor` for the inverse a settler needs.
      */
     function taxFor(
         uint256 price,
-        uint256 taxBps,
+        uint256 taxRateBps,
         uint256 elapsed
     ) internal pure returns (uint256) {
-        return Math.mulDiv(price, taxBps * elapsed, DEN);
+        return Math.mulDiv(price, taxRateBps * elapsed, DEN);
     }
 
     /**
@@ -65,11 +65,11 @@ library SlotMath {
      */
     function depositFor(
         uint256 price,
-        uint256 taxBps,
+        uint256 taxRateBps,
         uint256 window
     ) internal pure returns (uint256) {
         if (window == 0) return 0;
-        return Math.mulDiv(price, taxBps * window, DEN, Math.Rounding.Ceil);
+        return Math.mulDiv(price, taxRateBps * window, DEN, Math.Rounding.Ceil);
     }
 
     /**
@@ -77,7 +77,7 @@ library SlotMath {
      *
      * @dev The inverse of `taxFor`, in the same numerator space rather than
      *      via a per-second rate. A rate divides before it multiplies, so it
-     *      floors to zero whenever `price * taxBps < MONTH * BASIS_POINTS` —
+     *      floors to zero whenever `price * taxRateBps < MONTH * BASIS_POINTS` —
      *      and a caller then reads "never runs out" for a position that is
      *      insolvent inside the month.
      *
@@ -86,10 +86,30 @@ library SlotMath {
     function secondsFor(
         uint256 amount,
         uint256 price,
-        uint256 taxBps
+        uint256 taxRateBps
     ) internal pure returns (uint256) {
-        uint256 rate = price * taxBps;
+        uint256 rate = price * taxRateBps;
         if (rate == 0) return type(uint256).max;
         return Math.mulDiv(amount, DEN, rate);
+    }
+
+    /**
+     * @notice The seconds a settled `amount` of tax paid for, rounded UP.
+     *
+     * @dev What a settler advances its clock by. `amount` is `taxFor(elapsed)`,
+     *      which floors, so the exact paid time is at most one wei's worth short
+     *      of `elapsed`. Rounding it down left a whole paid second on the clock
+     *      to be charged again, and a settle per block overcharged by that much
+     *      each time. Rounding up can never pass `elapsed`, and forgives less
+     *      than one wei per settle.
+     */
+    function secondsPaidFor(
+        uint256 amount,
+        uint256 price,
+        uint256 taxRateBps
+    ) internal pure returns (uint256) {
+        uint256 rate = price * taxRateBps;
+        if (rate == 0) return type(uint256).max;
+        return Math.mulDiv(amount, DEN, rate, Math.Rounding.Ceil);
     }
 }

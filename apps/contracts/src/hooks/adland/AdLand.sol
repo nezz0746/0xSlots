@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
-import {IDescribedHook, HookDescriptor} from "../../IDescribedHook.sol";
-import {Versioned} from "../../Versioned.sol";
+import {IDescribedHook, HookDescriptor} from "../../interfaces/IDescribedHook.sol";
+import {Versioned} from "../../utils/Versioned.sol";
 import {AdLandCreate} from "./AdLandCreate.sol";
 import {AdLandCreatives} from "./AdLandCreatives.sol";
 import {AdLandLens} from "./AdLandLens.sol";
@@ -74,12 +74,8 @@ contract AdLand is
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
-    ///
-    ///      3 — `multicall` and `createAdSlotMany`. Additive: no storage moved,
-    ///      no existing selector changed, no behaviour altered for a caller who
-    ///      uses neither.
     function version() public pure virtual override returns (uint64) {
-        return 3;
+        return 1;
     }
 
     /**
@@ -97,9 +93,9 @@ contract AdLand is
      *      version, so a client that already knows {MinimumTenureHook} reads it
      *      here without learning anything new.
      *
-     *      Declared unconditionally, like `subscriptions`. This is `pure` and
+     *      Declared unconditionally, like its permissions. This is `pure` and
      *      cannot see a slot, so it says what the hook CAN enforce; whether a
-     *      given slot configured a window is `Slot.hookData`, and zero means
+     *      given slot configured a window is `Slot.hookTerms().config`, and zero means
      *      none.
      */
     function descriptors() external pure returns (HookDescriptor[] memory d) {

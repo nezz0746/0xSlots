@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Slot} from "../../src/Slot.sol";
-import {InsufficientGasForTerms} from "../../src/SlotErrors.sol";
+import {InsufficientGasForTerms} from "../../src/errors/SlotErrors.sol";
 import {DenyBuys, SlotsTest} from "./Slots.t.sol";
 
 /**
@@ -30,7 +32,7 @@ contract TermsApplicationTest is SlotsTest {
     function _ripeDenial(Slot s) internal returns (DenyBuys deny) {
         deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(10_000, address(deny), bytes32(0), true, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), HookTerms({target: address(deny), config: bytes32(0)}), uint8(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms(), "terms are ripe");
     }

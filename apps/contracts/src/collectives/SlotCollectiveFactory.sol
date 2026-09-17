@@ -7,8 +7,8 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotCollective} from "./SlotCollective.sol";
-import {Versioned} from "../Versioned.sol";
-import {VersionedUUPS} from "../VersionedUUPS.sol";
+import {Versioned} from "../utils/Versioned.sol";
+import {VersionedUUPS} from "../utils/VersionedUUPS.sol";
 
 /// @title SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon
 ///
@@ -54,7 +54,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 3;
+        return 1;
     }
 
     // ═══════════════════════════════════════════════════════════

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
-import {SlotInfo, SlotConstantsInfo} from "../../src/SlotViews.sol";
+import {Slot} from "../../src/Slot.sol";
+import {SlotInfo, SlotConstantsInfo} from "../../src/slot/SlotViews.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 
@@ -30,30 +32,30 @@ contract SlotInfoTest is Test {
         )));
         token = new Tok();
         slot = Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(0xF00D),
             currency: IERC20(address(token)),
             manager: address(this),
-            hook: address(new MinimumTenureHook()),
-            hookData: bytes32(uint256(7 days)),
-            taxBps: 500,
-            minDepositSeconds: 1 days,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
+            hookTerms: HookTerms({target: address(new MinimumTenureHook()), config: bytes32(uint256(7 days))})
         }))));
         token.mint(occ, 1e24);
     }
 
     function _assertAgrees() internal view {
         SlotInfo memory i = slot.getSlotInfo();
-        assertEq(i.recipient, slot.recipient());
+        assertEq(i.terms.taxTerms.recipient, slot.recipient());
         assertEq(address(i.currency), address(slot.currency()));
         assertEq(i.manager, slot.manager());
-        assertEq(i.taxBps, slot.taxBps());
-        assertEq(i.minDepositSeconds, slot.minDepositSeconds());
         assertEq(i.mutableTax, slot.mutableTax());
+        assertEq(i.mutableRecipient, slot.mutableRecipient());
         assertEq(i.mutableHook, slot.mutableHook());
-        assertEq(i.hook, slot.hook());
-        assertEq(i.hookFlags.beforeBuy, slot.hookFlags().beforeBuy);
+        assertEq(i.terms.hookOffer.feeBps, slot.hookOffer().feeBps);
+        assertEq(i.terms.hookOffer.permissions, slot.hookOffer().permissions);
+        assertEq(i.terms.taxTerms.rateBps, slot.taxRateBps());
+        assertEq(i.terms.taxTerms.minRunwaySeconds, slot.minRunwaySeconds());
+        assertEq(i.terms.hookTerms.target, slot.hook());
+        assertEq(i.terms.hookTerms.config, slot.hookTerms().config);
+        assertEq(i.hookPermissions.beforeBuy, slot.hookPermissions().beforeBuy);
         assertEq(i.occupant, slot.occupant());
         assertEq(i.price, slot.price());
         assertEq(i.deposit, slot.deposit());
@@ -65,14 +67,17 @@ contract SlotInfoTest is Test {
         assertEq(i.isVacant, slot.isVacant());
         assertEq(i.isInsolvent, slot.isInsolvent());
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
-        assertEq(i.hasRipeTerms, slot.hasRipeTerms());
-        (uint256 pt, address ph, bool hasT, bool hasH, uint64 at, ) = slot
-            .pending();
-        assertEq(i.pendingTaxBps, pt);
-        assertEq(i.pendingHook, ph);
-        assertEq(i.pendingHasTax, hasT);
-        assertEq(i.pendingHasHook, hasH);
-        assertEq(i.pendingProposedAt, at);
+        assertEq(i.pending.ripe, slot.hasRipeTerms());
+        PendingTerms memory __p1 = slot.pendingTerms();
+        TaxTerms memory taxTerms = __p1.taxTerms;
+        HookTerms memory hook = __p1.hookTerms;
+        uint8 mask = __p1.mask;
+        uint64 at = __p1.proposedAt;
+        assertEq(i.pending.taxTerms.rateBps, taxTerms.rateBps);
+        assertEq(i.pending.taxTerms.recipient, taxTerms.recipient);
+        assertEq(i.pending.hookTerms.target, hook.target);
+        assertEq(i.pending.mask, mask);
+        assertEq(i.pending.proposedAt, at);
     }
 
     function test_AgreesWhenVacant() public view {
@@ -95,13 +100,13 @@ contract SlotInfoTest is Test {
         slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
 
-        slot.proposeTerms(750, address(0), bytes32(0), true, false);
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
         _assertAgrees();                     // queued, not ripe
-        assertFalse(slot.getSlotInfo().hasRipeTerms);
+        assertFalse(slot.getSlotInfo().pending.ripe);
 
         vm.warp(block.timestamp + 1 days + 1);
         _assertAgrees();                     // ripe
-        assertTrue(slot.getSlotInfo().hasRipeTerms);
+        assertTrue(slot.getSlotInfo().pending.ripe);
     }
 
     function test_AgreesWhenInsolvent() public {
@@ -139,6 +144,6 @@ contract SlotInfoTest is Test {
         vm.stopPrank();
 
         vm.expectRevert();                       // tax above MAX_TAX_BPS
-        slot.proposeTerms(c.maxTaxBps + 1, address(0), bytes32(0), true, false);
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
     }
 }

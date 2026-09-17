@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AdLandStorage} from "./AdLandStorage.sol";
-import {ISlotFactory, SlotInit} from "./IAdLand.sol";
+import {ISlotFactory, ModerationMode} from "./IAdLand.sol";
+import {SlotInit, TaxTerms, HookTerms} from "../../types/SlotTypes.sol";
 
 /**
  * @title AdLandCreate
@@ -15,19 +16,19 @@ import {ISlotFactory, SlotInit} from "./IAdLand.sol";
  *      has no access control: any app can call it with `hook` set to this
  *      contract and get exactly the same slot. This is not a gate.
  *
- *      What it removes is the chance to get it wrong. `SlotInit` is nine
- *      fields, and three of them are the kind that fail quietly:
+ *            What it removes is the chance to get it wrong. Three `SlotInit` fields
+ *      fail quietly:
  *
  *        - `hook`, which is an address a form can fill with the wrong one. A
  *          slot pointing at some other hook is a perfectly valid slot that
  *          simply is not an ad space, and nothing about it looks broken.
- *        - `hookData`, a `bytes32` that is really seconds. Callers pass a
- *          duration here; the word is this contract's to encode.
+ *                - the hook's `config`, a `bytes32` that is really seconds. Callers pass
+ *          a duration; the word is this contract's to encode.
  *        - `mutableHook`, which decides whether the slot can ever stop being an
- *          ad space. See below — this function decides it, and does not ask.
+ *          ad space. This function locks it, and does not ask.
  *
  *      `Slot.initialize` already validates the rest, and reverts rather than
- *      attaching quietly: a `hookData` this contract refuses takes the creation
+ *      attaching quietly: hook data this contract refuses takes the creation
  *      down with the hook's own error. So this adds no checks the core lacks.
  *      It removes arguments.
  *
@@ -50,27 +51,39 @@ abstract contract AdLandCreate is AdLandStorage {
     error EmptyBatch();
 
     /**
-     * @notice One space's terms, for {createAdSlotMany}.
+     * @notice One space's terms.
      *
-     * @dev The same seven arguments {createAdSlot} takes, as a struct, because
-     *      seven parallel arrays would be seven chances to misalign one. Field
-     *      order matches the function's parameter order so the two read the
-     *      same way round.
+     * @param owner    Manages the slot and receives its rent. Can propose new
+     *        rent terms, hand the slot over with `Slot.setManager`, and
+     *        moderate its creatives.
+     * @param currency The token rent is priced and paid in. Zero for native.
+     * @param taxRateBps Tax per 30 days, in basis points of the declared price.
+     * @param minRunwaySeconds How far ahead an occupant must fund.
+     * @param tenureWindow Seconds an advertiser cannot be outbid off the space,
+     *        except at ten times their declared price. Zero means no window.
+     * @param moderation How creatives are screened from the first occupant on.
+     * @param key A registry name to claim for this slot, or zero to claim none.
      */
     struct AdSlotParams {
-        address recipient;
+        address owner;
         IERC20 currency;
-        uint256 taxBps;
-        uint256 minDepositSeconds;
+        uint16 taxRateBps;
+        uint32 minRunwaySeconds;
         uint256 tenureWindow;
-        address manager;
+        ModerationMode moderation;
         bytes32 key;
     }
 
     /// @notice A slot was created through this contract, pointing at it.
     /// @dev Not the definition of an AdLand slot — `Slot.hook()` is. This says
     ///      "made here", which is a smaller and different claim.
-    event AdSlotCreated(address indexed slot, address indexed creator, address indexed recipient, uint256 tenureWindow);
+    event AdSlotCreated(
+        address indexed slot,
+        address indexed creator,
+        address indexed owner,
+        uint256 tenureWindow,
+        ModerationMode moderation
+    );
 
     event SlotFactorySet(address previous, address next);
 
@@ -86,74 +99,36 @@ abstract contract AdLandCreate is AdLandStorage {
     /**
      * @notice Create a slot that runs this hook, and cannot stop running it.
      *
-     * @param recipient Where the rent goes. The publisher, or their collective.
-     * @param currency  The token rent is priced and paid in. Zero for native.
-     * @param taxBps    Rent per 30 days, in basis points of the declared price.
-     * @param minDepositSeconds How far ahead an occupant must fund.
-     * @param tenureWindow Seconds an advertiser cannot be outbid off the space,
-     *        except at ten times their declared price. ZERO means no window,
-     *        which AdLand accepts — the rule is optional on this hook.
-     * @param manager Who may change the tax later. Zero for a slot whose terms
-     *        can never move.
-     * @param key A registry name to claim for this slot, or zero to claim none.
-     *        Free to take while unclaimed, and yours to repoint afterwards.
-     *
-     * @dev ── Two decisions this makes for the caller ─────────────────────────
+     * @dev ── Decisions this makes for the caller ────────────────────────────
      *
      *      `mutableHook` is FALSE, always. A slot made here is an ad space
-     *      permanently: the manager may reprice the rent but can never point it
-     *      at a different hook. That is a real restriction and it is the point
-     *      — it turns "this is an AdLand slot" from a fact about right now into
-     *      a fact about the slot, which is what a publisher pasting an address
-     *      into their page is actually relying on. A publisher who wants the
-     *      other trade calls `SlotFactory.createSlot` directly; nothing here
-     *      stops them.
+     *      permanently: the owner may change the rent terms but can never point
+     *      it at a different hook, which is what a publisher pasting the
+     *      address into their page relies on. Anyone wanting the other trade
+     *      calls `SlotFactory.createSlot` directly.
      *
-     *      `mutableTax` follows the manager, because the core requires exactly
-     *      that: a manager is demanded when something is mutable and forbidden
-     *      when nothing is. Passing a manager means adjustable rent; passing
-     *      zero means terms fixed at birth, with nobody able to revise them.
+     *      Tax and recipient are mutable, and the owner is both manager and
+     *      recipient. Every space made here is manageable.
+     *
+     *      The moderation mode is written before anyone can buy, so the first
+     *      occupant is seated under it. A separate `setModerationMode` after
+     *      creation would race the first buyer, and lose to them for a whole
+     *      tenure.
      *
      *      ── Claiming a name, first come first served ────────────────────────
      *
-     *      A key is taken here WITHOUT permission, which is the point: a
-     *      publisher should be able to make a space and name it in one
-     *      transaction, and `setSlot` is owner-only precisely so that names
-     *      cannot be grabbed. The reconciliation is that only an UNCLAIMED key
-     *      may be taken this way, and taking one is recorded in `keyOwner`.
-     *
-     *      Three things keep that safe at the size this registry actually is:
-     *      `primary` and anything else already pointing somewhere cannot be
-     *      claimed at all; the owner can still repoint any key through
-     *      `setSlot`'s delayed path, so a squatted name costs two days rather
-     *      than being lost; and holding a key grants exactly one power over
-     *      exactly that key.
+     *      A key is taken here WITHOUT permission: only an UNCLAIMED key, and
+     *      taking one is recorded in `keyOwner`. `primary` and anything already
+     *      pointing somewhere cannot be claimed; the owner can still repoint
+     *      any key through `setSlot`'s delayed path; and holding a key grants
+     *      exactly one power over exactly that key.
      *
      *      A taken key reverts the WHOLE creation rather than making the slot
-     *      and skipping the claim. Half-succeeding would hand the caller a
-     *      space they believe is named and is not, discovered later by a
-     *      publisher whose embed resolves to somebody else.
+     *      and skipping the claim, so nobody walks away believing a space is
+     *      named when it is not.
      */
-    function createAdSlot(
-        address recipient,
-        IERC20 currency,
-        uint256 taxBps,
-        uint256 minDepositSeconds,
-        uint256 tenureWindow,
-        address manager,
-        bytes32 key
-    ) external returns (address slot) {
-        return _createAdSlot(
-            AdSlotParams({
-                recipient: recipient,
-                currency: currency,
-                taxBps: taxBps,
-                minDepositSeconds: minDepositSeconds,
-                tenureWindow: tenureWindow,
-                manager: manager,
-                key: key
-            })
-        );
+    function createAdSlot(AdSlotParams calldata params) external returns (address slot) {
+        return _createAdSlot(params);
     }
 
     /**
@@ -216,22 +191,28 @@ abstract contract AdLandCreate is AdLandStorage {
         slot = ISlotFactory(factory)
             .createSlot(
                 SlotInit({
-                    recipient: p.recipient,
                     currency: p.currency,
-                    manager: p.manager,
-                    hook: address(this),
-                    // The caller passes seconds; the word is ours to encode. A
-                    // `bytes32` in a form is a decision nobody should be making by
-                    // hand, and the one mistake it invites — a window written in
-                    // the wrong unit, or left as a hex string — produces a slot
-                    // that reverts every buy rather than one that looks wrong.
-                    hookData: bytes32(p.tenureWindow),
-                    taxBps: p.taxBps,
-                    minDepositSeconds: p.minDepositSeconds,
-                    mutableTax: p.manager != address(0),
-                    mutableHook: false
+                    manager: p.owner,
+                    mutableTax: true,
+                    mutableRecipient: true,
+                    mutableHook: false,
+                    taxTerms: TaxTerms({
+                        recipient: p.owner,
+                        rateBps: p.taxRateBps,
+                        minRunwaySeconds: p.minRunwaySeconds
+                    }),
+                    hookTerms: HookTerms({
+                        target: address(this),
+                        // The caller passes seconds; the word is ours to encode.
+                        config: bytes32(p.tenureWindow)
+                    })
                 })
             );
+
+        if (p.moderation != ModerationMode.Open) {
+            _moderation[slot].current = p.moderation;
+            emit ModerationModeSet(slot, p.moderation, 0);
+        }
 
         if (p.key != bytes32(0)) {
             if (slotOf[p.key] != address(0)) revert KeyTaken(p.key);
@@ -242,6 +223,6 @@ abstract contract AdLandCreate is AdLandStorage {
             emit SlotSet(p.key, address(0), slot);
         }
 
-        emit AdSlotCreated(slot, msg.sender, p.recipient, p.tenureWindow);
+        emit AdSlotCreated(slot, msg.sender, p.owner, p.tenureWindow, p.moderation);
     }
 }

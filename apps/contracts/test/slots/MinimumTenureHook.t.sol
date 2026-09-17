@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import {MinimumTenure} from "../../src/hooks/MinimumTenure.sol";
-import "../../src/SlotErrors.sol";
+import {SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import "../../src/errors/SlotErrors.sol";
 
 contract T is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -23,7 +26,7 @@ contract MinimumTenureHookTest is Test {
     MinimumTenureHook hook;
 
     uint256 constant TENURE = 7 days;
-    uint256 constant TAX = 1000; // 10% / month
+    uint256 constant TAX_RATE = 1000; // 10% / month
 
     address recipient = makeAddr("recipient");
     address alice = makeAddr("alice");
@@ -49,15 +52,11 @@ contract MinimumTenureHookTest is Test {
 
     function _slot(bytes32 hookData) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient,
             currency: IERC20(address(token)),
             manager: address(0),
-            hook: address(hook),
-            hookData: hookData,
-            taxBps: TAX,
-            minDepositSeconds: 0,
-            mutableTax: false,
-            mutableHook: false
+            mutableTax: false, mutableRecipient: false, mutableHook: false,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
+            hookTerms: HookTerms({target: address(hook), config: hookData})
         }))));
     }
 
@@ -72,7 +71,7 @@ contract MinimumTenureHookTest is Test {
 
     function test_EntryMustFundTheWholeWindow() public {
         Slot s = _slot();
-        uint256 need = hook.requiredDeposit(100 ether, TAX, TENURE);
+        uint256 need = hook.requiredDeposit(100 ether, TAX_RATE, TENURE);
         assertGt(need, 0);
 
         vm.startPrank(alice);
@@ -92,7 +91,7 @@ contract MinimumTenureHookTest is Test {
     ///      which made protection free and the slot claimable for nothing.
     function test_TheRequirementRoundsUpAndNeverToZero() public view {
         // A price so low the exact figure is a fraction of one unit.
-        uint256 need = hook.requiredDeposit(1, TAX, TENURE);
+        uint256 need = hook.requiredDeposit(1, TAX_RATE, TENURE);
         assertEq(need, 1, "rounds up to one, not down to zero");
     }
 
@@ -100,7 +99,7 @@ contract MinimumTenureHookTest is Test {
 
     function test_CannotCutThePriceInsideTheWindow() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether, 100 ether);
 
         vm.prank(alice);
         vm.expectRevert(MinimumTenure.PriceCutDuringTenure.selector);
@@ -114,7 +113,7 @@ contract MinimumTenureHookTest is Test {
 
     function test_CanCutThePriceOnceTheWindowHasPassed() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 100 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 100 ether, 100 ether);
 
         vm.warp(block.timestamp + TENURE + 1);
         vm.prank(alice);
@@ -127,7 +126,7 @@ contract MinimumTenureHookTest is Test {
     /// @notice Inside the window an ordinary bid is refused — even a doubling.
     function test_NobodyCanBuyInsideTheWindowBelowThePremium() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether, 100 ether);
 
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
@@ -150,10 +149,10 @@ contract MinimumTenureHookTest is Test {
     ///      rather than a fee.
     function test_ABuyerDeclaringThePremiumTakesItInsideTheWindow() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether, 100 ether);
         uint256 aliceBefore = token.balanceOf(alice);
 
-        uint256 dep = hook.requiredDeposit(1000 ether, TAX, TENURE) + 100 ether;
+        uint256 dep = hook.requiredDeposit(1000 ether, TAX_RATE, TENURE) + 100 ether;
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
         s.buy(bob, 1000 ether, dep, 0);
@@ -163,7 +162,7 @@ contract MinimumTenureHookTest is Test {
         assertEq(s.price(), 1000 ether, "and bob is now exposed at that number");
         assertEq(
             token.balanceOf(alice) - aliceBefore,
-            100 ether + hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether,
+            100 ether + hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether,
             "alice is paid her price and refunded her escrow"
         );
     }
@@ -171,9 +170,9 @@ contract MinimumTenureHookTest is Test {
     /// @notice One wei under the premium is still refused. The edge is exact.
     function test_ThePremiumBoundaryIsExact() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether, 100 ether);
 
-        uint256 dep = hook.requiredDeposit(1000 ether, TAX, TENURE) + 100 ether;
+        uint256 dep = hook.requiredDeposit(1000 ether, TAX_RATE, TENURE) + 100 ether;
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
         vm.expectRevert(
@@ -187,20 +186,20 @@ contract MinimumTenureHookTest is Test {
 
     function test_AnyoneCanBuyOnceItElapses() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether, 100 ether);
 
         vm.warp(block.timestamp + TENURE + 1);
-        _take(s, bob, hook.requiredDeposit(200 ether, TAX, TENURE) + 10 ether, 200 ether);
+        _take(s, bob, hook.requiredDeposit(200 ether, TAX_RATE, TENURE) + 10 ether, 200 ether);
         assertEq(s.occupant(), bob);
     }
 
     function test_AVacantSlotIsAlwaysClaimable() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether, 100 ether);
+        _take(s, alice, hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether, 100 ether);
         vm.prank(alice);
         s.release();
 
-        _take(s, bob, hook.requiredDeposit(50 ether, TAX, TENURE) + 10 ether, 50 ether);
+        _take(s, bob, hook.requiredDeposit(50 ether, TAX_RATE, TENURE) + 10 ether, 50 ether);
         assertEq(s.occupant(), bob, "no tenure to protect on a vacant slot");
     }
 
@@ -208,7 +207,7 @@ contract MinimumTenureHookTest is Test {
     ///         to start a fresh window.
     function test_AVacatingAccountCannotImmediatelyRetake() public {
         Slot s = _slot();
-        uint256 dep = hook.requiredDeposit(100 ether, TAX, TENURE) + 10 ether;
+        uint256 dep = hook.requiredDeposit(100 ether, TAX_RATE, TENURE) + 10 ether;
         _take(s, alice, dep, 100 ether);
 
         vm.prank(alice);
@@ -226,10 +225,29 @@ contract MinimumTenureHookTest is Test {
         s.buy(bob, 100 ether, dep, 0);
         assertEq(s.occupant(), bob);
     }
+    /// @notice Only the slot can bar an account. The `after` entry points are
+    ///         world-callable, so a forged context must not lock anyone out.
+    function test_NobodyButTheSlotCanBarAnAccount() public {
+        Slot s = _slot();
+        SlotContext memory forged;
+        forged.slot = address(s);
+        forged.account = bob;
+        forged.hookTerms = HookTerms({target: address(hook), config: bytes32(uint256(365 days))});
+
+        vm.expectRevert(MinimumTenure.NotTheSlot.selector);
+        hook.afterRelease(forged);
+        vm.expectRevert(MinimumTenure.NotTheSlot.selector);
+        hook.afterLiquidate(forged);
+
+        assertEq(hook.reentryAllowedAt(address(s), bob), 0, "nothing was written");
+        _take(s, bob, hook.requiredDeposit(100 ether, TAX_RATE, TENURE), 100 ether);
+        assertEq(s.occupant(), bob, "bob can still buy");
+    }
+
     /// @notice Liquidation is never vetoable, tenure or not.
     function test_LiquidationIgnoresTheWindowEntirely() public {
         Slot s = _slot();
-        _take(s, alice, hook.requiredDeposit(1 ether, TAX, TENURE) + 1, 1 ether);
+        _take(s, alice, hook.requiredDeposit(1 ether, TAX_RATE, TENURE) + 1, 1 ether);
 
         // Run the escrow dry while still inside the protection window.
         vm.warp(block.timestamp + TENURE - 1);
@@ -254,8 +272,8 @@ contract MinimumTenureHookTest is Test {
         Slot long_ = _slot(bytes32(uint256(30 days)));
         assertEq(short_.hook(), long_.hook(), "the same contract governs both");
 
-        _take(short_, alice, hook.requiredDeposit(100 ether, TAX, 30 days) + 10 ether, 100 ether);
-        _take(long_, alice, hook.requiredDeposit(100 ether, TAX, 30 days) + 10 ether, 100 ether);
+        _take(short_, alice, hook.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether, 100 ether);
+        _take(long_, alice, hook.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether, 100 ether);
 
         // A week in: the one-day window is long over, the thirty-day one is not.
         vm.warp(block.timestamp + 7 days);
@@ -264,7 +282,7 @@ contract MinimumTenureHookTest is Test {
         token.approve(address(short_), type(uint256).max);
         token.approve(address(long_), type(uint256).max);
 
-        uint256 need = hook.requiredDeposit(100 ether, TAX, 30 days) + 10 ether;
+        uint256 need = hook.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether;
         short_.buy(bob, 100 ether, need, type(uint256).max);
         assertEq(short_.occupant(), bob, "one day elapsed six days ago");
 
@@ -282,8 +300,8 @@ contract MinimumTenureHookTest is Test {
     ///         longer window costs more to enter at the same price.
     function test_TheWindowSetsWhatEntryCosts() public {
         Slot short_ = _slot(bytes32(uint256(1 days)));
-        uint256 cheap = hook.requiredDeposit(100 ether, TAX, 1 days);
-        uint256 dear = hook.requiredDeposit(100 ether, TAX, 30 days);
+        uint256 cheap = hook.requiredDeposit(100 ether, TAX_RATE, 1 days);
+        uint256 dear = hook.requiredDeposit(100 ether, TAX_RATE, 30 days);
         assertGt(dear, cheap);
 
         vm.startPrank(alice);
@@ -305,7 +323,7 @@ contract MinimumTenureHookTest is Test {
     ///
     /// @dev Refused at creation, which is the only moment it is fixable. Left
     ///      to the first callback it would be a slot whose every buy reverts —
-    ///      and here, where `mutableHook` is false, one that could never be
+    ///      and here, where the hook is locked, one that could never be
     ///      repaired.
     function test_ASlotCannotAttachThisHookWithNoWindow() public {
         vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
@@ -330,16 +348,16 @@ contract MinimumTenureHookTest is Test {
 
         // And the boundary itself is legal.
         Slot ok = _slot(bytes32(hook.MAX_TENURE()));
-        assertEq(uint256(ok.hookData()), hook.MAX_TENURE());
+        assertEq(uint256(ok.hookTerms().config), hook.MAX_TENURE());
     }
 
     /// @notice And the hook says so itself, for anyone asking before they
     ///         commit.
     function test_TheHookRejectsTheEmptyConfigurationDirectly() public {
         vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
-        hook.validateHookData(bytes32(0));
+        hook.validateHookConfig(bytes32(0));
 
-        hook.validateHookData(bytes32(TENURE)); // no revert
+        hook.validateHookConfig(bytes32(TENURE)); // no revert
         assertEq(hook.tenureOf(bytes32(TENURE)), TENURE);
     }
 
@@ -349,15 +367,11 @@ contract MinimumTenureHookTest is Test {
 
     function _slotWith(address h) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient,
             currency: IERC20(address(token)),
             manager: address(0),
-            hook: h,
-            hookData: bytes32(TENURE),
-            taxBps: TAX,
-            minDepositSeconds: 0,
-            mutableTax: false,
-            mutableHook: false
+            mutableTax: false, mutableRecipient: false, mutableHook: false,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
+            hookTerms: HookTerms({target: h, config: bytes32(TENURE)})
         }))));
     }
 }

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ISlotHook, HookFlags, SlotContext} from "../ISlotHook.sol";
-import {IDescribedHook, HookDescriptor} from "../IDescribedHook.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../libraries/HookPermissionsLib.sol";
+import {HookOffer} from "../types/SlotTypes.sol";
+import {IDescribedHook, HookDescriptor} from "../interfaces/IDescribedHook.sol";
 import {MinimumTenure} from "./MinimumTenure.sol";
 
 /**
@@ -20,15 +22,15 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      could never safely be upgraded — and it was a whole contract, a resolver
  *      UI and a deploy step to express a single number.
  *
- *      The number now comes from the slot, as `ctx.hookData`. One deployment
+ *      The number comes from the slot, as `ctx.hookTerms.config`. One deployment
  *      serves every duration, the factory is gone, and this contract holds no
  *      per-slot state at all.
  *
  *      That the data lives on the SLOT and not here is the load-bearing part.
  *      Were the window kept in this contract's storage, a setter here could
- *      rewrite a slot's rules while the slot went on reporting `mutableHook ==
- *      false`. On the slot, both halves of the configuration — which hook, and
- *      how long — are frozen by the same flag.
+ *      rewrite a slot's rules while the slot went on reporting a locked hook. On
+ *      the slot, both halves of the configuration — which hook, and how long —
+ *      are frozen by the same flag.
  *
  *      ── Harberger impact: SOFT ──────────────────────────────────────────
  *
@@ -49,7 +51,7 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      ── What condition 1 does NOT guarantee ─────────────────────────────
  *
  *      It is checked at entry and never again. `withdraw` consults no hook —
- *      only the core's own `minDepositSeconds` floor — so the escrow binds
+ *      only the core's own `minRunwaySeconds` floor — so the escrow binds
  *      exactly as far as that floor reaches. An occupant can escrow the full
  *      tenure, withdraw straight back to the floor, and keep the window.
  *
@@ -58,7 +60,7 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      their runway ends. What the leak costs is the BUYOUT channel — for the
  *      rest of the window a rival must liquidate to vacancy rather than buy at
  *      the declared price. A slot wanting condition 1 to bind for its full term
- *      sets `minDepositSeconds >= tenureSeconds` at creation, which puts the
+ *      sets `minRunwaySeconds >= tenureSeconds` at creation, which puts the
  *      floor in the core where `withdraw` enforces it.
  *
  *      ── `sell` does not run the tenure check ────────────────────────────
@@ -81,7 +83,7 @@ contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
      * @notice The longest window this hook will accept. Ten years.
      *
      * @dev Not a view about how long protection should last — it is an encoding
-     *      check. `hookData` is 32 bytes and only the low ones are a duration,
+     *      check. The hook `config` is 32 bytes and only the low ones are a duration,
      *      so the characteristic mistake is a word that was never a number:
      *      `bytes32("7 days")` is left-aligned text and decodes to roughly
      *      1e76 seconds.
@@ -129,18 +131,16 @@ contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
     /// @inheritdoc ISlotHook
     /// @dev The whole of this hook's configuration is one number, so
     ///      validation is {tenureOf} run for its revert.
-    function validateHookData(bytes32 data) external pure {
+    function validateHookConfig(bytes32 data) external pure {
         tenureOf(data);
     }
 
     /**
      * @notice What this hook claims to be.
      *
-     * @dev version 2 — the window is no longer part of this contract, so the
-     *      descriptor cannot name it. Version 1 encoded `tenureSeconds` here
-     *      because the address WAS the configuration; a consumer that wants the
-     *      window now reads `Slot.hookData` and calls {tenureOf}, which is the
-     *      only source that can be right for a given slot.
+     * @dev The window is the slot's, not this contract's, so the descriptor
+     *      cannot name it. A consumer reads `Slot.hookTerms().config` and calls
+     *      {tenureOf}.
      */
     function descriptors()
         external
@@ -154,13 +154,14 @@ contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
             signature: tenureSignature(),
             // The window's layout and bounds, from the same constants the
             // check enforces. A client renders the field and validates against
-            // `validateHookData` before anything is attached.
+            // `validateHookConfig` before anything is attached.
             data: tenureBounds_(),
             metadataURI: ""
         });
     }
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.beforeBuy = true;
         f.beforeSelfAssess = true;
         // Subscribed so the hook can see the ONE transition the protected party
@@ -168,6 +169,7 @@ contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
         // single transaction and the window renews for ever.
         f.afterRelease = true;
         f.afterLiquidate = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
 
     // ─── the rule, which lives in {MinimumTenure} ───────────────────────────

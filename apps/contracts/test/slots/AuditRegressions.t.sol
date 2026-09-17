@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, SlotContext, HookFlags} from "../../src/ISlotHook.sol";
+import {ISlotHook, SlotContext, HookPermissions} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
 interface IFlippable { function flip() external; }
@@ -23,11 +26,13 @@ contract Small is ERC20 {
 contract FlipHook is ISlotHook {
     bool public broken;
     function flip() external { broken = true; }
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external view returns (HookFlags memory f) {
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         if (broken) revert("gone");
         f.beforeBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -37,7 +42,7 @@ contract FlipHook is ISlotHook {
     function afterSettle(SlotContext calldata) external {}
 }
 
-/// @dev Honest until flipped, then answers `subscriptions()` with returndata too short
+/// @dev Honest until flipped, then answers `hookOffer` with returndata too short
 ///      to decode.
 ///
 ///      Not a revert — a SUCCESS the compiler's decoder then rejects. The
@@ -46,11 +51,13 @@ contract FlipHook is ISlotHook {
 contract ShortAnswerHook is ISlotHook {
     bool public broken;
     function flip() external { broken = true; }
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external view returns (HookFlags memory f) {
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         if (broken) assembly { mstore(0, 1) return(0, 32) } // 1 word, 256 wanted
         f.beforeBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -60,14 +67,15 @@ contract ShortAnswerHook is ISlotHook {
     function afterSettle(SlotContext calldata) external {}
 }
 
-/// @dev Honest until flipped, then answers with eight words that are none of
-///      them 0 or 1 — `validator_revert_t_bool` in the decoder, outside the catch.
+/// @dev Honest until flipped, then answers with eight 0xff words: flag bits the
+///      slot does not know, which solc's decoder would reject outside the catch.
 contract DirtyBoolHook is ISlotHook {
     bool public broken;
     function flip() external { broken = true; }
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
 
-    function subscriptions() external view returns (HookFlags memory f) {
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         if (broken) {
             assembly {
                 for { let i := 0 } lt(i, 8) { i := add(i, 1) } {
@@ -77,6 +85,7 @@ contract DirtyBoolHook is ISlotHook {
             }
         }
         f.beforeBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -93,11 +102,13 @@ contract RejectingHook is ISlotHook {
     bool public broken;
     function flip() external { broken = true; }
 
-    function validateHookData(bytes32) external view {
+    function validateHookConfig(bytes32) external view {
         if (broken) revert No();
     }
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.beforeBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -110,9 +121,11 @@ contract RejectingHook is ISlotHook {
 /// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
 contract Counter is ISlotHook {
     uint256 public buys;
-    function validateHookData(bytes32) external pure {}
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function validateHookConfig(bytes32) external pure {}
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -147,7 +160,7 @@ contract AuditRegressionsTest is Test {
     address recipient = address(0xF00D);
 
     uint256 constant PRICE = 50_000; // 500.00 at 2dp
-    uint256 constant TAX = 200;      // 2%/month
+    uint256 constant TAX_RATE = 200;      // 2%/month
 
     function setUp() public {
         factory = SlotFactory(address(new ERC1967Proxy(
@@ -161,15 +174,11 @@ contract AuditRegressionsTest is Test {
 
     function _slot(address currency, uint256 minDep) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient,
             currency: IERC20(currency),
             manager: address(this),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: TAX,
-            minDepositSeconds: minDep,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(minDep)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
         }))));
     }
 
@@ -217,7 +226,7 @@ contract AuditRegressionsTest is Test {
         vm.stopPrank();
 
         FlipHook h = new FlipHook();
-        s.proposeTerms(0, address(h), bytes32(0), false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(h), config: bytes32(0)}), uint8(8));
 
         vm.warp(block.timestamp + 3650 days);
         assertTrue(s.isInsolvent());
@@ -242,7 +251,7 @@ contract AuditRegressionsTest is Test {
         // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
         // and would refuse it otherwise. The break happens afterwards, which is
         // the whole point: the apply path cannot re-verify what it accepted.
-        s.proposeTerms(0, pending, bytes32(0), false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: pending, config: bytes32(0)}), uint8(8));
         if (etchAway) vm.etch(pending, "");
         else IFlippable(pending).flip();
 
@@ -252,7 +261,7 @@ contract AuditRegressionsTest is Test {
         s.liquidate(); // must not revert
         assertTrue(s.isVacant(), "eviction blocked by a pending hook");
         assertEq(s.hook(), address(0), "and the hook was dropped, not attached");
-        assertEq(s.hookData(), bytes32(0), "its configuration went with it");
+        assertEq(s.hookTerms().config, bytes32(0), "its configuration went with it");
     }
 
     /// @notice A queued hook with NO CODE cannot block an eviction.
@@ -287,15 +296,11 @@ contract AuditRegressionsTest is Test {
     function test_AWeirdTokenReturnCannotBlockLiquidation() public {
         WeirdTok w = new WeirdTok(recipient);
         Slot s = Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient,
             currency: IERC20(address(w)),
             manager: address(this),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: TAX,
-            minDepositSeconds: 0,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
         }))));
         w.mint(occ, 1_000_000);
         vm.startPrank(occ);
@@ -328,14 +333,14 @@ contract AuditRegressionsTest is Test {
 
     function test_QueuedTermsCannotBindTheNextBlocksBuyer() public {
         Slot s = _slot(address(token), 0);
-        s.proposeTerms(10_000, address(0), bytes32(0), true, false);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
         s.buy(occ, PRICE, 5_000, 0);
         vm.stopPrank();
 
-        assertEq(s.taxBps(), TAX, "not applied before it ripened");
+        assertEq(s.taxRateBps(), TAX_RATE, "not applied before it ripened");
         assertFalse(s.hasRipeTerms());
 
         vm.warp(block.timestamp + 1 days + 1);

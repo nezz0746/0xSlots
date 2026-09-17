@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {HookTerms, HookOffer} from "../types/SlotTypes.sol";
+
 /**
  * @notice Everything a hook is told, for every callback.
  *
- * @dev ONE shape for all eight hooks, rather than a rich struct for decisions
- *      and loose deltas for notifications. The previous design had exactly that
- *      split — nine fields for a policy, three loose arguments for a module —
- *      and it meant learning two vocabularies to extend one slot.
- *
- *      Fields not meaningful for a given callback are zero. `afterSettle` is the
+ * @dev One shape for every callback. Fields not meaningful for a given callback are zero. `afterSettle` is the
  *      only one that populates `owed`/`paid`; `beforeBuy` is the only one where
  *      `newPrice` is a proposal rather than a fact.
  */
@@ -31,7 +28,7 @@ struct SlotContext {
     /// When the current occupancy began. Zero when vacant.
     uint256 occupiedSince;
     /// Basis points per 30 days.
-    uint256 taxBps;
+    uint256 taxRateBps;
     uint256 currentPrice;
     /// The price being proposed (`before`) or just set (`after`).
     uint256 newPrice;
@@ -40,39 +37,38 @@ struct SlotContext {
     /// `owed > paid` means the occupant has run dry. `afterSettle` only.
     uint256 owed;
     uint256 paid;
-    /// The slot's configuration FOR THIS HOOK, verbatim from `Slot.hookData`.
+    /// The slot's terms FOR THIS HOOK: its address (`target`) and `config`.
     ///
     /// What lets one deployment serve every configuration, instead of a
     /// factory deploying a contract per setting. It is the slot's storage, not
-    /// the hook's — so a hook reading it stays stateless, and a slot whose
-    /// `mutableHook` is false has both halves of its rules frozen.
-    ///
-    /// Zero means the slot configured nothing. A hook whose behaviour is fully
-    /// determined by its own address ignores this field entirely.
-    bytes32 hookData;
+    /// the hook's, so a hook reading it stays stateless.
+    HookTerms hookTerms;
 }
 
 /**
- * @notice Which callbacks a hook wants.
+ * @notice What a hook may do to a slot, unpacked: the callbacks it receives,
+ *         and whether it may block an exit (`strict`).
  *
- * @dev Declared by the hook and read ONCE when it is attached, then
- *      snapshotted. Not re-read: a hook able to widen its own reach mid-tenure
- *      could start charging an occupant gas they never agreed to.
+ * @dev Declared by the hook as `HookOffer.permissions` and copied when it attaches.
+ *      Never re-read on its own: a hook able to widen its own reach mid-tenure
+ *      could veto an exit its occupant never agreed to. A change reaches the
+ *      slot only when its manager accepts it, at the next occupancy
+ *      transition, and never on a slot whose hook is immutable.
  *
  *      Declared rather than encoded in the address. Uniswap v4 packs these into
  *      address bits, which is elegant and saves gas in the hottest loop in
  *      DeFi — but it costs a salt miner in the deploy pipeline, a redeploy
- *      whenever a flag is wrong, and an address that tells a reader nothing.
+ *      whenever a permission is wrong, and an address that tells a reader nothing.
  *      This protocol is optimising for a handful of people understanding it in
  *      one sitting, which points the other way.
  *
- *      Flags are also not optional for the `before` set, for a reason easy to
+ *      Permissions are also not optional for the `before` set, for a reason easy to
  *      miss: a `before` hook is fail-CLOSED. Calling one optimistically on a
  *      contract that does not implement it reverts on the missing function, and
  *      a fail-closed revert means every buy on that slot is vetoed forever. The
  *      `after` set could be discovered by trying. The `before` set never can.
  */
-struct HookFlags {
+struct HookPermissions {
     bool beforeBuy;
     bool beforeSelfAssess;
     bool afterBuy;
@@ -115,7 +111,7 @@ struct HookFlags {
  *      - `after` is gas-capped and its revert is swallowed, so it cannot block
  *        a buy — and above all cannot block a liquidation, which this protocol
  *        treats as unconditional for every hook that does not declare `strict`.
- *        One that does trades that guarantee for delivery; see {HookFlags}.
+ *        One that does trades that guarantee for delivery; see {HookPermissions}.
  *
  *      A hook that wants to record something about a decision does it in the
  *      matching `after`. There is deliberately no way to write during `before`.
@@ -130,7 +126,7 @@ struct HookFlags {
  *
  *        - `require(msg.sender == ctx.slot)` — cheap, and authenticates the
  *          whole context at once. Fine for a lenient hook.
- *        - read the slot instead of the argument — `occupant()`, `hookData()`
+ *        - read the slot instead of the argument — `occupant()`, `hookTerms()`
  *          — which costs a staticcall and is indifferent to who is calling.
  *          Preferable for a `strict` hook, where a revert is a stuck slot.
  *
@@ -150,37 +146,43 @@ struct HookFlags {
  *      bought nothing the author of a purpose-built hook cannot do directly.
  */
 interface ISlotHook {
-    // `beforeSell` and `afterSell` used to sit beside these. `Slot.sell` was
-    // removed — a consensual sale is `selfAssess` then `buy`, performed by the
-    // OfferBook — so a sale now runs `beforeSelfAssess` and `beforeBuy` like
-    // any other seating. Leaving the two callbacks declared would have left a
-    // hook able to subscribe to something that can never fire.
-
-    /// @dev `view`, not `pure`: a hook may answer from storage — an upgradeable
-    ///      one, or one whose owner can retire a behaviour — and that is a
-    ///      legitimate hook rather than an edge case. The slot snapshots the
-    ///      answer at attach time either way, so a later change of mind does
-    ///      not move a live slot's terms.
-    function subscriptions() external view returns (HookFlags memory);
-
     /**
-     * @notice Revert if `data` is not a configuration this hook accepts.
+     * @notice Revert if `config` is not a configuration this hook accepts.
      *
-     * @dev Called once, when the hook is attached, so a misconfiguration is
-     *      refused at the only moment somebody is around to fix it.
+     * @dev Called when the hook is proposed or attached, so a misconfiguration
+     *      is refused at the only moment somebody is around to fix it.
      *
-     *      Not optional, and that is the point. `hookData` is opaque to the
-     *      slot: only the hook knows whether a given word means anything. Left
-     *      unchecked, a slot attaches a hook with data it will reject on every
-     *      callback — and since `before` is fail-closed, that is a slot nobody
-     *      can ever buy. Where `mutableHook` is false it is a slot nobody can
-     *      ever repair.
+     *      Not optional. `config` is opaque to the slot: only the hook knows
+     *      whether a given word means anything. Left unchecked, a slot attaches
+     *      a hook with data it will reject on every callback, and since
+     *      `before` is fail-closed, that is a slot nobody can ever buy.
      *
      *      A hook that takes no configuration implements this as a no-op and
-     *      thereby accepts anything, including zero. Say so deliberately rather
-     *      than by omission.
+     *      thereby accepts anything, including zero. Say so deliberately.
      */
-    function validateHookData(bytes32 data) external view;
+    function validateHookConfig(bytes32 config) external view;
+
+    /**
+     * @notice What this hook asks of a slot configured with `config`: the
+     *         callbacks it wants and its share of rent.
+     *
+     * @dev An offer, not a setting. The slot copies it when the hook attaches,
+     *      and later only when its manager calls `acceptHookOffer`: a new fee
+     *      at once, new permissions at the next occupancy transition and only if the
+     *      slot's hook is mutable. Payouts and callbacks use the slot's copy and
+     *      never call back here, so a hook can neither make an eviction depend
+     *      on it nor change what it takes from rent already earned. A hook whose
+     *      offer a manager ignores may refuse service; that is the hook's lever,
+     *      and the manager's risk.
+     *
+     *      `view`, not `pure`: a hook may answer from storage, and that is a
+     *      legitimate hook rather than an edge case.
+     *
+     *      `permissions` must be non-zero and use only `HookPermissionsLib` bits. A zero fee
+     *      takes nothing; a non-zero `feeBps` needs a recipient and may not
+     *      exceed 10_000.
+     */
+    function hookOffer(bytes32 config) external view returns (HookOffer memory);
 
     // ─── decisions: `view`, revert to veto ──────────────────────────────────
 

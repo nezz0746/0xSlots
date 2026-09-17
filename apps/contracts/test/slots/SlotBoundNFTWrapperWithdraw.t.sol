@@ -46,7 +46,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
 
-    uint256 constant TAX = 1000;
+    uint16 constant TAX_RATE = 1000;
     uint256 constant VALUATION = 1 ether;
 
     function setUp() public {
@@ -70,7 +70,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
 
     /// @dev This wrapper is feeless, so total and deposit are the same number.
     function _dep(uint256 v) internal view returns (uint256 deposit) {
-        (, deposit, ) = wrapper.quoteWrap(v, TAX);
+        (, deposit, ) = wrapper.quoteWrap(v, TAX_RATE);
     }
 
     function _wrap(uint256 id, Mode mode) internal returns (uint256 tokenId, Slot slot) {
@@ -78,7 +78,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         nft.approve(address(wrapper), id);
         address s;
         (tokenId, s) = wrapper.wrap{value: _dep(VALUATION)}(
-            IERC721(address(nft)), id, TAX, VALUATION, mode
+            IERC721(address(nft)), id, TAX_RATE, VALUATION, mode
         );
         vm.stopPrank();
         slot = Slot(payable(s));
@@ -314,7 +314,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         vm.startPrank(alice);
         nft.approve(address(wrapper), 1);
         (, address s) = wrapper.wrap{value: _dep(VALUATION) * 3}(
-            IERC721(address(nft)), 1, TAX, VALUATION, Mode.Permanent
+            IERC721(address(nft)), 1, TAX_RATE, VALUATION, Mode.Permanent
         );
         vm.stopPrank();
 
@@ -341,7 +341,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         vm.startPrank(alice);
         bad.approve(address(wrapper), 1);
         (uint256 id, ) = wrapper.wrap{value: _dep(VALUATION)}(
-            IERC721(address(bad)), 1, TAX, VALUATION, Mode.Reclaimable
+            IERC721(address(bad)), 1, TAX_RATE, VALUATION, Mode.Reclaimable
         );
         vm.stopPrank();
 

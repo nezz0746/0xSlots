@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -9,12 +11,13 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
 import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/hooks/nft/ISlotBoundNFTWrapper.sol";
 import {ISlotBoundNFT} from "../../src/hooks/nft/ISlotBoundNFT.sol";
-import {SlotContext} from "../../src/ISlotHook.sol";
+import {SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
 
 contract MockNFT is ERC721 {
     constructor() ERC721("Mock", "MOCK") {}
@@ -41,7 +44,7 @@ contract SlotBoundNFTWrapperTest is Test {
     address bob = makeAddr("bob");
     address wrapperOwner = makeAddr("wrapperOwner");
 
-    uint256 constant TAX = 1000; // 10%
+    uint16 constant TAX_RATE = 1000; // 10%
     uint256 constant VALUATION = 1 ether;
 
     uint256 tokenId;
@@ -80,14 +83,14 @@ contract SlotBoundNFTWrapperTest is Test {
 
     /// @dev What a wrap costs in total — the escrow plus whatever fee is set.
     function _deposit(uint256 valuation) internal view returns (uint256 total) {
-        (total, , ) = wrapper.quoteWrap(valuation, TAX);
+        (total, , ) = wrapper.quoteWrap(valuation, TAX_RATE);
     }
 
     function _wrap(address who, uint256 id, Mode mode) internal returns (uint256 newId) {
         vm.startPrank(who);
         nft.approve(address(wrapper), id);
         (newId, ) = wrapper.wrap{value: _deposit(VALUATION)}(
-            IERC721(address(nft)), id, TAX, VALUATION, mode
+            IERC721(address(nft)), id, TAX_RATE, VALUATION, mode
         );
         vm.stopPrank();
     }
@@ -108,14 +111,14 @@ contract SlotBoundNFTWrapperTest is Test {
     function test_TheDepositorIsTheRecipientAndTheManager() public view {
         assertEq(slot.recipient(), alice, "earns the rent on their own asset");
         assertEq(slot.manager(), alice, "and may re-rate it");
-        assertEq(slot.taxBps(), TAX, "at the rate they chose");
+        assertEq(slot.taxRateBps(), TAX_RATE, "at the rate they chose");
     }
 
     /// @notice The hook cannot be detached; detaching it would strand the token.
     function test_TheHookIsThisContractAndPermanent() public view {
         assertEq(slot.hook(), address(wrapper));
         assertFalse(slot.mutableHook(), "and permanently so");
-        assertTrue(slot.mutableTax(), "but the rate can still move");
+        assertEq(slot.manager(), alice, "but the rate can still move");
     }
 
     /// @notice The wrap records what backs the token.
@@ -155,7 +158,7 @@ contract SlotBoundNFTWrapperTest is Test {
         nft.approve(address(wrapper), 2);
         vm.expectRevert();
         wrapper.wrap{value: short}(
-            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
+            IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent
         );
         vm.stopPrank();
     }
@@ -165,7 +168,7 @@ contract SlotBoundNFTWrapperTest is Test {
         vm.startPrank(alice);
         nft.approve(address(wrapper), 2);
         (uint256 id2, address s2) = wrapper.wrap{value: _deposit(VALUATION) * 2}(
-            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
+            IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent
         );
         vm.stopPrank();
         assertEq(Slot(payable(s2)).deposit(), _deposit(VALUATION) * 2);
@@ -178,7 +181,7 @@ contract SlotBoundNFTWrapperTest is Test {
         nft.approve(address(wrapper), 2);
 
         vm.expectRevert();
-        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, TAX, 0, Mode.Permanent);
+        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, TAX_RATE, 0, Mode.Permanent);
 
         vm.expectRevert();
         wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, 0, VALUATION, Mode.Permanent);
@@ -193,7 +196,7 @@ contract SlotBoundNFTWrapperTest is Test {
     function test_WrappingSomeoneElsesTokenIsRefused() public {
         vm.prank(bob);
         vm.expectRevert();
-        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent);
+        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent);
     }
 
     // ── the lifecycle, inherited wholesale ──────────────────────────────────
@@ -264,10 +267,11 @@ contract SlotBoundNFTWrapperTest is Test {
     function test_AStrangerCannotClaimATokenWithTheirOwnSlot() public {
         vm.prank(bob);
         address rogue = factory.createSlot(SlotInit({
-            recipient: bob, currency: IERC20(address(0)), manager: bob,
-            hook: address(wrapper), hookData: bytes32(0),
-            taxBps: TAX, minDepositSeconds: 7 days,
-            mutableTax: true, mutableHook: false
+            currency: IERC20(address(0)),
+            manager: bob,
+            mutableTax: true, mutableRecipient: true, mutableHook: false,
+            taxTerms: TaxTerms({recipient: bob, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(wrapper), config: bytes32(0)})
         }));
         assertEq(wrapper.tokenOf(rogue), 0, "not ours");
         assertEq(wrapper.ownerOf(tokenId), alice, "and alice keeps her token");
@@ -283,31 +287,31 @@ contract SlotBoundNFTWrapperTest is Test {
         slot.buy{value: VALUATION + _deposit(2 ether)}(bob, 2 ether, _deposit(2 ether), 0);
 
         vm.prank(alice);
-        slot.proposeTerms(5000, address(0), bytes32(0), true, false);
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
 
         vm.warp(block.timestamp + 2 days); // well past TERMS_DELAY
-        assertEq(slot.taxBps(), TAX, "still the rate bob bought under");
+        assertEq(slot.taxRateBps(), TAX_RATE, "still the rate bob bought under");
 
         vm.prank(bob);
         slot.release();
-        assertEq(slot.taxBps(), 5000, "lands at the transition, never before");
+        assertEq(slot.taxRateBps(), 5000, "lands at the transition, never before");
     }
 
     /// @notice The retirement veto cannot be added later. The slot packs these
-    ///         flags into `_hookFlags` at its own `initialize` and reads the
+    ///         permissions into `_hookPermissions` at its own `initialize` and reads the
     ///         bit thereafter, so a wrapper shipped without `beforeBuy` leaves
     ///         every slot it ever creates permanently unable to refuse a buy —
     ///         and no beacon upgrade can retrofit it.
     function test_TheRetirementVetoIsSubscribedFromTheFirstWrap() public view {
-        assertTrue(wrapper.subscriptions().beforeBuy, "or the veto is dead code");
-        assertTrue(slot.hookFlags().beforeBuy, "and the slot cached it at creation");
+        assertTrue(HookPermissionsLib.unpack(wrapper.hookOffer(0).permissions).beforeBuy, "or the veto is dead code");
+        assertTrue(slot.hookPermissions().beforeBuy, "and the slot cached it at creation");
     }
 
     function test_TheHookIsStrict() public view {
-        assertTrue(wrapper.subscriptions().strict, "so the move cannot be starved");
-        assertTrue(wrapper.subscriptions().afterBuy);
-        assertTrue(wrapper.subscriptions().afterRelease);
-        assertTrue(wrapper.subscriptions().afterLiquidate);
+        assertTrue(HookPermissionsLib.unpack(wrapper.hookOffer(0).permissions).strict, "so the move cannot be starved");
+        assertTrue(HookPermissionsLib.unpack(wrapper.hookOffer(0).permissions).afterBuy);
+        assertTrue(HookPermissionsLib.unpack(wrapper.hookOffer(0).permissions).afterRelease);
+        assertTrue(HookPermissionsLib.unpack(wrapper.hookOffer(0).permissions).afterLiquidate);
     }
 
     // ── finding a wrapper token from its underlying ─────────────────────────
@@ -340,7 +344,7 @@ contract SlotBoundNFTWrapperTest is Test {
         vm.startPrank(alice);
         bad.approve(address(wrapper), 7);
         (uint256 badId, ) = wrapper.wrap{value: _deposit(VALUATION)}(
-            IERC721(address(bad)), 7, TAX, VALUATION, Mode.Permanent
+            IERC721(address(bad)), 7, TAX_RATE, VALUATION, Mode.Permanent
         );
         vm.stopPrank();
 
@@ -360,7 +364,7 @@ contract SlotBoundNFTWrapperTest is Test {
         vm.prank(wrapperOwner);
         wrapper.setWrapFee(0.01 ether);
 
-        (uint256 total, uint256 deposit, uint256 fee) = wrapper.quoteWrap(VALUATION, TAX);
+        (uint256 total, uint256 deposit, uint256 fee) = wrapper.quoteWrap(VALUATION, TAX_RATE);
         assertEq(fee, 0.01 ether);
         assertEq(total, deposit + fee, "the quote splits it for the UI");
 
@@ -391,7 +395,7 @@ contract SlotBoundNFTWrapperTest is Test {
             abi.encodeWithSelector(ISlotBoundNFTWrapper.FeeUnpaid.selector, 1 ether)
         );
         wrapper.wrap{value: 0.5 ether}(
-            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
+            IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent
         );
         vm.stopPrank();
     }
@@ -426,7 +430,7 @@ contract SlotBoundNFTWrapperTest is Test {
 
         vm.prank(bob);
         wrapper.setWrapFee(1 ether);
-        (, , uint256 fee) = wrapper.quoteWrap(VALUATION, TAX);
+        (, , uint256 fee) = wrapper.quoteWrap(VALUATION, TAX_RATE);
         assertEq(fee, 1 ether);
     }
 
@@ -437,7 +441,7 @@ contract SlotBoundNFTWrapperTest is Test {
         SlotBoundNFTWrapper free = _deployWrapper(address(0), 0);
 
         assertEq(free.owner(), address(0));
-        (, , uint256 fee) = free.quoteWrap(VALUATION, TAX);
+        (, , uint256 fee) = free.quoteWrap(VALUATION, TAX_RATE);
         assertEq(fee, 0);
 
         vm.prank(wrapperOwner);

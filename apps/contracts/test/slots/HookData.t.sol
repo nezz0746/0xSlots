@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, HookOffer, PendingTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
-import "../../src/SlotErrors.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
+import "../../src/errors/SlotErrors.sol";
 
 /// @dev Records the configuration it is handed, on every side.
 contract Spy is ISlotHook {
@@ -16,13 +19,15 @@ contract Spy is ISlotHook {
     bytes32 public lastAfter;
     uint256 public afterCalls;
 
-    function validateHookData(bytes32) external pure virtual {}
+    function validateHookConfig(bytes32) external pure virtual {}
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.beforeBuy = true;
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
+        o.permissions = HookPermissionsLib.pack(f);
     }
 
     function beforeBuy(SlotContext calldata) external view virtual {}
@@ -30,18 +35,18 @@ contract Spy is ISlotHook {
     function beforeSelfAssess(SlotContext calldata) external view {}
 
     function afterBuy(SlotContext calldata c) external {
-        lastAfter = c.hookData;
+        lastAfter = c.hookTerms.config;
         afterCalls++;
     }
 
 
     function afterRelease(SlotContext calldata c) external {
-        lastAfter = c.hookData;
+        lastAfter = c.hookTerms.config;
         afterCalls++;
     }
 
     function afterLiquidate(SlotContext calldata c) external {
-        lastAfter = c.hookData;
+        lastAfter = c.hookTerms.config;
         afterCalls++;
     }
 
@@ -54,7 +59,7 @@ contract Loud is Spy {
     error SawConfiguration(bytes32 data);
 
     function beforeBuy(SlotContext calldata c) external view override {
-        revert SawConfiguration(c.hookData);
+        revert SawConfiguration(c.hookTerms.config);
     }
 }
 
@@ -64,7 +69,7 @@ contract Picky is Spy {
 
     error WrongConfiguration();
 
-    function validateHookData(bytes32 data) external pure override {
+    function validateHookConfig(bytes32 data) external pure override {
         if (data != ONLY) revert WrongConfiguration();
     }
 }
@@ -93,15 +98,11 @@ contract HookDataTest is Test {
 
     function _slot(address hook, bytes32 data) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(0xF00D),
             currency: IERC20(address(0)),
             manager: address(this),
-            hook: hook,
-            hookData: data,
-            taxBps: 500,
-            minDepositSeconds: 1 hours,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 hours)}),
+            hookTerms: HookTerms({target: hook, config: data})
         }))));
     }
 
@@ -115,7 +116,7 @@ contract HookDataTest is Test {
 
     function test_TheSlotStoresItAndHandsItToTheHook() public {
         Slot s = _slot(address(spy), CONFIG);
-        assertEq(s.hookData(), CONFIG);
+        assertEq(s.hookTerms().config, CONFIG);
 
         _take(s, alice);
         assertEq(spy.lastAfter(), CONFIG, "verbatim, on the after side");
@@ -147,7 +148,7 @@ contract HookDataTest is Test {
         assertEq(spy.lastAfter(), CONFIG);
         _take(b, alice);
         assertEq(spy.lastAfter(), OTHER);
-        assertEq(a.hookData(), CONFIG, "unmoved by b's buy");
+        assertEq(a.hookTerms().config, CONFIG, "unmoved by b's buy");
     }
 
     // ─── it cannot exist without a hook ─────────────────────────────────────
@@ -160,19 +161,19 @@ contract HookDataTest is Test {
     function test_ConfigurationWithoutAHookIsRefusedAtProposal() public {
         Slot s = _slot(address(0), bytes32(0));
         vm.expectRevert(InvalidHook.selector);
-        s.proposeTerms(0, address(0), CONFIG, false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(0), config: CONFIG}), uint8(8));
     }
 
     /// @notice Detaching takes the configuration with it. Left behind, it would
     ///         become live again the day a hook is attached without its own.
     function test_DetachingTheHookClearsTheConfiguration() public {
         Slot s = _slot(address(spy), CONFIG);
-        s.proposeTerms(0, address(0), bytes32(0), false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(8));
         vm.warp(block.timestamp + 1 days + 1);
 
         _take(s, alice); // a transition, which is where terms land
         assertEq(s.hook(), address(0));
-        assertEq(s.hookData(), bytes32(0));
+        assertEq(s.hookTerms().config, bytes32(0));
     }
 
     // ─── a hook judges its own configuration ────────────────────────────────
@@ -183,7 +184,7 @@ contract HookDataTest is Test {
         _slot(address(picky), CONFIG);
 
         Slot ok = _slot(address(picky), picky.ONLY());
-        assertEq(ok.hookData(), picky.ONLY());
+        assertEq(ok.hookTerms().config, picky.ONLY());
     }
 
     function test_TheSameJudgementAppliesToAProposal() public {
@@ -191,20 +192,31 @@ contract HookDataTest is Test {
         Picky picky = new Picky();
 
         vm.expectRevert(Picky.WrongConfiguration.selector);
-        s.proposeTerms(0, address(picky), CONFIG, false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(picky), config: CONFIG}), uint8(8));
 
-        s.proposeTerms(0, address(picky), picky.ONLY(), false, true);
-        (, , , , , bytes32 pendingData) = s.pending();
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(picky), config: picky.ONLY()}), uint8(8));
+        PendingTerms memory __p1 = s.pendingTerms();
+        TaxTerms memory __r1 = __p1.taxTerms;
+        HookTerms memory __h1 = __p1.hookTerms;
+        uint8 __m1 = __p1.mask;
+        uint64 __at1 = __p1.proposedAt;
+        bytes32 pendingData = __h1.config;
         assertEq(pendingData, picky.ONLY());
     }
 
     /// @notice Cancelling clears the queued configuration along with the hook.
     function test_CancellingClearsTheQueuedConfiguration() public {
         Slot s = _slot(address(0), bytes32(0));
-        s.proposeTerms(0, address(spy), CONFIG, false, true);
-        s.cancelTerms(false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(spy), config: CONFIG}), uint8(8));
+        s.cancelTerms(uint8(8));
 
-        (, address hook, , , , bytes32 pendingData) = s.pending();
+        PendingTerms memory __p2 = s.pendingTerms();
+        TaxTerms memory __r2 = __p2.taxTerms;
+        HookTerms memory __h2 = __p2.hookTerms;
+        uint8 __m2 = __p2.mask;
+        uint64 __at2 = __p2.proposedAt;
+        address hook = __h2.target;
+        bytes32 pendingData = __h2.config;
         assertEq(hook, address(0));
         assertEq(pendingData, bytes32(0));
     }
@@ -227,14 +239,14 @@ contract HookDataTest is Test {
         _take(s, alice);
 
         Spy successor = new Spy();
-        s.proposeTerms(0, address(successor), OTHER, false, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), HookTerms({target: address(successor), config: OTHER}), uint8(8));
         vm.warp(block.timestamp + 1 days + 1);
 
         vm.prank(alice);
         s.release();
 
         assertEq(s.hook(), address(successor), "the swap happened");
-        assertEq(s.hookData(), OTHER);
+        assertEq(s.hookTerms().config, OTHER);
         assertEq(spy.lastAfter(), CONFIG, "and the departing hook kept its own");
         assertEq(successor.afterCalls(), 0, "it never saw this tenure");
     }

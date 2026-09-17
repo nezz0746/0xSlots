@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {SlotsTest, DenyBuys} from "./Slots.t.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {InsufficientGasForTerms} from "../../src/SlotErrors.sol";
+import {InsufficientGasForTerms} from "../../src/errors/SlotErrors.sol";
 
 /**
  * The two defects this file was written to demonstrate, now asserting the fix.
@@ -19,7 +21,7 @@ contract QuickAuditTest is SlotsTest {
     /**
      * @notice Settling a hundred times in one second costs one second of tax.
      *
-     * @dev This drained the whole deposit. `secondsFor(paid, price, taxBps)`
+     * @dev This drained the whole deposit. `secondsFor(paid, price, taxRateBps)`
      *      floors, so at a price whose per-second tax is fractional — 1.5 wei
      *      here — one wei of tax bought ZERO seconds of clock. The settle took
      *      the wei and left `lastSettled` where it was, so the next call in the
@@ -34,7 +36,7 @@ contract QuickAuditTest is SlotsTest {
     function test_RepeatedSettlementCannotDrainDepositInOneBlock() public {
         SlotInit memory init = _init(address(0), 0);
         init.currency = IERC20(address(0));
-        init.taxBps = 10_000;
+        init.taxTerms.rateBps = uint16(10_000);
         Slot s = Slot(payable(factory.createSlot(init)));
         vm.deal(alice, 100);
         vm.prank(alice);
@@ -80,7 +82,7 @@ contract QuickAuditTest is SlotsTest {
         Slot s = _slot(address(0));
         DenyBuys deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(10_000, address(deny), bytes32(0), true, true);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), HookTerms({target: address(deny), config: bytes32(0)}), uint8(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms());
         vm.startPrank(bob);

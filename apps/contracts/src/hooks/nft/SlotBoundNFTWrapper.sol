@@ -11,11 +11,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 
-import {ISlotHook, HookFlags, SlotContext} from "../../ISlotHook.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../libraries/HookPermissionsLib.sol";
 import {SlotFactory} from "../../SlotFactory.sol";
-import {SlotInit} from "../../Slot.sol";
-import {SlotMath} from "../../SlotMath.sol";
-import {Versioned} from "../../Versioned.sol";
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../types/SlotTypes.sol";
+import {SlotMath} from "../../libraries/SlotMath.sol";
+import {Versioned} from "../../utils/Versioned.sol";
 import {ISlotOccupancy, ISlotBoundNFT} from "./ISlotBoundNFT.sol";
 import {ISlotBoundNFTWrapper, Mode, Wrap} from "./ISlotBoundNFTWrapper.sol";
 
@@ -47,7 +48,7 @@ contract SlotBoundNFTWrapper is
     ///      change it for FUTURE wraps — every slot holds its own copy.
     IERC20 internal constant CURRENCY = IERC20(address(0));
 
-    uint256 public constant MIN_DEPOSIT_SECONDS = 7 days;
+    uint32 public constant MIN_RUNWAY_SECONDS = 7 days;
 
     SlotFactory public slotFactory;
 
@@ -149,7 +150,7 @@ contract SlotBoundNFTWrapper is
     function wrap(
         IERC721 underlying,
         uint256 underlyingId,
-        uint256 taxBps,
+        uint16 taxRateBps,
         uint256 valuation,
         Mode mode
     ) external payable nonReentrant returns (uint256 tokenId, address slot) {
@@ -166,20 +167,23 @@ contract SlotBoundNFTWrapper is
         // inside this frame. See {onERC721Received}.
         underlying.transferFrom(msg.sender, address(this), underlyingId);
 
-        // Nothing below is re-validated here. `taxBps`, `valuation` and the
+        // Nothing below is re-validated here. `taxRateBps`, `valuation` and the
         // deposit floor are the slot's to enforce, and one validation means one
         // authority.
         slot = slotFactory.createSlot(
             SlotInit({
-                recipient: msg.sender,
                 currency: CURRENCY,
                 manager: msg.sender,
-                hook: address(this),
-                hookData: bytes32(0),
-                taxBps: taxBps,
-                minDepositSeconds: MIN_DEPOSIT_SECONDS,
                 mutableTax: true,
-                mutableHook: false
+                mutableRecipient: false,
+                // A detachable hook strands the token.
+                mutableHook: false,
+                taxTerms: TaxTerms({
+                    recipient: msg.sender,
+                    rateBps: taxRateBps,
+                    minRunwaySeconds: MIN_RUNWAY_SECONDS
+                }),
+                hookTerms: HookTerms({target: address(this), config: bytes32(0)})
             })
         );
 
@@ -208,7 +212,7 @@ contract SlotBoundNFTWrapper is
             address(underlying),
             underlyingId,
             mode,
-            taxBps,
+            taxRateBps,
             fee
         );
 
@@ -231,9 +235,9 @@ contract SlotBoundNFTWrapper is
     /// @dev Exists because the slot does not yet exist when a caller needs this.
     function quoteWrap(
         uint256 valuation,
-        uint256 taxBps
+        uint256 taxRateBps
     ) external view returns (uint256 total, uint256 deposit, uint256 fee) {
-        deposit = SlotMath.depositFor(valuation, taxBps, MIN_DEPOSIT_SECONDS);
+        deposit = SlotMath.depositFor(valuation, taxRateBps, MIN_RUNWAY_SECONDS);
         fee = wrapFeeWei;
         return (deposit + fee, deposit, fee);
     }
@@ -324,19 +328,22 @@ contract SlotBoundNFTWrapper is
     // ─── hook ───────────────────────────────────────────────────────────────
 
     /// @dev `beforeBuy` is not optional and cannot be added later: the slot
-    ///      packs these into `_hookFlags` at its own `initialize` and reads
+    ///      packs these into `_hookPermissions` at its own `initialize` and reads
     ///      the bit thereafter, so a beacon upgrade could never retrofit the
     ///      retirement veto onto slots already created. Without it,
     ///      {beforeBuy} is never called and a retired slot stays buyable.
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.beforeBuy = true; // the retirement veto
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.strict = true; // why this contract can hold real ownership state
+        o.permissions = HookPermissionsLib.pack(f);
     }
 
-    function validateHookData(bytes32) external view {}
+    function validateHookConfig(bytes32) external view {}
+
 
     /// @dev The one thing that stops a retired slot being sold. Merely clearing
     ///      `tokenOf` would send {_sync} down its "not ours" path and let the

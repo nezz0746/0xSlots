@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {Script, console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotsTestToken} from "./SlotsTestToken.sol";
-import {SlotMath} from "../../src/SlotMath.sol";
+import {SlotMath} from "../../src/libraries/SlotMath.sol";
 
 /**
  * @title SeedSlots
@@ -97,9 +99,9 @@ contract SeedSlots is Script {
         Slot f = _create(me, address(0), address(0), bytes32(0), 500, 1 days, true, true);
         uint256 depF = _minDeposit(0.02 ether, 500, 1 days);
         f.buy{value: depF}(me, 0.02 ether, depF, 0);
-        f.proposeTerms(750, address(0), bytes32(0), true, false);
+        f.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
 
-        // 7. Funded to the exact minimum. `minDepositSeconds` is 1 hour, so an
+        // 7. Funded to the exact minimum. `minRunwaySeconds` is 1 hour, so an
         //    hour of warp — or an hour of anvil — makes this liquidatable by
         //    anyone. This is the slot the liquidation UI is built against.
         Slot g = _create(me, address(0), address(0), bytes32(0), 2_000, 1 hours, true, true);
@@ -144,7 +146,7 @@ contract SeedSlots is Script {
         address hook,
         bytes32 hookData,
         uint256 tax,
-        uint256 minDepositSeconds,
+        uint256 minRunwaySeconds,
         bool mutableTax,
         bool mutableHook
     ) internal returns (Slot) {
@@ -155,17 +157,15 @@ contract SeedSlots is Script {
                 payable(
                     factory.createSlot(
                         SlotInit({
-                            recipient: recipient,
                             currency: IERC20(currency),
                             manager: (mutableTax || mutableHook)
                                 ? recipient
                                 : address(0),
-                            hook: hook,
-                            hookData: hookData,
-                            taxBps: tax,
-                            minDepositSeconds: minDepositSeconds,
                             mutableTax: mutableTax,
-                            mutableHook: mutableHook
+                            mutableRecipient: mutableTax || mutableHook,
+                            mutableHook: mutableHook,
+                            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(tax), minRunwaySeconds: uint32(minRunwaySeconds)}),
+                            hookTerms: HookTerms({target: hook, config: hookData})
                         })
                     )
                 )

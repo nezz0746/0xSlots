@@ -3,10 +3,11 @@ pragma solidity ^0.8.24;
 
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {Slot, SlotInit} from "./Slot.sol";
-import "./SlotErrors.sol";
-import {VersionedUUPS} from "./VersionedUUPS.sol";
-import {Versioned} from "./Versioned.sol";
+import {Slot} from "./Slot.sol";
+import {SlotInit} from "./types/SlotTypes.sol";
+import "./errors/SlotErrors.sol";
+import {VersionedUUPS} from "./utils/VersionedUUPS.sol";
+import {Versioned} from "./utils/Versioned.sol";
 
 /**
  * @title SlotFactory
@@ -25,7 +26,7 @@ contract SlotFactory is VersionedUUPS {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 4;
+        return 1;
     }
 
     /// @notice Which migration has run against THIS proxy's storage.
@@ -122,10 +123,10 @@ contract SlotFactory is VersionedUUPS {
         }
         emit SlotCreated(
             slot,
-            init.recipient,
+            init.taxTerms.recipient,
             msg.sender,
             address(init.currency),
-            init.hook
+            init.hookTerms.target
         );
     }
 
@@ -202,7 +203,7 @@ contract SlotFactory is VersionedUUPS {
      *      Capped by the deposit, which is not defensive rounding but the
      *      settlement rule: `taxOwed()` is the RAW debt and may exceed the
      *      escrow, in which case `_settle` takes the deposit and carries the
-     *      rest as arrears against the occupant rather than paying it out.
+     *      rest as debt against the occupant rather than paying it out.
      *      Adding the uncapped debt here would report money to a recipient that
      *      no transfer moved, on exactly the slots — insolvent ones — a
      *      collection run is most likely to be sweeping up.

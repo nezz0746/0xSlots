@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, PendingTerms} from "../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -11,10 +13,10 @@ import {SlotCollective} from "../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../src/collectives/SlotCollectiveFactory.sol";
 import {IManagedSlot} from "../src/collectives/SlotGovernance.sol";
 
-import {Slot, SlotInit} from "../src/Slot.sol";
+import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
 import {MinimumTenureHook} from "../src/hooks/MinimumTenureHook.sol";
-import {HookFlags} from "../src/ISlotHook.sol";
+import {HookPermissions} from "../src/interfaces/ISlotHook.sol";
 
 /**
  * @notice The collective driving a REAL hook-based slot, not a mock.
@@ -58,15 +60,11 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         // The collective is both the manager and where the tax goes.
         slot = Slot(payable(slotFactory.createSlot(SlotInit({
-            recipient: address(collective),
             currency: IERC20(address(0)),
             manager: address(collective),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 500,
-            minDepositSeconds: 1 days,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
         }))));
 
         hookA = address(new MinimumTenureHook());
@@ -105,7 +103,7 @@ contract CollectiveGovernsRealSlotTest is Test {
     }
 
     /// @dev Funded generously on purpose: once a tenure hook is attached its
-    ///      own window requirement exceeds the core's `minDepositSeconds`
+    ///      own window requirement exceeds the core's `minRunwaySeconds`
     ///      floor, and this helper is used on both sides of that change.
     function _seat(address who) internal {
         // Native slot, and funded generously on purpose: once a tenure hook is
@@ -123,7 +121,15 @@ contract CollectiveGovernsRealSlotTest is Test {
         view
         returns (uint256 tax, address hook, bool hasTax, bool hasHook)
     {
-        (tax, hook, hasTax, hasHook, , ) = slot.pending();
+        PendingTerms memory __p1 = slot.pendingTerms();
+        TaxTerms memory __r1 = __p1.taxTerms;
+        HookTerms memory __h1 = __p1.hookTerms;
+        uint8 __m1 = __p1.mask;
+        uint64 __at1 = __p1.proposedAt;
+        tax = __r1.rateBps;
+        hook = __h1.target;
+        hasTax = (__m1 & 1 != 0);
+        hasHook = (__m1 & 8 != 0);
     }
 
     /// @notice The tax manager's lever reaches a real slot.
@@ -134,32 +140,32 @@ contract CollectiveGovernsRealSlotTest is Test {
         (uint256 tax, , bool hasTax, ) = _pending();
         assertTrue(hasTax);
         assertEq(tax, 750);
-        assertEq(slot.taxBps(), 500, "deferred, not immediate");
+        assertEq(slot.taxRateBps(), 500, "deferred, not immediate");
 
         _ripen();
         _seat(buyer);
-        assertEq(slot.taxBps(), 750, "landed on the occupancy change");
+        assertEq(slot.taxRateBps(), 750, "landed on the occupancy change");
     }
 
     /// @notice The hook manager's lever reaches a real slot, and the real slot
     ///         validates the hook rather than trusting the relay.
     function test_TheHookRelayReachesARealSlotAndTheSlotValidates() public {
         vm.prank(hookMgr);
-        collective.proposeHook(IManagedSlot(address(slot)), hookA, bytes32(uint256(7 days)));
+        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: hookA, config: bytes32(uint256(7 days))}));
 
         _ripen();
         _seat(buyer);
         assertEq(slot.hook(), hookA);
 
         assertTrue(
-            slot.hookFlags().beforeBuy,
-            "flags were snapshotted from the real hook"
+            slot.hookPermissions().beforeBuy,
+            "flags were copied from the real hook"
         );
 
-        // A hook that cannot answer `subscriptions()` is refused at the slot, not here.
+        // A hook that cannot answer `hookOffer` is refused at the slot, not here.
         vm.prank(hookMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), address(warehouse), bytes32(0));
+        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: address(warehouse), config: bytes32(0)}));
     }
 
     /// @notice The assertion the whole port turns on, against real contracts:
@@ -169,7 +175,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(taxMgr);
         collective.proposeTax(IManagedSlot(address(slot)), 750);
         vm.prank(hookMgr);
-        collective.proposeHook(IManagedSlot(address(slot)), hookA, bytes32(uint256(7 days)));
+        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: hookA, config: bytes32(uint256(7 days))}));
 
         vm.prank(hookMgr);
         collective.cancelHookProposal(IManagedSlot(address(slot)));
@@ -182,7 +188,7 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         _ripen();
         _seat(buyer);
-        assertEq(slot.taxBps(), 750);
+        assertEq(slot.taxRateBps(), 750);
         assertEq(slot.hook(), address(0), "the cancelled hook did not land");
     }
 
@@ -194,7 +200,7 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), hookA, bytes32(uint256(7 days)));
+        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: hookA, config: bytes32(uint256(7 days))}));
 
         (, , bool hasTax, bool hasHook) = _pending();
         assertFalse(hasTax);
@@ -205,15 +211,11 @@ contract CollectiveGovernsRealSlotTest is Test {
     ///         refused on the far side — which is why no registry is kept.
     function test_ASlotThisCollectiveDoesNotManageRefusesIt() public {
         Slot other = Slot(payable(slotFactory.createSlot(SlotInit({
-            recipient: address(0xF00D),
             currency: IERC20(address(0)),
             manager: address(0xA11CE),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 500,
-            minDepositSeconds: 1 days,
-            mutableTax: true,
-            mutableHook: true
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
+            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
         }))));
 
         vm.prank(taxMgr);

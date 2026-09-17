@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInfo} from "../../SlotViews.sol";
+import {SlotInfo} from "../../slot/SlotViews.sol";
 import {AdLandStorage} from "./AdLandStorage.sol";
 import {AdView, Creative, ISlotAd} from "./IAdLand.sol";
 
@@ -40,7 +40,7 @@ abstract contract AdLandLens is AdLandStorage {
         // from two more reads.
         try ISlotAd(slot).getSlotInfo() returns (SlotInfo memory info) {
             v.info = info;
-            v.managed = info.hook == address(this);
+            v.managed = info.terms.hookTerms.target == address(this);
 
             Creative storage c = _creative[slot];
             if (

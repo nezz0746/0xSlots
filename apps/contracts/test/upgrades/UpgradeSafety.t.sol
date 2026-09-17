@@ -31,8 +31,8 @@ contract UpgradeSafetyTest is Test {
     function test_SlotImplementationIsLocked() public {
         Slot impl = new Slot();
         SlotInit memory init;
-        init.recipient = address(this);
-        init.taxBps = 500;
+        init.taxTerms.recipient = address(this);
+        init.taxTerms.rateBps = 500;
         vm.expectRevert();
         impl.initialize(init);
     }

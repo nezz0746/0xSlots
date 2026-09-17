@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInfo} from "../../SlotViews.sol";
+import {SlotInfo} from "../../slot/SlotViews.sol";
 
 /// @dev The slice of `Slot` this collection calls. Narrow on purpose: declaring
 ///      the whole surface would recompile it on every unrelated change.

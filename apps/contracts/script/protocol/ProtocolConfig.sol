@@ -41,11 +41,8 @@ abstract contract ProtocolConfig is Script {
      *
      *      Bumping this moves everything at once, so the retired deployment
      *      keeps working, untouched, at addresses nothing here can reach.
-     *
-     *      v2 — `Slot` gained `hookData` and a regrouped storage layout, which
-     *      no live proxy can be upgraded into.
      */
-    string internal constant NAMESPACE = "0xslots.v3";
+    string internal constant NAMESPACE = "0xslots.v1.2026-09";
 
     struct ChainConfig {
         string name;
@@ -181,6 +178,10 @@ abstract contract ProtocolConfig is Script {
             return;
         }
 
+        vm.createDir(
+            string.concat(vm.projectRoot(), "/deployments/", vm.toString(block.chainid)),
+            true
+        );
         vm.writeFile(path, json);
     }
 

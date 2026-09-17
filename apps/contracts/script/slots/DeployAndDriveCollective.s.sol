@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
+
 import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -12,7 +14,7 @@ import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 import {IManagedSlot} from "../../src/collectives/SlotGovernance.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 
 /**
@@ -84,9 +86,9 @@ contract DeployAndDriveCollective is Script {
     address constant PAYEE_B = 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc;
 
     uint256 constant PRICE = 0.1 ether;
-    uint256 constant TAX_AT_BIRTH = 500;
-    uint256 constant TAX_PROPOSED = 750;
-    uint256 constant TAX_PROPOSED_AGAIN = 900;
+    uint16 constant TAX_AT_BIRTH = 500;
+    uint16 constant TAX_PROPOSED = 750;
+    uint16 constant TAX_PROPOSED_AGAIN = 900;
 
     address admin = vm.addr(PK_ADMIN);
     address taxMgr = vm.addr(PK_TAX_MGR);
@@ -100,7 +102,7 @@ contract DeployAndDriveCollective is Script {
     /**
      * @param slotFactoryAddr The already-deployed `SlotFactory` — printed by
      *        `DeployProtocol`, and in `deployments/31337/SlotFactory.json`.
-     * @param hookAddr A hook that answers `subscriptions()`. The slot validates it at
+     * @param hookAddr A hook that answers `hookOffer`. The slot validates it at
      *        propose time, so a contract that cannot answer is refused there
      *        rather than here.
      */
@@ -137,15 +139,13 @@ contract DeployAndDriveCollective is Script {
             payable(
                 SlotFactory(slotFactoryAddr).createSlot(
                     SlotInit({
-                        recipient: address(collective),
                         currency: IERC20(address(0)),
                         manager: address(collective),
-                        hook: address(0),
-                        hookData: bytes32(0),
-                        taxBps: TAX_AT_BIRTH,
-                        minDepositSeconds: 1 days,
                         mutableTax: true,
-                        mutableHook: true
+                        mutableRecipient: true,
+                        mutableHook: true,
+                        taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(TAX_AT_BIRTH), minRunwaySeconds: uint32(1 days)}),
+                        hookTerms: HookTerms({target: address(0), config: bytes32(0)})
                     })
                 )
             )
@@ -160,8 +160,7 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_HOOK_MGR);
         collective.proposeHook(
             IManagedSlot(address(slot)),
-            hookAddr,
-            bytes32(uint256(7 days))
+            HookTerms({target: hookAddr, config: bytes32(uint256(7 days))})
         );
 
         vm.broadcast(PK_HOOK_MGR);
@@ -170,10 +169,12 @@ contract DeployAndDriveCollective is Script {
         // The assertion the port turns on, checked against the live chain
         // rather than against a fixture. If this trips, nothing downstream is
         // worth indexing.
-        (uint256 pendingTax, , bool hasTax, bool hasHook, , ) = slot.pending();
-        require(hasTax, "the tax manager's proposal did not survive");
-        require(pendingTax == TAX_PROPOSED, "wrong tax survived");
-        require(!hasHook, "the hook proposal was not cancelled");
+        PendingTerms memory __p1 = slot.pendingTerms();
+        TaxTerms memory pendingTaxTerms = __p1.taxTerms;
+        uint8 mask = __p1.mask;
+        require(mask & slot.TERM_TAX_RATE() != 0, "the tax manager's proposal did not survive");
+        require(pendingTaxTerms.rateBps == TAX_PROPOSED, "wrong tax survived");
+        require(mask & slot.TERM_HOOK() == 0, "the hook proposal was not cancelled");
 
         // ── 7. a real buy, so the surviving proposal lands ──────────────────
         // Both reads are hoisted above the broadcast on purpose: forge refuses a
@@ -184,7 +185,7 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_BUYER);
         slot.buy{value: cost}(buyer, PRICE, need, 0);
         require(
-            slot.taxBps() == TAX_PROPOSED,
+            slot.taxRateBps() == TAX_PROPOSED,
             "TermsApplied did not land the surviving tax"
         );
 
@@ -195,8 +196,9 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_ADMIN);
         collective.cancelAllProposals(IManagedSlot(address(slot)));
 
-        (, , bool leftTax, bool leftHook, , ) = slot.pending();
-        require(!leftTax && !leftHook, "cancelAllProposals left something");
+        PendingTerms memory __p2 = slot.pendingTerms();
+        uint8 left = __p2.mask;
+        require(left == 0, "cancelAllProposals left something");
 
         // ── 10. shrink the split ───────────────────────────────────────────
         //

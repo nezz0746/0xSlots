@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInfo} from "../../src/SlotViews.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
+import {SlotInfo} from "../../src/slot/SlotViews.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
 
 contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,uint256 a) external {_mint(t,a);} }
 
@@ -17,7 +20,7 @@ contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,ui
 abstract contract Modal is ISlotHook {
     bool internal immutable _strict;
     constructor(bool strict_) { _strict = strict_; }
-    function validateHookData(bytes32) external pure {}
+    function validateHookConfig(bytes32) external pure {}
     function beforeBuy(SlotContext calldata) external view virtual {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterSettle(SlotContext calldata) external {}
@@ -27,9 +30,11 @@ abstract contract Modal is ISlotHook {
 contract FailingAfter is Modal {
     error Nope();
     constructor(bool s) Modal(s) {}
-    function subscriptions() external view returns (HookFlags memory f) {
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true; f.afterRelease = true; f.afterLiquidate = true;
         f.strict = _strict;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function afterBuy(SlotContext calldata) external pure { revert Nope(); }
     function afterRelease(SlotContext calldata) external pure { revert Nope(); }
@@ -40,8 +45,10 @@ contract FailingAfter is Modal {
 contract BlocksEviction is Modal {
     error Stuck();
     constructor(bool s) Modal(s) {}
-    function subscriptions() external view returns (HookFlags memory f) {
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true; f.afterLiquidate = true; f.strict = _strict;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function afterBuy(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
@@ -53,8 +60,10 @@ contract HungryAfter is Modal {
     mapping(uint256 => uint256) public junk;
     uint256 public runs;
     constructor(bool s) Modal(s) {}
-    function subscriptions() external view returns (HookFlags memory f) {
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true; f.strict = _strict;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function afterBuy(SlotContext calldata) external {
         for (uint256 i; i < 40; ++i) junk[runs * 1000 + i] = i + 1;
@@ -78,10 +87,11 @@ contract StrictHooksTest is Test {
 
     function _slot(address hook) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(this), currency: IERC20(address(token)),
-            manager: address(0), hook: hook, hookData: bytes32(0),
-            taxBps: 1000, minDepositSeconds: 0,
-            mutableTax: false, mutableHook: false
+            currency: IERC20(address(token)),
+            manager: address(0),
+            mutableTax: false, mutableRecipient: false, mutableHook: false,
+            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(1000), minRunwaySeconds: uint32(0)}),
+            hookTerms: HookTerms({target: hook, config: bytes32(0)})
         }))));
     }
 
@@ -125,7 +135,7 @@ contract StrictHooksTest is Test {
     /// @dev The whole cost of the flag. Rule 1 holds for every hook that did
     ///      not ask for this; a slot attaching one that did is only as evictable
     ///      as that hook. Snapshotted at attach and readable from
-    ///      `SlotInfo.hookFlags`, so it is a fact about the slot, not a
+    ///      `SlotInfo.hookPermissions`, so it is a fact about the slot, not a
     ///      surprise inside it.
     function test_AStrictHookCanBlockItsSlotsEviction() public {
         Slot s = _slot(address(new BlocksEviction(true)));
@@ -156,23 +166,23 @@ contract StrictHooksTest is Test {
     function test_TheFlagIsSnapshottedAndPublished() public {
         Slot s = _slot(address(new FailingAfter(true)));
         SlotInfo memory i = s.getSlotInfo();
-        assertTrue(i.hookFlags.strict, "a buyer can read it before committing");
-        assertTrue(i.hookFlags.afterBuy, "and the callbacks alongside it");
+        assertTrue(i.hookPermissions.strict, "a buyer can read it before committing");
+        assertTrue(i.hookPermissions.afterBuy, "and the callbacks alongside it");
 
         SlotInfo memory j = _slot(address(new FailingAfter(false))).getSlotInfo();
-        assertFalse(j.hookFlags.strict, "default is off");
+        assertFalse(j.hookPermissions.strict, "default is off");
     }
 
     /// @notice A hook that flips its answer later cannot change a live slot.
-    /// @dev `strict` is one more bit in the snapshotted byte, so it obeys the
+    /// @dev `strict` is one more bit in the accepted byte, so it obeys the
     ///      same rule as every other: the slot honours what it read at attach.
     function test_TheSnapshotBeatsALaterChangeOfMind() public {
         Flipper h = new Flipper();
         Slot s = _slot(address(h));
-        assertFalse(s.getSlotInfo().hookFlags.strict, "attached lenient");
+        assertFalse(s.getSlotInfo().hookPermissions.strict, "attached lenient");
 
         h.flip();
-        assertTrue(h.subscriptions().strict, "the hook now claims strict");
+        assertTrue(HookPermissionsLib.unpack(h.hookOffer(0).permissions).strict, "the hook now claims strict");
 
         // Still swallowed: the slot obeys its snapshot, not the live answer.
         _buy(s, alice, 1 ether, 1 ether);
@@ -185,9 +195,11 @@ contract Flipper is ISlotHook {
     error Nope();
     bool public flipped;
     function flip() external { flipped = true; }
-    function validateHookData(bytes32) external pure {}
-    function subscriptions() external view returns (HookFlags memory f) {
+    function validateHookConfig(bytes32) external pure {}
+    function hookOffer(bytes32) external view returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true; f.strict = flipped;
+        o.permissions = HookPermissionsLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}

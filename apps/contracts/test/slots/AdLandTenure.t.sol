@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
-import {HookBounds, HookDescriptor} from "../../src/IDescribedHook.sol";
+import {HookBounds, HookDescriptor} from "../../src/interfaces/IDescribedHook.sol";
 import {MinimumTenure} from "../../src/hooks/MinimumTenure.sol";
+import {SlotContext} from "../../src/interfaces/ISlotHook.sol";
 
 /**
  * AdLand enforcing a minimum tenure, on the one hook a slot is allowed.
@@ -63,15 +66,11 @@ contract AdLandTenureTest is Test {
                 payable(
                     factory.createSlot(
                         SlotInit({
-                            recipient: address(this),
                             currency: IERC20(address(0)),
                             manager: address(this),
-                            hook: address(adland),
-                            hookData: hookData,
-                            taxBps: 500,
-                            minDepositSeconds: 7 days,
-                            mutableTax: true,
-                            mutableHook: true
+                            mutableTax: true, mutableRecipient: true, mutableHook: true,
+                            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+                            hookTerms: HookTerms({target: address(adland), config: hookData})
                         })
                     )
                 )
@@ -81,7 +80,7 @@ contract AdLandTenureTest is Test {
     /// @dev Funds the whole window, so the tenure rule's own funding check
     ///      cannot be what refuses a buy under test.
     function _take(Slot s, address who, uint256 price) internal {
-        uint256 dep = adland.requiredDeposit(price, s.taxBps(), WINDOW);
+        uint256 dep = adland.requiredDeposit(price, s.taxRateBps(), WINDOW);
         uint256 floor = s.minDepositForBuy(price);
         if (floor > dep) dep = floor;
         uint256 owed = s.quoteBuy(who, dep);
@@ -97,7 +96,7 @@ contract AdLandTenureTest is Test {
         _take(s, alice, 1 ether);
 
         vm.warp(block.timestamp + 1 days);
-        uint256 dep = adland.requiredDeposit(2 ether, s.taxBps(), WINDOW);
+        uint256 dep = adland.requiredDeposit(2 ether, s.taxRateBps(), WINDOW);
         uint256 owed = s.quoteBuy(bob, dep);
 
         // Double the price is not enough; the rule asks ten times.
@@ -164,6 +163,52 @@ contract AdLandTenureTest is Test {
         );
     }
 
+    /// @notice Whoever leaves cannot buy the vacant slot straight back and
+    ///         restart their window, which would make the protection permanent.
+    function test_AnAdvertiserWhoLeavesCannotBuyStraightBackIn() public {
+        Slot s = _slot(bytes32(WINDOW));
+        _take(s, alice, 1 ether);
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(alice);
+        s.release();
+        uint256 allowedAt = adland.reentryAllowedAt(address(s), alice);
+        assertEq(allowedAt, block.timestamp + WINDOW, "the bar was recorded");
+
+        uint256 dep = s.minDepositForBuy(1);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(MinimumTenure.TenureNotElapsed.selector, allowedAt));
+        s.buy{value: dep}(alice, 1, dep, type(uint256).max);
+
+        // Anyone else may take it, and alice may come back once barred time is up.
+        vm.warp(allowedAt);
+        _take(s, alice, 1 ether);
+        assertEq(s.occupant(), alice);
+    }
+
+    /// @notice Liquidation bars the evicted advertiser the same way.
+    function test_ALiquidatedAdvertiserIsBarredToo() public {
+        Slot s = _slot(bytes32(WINDOW));
+        _take(s, alice, 1 ether);
+
+        vm.warp(block.timestamp + 3650 days);
+        s.liquidate();
+        assertEq(adland.reentryAllowedAt(address(s), alice), block.timestamp + WINDOW);
+    }
+
+    /// @notice A forged context cannot write a bar through AdLand either.
+    function test_NobodyButTheSlotCanBarOnAdLand() public {
+        Slot s = _slot(bytes32(WINDOW));
+        SlotContext memory forged;
+        forged.slot = address(s);
+        forged.account = bob;
+        forged.hookTerms = HookTerms({target: address(adland), config: bytes32(WINDOW)});
+
+        vm.expectRevert(MinimumTenure.NotTheSlot.selector);
+        adland.afterRelease(forged);
+        assertEq(adland.reentryAllowedAt(address(s), bob), 0);
+    }
+
     // ── without one ─────────────────────────────────────────────────────────
 
     /// @notice Zero data is no window, which is every AdLand slot already on
@@ -181,6 +226,13 @@ contract AdLandTenureTest is Test {
         vm.prank(bob);
         s.selfAssess(0.5 ether);
         assertEq(s.price(), 0.5 ether);
+
+        // Nor is leaving and coming back.
+        vm.prank(bob);
+        s.release();
+        assertEq(adland.reentryAllowedAt(address(s), bob), 0, "no window, no bar");
+        _take(s, bob, 1 ether);
+        assertEq(s.occupant(), bob);
     }
 
     /// @notice A window is optional, but a malformed one is still refused.
@@ -263,7 +315,7 @@ contract AdLandTenureTest is Test {
         );
 
         // The top of the published range is accepted.
-        adland.validateHookData(bytes32(b[0].max));
+        adland.validateHookConfig(bytes32(b[0].max));
 
         // One past it is not, and the revert names the same number.
         vm.expectRevert(
@@ -272,7 +324,7 @@ contract AdLandTenureTest is Test {
                 b[0].max
             )
         );
-        adland.validateHookData(bytes32(b[0].max + 1));
+        adland.validateHookConfig(bytes32(b[0].max + 1));
     }
 
     /// @notice Both hosts publish the same schema, byte for byte.

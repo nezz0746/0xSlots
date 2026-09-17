@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {SlotFactory} from "../../SlotFactory.sol";
-import {VersionedUUPS} from "../../VersionedUUPS.sol";
-import {Versioned} from "../../Versioned.sol";
-import {InvalidRecipient} from "../../SlotErrors.sol";
+import {VersionedUUPS} from "../../utils/VersionedUUPS.sol";
+import {Versioned} from "../../utils/Versioned.sol";
+import {InvalidRecipient} from "../../errors/SlotErrors.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {SlotBoundNFT} from "./SlotBoundNFT.sol";
@@ -18,8 +18,8 @@ struct CollectionInit {
     string symbol;
     uint256 maxSupply;
     IERC20 currency;
-    uint256 taxBps;
-    uint256 minDepositSeconds;
+    uint16 taxRateBps;
+    uint32 minRunwaySeconds;
     address recipient;
     /// May change the rent, on the slots directly. Zero fixes it forever.
     address manager;
@@ -61,7 +61,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
 
     /// @inheritdoc Versioned
     function version() public pure virtual override returns (uint64) {
-        return 3;
+        return 1;
     }
 
     /// @notice The slot factory every collection creates its slots through.
@@ -89,14 +89,18 @@ contract SlotBoundNFTFactory is VersionedUUPS {
         _;
     }
 
-    function initialize(address admin_, SlotFactory slotFactory_)
-        external
-        initializer
-    {
+    function initialize(
+        address admin_,
+        SlotFactory slotFactory_,
+        address wrapperImplementation
+    ) external initializer {
         if (admin_ == address(0)) revert InvalidRecipient();
         if (address(slotFactory_) == address(0)) revert InvalidRecipient();
+        if (wrapperImplementation == address(0)) revert InvalidRecipient();
         admin = admin_;
         slotFactory = slotFactory_;
+        // The factory owns the beacon, so `upgradeWrapperBeacon` can reach it.
+        wrapperBeacon = new UpgradeableBeacon(wrapperImplementation, address(this));
         emit AdminTransferred(address(0), admin_);
     }
 
@@ -129,8 +133,8 @@ contract SlotBoundNFTFactory is VersionedUUPS {
                 init.symbol,
                 init.maxSupply,
                 init.currency,
-                init.taxBps,
-                init.minDepositSeconds,
+                init.taxRateBps,
+                init.minRunwaySeconds,
                 init.recipient,
                 init.manager,
                 init.owner
@@ -176,22 +180,6 @@ contract SlotBoundNFTFactory is VersionedUUPS {
         uint256 wrapFeeWei
     );
     event WrapperBeaconUpgraded(address indexed newImplementation);
-
-    /// @notice Stand up the wrapper beacon on an already-deployed factory.
-    ///
-    /// @dev Cannot live in `initialize`, which already ran on the live proxy.
-    ///      `onlyAdmin` is load-bearing: a `reinitializer` on an external
-    ///      function is otherwise callable by anyone, and the caller would be
-    ///      choosing the implementation behind every wrapper.
-    function initializeWrappers(
-        address wrapperImplementation
-    ) external reinitializer(2) onlyAdmin {
-        if (wrapperImplementation == address(0)) revert InvalidRecipient();
-        wrapperBeacon = new UpgradeableBeacon(
-            wrapperImplementation,
-            address(this)
-        );
-    }
 
     /// @notice Deploy a wrapper. Anyone may; it has no privileged party.
     function createWrapper(

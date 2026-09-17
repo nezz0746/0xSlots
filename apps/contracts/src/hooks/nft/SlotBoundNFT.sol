@@ -8,11 +8,12 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import {ISlotHook, HookFlags, SlotContext} from "../../ISlotHook.sol";
+import {ISlotHook, HookPermissions, SlotContext} from "../../interfaces/ISlotHook.sol";
+import {HookPermissionsLib} from "../../libraries/HookPermissionsLib.sol";
 import {SlotFactory} from "../../SlotFactory.sol";
-import {SlotInit} from "../../Slot.sol";
-import {SlotInfo} from "../../SlotViews.sol";
-import {SlotMath} from "../../SlotMath.sol";
+import {SlotInit, TaxTerms, HookTerms, HookOffer} from "../../types/SlotTypes.sol";
+import {SlotInfo} from "../../slot/SlotViews.sol";
+import {SlotMath} from "../../libraries/SlotMath.sol";
 import {ISlotBoundNFT, ISlotOccupancy} from "./ISlotBoundNFT.sol";
 
 /**
@@ -61,8 +62,8 @@ contract SlotBoundNFT is
         string memory symbol_,
         uint256 maxSupply_,
         IERC20 currency_,
-        uint256 taxBps_,
-        uint256 minDepositSeconds_,
+        uint16 taxRateBps_,
+        uint32 minRunwaySeconds_,
         address recipient_,
         address manager_,
         address owner
@@ -71,18 +72,21 @@ contract SlotBoundNFT is
         MAX_SUPPLY = maxSupply_;
 
         _terms = SlotInit({
-            recipient: recipient_,
             currency: currency_,
             manager: manager_,
-            hook: address(this),
-            hookData: bytes32(0),
-            taxBps: taxBps_,
-            minDepositSeconds: minDepositSeconds_,
             mutableTax: manager_ != address(0),
-            mutableHook: false
+            mutableRecipient: false,
+            // A detachable hook strands the token.
+            mutableHook: false,
+            taxTerms: TaxTerms({
+                recipient: recipient_,
+                rateBps: taxRateBps_,
+                minRunwaySeconds: minRunwaySeconds_
+            }),
+            hookTerms: HookTerms({target: address(this), config: bytes32(0)})
         });
 
-        if (minDepositSeconds_ == 0) revert TermsCannotBeMinted();
+        if (minRunwaySeconds_ == 0) revert TermsCannotBeMinted();
         if (maxSupply_ == 0) revert NoSupply();
     }
 
@@ -120,7 +124,7 @@ contract SlotBoundNFT is
         // Asked of the slot, not computed here — it enforces the floor.
         uint256 deposit = ISlotOccupancy(slot).minDepositForBuy(valuation);
         uint256 total = deposit + valuation;
-        address to = _terms.recipient;
+        address to = _terms.taxTerms.recipient;
 
         if (address(_terms.currency) == address(0)) {
             if (msg.value != total) revert WrongValue(total);
@@ -159,8 +163,8 @@ contract SlotBoundNFT is
     ) external view returns (uint256 total, uint256 price, uint256 deposit) {
         deposit = SlotMath.depositFor(
             valuation,
-            _terms.taxBps,
-            _terms.minDepositSeconds
+            _terms.taxTerms.rateBps,
+            _terms.taxTerms.minRunwaySeconds
         );
         return (valuation + deposit, valuation, deposit);
     }
@@ -188,14 +192,17 @@ contract SlotBoundNFT is
         return _uri;
     }
 
-    function subscriptions() external pure returns (HookFlags memory f) {
+    function hookOffer(bytes32) external pure returns (HookOffer memory o) {
+        HookPermissions memory f;
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.strict = true; // why this contract can hold real ownership state
+        o.permissions = HookPermissionsLib.pack(f);
     }
 
-    function validateHookData(bytes32) external view {}
+    function validateHookConfig(bytes32) external view {}
+
 
     function beforeBuy(SlotContext calldata) external view {}
 

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test, Vm} from "forge-std/Test.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 
@@ -65,15 +67,11 @@ contract AdLandEventsTest is Test {
                 payable(
                     factory.createSlot(
                         SlotInit({
-                            recipient: address(this),
                             currency: IERC20(address(0)),
                             manager: address(this),
-                            hook: address(adland),
-                            hookData: bytes32(0),
-                            taxBps: 500,
-                            minDepositSeconds: 1 days,
-                            mutableTax: true,
-                            mutableHook: true
+                            mutableTax: true, mutableRecipient: true, mutableHook: true,
+                            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
+                            hookTerms: HookTerms({target: address(adland), config: bytes32(0)})
                         })
                     )
                 )

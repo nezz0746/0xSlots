@@ -8,6 +8,7 @@ import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
 import {AdLandCreate} from "../../src/hooks/adland/AdLandCreate.sol";
+import {ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
 
 contract AdLandCreateTest is Test {
     SlotFactory factory;
@@ -29,31 +30,65 @@ contract AdLandCreateTest is Test {
         adland.setSlotFactory(address(factory));
     }
 
+    function _p(address who, uint256 window, bytes32 key) internal pure returns (AdLandCreate.AdSlotParams memory) {
+        return AdLandCreate.AdSlotParams({
+            owner: who,
+            currency: IERC20(address(0)),
+            taxRateBps: 500,
+            minRunwaySeconds: 1 days,
+            tenureWindow: window,
+            moderation: ModerationMode.Open,
+            key: key
+        });
+    }
+
     /// @notice The slot it makes runs AdLand and can never stop.
     function test_CreatesAnAdSlotThatCannotLeave() public {
         vm.prank(pub);
-        address s = adland.createAdSlot(pub, IERC20(address(0)), 500, 1 days, 7 days, pub, bytes32(0));
+        address s = adland.createAdSlot(_p(pub, 7 days, bytes32(0)));
 
         assertEq(Slot(payable(s)).hook(), address(adland), "runs this hook");
-        assertEq(uint256(Slot(payable(s)).hookData()), 7 days, "seconds, encoded for them");
+        assertEq(uint256(Slot(payable(s)).hookTerms().config), 7 days, "seconds, encoded for them");
         assertFalse(Slot(payable(s)).mutableHook(), "and can never point elsewhere");
         assertTrue(Slot(payable(s)).mutableTax(), "rent stays adjustable");
     }
 
-    /// @notice No manager means terms fixed at birth, which the core demands.
-    function test_NoManagerMeansImmutable() public {
-        vm.prank(pub);
-        address s = adland.createAdSlot(pub, IERC20(address(0)), 500, 1 days, 0, address(0), bytes32(0));
-        assertFalse(Slot(payable(s)).mutableTax());
-        assertEq(Slot(payable(s)).manager(), address(0));
-        assertEq(uint256(Slot(payable(s)).hookData()), 0, "zero window is allowed here");
+    /// @notice The owner manages the slot and receives its rent.
+    function test_OwnerIsManagerAndRecipient() public {
+        vm.prank(alice);
+        address s = adland.createAdSlot(_p(pub, 0, bytes32(0)));
+        assertEq(Slot(payable(s)).manager(), pub);
+        assertEq(Slot(payable(s)).recipient(), pub);
+        assertEq(uint256(Slot(payable(s)).hookTerms().config), 0, "zero window is allowed here");
+    }
+
+    /// @notice The mode is in force before the first buyer can arrive.
+    function test_ModerationModeAppliesFromTheFirstOccupant() public {
+        AdLandCreate.AdSlotParams memory p = _p(pub, 0, bytes32(0));
+        p.moderation = ModerationMode.Every;
+        address s = adland.createAdSlot(p);
+
+        (ModerationMode current, ModerationMode next,) = adland.moderationOf(s);
+        assertEq(uint8(current), uint8(ModerationMode.Every));
+        assertEq(uint8(next), uint8(ModerationMode.Every));
+    }
+
+    function test_DefaultModerationIsOpen() public {
+        address s = adland.createAdSlot(_p(pub, 0, bytes32(0)));
+        (ModerationMode current,,) = adland.moderationOf(s);
+        assertEq(uint8(current), uint8(ModerationMode.Open));
+    }
+
+    function test_ZeroOwnerIsRefused() public {
+        vm.expectRevert();
+        adland.createAdSlot(_p(address(0), 0, bytes32(0)));
     }
 
     /// @notice A window the hook refuses takes the creation down with it.
     function test_AnImpossibleWindowRevertsAtCreation() public {
         vm.prank(pub);
         vm.expectRevert();
-        adland.createAdSlot(pub, IERC20(address(0)), 500, 1 days, 400 days, pub, bytes32(0));
+        adland.createAdSlot(_p(pub, 400 days, bytes32(0)));
     }
 
     /// @notice An unset factory says so rather than deploying nothing.
@@ -61,7 +96,7 @@ contract AdLandCreateTest is Test {
         AdLand fresh =
             AdLand(address(new ERC1967Proxy(address(new AdLand()), abi.encodeCall(AdLand.initialize, (owner)))));
         vm.expectRevert(AdLandCreate.NoFactory.selector);
-        fresh.createAdSlot(pub, IERC20(address(0)), 500, 1 days, 0, address(0), bytes32(0));
+        fresh.createAdSlot(_p(pub, 0, bytes32(0)));
     }
 
     // ─── claiming a key at creation ─────────────────────────────────────────
@@ -69,7 +104,7 @@ contract AdLandCreateTest is Test {
     /// @notice Alice takes a free name in the same transaction as her space.
     function test_AliceClaimsAFreeKeyWhenSheCreates() public {
         vm.prank(alice);
-        address s = adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        address s = adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         assertEq(adland.slotOf("ethereum"), s, "resolves immediately");
         assertEq(adland.keyOwner("ethereum"), alice, "and she owns the name");
@@ -78,7 +113,7 @@ contract AdLandCreateTest is Test {
     /// @notice A virgin key writes straight through — no pending, no delay.
     function test_AFreshKeyDoesNotWait() public {
         vm.prank(alice);
-        adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         (address pendingSlot, uint64 readyAt) = adland.pendingOf("ethereum");
         assertEq(pendingSlot, address(0), "nothing queued");
@@ -88,7 +123,7 @@ contract AdLandCreateTest is Test {
     /// @notice Passing no key creates a slot and touches the registry not at all.
     function test_CreatingWithoutAKeyClaimsNothing() public {
         vm.prank(alice);
-        address s = adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, bytes32(0));
+        address s = adland.createAdSlot(_p(alice, 0, bytes32(0)));
 
         assertEq(Slot(payable(s)).hook(), address(adland), "still a real slot");
         assertEq(adland.keyOwner(bytes32(0)), address(0), "no name taken");
@@ -100,13 +135,13 @@ contract AdLandCreateTest is Test {
     ///      believes is named and is not.
     function test_BobCannotTakeAliceKeyAndGetsNoSlot() public {
         vm.prank(alice);
-        adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         uint256 before = vm.getNonce(address(adland));
 
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSignature("KeyTaken(bytes32)", bytes32("ethereum")));
-        adland.createAdSlot(bob, IERC20(address(0)), 500, 1 days, 0, bob, "ethereum");
+        adland.createAdSlot(_p(bob, 0, "ethereum"));
 
         assertEq(adland.slotOf("ethereum"), adland.slotOf("ethereum"), "unchanged");
         assertEq(adland.keyOwner("ethereum"), alice, "still hers");
@@ -118,10 +153,10 @@ contract AdLandCreateTest is Test {
     /// @notice Alice may move her own name, through the ordinary delay.
     function test_AliceRepointsHerOwnKeyAfterTheDelay() public {
         vm.prank(alice);
-        adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         vm.prank(alice);
-        address second = adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, bytes32(0));
+        address second = adland.createAdSlot(_p(alice, 0, bytes32(0)));
 
         vm.prank(alice);
         adland.setSlot("ethereum", second);
@@ -135,7 +170,7 @@ contract AdLandCreateTest is Test {
     /// @notice Bob may not move a name he does not hold.
     function test_BobCannotRepointAliceKey() public {
         vm.prank(alice);
-        address s = adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        address s = adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         vm.prank(bob);
         vm.expectRevert();
@@ -147,7 +182,7 @@ contract AdLandCreateTest is Test {
     /// @notice Owning a key is not owning the contract.
     function test_HoldingAKeyGrantsNothingElse() public {
         vm.prank(alice);
-        adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         vm.prank(alice);
         vm.expectRevert();
@@ -159,10 +194,10 @@ contract AdLandCreateTest is Test {
     /// @notice The contract owner can take a squatted name back.
     function test_OwnerCanDesquatAKeyAliceHolds() public {
         vm.prank(alice);
-        adland.createAdSlot(alice, IERC20(address(0)), 500, 1 days, 0, alice, "ethereum");
+        adland.createAdSlot(_p(alice, 0, "ethereum"));
 
         vm.prank(owner);
-        address proper = adland.createAdSlot(owner, IERC20(address(0)), 500, 1 days, 0, owner, bytes32(0));
+        address proper = adland.createAdSlot(_p(owner, 0, bytes32(0)));
 
         vm.prank(owner);
         adland.setSlot("ethereum", proper);
@@ -176,7 +211,7 @@ contract AdLandCreateTest is Test {
     /// @notice Nobody may claim `primary` by creating, because it is already set.
     function test_PrimaryCannotBeClaimedOnceSet() public {
         vm.prank(owner);
-        address mine = adland.createAdSlot(owner, IERC20(address(0)), 500, 1 days, 0, owner, bytes32(0));
+        address mine = adland.createAdSlot(_p(owner, 0, bytes32(0)));
         // Hoisted: `PRIMARY()` is itself an external call, and `vm.prank`
         // applies to the next one — reading it inline consumes the prank and
         // `setSlot` then runs as the test contract.
@@ -186,21 +221,13 @@ contract AdLandCreateTest is Test {
 
         vm.prank(bob);
         vm.expectRevert();
-        adland.createAdSlot(bob, IERC20(address(0)), 500, 1 days, 0, bob, "primary");
+        adland.createAdSlot(_p(bob, 0, "primary"));
     }
 
     // ── batching ────────────────────────────────────────────────────────────
 
     function _params(bytes32 key) internal view returns (AdLandCreate.AdSlotParams memory) {
-        return AdLandCreate.AdSlotParams({
-            recipient: pub,
-            currency: IERC20(address(0)),
-            taxBps: 500,
-            minDepositSeconds: 1 days,
-            tenureWindow: 7 days,
-            manager: pub,
-            key: key
-        });
+        return _p(pub, 7 days, key);
     }
 
     /// @notice Many spaces from one call, distinct and in the order asked for.
@@ -269,10 +296,8 @@ contract AdLandCreateTest is Test {
     ///      `delegatecall` keeps the caller, so `keyOwner` records the person.
     function test_MulticallKeepsTheCallerAsSender() public {
         bytes[] memory calls = new bytes[](2);
-        calls[0] =
-            abi.encodeCall(AdLandCreate.createAdSlot, (pub, IERC20(address(0)), 500, 1 days, 7 days, pub, "mine"));
-        calls[1] =
-            abi.encodeCall(AdLandCreate.createAdSlot, (pub, IERC20(address(0)), 500, 1 days, 7 days, pub, bytes32(0)));
+        calls[0] = abi.encodeCall(AdLandCreate.createAdSlot, (_p(pub, 7 days, "mine")));
+        calls[1] = abi.encodeCall(AdLandCreate.createAdSlot, (_p(pub, 7 days, bytes32(0))));
 
         vm.prank(alice);
         bytes[] memory out = adland.multicall(calls);

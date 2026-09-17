@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Versioned} from "../../Versioned.sol";
+import {Versioned} from "../../utils/Versioned.sol";
 
 /**
  * @title OfferBookStorage

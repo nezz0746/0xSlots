@@ -18,13 +18,13 @@ import {SlotsTest} from "./Slots.t.sol";
 contract SettlementClockTest is SlotsTest {
     /// @dev A native slot whose per-second tax is deliberately fractional.
     function _fractional(
-        uint256 taxBps,
+        uint256 taxRateBps,
         uint256 window
     ) internal returns (Slot s) {
         SlotInit memory init = _init(address(0), 0);
         init.currency = IERC20(address(0));
-        init.taxBps = taxBps;
-        init.minDepositSeconds = window;
+        init.taxTerms.rateBps = uint16(taxRateBps);
+        init.taxTerms.minRunwaySeconds = uint32(window);
         return Slot(payable(factory.createSlot(init)));
     }
 
