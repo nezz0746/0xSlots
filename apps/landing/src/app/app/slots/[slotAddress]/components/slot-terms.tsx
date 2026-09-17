@@ -13,6 +13,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { formatBps } from "@/utils";
+import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
+import { HookConfig } from "@/app/app/create/components/hook-config";
+import { HookPermissionRow } from "@/components/hook-permissions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useChain } from "@/context/chain";
+import { useHookCheck } from "@/hooks/use-hook-check";
+import { useHookSchema } from "@/hooks/use-hook-schema";
 import { describePermissions } from "@/lib/hook-permissions";
 import { NumberField, Panel } from "./panel";
 import { QueuedTermsControls } from "./pending-updates";
@@ -37,6 +50,7 @@ export function ManageTermsPanel({
   const [runway, setRunway] = useState("");
   const [hook, setHook] = useState("");
   const [hookData, setHookData] = useState("");
+  const [hookConfigOk, setHookConfigOk] = useState(true);
   const [changeTax, setChangeTax] = useState(false);
   const [changeRecipient, setChangeRecipient] = useState(false);
   const [changeRunway, setChangeRunway] = useState(false);
@@ -57,7 +71,7 @@ export function ManageTermsPanel({
       runwaySeconds >= 0 &&
       runwaySeconds <= 0xffffffff);
 
-  // A blank hook field means DETACH, which is a real intention.
+  // A blank hook means DETACH, which is a real intention.
   const hookTrimmed = hook.trim();
   const hookAddress = (
     hookTrimmed === "" ? zeroAddress : hookTrimmed
@@ -65,7 +79,8 @@ export function ManageTermsPanel({
   const data = (hookData.trim() || ZERO_HOOK_DATA) as Hex;
   const hookValid =
     !changeHook ||
-    (isAddress(hookAddress) && isHex(data) && data.length === 66);
+    hookAddress === zeroAddress ||
+    (isAddress(hookAddress) && isHex(data) && data.length === 66 && hookConfigOk);
 
   const ready =
     (changeTax || changeRecipient || changeRunway || changeHook) &&
@@ -149,28 +164,20 @@ export function ManageTermsPanel({
 
       {state.mutableHook ? (
         <Toggle label="Change the hook" on={changeHook} set={setChangeHook}>
-          <Input
-            value={hook}
-            placeholder="0x… — leave blank to detach"
-            onChange={(e) => setHook(e.target.value)}
-            className="rounded-none text-xs"
+          <HookEditor
+            hook={hook}
+            onHook={(next) => {
+              setHook(next);
+              setHookData("");
+              setHookConfigOk(true);
+            }}
+            onConfig={setHookData}
+            onVerdict={setHookConfigOk}
           />
-          {hookTrimmed !== "" ? (
-            <>
-              <Input
-                value={hookData}
-                placeholder="data: 0x… (32 bytes, optional)"
-                onChange={(e) => setHookData(e.target.value)}
-                className="rounded-none text-xs"
-              />
-            </>
-          ) : null}
           <p className="text-[10px] leading-snug text-muted-foreground">
             {hookTrimmed === ""
-              ? "Blank detaches the hook and its fee."
-              : hookValid
-                ? "The hook checks its data and declares its own fee and callbacks, when proposed and again when it attaches."
-                : "Check the address and data."}
+              ? "No hook detaches the current one and its fee."
+              : "The hook checks its configuration and declares its own fee and permissions, when proposed and again when it attaches."}
           </p>
         </Toggle>
       ) : null}
@@ -206,6 +213,108 @@ export function ManageTermsPanel({
         transition, so the occupant keeps the terms they bought into.
       </p>
     </Panel>
+  );
+}
+
+/**
+ * Pick the hook to propose: a known hook, a custom address, or none. A hook
+ * that describes its configuration gets the same generated form as the create
+ * page, checked against the hook on chain.
+ */
+function HookEditor({
+  hook,
+  onHook,
+  onConfig,
+  onVerdict,
+}: {
+  hook: string;
+  onHook: (hook: string) => void;
+  onConfig: (encoded: string) => void;
+  onVerdict: (ok: boolean) => void;
+}) {
+  const { chainId } = useChain();
+  const available = knownHooks[chainId] ?? [];
+  const known = isAddress(hook) ? findKnownHook(chainId, hook as Address) : undefined;
+  const [custom, setCustom] = useState(false);
+  const [values, setValues] = useState<string[]>([]);
+  const check = useHookCheck(hook, chainId);
+  const { families } = useHookSchema(hook);
+  const family = families.find((f) => f.fields.length > 0);
+
+  const selectValue = custom ? "custom" : hook === "" ? "none" : (known?.address ?? "custom");
+
+  return (
+    <div className="space-y-1.5">
+      <Select
+        value={selectValue}
+        onValueChange={(v) => {
+          setValues([]);
+          if (v === "none") {
+            setCustom(false);
+            onHook("");
+          } else if (v === "custom") {
+            setCustom(true);
+            onHook("");
+          } else {
+            setCustom(false);
+            onHook(v);
+          }
+        }}
+      >
+        <SelectTrigger className="w-full rounded-none text-xs">
+          <SelectValue placeholder="Select a hook" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">No hook (detach)</SelectItem>
+          {available.map((h) => (
+            <SelectItem key={h.address} value={h.address}>
+              {h.name}
+            </SelectItem>
+          ))}
+          <SelectItem value="custom">Custom address</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {custom && (
+        <Input
+          value={hook}
+          placeholder="0x…"
+          onChange={(e) => {
+            setValues([]);
+            onHook(e.target.value.trim());
+          }}
+          className="rounded-none text-xs"
+        />
+      )}
+
+      {check.data?.status === "ok" && (
+        <HookPermissionRow permissions={check.data.permissions} fee={check.data.fee} />
+      )}
+      {check.data && check.data.status !== "ok" && (
+        <p className="text-[10px] text-destructive">
+          {check.data.status === "no-code"
+            ? "No contract at this address on this chain."
+            : check.data.status === "inert"
+              ? "This hook asks for no permissions and cannot be attached."
+              : "Not a hook — no hookOffer()."}
+        </p>
+      )}
+
+      {family && (
+        <div className="border-l-2 border-muted pl-3">
+          <HookConfig
+            hookAddress={hook}
+            family={family}
+            value={values}
+            onChange={(next, encoded) => {
+              setValues(next);
+              onConfig(encoded ?? "");
+            }}
+            onVerdict={onVerdict}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
