@@ -50,9 +50,8 @@ const ZERO = 0n;
  *   disagree.
  *
  * - The MINIMUM DEPOSIT comes from `minDepositForBuy`, which reads the PENDING
- *   tax when one is queued. Entry is an occupancy transition, so `_applyPending`
- *   runs before the funding check and the buyer funds the terms they are buying
- *   into. This panel used to mirror `_minDepositFor` by hand and pick the
+ *   tax when one is queued. A buy applies queued terms before its funding
+ *   check, so the buyer funds the terms they are buying into. This panel used to mirror `_minDepositFor` by hand and pick the
  *   effective rate itself; the hand-rolled version was right about the hazard
  *   and is now simply asking the party that decides.
  */

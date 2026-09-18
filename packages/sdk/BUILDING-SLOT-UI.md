@@ -194,8 +194,8 @@ starts a fresh tenure that approves nobody.
 
 `proposeTerms(newTaxBps, newHook, newHookData, changeTax, changeHook)` queues a
 change. It **never applies immediately**: terms ripen for `TERMS_DELAY` (1 day)
-and land at the next occupancy transition. The terms an occupant bought into
-hold for their whole tenure.
+and land at the next buy, or when the occupant lands them with `applyTerms`.
+The terms an occupant bought into hold for their whole tenure.
 
 - `hookData` travels with `changeHook`, never separately. Swapping a hook and
   leaving the old configuration behind hands the new hook a word meant for

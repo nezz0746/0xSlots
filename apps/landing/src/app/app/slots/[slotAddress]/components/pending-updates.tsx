@@ -180,7 +180,7 @@ function NextValue({ row }: { row: PendingRow }) {
  *
  * It used to be three amber panels' worth of copy, rendered twice — once in the
  * details tab and once above the buy form — with a headline and a subtext per
- * viewer, plus a paragraph explaining what an occupancy transition is. Nothing
+ * viewer, plus a paragraph explaining when queued terms land. Nothing
  * queued here is dangerous: it is a fact about the slot with one consequence for
  * a buyer, and amber spent on it is amber unavailable for INSOLVENT, which
  * genuinely is urgent. So: info tint, one line of numbers, one line of

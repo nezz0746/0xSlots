@@ -431,8 +431,8 @@ export const slot = onchainTable(
     /// of their buyout, or out of their top-up.
     debtRepaidTotal: t.bigint().notNull(),
     /// Accepted when the hook attached and changed only by a manager accepting
-    /// new ones, at an occupancy transition, so a hook cannot widen its own
-    /// reach mid-tenure. Compare against the `declared*` columns on `hook`.
+    /// new ones, at the next buy, so a hook cannot widen its own reach
+    /// mid-tenure. Compare against the `declared*` columns on `hook`.
     permBeforeBuy: t.boolean().notNull(),
     permBeforeSelfAssess: t.boolean().notNull(),
     permAfterBuy: t.boolean().notNull(),
@@ -514,7 +514,7 @@ export const slot = onchainTable(
     pendingHook: t.hex(),
     pendingHookConfig: t.hex(),
     /// Subscriptions the manager accepted from the attached hook, waiting for
-    /// the next occupancy transition.
+    /// the next buy.
     pendingHasHookPermissions: t.boolean().notNull(),
     pendingHookPermissions: t.integer(),
     pendingProposedAt: t.bigint(),
@@ -1227,7 +1227,7 @@ export const operatorSetEvent = onchainTable(
 );
 
 /**
- * Terms queued by the manager, landing at the next occupancy transition.
+ * Terms queued by the manager, landing at the next buy.
  * Value columns are meaningful only when their `change*` flag is true.
  */
 export const termsProposedEvent = onchainTable(

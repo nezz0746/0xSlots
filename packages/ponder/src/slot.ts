@@ -783,8 +783,8 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
 });
 
 /**
- * Queued terms landing at an occupancy transition. The event carries the terms
- * now in force, hook offer included.
+ * Queued terms landed, at a buy or at `applyTerms`. The event carries the
+ * terms now in force, hook offer included.
  */
 ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const chainId = context.chain.id;
@@ -1049,7 +1049,7 @@ ponder.on("Slot:ManagerSet", async ({ event, context }) => {
 
 /**
  * The manager accepted the hook's current offer. A new fee applies now; new
- * permissions queue for the next occupancy transition, restarting the queue's clock.
+ * permissions queue for the next buy, restarting the queue's clock.
  */
 ponder.on("Slot:HookOfferAccepted", async ({ event, context }) => {
   const { offer, feeApplied, permissionsQueued } = event.args;

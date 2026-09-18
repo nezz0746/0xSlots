@@ -397,7 +397,7 @@ export function OwnershipPanel({
 
 /**
  * The hook's current offer, when accepting it would change something. A new fee
- * applies at once; new callbacks wait for the next occupancy transition. The
+ * applies at once; new callbacks wait for the next buy. The
  * button pins exactly the offer shown here.
  */
 function HookOfferRow({
@@ -444,7 +444,7 @@ function HookOfferRow({
       {status.permissionsDiffer ? (
         <p className="text-muted-foreground">
           Permissions: {callbacks(accepted.permissions)} → {callbacks(offered.permissions)}.
-          Applies at the next occupancy transition.
+          Applies at the next buy.
         </p>
       ) : null}
       <p className="text-muted-foreground">

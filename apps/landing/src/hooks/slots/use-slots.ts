@@ -229,9 +229,9 @@ export function useIsOperator(
 /**
  * The smallest deposit a BUY will accept at `price`, asked of the slot itself.
  *
- * NOT `minDepositFor(price, taxRateBps, minRunwaySeconds)`. Entry is an
- * occupancy transition, so `_applyPending` runs before the funding check — a
- * buyer funds the terms they are buying INTO. Where a tax rise is queued, the
+ * NOT `minDepositFor(price, taxRateBps, minRunwaySeconds)`. A buy applies
+ * queued terms before its funding check — a buyer funds the terms they are
+ * buying INTO. Where a tax rise is queued, the
  * local formula sizes from the visible rate, under-quotes, and the buy reverts
  * `InvalidDeposit` for a reason nothing on screen explains. The slot already
  * knows which rate it will use, so it is asked.

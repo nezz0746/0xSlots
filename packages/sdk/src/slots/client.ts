@@ -229,7 +229,7 @@ export function unpackHookPermissions(permissions: number): HookPermissions {
   };
 }
 
-/** Terms the manager has queued, landing at the next occupancy transition. */
+/** Terms the manager has queued, landing at the next buy. */
 export interface PendingTerms {
   /** Only the fields named by `mask` are meaningful. */
   taxTerms: TaxTerms;
@@ -251,8 +251,8 @@ export interface PendingTerms {
    */
   appliesAt: bigint;
   /**
-   * `hasRipeTerms()` — whether the next occupancy transition will actually
-   * land these terms, answered against the chain's clock.
+   * `hasRipeTerms()` — whether the next buy will actually land these terms,
+   * answered against the chain's clock.
    */
   applies: boolean;
   /** True when nothing is queued. */
@@ -329,8 +329,8 @@ export interface HookOfferStatus {
   /** Accepting would change the fee, at once. */
   feeDiffers: boolean;
   /**
-   * Accepting would queue new permissions for the next occupancy transition. Always
-   * false when the slot's hook is immutable, or those permissions are already queued.
+   * Accepting would queue new permissions for the next buy. Always false when
+   * the slot's hook is immutable, or those permissions are already queued.
    */
   permissionsDiffer: boolean;
 }
@@ -694,10 +694,10 @@ export class SlotsClient {
   }
 
   /**
-   * Terms the manager has queued for the next occupancy transition.
+   * Terms the manager has queued for the next buy.
    *
    * Two reads, not one, and the second is the whole reason: the struct says
-   * WHAT is queued and `hasRipeTerms()` says whether the next transition will
+   * WHAT is queued and `hasRipeTerms()` says whether the next buy will
    * take it. Those were the same fact until `TERMS_DELAY` was wired up, and a
    * caller left to infer the second from `proposedAt` and its own clock is
    * inferring it against the wrong clock.
@@ -895,9 +895,8 @@ export class SlotsClient {
    * slot itself.
    *
    * Prefer this over {@link minDepositFor} anywhere a BUY is being sized.
-   * Entry is an occupancy transition, so `_applyPending` runs before the
-   * funding check — a buyer funds the terms they are buying INTO, not the ones
-   * currently on display. Sizing from `taxRateBps()` underquotes through
+   * A buy applies queued terms before its funding check — a buyer funds the
+   * terms they are buying INTO, not the ones currently on display. Sizing from `taxRateBps()` underquotes through
    * exactly the window where a tax rise is queued, and the buy then reverts
    * `InvalidDeposit` for reasons nothing on screen explains.
    *
@@ -1455,8 +1454,8 @@ export class SlotsClient {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Queue a change of terms. It lands at the next occupancy transition, never
-   * immediately — the terms an occupant bought into hold for their whole tenure.
+   * Queue a change of terms. It lands at the next buy, never immediately —
+   * the terms an occupant bought into hold for their whole tenure.
    *
    * Both dimensions travel in one call because they share one deferral and one
    * apply. Omit a field to leave it alone; pass `hook: zeroAddress` to detach the
