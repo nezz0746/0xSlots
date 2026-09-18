@@ -16,21 +16,16 @@ import "./OfferBookErrors.sol";
 ///
 /// @dev ── WHY THE BOOK PERFORMS THE FILL ──────────────────────────────────
 ///
-///      The core used to carry `sell`: an occupant submitted a bidder's
-///      EIP-712 order and the slot seated them. That made a SECOND seating
-///      path — it reset `occupiedSince` like `buy` but ran `beforeSell`
-///      instead of `beforeBuy`, so every hook author had two doors to police
-///      and two audit findings were the same mistake of policing one.
-///
-///      It is gone. A consensual sale is now two calls the core already had:
+///      A consensual sale is not a core concern at all. It is two calls the
+///      core already has:
 ///
 ///          slot.selfAssess(price)   // the occupant's own price, restated
 ///          slot.buy(bidder, …)      // the ordinary market path
 ///
-///      In one transaction, so nothing can be sniped between them. The
-///      economics are unchanged: `buy` already refunds the outgoing occupant
-///      their deposit plus the price. What changed is that there is one seating
-///      path, one set of hook checks, and no order machinery in the slot.
+///      In one transaction, so nothing can be sniped between them, and `buy`
+///      already refunds the outgoing occupant their deposit plus the price. The
+///      slot therefore has one seating path and one set of hook checks, and a
+///      hook author has one door to police rather than two.
 ///
 ///      ── WHAT THE OCCUPANT GRANTS, AND WHY THIS IS NOT A PROXY ──────────
 ///
@@ -67,11 +62,9 @@ import "./OfferBookErrors.sol";
 ///
 ///      ── NO SIGNATURE ───────────────────────────────────────────────────
 ///
-///      An offer used to carry the bidder's EIP-712 signature, because
-///      `Slot.sell` demanded one and `offer` stored the terms and the signature
-///      without binding them. `offer()` is a transaction FROM the bidder:
-///      posting it is the consent, and there is no second artefact left to
-///      disagree with the terms beside it.
+///      `offer()` is a transaction FROM the bidder: posting it is the consent,
+///      and there is no second artefact that can disagree with the terms beside
+///      it.
 contract OfferBook is OfferBookInternals {
     using SafeERC20 for IERC20;
 
@@ -135,8 +128,8 @@ contract OfferBook is OfferBookInternals {
      *           restated to what they have agreed to sell at. Needs the
      *           operator grant.
      *        2. `buy(bidder, price, deposit, price + deposit + debt)` — the
-     *           ordinary market path. It pays the outgoing occupant their
-     *           deposit plus the price, which is exactly what `sell` used to.
+     *           ordinary market path, which pays the outgoing occupant their
+     *           deposit plus the price.
      *
      *      Atomic, so nothing can take the slot between the reprice and the
      *      fill. If step 2 reverts, step 1 rolls back with it and the occupant

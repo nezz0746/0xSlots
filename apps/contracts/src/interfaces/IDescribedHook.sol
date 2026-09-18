@@ -23,7 +23,7 @@ pragma solidity ^0.8.24;
  *      ecosystem already reads: viem's `parseAbiParameters` takes it as-is,
  *      and it is the same choice EAS made — its schema registry stores
  *      `"uint256 eventId, uint8 voteIndex"` and leaves validation to a
- *      separate resolver contract, which is exactly what `validateHookTerms`
+ *      separate resolver contract, which is exactly what `validateHookConfig`
  *      is here.
  *
  *      Widths come from the types, so a hook that ever packs two values into

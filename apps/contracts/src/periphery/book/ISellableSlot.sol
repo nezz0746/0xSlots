@@ -9,11 +9,9 @@ pragma solidity ^0.8.24;
 ///      the book is deliberately replaceable, so it must not drag the core in
 ///      behind it.
 ///
-///      This list used to name `sell`, `sellOrderHash`, `orderNonce` and
-///      `orderUsed`. The core no longer has them: a consensual sale is
-///      `selfAssess` then `buy`, and the book performs both. What it needs from
-///      the slot is therefore the ordinary market surface plus the two writes,
-///      which is why nothing here is sale-specific any more.
+///      Nothing here is sale-specific: a consensual sale is `selfAssess` then
+///      `buy`, and the book performs both, so what it needs is the ordinary
+///      market surface plus those two writes.
 interface ISellableSlot {
     function occupant() external view returns (address);
     function price() external view returns (uint256);

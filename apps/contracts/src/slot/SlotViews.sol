@@ -270,8 +270,8 @@ abstract contract SlotViews is SlotAccounting {
      * @notice The escrow floor at `price_` under the terms in force: what
      *         `selfAssess` and `withdraw` enforce against a sitting occupant.
      *
-     * @dev Queued terms are ignored, unlike {minDepositForBuy}: neither call is
-     *      an occupancy transition, so neither applies them.
+     * @dev Queued terms are ignored, unlike {minDepositForBuy}: neither call
+     *      applies them.
      */
     function minDepositToHold(uint256 price_) external view returns (uint256) {
         return _minDepositFor(price_);

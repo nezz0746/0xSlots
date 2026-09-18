@@ -15,12 +15,9 @@ import {OfferBookStorage} from "./OfferBookStorage.sol";
  *      is the only one a list may filter on. A UI filtering on `_fundable`
  *      renders a filled offer as acceptable, which is a button that lies.
  *
- *      There used to be a third, `_signed`, because `Slot.sell` required the
- *      bidder's EIP-712 signature over the exact terms and `offer` stored the
- *      signature and the terms from separate arguments without binding them.
- *      The book fills offers itself now, and `offer()` is already a transaction
- *      FROM the bidder — so posting IS the consent, and there is no second
- *      artefact that can disagree with the terms beside it.
+ *      Neither asks whether the bid is signed. `offer()` is a transaction FROM
+ *      the bidder, so posting IS the consent, and there is no second artefact
+ *      that can disagree with the terms beside it.
  */
 abstract contract OfferBookInternals is OfferBookStorage {
     function _live(address slot, Offer storage o, address occupant)
@@ -42,9 +39,8 @@ abstract contract OfferBookInternals is OfferBookStorage {
      *      Allowance is checked against THIS BOOK, not against the slot. The
      *      book pulls the payment and then spends it on `buy`, because `buy`
      *      charges `msg.sender` — and on a fill `msg.sender` is the book, not
-     *      the bidder. Before `sell` was removed the allowance went to the slot
-     *      instead; an offer posted under the old arrangement reads as unfunded
-     *      here, which is the correct answer rather than a stale one.
+     *      the bidder. A bidder who approved the slot instead reads as unfunded
+     *      here, which is the correct answer: the fill would revert.
      */
     function _fundable(address slot, Offer storage o)
         internal

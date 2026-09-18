@@ -33,33 +33,14 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // ═══════════════════════════════════════════════════════════
 
     /// @notice May change the tax rate — what the slot costs to hold.
-    /// @dev The liquidation bounty used to ride along with this role. The
-    ///      protocol no longer has one: liquidation pays nothing, and the
-    ///      reward is the vacancy itself.
     bytes32 public constant TAX_MANAGER_ROLE = keccak256("TAX_MANAGER_ROLE");
 
     /// @notice May change the hook — both what holding the slot grants and who
     ///         is allowed to hold it.
     ///
-    /// @dev ── Why this is the POLICY role and not the UTILITY one ──────────
-    ///
-    ///      A hook is the old policy and the old utility unified, so the two
-    ///      roles that governed them separately have to collapse into one. The
-    ///      identifier kept is `POLICY_MANAGER_ROLE`, and the choice is not
-    ///      cosmetic: whichever one survives, its existing holders inherit the
-    ///      other's powers on every live collective.
-    ///
-    ///      A policy manager could already decide who may hold a slot, which
-    ///      is the stronger of the two — they gain the ability to change what
-    ///      it does. Keeping `UTILITY_MANAGER_ROLE` instead would run the
-    ///      escalation the other way: someone trusted only to change what a
-    ///      slot does would silently acquire the power to decide who may hold
-    ///      it, and to refuse buys outright. Privileges must not widen because
-    ///      an implementation was refactored underneath them.
-    ///
-    ///      Holders of `UTILITY_MANAGER_ROLE` therefore lose their lever
-    ///      rather than gaining one. That is the safe direction, and it is
-    ///      recoverable by an admin granting them this role deliberately.
+    /// @dev One role, because one hook governs both halves: a hook decides who
+    ///      may hold a slot AND what holding it does, and nobody can be granted
+    ///      one of those without the other.
     bytes32 public constant POLICY_MANAGER_ROLE = keccak256("POLICY_MANAGER_ROLE");
 
     // ═══════════════════════════════════════════════════════════
@@ -155,12 +136,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///
     ///      Deliberately NOT an `initializer` itself — the engine's entry point
     ///      carries that modifier, and nesting them would revert.
-    /// @dev `hookManagers` receive `POLICY_MANAGER_ROLE` — see that constant
-    ///      for why the identifier still says policy. There is no separate
-    ///      utility role to grant any more; the parameter is gone rather than
-    ///      quietly redirected, because silently granting the hook role to
-    ///      whoever was listed as a utility manager is the escalation the role
-    ///      choice above exists to avoid.
+    /// @dev `hookManagers` receive `POLICY_MANAGER_ROLE`.
     function _initGovernance(
         address admin,
         address[] memory taxManagers,
@@ -193,8 +169,8 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // slot that has not named this contract as its manager simply reverts with
     // `NotManager()` on the far side.
 
-    /// @notice Propose a new tax rate on `slot`. Applies on its next occupancy
-    ///         transition, not immediately.
+    /// @notice Propose a new tax rate on `slot`. Applies at its next buy, not
+    ///         immediately.
     function proposeTax(IManagedSlot slot, uint16 newTaxRateBps)
         external
         onlyRoleOrAdmin(TAX_MANAGER_ROLE)
@@ -262,7 +238,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     }
 
     /// @notice Accept the attached hook's current offer on `slot`: a new fee at
-    ///         once, new permissions at the next occupancy transition.
+    ///         once, new permissions at the next buy.
     ///
     /// @dev The hook manager's decision, like proposing a hook. `expected` is
     ///      the offer they reviewed; the slot reverts if the hook now offers

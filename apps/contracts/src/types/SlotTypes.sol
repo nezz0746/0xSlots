@@ -35,7 +35,7 @@ struct HookTerms {
  *      copy, taken when the hook attaches, and never reads the hook's current
  *      answer at payout or callback time. A different answer is an offer the
  *      manager may accept: the fee applies at once, the permissions at the next
- *      occupancy transition and only on a slot whose hook is mutable.
+ *      buy and only on a slot whose hook is mutable.
  *      Append new fields at the end only.
  */
 struct HookOffer {
@@ -72,7 +72,7 @@ struct Terms {
     HookOffer hookOffer;
 }
 
-/// @notice The terms queued for the next occupancy transition.
+/// @notice The terms queued for the next buy.
 struct PendingTerms {
     /// Only the fields named by `mask` are meaningful.
     TaxTerms taxTerms;

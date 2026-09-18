@@ -44,7 +44,7 @@ import {Versioned} from "../utils/Versioned.sol";
 ///      that function would completely defeat everything below it: the owner
 ///      would simply call
 ///
-///          execCalls([{ to: slot, data: proposeTerms(rent, hook, TERM_TAX) }])
+///          execCalls([{ to: slot, data: proposeTerms(tax, hook, TERM_TAX_RATE) }])
 ///
 ///      and bypass `TAX_MANAGER_ROLE` entirely. The roles would be decoration.
 ///
@@ -119,9 +119,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     ///        and is the admin of all three manager roles.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
     /// @param hookManagers Initial `POLICY_MANAGER_ROLE` holders — the role
-    ///        that governs the hook. May be empty. There is no longer a
-    ///        separate utility role: a hook is the old policy and the old
-    ///        utility unified, so the two collapsed into one.
+    ///        that governs the hook. May be empty.
     /// @param splitManagers Initial `SPLIT_MANAGER_ROLE` holders. May be empty.
     struct InitialRoles {
         address admin;
@@ -145,8 +143,8 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     ///      not the collective's own factory. That would matter if this contract
     ///      used the inherited `initialize(split, owner)`, which is gated on
     ///      `msg.sender == FACTORY`. It does not — `initializeCollective` below
-    ///      does the same work itself, exactly as the old constructor did, so
-    ///      nothing depends on `FACTORY` and nothing breaks when the beacon
+    ///      does the same work itself, so nothing depends on `FACTORY` and
+    ///      nothing breaks when the beacon
     ///      points at an implementation someone else deployed.
     ///
     /// @param splitsWarehouse The canonical `SplitsWarehouse` for this chain.
@@ -161,8 +159,8 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     /// @notice Set up a collective. Called by `SlotCollectiveFactory` in the
     ///         proxy constructor.
     ///
-    /// @dev Byte-for-byte the old constructor body. It deliberately does NOT
-    ///      route through the inherited `SplitWalletV2.initialize`: that one is
+    /// @dev Deliberately does NOT route through the inherited
+    ///      `SplitWalletV2.initialize`: that one is
     ///      gated on the `FACTORY` immutable (see the constructor note) and
     ///      would tie every collective to whoever happened to deploy the
     ///      implementation it was pointing at when it was created.

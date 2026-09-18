@@ -195,9 +195,7 @@ contract SlotStreamCollective is SlotGovernance {
     /// @param admin Holder of `DEFAULT_ADMIN_ROLE`.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
     /// @param hookManagers Initial `POLICY_MANAGER_ROLE` holders — the role
-    ///        that governs the hook. May be empty. There is no longer a
-    ///        separate utility role: a hook is the old policy and the old
-    ///        utility unified, so the two collapsed into one.
+    ///        that governs the hook. May be empty.
     /// @param poolManagers Initial `POOL_MANAGER_ROLE` holders. May be empty.
     struct InitialRoles {
         address admin;

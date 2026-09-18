@@ -95,7 +95,7 @@ contract SeedSlots is Script {
         uint256 depE = _minDeposit(0.02 ether, 300, 1 days);
         e.buy{value: depE}(me, 0.02 ether, depE, 0);
 
-        // 6. A pending term change, parked until the next occupancy transition.
+        // 6. A pending term change, parked until the next buy.
         Slot f = _create(me, address(0), address(0), bytes32(0), 500, 1 days, true, true);
         uint256 depF = _minDeposit(0.02 ether, 500, 1 days);
         f.buy{value: depF}(me, 0.02 ether, depF, 0);

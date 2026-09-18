@@ -47,6 +47,6 @@ interface ISlotEvents {
     event TermsCancelled(uint8 mask);
     event ManagerSet(address indexed previous, address indexed next);
     /// @dev `feeApplied`: the fee changed now. `permissionsQueued`: the permissions wait
-    ///      for the next occupancy transition under `TERM_HOOK_PERMISSIONS`.
+    ///      queued under `TERM_HOOK_PERMISSIONS` for the next buy.
     event HookOfferAccepted(HookOffer offer, bool feeApplied, bool permissionsQueued);
 }
