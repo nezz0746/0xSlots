@@ -82,15 +82,12 @@ abstract contract SlotAccounting is SlotHooks {
         uint256 paid;
         if (owed >= o.deposit) {
             // Nothing accrued, so there is nothing to realise — and moving the
-            // clock anyway would destroy the window.
-            //
-            // This is the same grind the solvent branch below converts `paid`
-            // back into seconds to prevent, and it was reachable here because
-            // `owed >= deposit` is TRUE at `0 >= 0`. Once a deposit hits zero,
-            // every sub-threshold window took this branch and set `lastSettled`
-            // to now, so at a price low enough that one second floors to zero
-            // tax, `topUp(0)` — free and permissionless — ground the clock
-            // forward for ever and the debt never accrued at all.
+            // clock anyway would destroy the window. This branch is taken at
+            // `0 >= 0` too, so without the guard a price low enough that one
+            // second floors to zero tax could be ground forward for ever with
+            // free, permissionless `topUp(0)` calls, and the debt would never
+            // accrue: the same grind the solvent branch below converts `paid`
+            // back into seconds to prevent.
             //
             // `owed == 0` here implies `deposit == 0`, so everything skipped
             // is a no-op: no tax to take, no debt to carry, and a `Settled`
@@ -150,10 +147,9 @@ abstract contract SlotAccounting is SlotHooks {
         _after(F_AFTER_SETTLE, abi.encodeCall(ISlotHook.afterSettle, (ctx)));
     }
 
-    /// @notice Whether queued terms are ripe enough to land on the next
-    ///         occupancy transition.
-    /// @dev A transition is WHERE terms land; the delay is WHEN they may.
-    ///      Public because a buyer has to be able to ask: anything sizing a
+    /// @notice Whether queued terms have sat long enough to land.
+    /// @dev `buy` and `applyTerms` are WHERE terms land; the delay is WHEN they
+    ///      may. Public because a buyer has to be able to ask: anything sizing a
     ///      deposit against queued terms has to agree with `_applyPending`
     ///      about whether they are going to apply.
     function hasRipeTerms() public view returns (bool) {
@@ -163,36 +159,27 @@ abstract contract SlotAccounting is SlotHooks {
     /**
      * @dev Apply terms queued by the manager.
      *
-     *      Called at every occupancy transition — that boundary IS the
-     *      guarantee. An occupant's terms cannot move under them; they change
-     *      only when the seat does.
-     */
-    function _applyPending() internal {
-        _applyPending(false);
-    }
-
-    /**
-     * @param mustApply Revert rather than defer when the hook cannot be read.
+     *      Called when the seat is TAKEN — from `buy`, and from `applyTerms`
+     *      when somebody entitled to asks. That boundary is the guarantee: an
+     *      occupant's terms cannot move under them, because the only automatic
+     *      application seats somebody new under them.
      *
-     *      TRUE only from `buy`. The early return below protects a manager's
-     *      proposal from being erased by a starved read, which matters when a
-     *      griefer is trying to destroy a change that constrains somebody else.
-     *      It must not let a buyer dodge a hook meant to gate THEM by picking a
-     *      gas limit under the threshold, so `buy` refuses instead. Refusing a
-     *      buy is safe; refusing an eviction is not, which is why `release` and
-     *      `liquidate` keep the early return.
+     *      Deliberately NOT called from `release` or `liquidate`. Applying
+     *      reads the incoming hook, and an eviction that reads a hook is an
+     *      eviction a hook can make expensive. A vacated slot keeps the terms
+     *      it had until the next buyer funds the new ones, which is when they
+     *      matter.
      *
-     * @dev ── Rent is paid out BEFORE anything changes ─────────────────────
+     *      ── Rent is paid out BEFORE anything changes ─────────────────────
      *
      *      Collected rent was earned under the outgoing terms: their recipient
      *      and their hook fee. Flushing first means the pot only ever holds rent
      *      earned under the terms in force, so a fee or recipient change can
-     *      never reach back into it, and no history needs keeping. `_flush`
-     *      never reverts, so this stays safe inside a liquidation.
+     *      never reach back into it, and no history needs keeping.
      */
-    function _applyPending(bool mustApply) internal {
+    function _applyPending() internal returns (bool attached) {
         TermsQueue storage q = _queue();
-        if (!q.isRipe(TERMS_DELAY)) return;
+        if (!q.isRipe(TERMS_DELAY)) return false;
 
         HookTerms memory next = _nextHookTerms();
         HookTerms memory current = _hookTerms();
@@ -203,30 +190,15 @@ abstract contract SlotAccounting is SlotHooks {
 
         _flush();
 
-        // Refuse to answer for a hook we cannot afford to ask.
-        //
-        // A starved read is indistinguishable from a misbehaving hook — both
-        // return false — so without this anyone could erase a queued change by
-        // calling `liquidate()` with a gas limit tuned to starve the read.
-        // Returning early leaves the queue intact and ripe: a griefer can delay
-        // a change, never erase it. The 64/63 is EIP-150.
-        //
-        // Checked AFTER the payout, whose token transfer has no gas cap, so the
-        // margin measured here is the margin the read actually gets.
-        if (reading != address(0) && gasleft() < (HOOK_GAS * 64) / 63 + HOOK_READ_FLOOR) {
-            if (mustApply) revert InsufficientGasForTerms();
-            return;
-        }
-
         // Read the hook before the copy clears the queue. Re-read here rather
         // than trusted from proposal or acceptance: a hook could have been
         // upgraded in the interval, and the copy has to describe the code that
         // will run.
         //
-        // FAIL-OPEN, unlike `proposeTerms`. This runs inside `_liquidate`, and
-        // a hook that stopped answering must not make an insolvent occupant
-        // un-evictable. An incoming hook that will not say what it wants is
-        // attached as nothing; accepted permissions it no longer declares are dropped.
+        // FAIL-OPEN, unlike `proposeTerms`: a hook that stopped answering must
+        // not be able to wedge the queue shut. An incoming hook that will not
+        // say what it wants is attached as nothing; accepted permissions it no
+        // longer declares are dropped.
         bool ok;
         HookOffer memory offer;
         if (reading != address(0)) {
@@ -258,6 +230,28 @@ abstract contract SlotAccounting is SlotHooks {
         }
 
         emit TermsApplied(_taxTerms(), _hookTerms(), live, applied);
+
+        // Told to the caller rather than sent from here: a buy applies terms
+        // BEFORE it seats anybody, so a context built now would hand the
+        // incoming hook the outgoing occupant. The caller tells it once the
+        // seat is settled.
+        attached = hookChanges && _hookTerms().target != address(0);
+    }
+
+    /// @dev Tell a newly attached hook, if it asked to be told. Only ever
+    ///      called where a seat is taken, never on an eviction.
+    function _afterAttach(
+        address account,
+        uint256 price_,
+        uint256 depositAmount
+    ) internal {
+        _after(
+            F_AFTER_ATTACH,
+            abi.encodeCall(
+                ISlotHook.afterAttach,
+                (_ctx(msg.sender, account, price_, depositAmount))
+            )
+        );
     }
 
     /**

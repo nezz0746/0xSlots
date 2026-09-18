@@ -39,6 +39,8 @@ contract StrictBreaker is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external pure { revert("nope"); }
+
+    function afterAttach(SlotContext calldata) external pure {}
 }
 
 /**

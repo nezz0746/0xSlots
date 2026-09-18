@@ -18,6 +18,9 @@ error InvalidValue();
 error InvalidHook();
 /// @dev A hook fee with no one to receive it, or above 100% of the rent.
 error InvalidHookFee();
+/// @dev The hook answers, but not within the stipend the slot reads it under,
+///      so attaching it would attach nothing.
+error HookReadTooExpensive();
 /// @dev The hook's offer is not the one the manager reviewed.
 error HookOfferChanged();
 /// @dev The hook offers nothing this slot could take.
@@ -45,8 +48,3 @@ error UnknownTerms();
 error PaymentAboveMax();
 /// @dev The currency delivered a different amount than was transferred.
 error CurrencyTakesACut(uint256 sent, uint256 received);
-
-/// @dev A buy arrived with too little gas to apply the terms it would be
-///      seated under. Deferring them is how a buyer used to dodge a hook meant
-///      to gate them, so the buy is refused instead. Retry with more gas.
-error InsufficientGasForTerms();

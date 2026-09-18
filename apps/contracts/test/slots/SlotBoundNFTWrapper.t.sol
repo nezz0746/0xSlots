@@ -280,7 +280,7 @@ contract SlotBoundNFTWrapperTest is Test {
     /// @notice The property this whole design leans on. The depositor manages
     ///         their own slot, and a manager can change NOTHING under a
     ///         sitting occupant — terms ripen for `TERMS_DELAY` and land at the
-    ///         next occupancy transition. Without this, depositor-as-manager
+    ///         next buy. Without this, depositor-as-manager
     ///         plus depositor-as-withdrawer is a rug.
     function test_ARerateCannotTouchASittingOccupant() public {
         vm.prank(bob);
@@ -294,7 +294,8 @@ contract SlotBoundNFTWrapperTest is Test {
 
         vm.prank(bob);
         slot.release();
-        assertEq(slot.taxRateBps(), 5000, "lands at the transition, never before");
+        slot.applyTerms();
+        assertEq(slot.taxRateBps(), 5000, "lands once the seat is free, never before");
     }
 
     /// @notice The retirement veto cannot be added later. The slot packs these

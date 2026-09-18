@@ -22,16 +22,15 @@ import {SlotMath} from "../libraries/SlotMath.sol";
  *      declares no state, so it costs no storage slot and moves nothing.
  */
 abstract contract SlotConstants {
-    // Ceiling on a self-assessed price.
-    // So `price * taxRateBps * elapsed` cannot be driven to overflow. That
-    //      product is computed on every settle, and every entry point settles
-    //      first — so an overflow there used to revert `liquidate()` and brick a
-    //      slot permanently, for the cost of gas. 2^128-1 is ~3.4e38, past any
-    //      real valuation in a token's smallest unit.
+    // Ceiling on a self-assessed price, so `price * taxRateBps * elapsed`
+    // cannot be driven to overflow. That product is computed on every settle,
+    // and every entry point settles first, so an overflow there would revert
+    // `liquidate()` and brick a slot permanently for the cost of gas. 2^128-1
+    // is ~3.4e38, past any real valuation in a token's smallest unit.
     uint256 public constant MAX_PRICE = type(uint128).max;
 
-    // Ceiling on the monthly rate, in basis points. The other factor in
-    //         that same product.
+    // Ceiling on the monthly rate, in basis points. The other factor in that
+    // same product.
     uint256 public constant MAX_TAX_BPS = 10_000;
 
     uint256 public constant BASIS_POINTS = SlotMath.BASIS_POINTS;
@@ -48,14 +47,7 @@ abstract contract SlotConstants {
     //      expensive and unreliable. 30k covers an EOA and a typical Safe.
     uint256 public constant PAYOUT_GAS = 30_000;
 
-    /// @notice Headroom `_applyPending` keeps for its own work beyond the hook
-    ///         read, before it will attempt that read at all.
-    /// @dev Below this it leaves the proposal queued rather than concluding the
-    ///      hook misbehaved — see `_applyPending`. Sized for the surrounding
-    ///      SSTOREs and the event, not for the call itself.
-    uint256 public constant HOOK_READ_FLOOR = 20_000;
-
-    // How long a proposal must sit before an occupancy transition may apply it.
+    // How long a proposal must sit before it may be applied.
     //
     // Without this, `proposeTerms` in block N binds a buyer in block N: the
     // manager watches the mempool, raises the tax, and the incoming occupant is

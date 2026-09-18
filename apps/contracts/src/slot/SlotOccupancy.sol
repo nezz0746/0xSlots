@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {ISlotHook} from "../interfaces/ISlotHook.sol";
 import "../errors/SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
-import {HookTerms} from "../types/SlotTypes.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 
 /**
@@ -90,7 +89,7 @@ abstract contract SlotOccupancy is SlotViews {
         // terms, and applying pays collected tax out under those terms first.
         // They still land BEFORE the hook is asked, so the hook judges the
         // terms the buyer is actually seated under.
-        _applyPending(true);
+        bool attached = _applyPending();
         _requireFunded(depositAmount, selfAssessedPrice);
 
         _before(
@@ -111,6 +110,11 @@ abstract contract SlotOccupancy is SlotViews {
         if (prev != address(0)) _payOrCredit(prev, refund);
 
         emit Bought(account, prev, selfAssessedPrice, depositAmount, owedToPrev);
+
+        // A hook that landed above meets the seat it inherited before it hears
+        // about the buy that filled it.
+        if (attached) _afterAttach(account, selfAssessedPrice, depositAmount);
+
         _after(
             F_AFTER_BUY,
             abi.encodeCall(
@@ -128,27 +132,15 @@ abstract contract SlotOccupancy is SlotViews {
         address prev = o.occupant;
         uint256 refund = o.deposit;
 
-        // Cached before the swap: this callback belongs to the hook that
-        // governed the tenure now ending, with the terms it was attached with.
-        HookTerms memory outgoing = _hookTerms();
-        uint8 outgoingPermissions = _hookOffer().permissions;
-        uint256 outgoingTax = _taxTerms().rateBps;
-
         _vacate();
-        _applyPending();
 
         if (refund > 0) _payOrCredit(prev, refund);
         _flush();
 
         emit Released(prev, refund);
-        _afterOn(
-            outgoing.target,
-            outgoingPermissions,
+        _after(
             F_AFTER_RELEASE,
-            abi.encodeCall(
-                ISlotHook.afterRelease,
-                (_ctxFor(msg.sender, prev, 0, 0, outgoing, outgoingTax))
-            )
+            abi.encodeCall(ISlotHook.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 
@@ -170,23 +162,14 @@ abstract contract SlotOccupancy is SlotViews {
         if (o.deposit > 0) revert NotInsolvent();
 
         address prev = o.occupant;
-        HookTerms memory outgoing = _hookTerms();
-        uint8 outgoingPermissions = _hookOffer().permissions;
-        uint256 outgoingTax = _taxTerms().rateBps;
 
         _vacate();
-        _applyPending();
         _flush();
 
         emit Liquidated(msg.sender, prev);
-        _afterOn(
-            outgoing.target,
-            outgoingPermissions,
+        _after(
             F_AFTER_LIQUIDATE,
-            abi.encodeCall(
-                ISlotHook.afterLiquidate,
-                (_ctxFor(msg.sender, prev, 0, 0, outgoing, outgoingTax))
-            )
+            abi.encodeCall(ISlotHook.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 }

@@ -54,6 +54,8 @@ contract BrokenAfter is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 /**

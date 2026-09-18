@@ -25,6 +25,8 @@ contract AnyHook is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 /// @dev An offer its owner can change at any time, and a count of the buys it hears about.
@@ -130,6 +132,13 @@ contract SlotTermsTest is Test {
     function _release(Slot s) internal {
         vm.prank(buyer);
         s.release();
+    }
+
+    /// @dev Exits no longer carry terms: the seat is given up, then whoever
+    ///      wants to lands the queue on the empty slot.
+    function _releaseAndApply(Slot s) internal {
+        _release(s);
+        s.applyTerms();
     }
 
     // ── mutability ──────────────────────────────────────────────────────────
@@ -265,7 +274,7 @@ contract SlotTermsTest is Test {
         skip(slot.TERMS_DELAY());
         assertEq(slot.recipient(), recipient, "a delay alone applies nothing");
 
-        _release(slot);
+        _releaseAndApply(slot);
 
         assertEq(slot.recipient(), next);
         assertEq(slot.taxRateBps(), 900);
@@ -352,10 +361,6 @@ contract SlotTermsTest is Test {
         vm.expectRevert(InvalidHook.selector);
         factory.createSlot(_init(true, true, true, HookTerms({target: address(noFlags), config: 0})));
 
-        OfferHook unknownFlag = new OfferHook(0, address(0));
-        unknownFlag.setPermissions(SETTLE | 0x80);
-        vm.expectRevert(InvalidHook.selector);
-        factory.createSlot(_init(true, true, true, HookTerms({target: address(unknownFlag), config: 0})));
     }
 
     function test_TheFeeIsSplitFromCollectedRent() public {
@@ -441,7 +446,7 @@ contract SlotTermsTest is Test {
         assertEq(h.buys(), 0, "the sitting occupant bought under the old flags");
 
         skip(s.TERMS_DELAY());
-        _release(s);
+        _releaseAndApply(s);
         assertEq(s.hookOffer().permissions, SETTLE_AND_BUY, "the seat changed hands");
         assertEq(s.pendingTerms().mask, 0);
 
@@ -570,7 +575,7 @@ contract SlotTermsTest is Test {
         h.set(10_000, author);
         _propose(s, _taxTerms(), HookTerms({target: address(h), config: 0}), HOOK);
         skip(10 days);
-        _release(s);
+        _releaseAndApply(s);
 
         assertEq(author.balance, 0, "rent earned under a 0% fee pays no fee");
         assertGt(recipient.balance, 0);
@@ -582,7 +587,7 @@ contract SlotTermsTest is Test {
         _buy(s);
         _propose(s, _taxTerms(), _noHook(), HOOK);
         skip(s.TERMS_DELAY());
-        _release(s);
+        _releaseAndApply(s);
 
         HookOffer memory offer = s.hookOffer();
         assertEq(s.hook(), address(0));

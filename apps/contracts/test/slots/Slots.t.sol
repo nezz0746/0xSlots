@@ -47,6 +47,8 @@ contract Recorder is ISlotHook {
         settles++;
         lastPaid = c.paid;
     }
+
+    function afterAttach(SlotContext calldata c) external {}
 }
 
 /// @dev Refuses every buy. The canonical `before` hook.
@@ -65,6 +67,8 @@ contract DenyBuys is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
@@ -86,6 +90,8 @@ contract Hostile is ISlotHook {
     function afterRelease(SlotContext calldata) external pure { revert("no"); }
     function afterLiquidate(SlotContext calldata) external pure { revert("no"); }
     function afterSettle(SlotContext calldata) external pure { revert("no"); }
+
+    function afterAttach(SlotContext calldata) external pure {}
 }
 
 /// @dev Burns every unit of gas it is handed.
@@ -109,6 +115,8 @@ contract GasBurner is ISlotHook {
     function afterSettle(SlotContext calldata) external {
         while (true) sink++;
     }
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 contract SlotsTest is Test {
@@ -332,4 +340,6 @@ contract Nothing is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }

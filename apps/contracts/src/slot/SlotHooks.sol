@@ -42,6 +42,7 @@ abstract contract SlotHooks is SlotStorage {
     uint8 internal constant F_AFTER_LIQUIDATE = HookPermissionsLib.AFTER_LIQUIDATE;
     uint8 internal constant F_AFTER_SETTLE = HookPermissionsLib.AFTER_SETTLE;
     uint8 internal constant F_STRICT = HookPermissionsLib.STRICT;
+    uint8 internal constant F_AFTER_ATTACH = HookPermissionsLib.AFTER_ATTACH;
 
     /// @notice A hook callback reverted and was ignored.
     /// @dev Only ever emitted for the `after` side. A failing `before` reverts
@@ -56,10 +57,14 @@ abstract contract SlotHooks is SlotStorage {
     /**
      * @dev `_readHook` without the right to revert.
      *
-     *      Used by `_applyPending`, which runs inside `_liquidate`, and by the
-     *      offer view. The gas cap matters as much as the fail-open: an
-     *      uncapped read lets a hook burn the caller's frame, which prices out
-     *      an eviction rather than blocking it.
+     *      Used by `_applyPending`, where the hook being read is one the slot
+     *      has not run yet, and by the offer view. Failing open is what keeps a
+     *      hook that stopped answering from wedging the queue shut: it attaches
+     *      as nothing rather than barring every buy. The cap bounds what that
+     *      read may cost the buyer who happens to trigger it; `proposeTerms`
+     *      refuses a hook that cannot answer within it, so the fail-open is for
+     *      a hook that BREAKS after it was accepted, never for one that was
+     *      always too expensive.
      *
      *      Returns ok=false for a revert, a configuration the hook rejects, an
      *      answer that does not decode, no permissions or unknown ones, or a fee out
@@ -70,9 +75,10 @@ abstract contract SlotHooks is SlotStorage {
      *      `try` catches the CALL, not the code solc emits around it: the
      *      `extcodesize` guard before a call that returns nothing, and the ABI
      *      decoder after one that returns a struct. Either can revert outside
-     *      the `catch`, and here that would make a slot un-evictable. So the
-     *      calls are raw, into fixed-size buffers, and decoded by hand as
-     *      strictly as solc would, except that failing returns false.
+     *      the `catch`, which would make this fail CLOSED on exactly the hooks
+     *      it exists to survive. So the calls are raw, into fixed-size buffers,
+     *      and decoded by hand as strictly as solc would, except that failing
+     *      returns false.
      */
     function _tryReadHook(
         HookTerms memory terms
@@ -153,43 +159,17 @@ abstract contract SlotHooks is SlotStorage {
     }
 
     /// @dev The context every callback receives. Built once per call site.
+    ///
+    ///      On an exit it is built after `_vacate`, so `occupant`,
+    ///      `occupiedSince` and `currentPrice` are zero: the tenure is over, and
+    ///      a hook closing its books needs to know that. The terms are still the
+    ///      ones it governed under — nothing moves them during an exit, because
+    ///      queued terms land at a buy.
     function _ctx(
         address caller,
         address account,
         uint256 newPrice,
         uint256 depositAmount
-    ) internal view returns (SlotContext memory) {
-        return
-            _ctxFor(
-                caller,
-                account,
-                newPrice,
-                depositAmount,
-                _hookTerms(),
-                _taxTerms().rateBps
-            );
-    }
-
-    /// @dev `_ctx` with the outgoing terms named rather than read.
-    ///
-    ///      The counterpart to `_afterOn`, and needed for the same reason: a
-    ///      transition that swaps hooks has already overwritten the hook terms
-    ///      and `taxRateBps` by the time the end-of-tenure callback goes out, so
-    ///      a context built from storage would hand the outgoing hook its
-    ///      successor's terms — a rate it never charged and a configuration it
-    ///      never granted, on a tenure it did govern.
-    ///
-    ///      `occupant`, `occupiedSince` and `currentPrice` are deliberately the
-    ///      post-`_vacate` zeros: the tenure is over, and a hook closing its
-    ///      books needs to know that. What it must not get is the SUCCESSOR's
-    ///      terms wearing the authority of the tenure it is being told about.
-    function _ctxFor(
-        address caller,
-        address account,
-        uint256 newPrice,
-        uint256 depositAmount,
-        HookTerms memory terms,
-        uint256 tax
     ) internal view returns (SlotContext memory) {
         Occupancy storage o = _occupancy();
         return
@@ -199,13 +179,13 @@ abstract contract SlotHooks is SlotStorage {
                 account: account,
                 occupant: o.occupant,
                 occupiedSince: o.since,
-                taxRateBps: tax,
+                taxRateBps: _taxTerms().rateBps,
                 currentPrice: o.price,
                 newPrice: newPrice,
                 depositAmount: depositAmount,
                 owed: 0,
                 paid: 0,
-                hookTerms: terms
+                hookTerms: _hookTerms()
             });
     }
 
@@ -228,30 +208,13 @@ abstract contract SlotHooks is SlotStorage {
 
     // ─── effects ────────────────────────────────────────────────────────────
 
-    function _after(uint8 permission, bytes memory call) internal {
-        _afterOn(_hookTerms().target, _hookOffer().permissions, permission, call);
-    }
-
     /**
-     * @dev `_after`, addressed to a hook named by the caller.
-     *
-     *      Exists because a transition that swaps hooks would otherwise split
-     *      its own callbacks across two contracts: the hook that governed the
-     *      tenure is asked for permission, `_applyPending` replaces it, and
-     *      the notification that the tenure ENDED is delivered to its
-     *      successor — which never saw the tenure begin. Any hook holding
-     *      per-occupancy state (rewards, a feed, an allowlist) is left with a
-     *      tenure it can never close.
-     *
-     *      End-of-tenure callbacks pass the hook cached before the swap.
+     * @dev Tell the hook, if it asked to be told. Capped and swallowed, so a
+     *      hook cannot fail the call it is being told about.
      */
-    function _afterOn(
-        address h,
-        uint8 permissions,
-        uint8 permission,
-        bytes memory call
-    ) internal {
-        if (h == address(0) || permissions & permission == 0) return;
+    function _after(uint8 permission, bytes memory call) internal {
+        address h = _hookTerms().target;
+        if (h == address(0) || _hookOffer().permissions & permission == 0) return;
 
         // Strict: uncapped, and the revert propagates. Declared by the hook
         // and accepted with every other permission, so it is fixed for the slot
@@ -261,7 +224,7 @@ abstract contract SlotHooks is SlotStorage {
         // starved by a caller calibrating gas. It can also fail the slot,
         // eviction included. That is the trade, and choosing this hook's
         // address is where it was made.
-        if (permissions & F_STRICT != 0) {
+        if (_hookOffer().permissions & F_STRICT != 0) {
             (bool strictOk, bytes memory err) = h.call(call);
             if (strictOk) return;
             assembly ("memory-safe") {

@@ -52,8 +52,8 @@ struct SlotContext {
  * @dev Declared by the hook as `HookOffer.permissions` and copied when it attaches.
  *      Never re-read on its own: a hook able to widen its own reach mid-tenure
  *      could veto an exit its occupant never agreed to. A change reaches the
- *      slot only when its manager accepts it, at the next occupancy
- *      transition, and never on a slot whose hook is immutable.
+ *      slot only when its manager accepts it, at the next buy, and never on a
+ *      slot whose hook is immutable.
  *
  *      Declared rather than encoded in the address. Uniswap v4 packs these into
  *      address bits, which is elegant and saves gas in the hottest loop in
@@ -94,6 +94,17 @@ struct HookPermissions {
      *      purchase for ever. What this adds is the ability to refuse an EXIT.
      */
     bool strict;
+    /**
+     * @notice Be told when this hook is attached to a slot, so it can set up
+     *         whatever it keeps per slot.
+     *
+     * @dev Fires from `initialize` and from the application of a queued hook.
+     *      Neither can happen during an eviction — terms land when a seat is
+     *      taken, never when one is given up — so `strict` is honoured here
+     *      like anywhere else: a hook that must not be attached half-configured
+     *      can refuse the attachment outright.
+     */
+    bool afterAttach;
 }
 
 /**
@@ -130,8 +141,7 @@ struct HookPermissions {
  *          — which costs a staticcall and is indifferent to who is calling.
  *          Preferable for a `strict` hook, where a revert is a stuck slot.
  *
- *      What is NOT safe is keying storage on `ctx` without either. Two shipped
- *      hooks did exactly that, and both were bugs.
+ *      What is NOT safe is keying storage on `ctx` without either.
  *
  *      ── One hook per slot ───────────────────────────────────────────────
  *
@@ -140,10 +150,10 @@ struct HookPermissions {
  *      subtree hiding behind it.
  *
  *      A slot that wants several behaviours composes them in ONE hook, written
- *      as one contract. Fanning out to a list of children in userland was tried
- *      and removed: it split the stipend between callees, made `msg.sender`
- *      stop being the slot (which two hooks had silently keyed storage on), and
- *      bought nothing the author of a purpose-built hook cannot do directly.
+ *      as one contract. Fanning out to a list of children in userland buys
+ *      nothing the author of a purpose-built hook cannot do directly, and costs
+ *      the stipend split between callees and a `msg.sender` that is no longer
+ *      the slot.
  */
 interface ISlotHook {
     /**
@@ -159,6 +169,9 @@ interface ISlotHook {
      *
      *      A hook that takes no configuration implements this as a no-op and
      *      thereby accepts anything, including zero. Say so deliberately.
+     *
+     *      A hook needing more than one word stores its configuration itself and
+     *      takes the hash here: see `HookConfigStore`.
      */
     function validateHookConfig(bytes32 config) external view;
 
@@ -168,8 +181,8 @@ interface ISlotHook {
      *
      * @dev An offer, not a setting. The slot copies it when the hook attaches,
      *      and later only when its manager calls `acceptHookOffer`: a new fee
-     *      at once, new permissions at the next occupancy transition and only if the
-     *      slot's hook is mutable. Payouts and callbacks use the slot's copy and
+     *      at once, new permissions at the next buy and only if the slot's
+     *      hook is mutable. Payouts and callbacks use the slot's copy and
      *      never call back here, so a hook can neither make an eviction depend
      *      on it nor change what it takes from rent already earned. A hook whose
      *      offer a manager ignores may refuse service; that is the hook's lever,
@@ -199,4 +212,7 @@ interface ISlotHook {
     function afterLiquidate(SlotContext calldata ctx) external;
 
     function afterSettle(SlotContext calldata ctx) external;
+
+    /// @notice This hook is now this slot's hook. `msg.sender` is the slot.
+    function afterAttach(SlotContext calldata ctx) external;
 }

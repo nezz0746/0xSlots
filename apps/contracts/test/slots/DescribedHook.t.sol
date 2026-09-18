@@ -29,6 +29,8 @@ contract SilentHook is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 /// @dev A hook whose `descriptors()` reverts. It must still be usable — the

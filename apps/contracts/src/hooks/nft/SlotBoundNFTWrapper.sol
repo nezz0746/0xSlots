@@ -373,6 +373,8 @@ contract SlotBoundNFTWrapper is
 
     function afterSettle(SlotContext calldata) external {}
 
+    function afterAttach(SlotContext calldata) external {}
+
     /// @dev Reads `occupant()` live, never `ctx`: the `after` entry points are
     ///      world-callable, so a forged context must be able to change nothing.
     function _sync(address slot) internal {

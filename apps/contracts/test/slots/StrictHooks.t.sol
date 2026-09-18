@@ -24,6 +24,8 @@ abstract contract Modal is ISlotHook {
     function beforeBuy(SlotContext calldata) external view virtual {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 /// @dev Reverts in every `after`.
@@ -207,4 +209,6 @@ contract Flipper is ISlotHook {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }

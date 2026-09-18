@@ -14,17 +14,12 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *
  * @dev ── One deployment, every duration ─────────────────────────────────
  *
- *      The window used to be an `immutable` constructor argument, which made
- *      the configuration part of the ADDRESS: a seven-day hook and a thirty-day
- *      hook were different contracts, and a CREATE2 factory existed solely to
- *      derive and deploy one per setting. That factory carried its own problems
- *      — the predicted address depended on this contract's initcode, so it
- *      could never safely be upgraded — and it was a whole contract, a resolver
- *      UI and a deploy step to express a single number.
- *
- *      The number comes from the slot, as `ctx.hookTerms.config`. One deployment
- *      serves every duration, the factory is gone, and this contract holds no
- *      per-slot state at all.
+ *      The window comes from the slot, as `ctx.hookTerms.config`, so one
+ *      deployment serves every duration and this contract holds no per-slot
+ *      state at all. Kept in an `immutable` instead, the configuration would be
+ *      part of the ADDRESS: a seven-day hook and a thirty-day hook would be
+ *      different contracts, deployed by a factory whose predicted address
+ *      depends on this initcode and so can never safely be upgraded.
  *
  *      That the data lives on the SLOT and not here is the load-bearing part.
  *      Were the window kept in this contract's storage, a setter here could
@@ -63,13 +58,12 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      sets `minRunwaySeconds >= tenureSeconds` at creation, which puts the
  *      floor in the core where `withdraw` enforces it.
  *
- *      ── `sell` does not run the tenure check ────────────────────────────
+ *      ── A sale the occupant arranges is not a buyout ────────────────────
  *
  *      The window exists to stop the slot being taken FROM its occupant, and
- *      there is nobody to protect when they are the one handing it over.
- *      Funding and the price floor are still enforced on `sell`, so the channel
- *      cannot be used to seat someone underfunded or to restart protection at a
- *      price the tax rounds away.
+ *      there is nobody to protect when they are the one handing it over. An
+ *      occupant selling through the OfferBook reprices to the bid first, so the
+ *      buy that follows clears the floor and the check never bites.
  */
 contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
 
@@ -203,4 +197,6 @@ contract MinimumTenureHook is MinimumTenure, ISlotHook, IDescribedHook {
     function afterBuy(SlotContext calldata) external {}
 
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }

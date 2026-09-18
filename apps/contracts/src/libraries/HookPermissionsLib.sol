@@ -16,8 +16,9 @@ library HookPermissionsLib {
     uint8 internal constant AFTER_SETTLE = 1 << 5;
     /// Not a callback: a mode. See {HookPermissions-strict}.
     uint8 internal constant STRICT = 1 << 6;
+    uint8 internal constant AFTER_ATTACH = 1 << 7;
 
-    uint8 internal constant ALL = (1 << 7) - 1;
+    uint8 internal constant ALL = type(uint8).max;
 
     function pack(HookPermissions memory f) internal pure returns (uint8 b) {
         if (f.beforeBuy) b |= BEFORE_BUY;
@@ -27,6 +28,7 @@ library HookPermissionsLib {
         if (f.afterLiquidate) b |= AFTER_LIQUIDATE;
         if (f.afterSettle) b |= AFTER_SETTLE;
         if (f.strict) b |= STRICT;
+        if (f.afterAttach) b |= AFTER_ATTACH;
     }
 
     function unpack(uint8 b) internal pure returns (HookPermissions memory f) {
@@ -37,5 +39,6 @@ library HookPermissionsLib {
         f.afterLiquidate = b & AFTER_LIQUIDATE != 0;
         f.afterSettle = b & AFTER_SETTLE != 0;
         f.strict = b & STRICT != 0;
+        f.afterAttach = b & AFTER_ATTACH != 0;
     }
 }

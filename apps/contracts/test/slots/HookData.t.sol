@@ -51,6 +51,8 @@ contract Spy is ISlotHook {
     }
 
     function afterSettle(SlotContext calldata) external {}
+
+    function afterAttach(SlotContext calldata) external {}
 }
 
 /// @dev Reports what the DECISION side was handed. `before` is a staticcall
@@ -244,6 +246,7 @@ contract HookDataTest is Test {
 
         vm.prank(alice);
         s.release();
+        s.applyTerms();
 
         assertEq(s.hook(), address(successor), "the swap happened");
         assertEq(s.hookTerms().config, OTHER);

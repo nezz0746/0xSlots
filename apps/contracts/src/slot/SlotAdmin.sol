@@ -12,8 +12,7 @@ import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
  * @notice The manager's surface, which is deliberately small.
  *
  * @dev Terms only ever QUEUE: they ripen for `TERMS_DELAY` and land at the next
- *      occupancy transition, so nothing an occupant bought into moves under
- *      them. A term moves only if the slot was created mutable for it. The
+ *      buy, so nothing an occupant bought into moves under them. A term moves only if the slot was created mutable for it. The
  *      immediate powers touch no occupant: handing the slot to another manager,
  *      and accepting a hook's new fee.
  */
@@ -75,8 +74,8 @@ abstract contract SlotAdmin is SlotEscrow {
      *      first.
      *
      *      New permissions change what the hook may do to an occupant, so they queue
-     *      like any term and land at the next occupancy transition, and only on
-     *      a slot whose hook is mutable. An immutable hook keeps the
+     *      like any term and land at the next buy, and only on a slot whose
+     *      hook is mutable. An immutable hook keeps the
      *      permissions it attached with.
      */
     function acceptHookOffer(HookOffer calldata expected) external nonReentrant onlyManager {
@@ -102,6 +101,33 @@ abstract contract SlotAdmin is SlotEscrow {
         if (permissionsChange) _queue().queueHookPermissions(offered.permissions);
 
         emit HookOfferAccepted(offered, feeChanges, permissionsChange);
+    }
+
+    /**
+     * @notice Land the queued terms now.
+     *
+     * @dev Two callers, for two reasons. While somebody is seated it is THEIR
+     *      call: the delay exists to protect them, so waiving it is theirs to
+     *      waive — an occupant happy with a lower tax should not have to give
+     *      up the seat to get it. Once the slot is vacant there is nobody to
+     *      protect, so anyone may press it, which keeps a manager from waiting
+     *      on a buyer to land a change.
+     *
+     *      Everything ripe lands together, as it would at a buy.
+     */
+    function applyTerms() external nonReentrant {
+        address occupant = _occupancy().occupant;
+        if (occupant != address(0) && msg.sender != occupant) revert NotOccupant();
+        if (!_queue().isRipe(TERMS_DELAY)) revert NoPendingTerms();
+
+        _settle();
+        if (_applyPending()) {
+            _afterAttach(
+                _occupancy().occupant,
+                _occupancy().price,
+                _occupancy().deposit
+            );
+        }
     }
 
     /**
@@ -135,6 +161,13 @@ abstract contract SlotAdmin is SlotEscrow {
     }
 
     /// @dev Returns the hook's offer, as it declares it.
+    ///
+    ///      Read twice, for two different answers. `_readHook` is uncapped and
+    ///      bubbles the hook's own revert, so a hook refusing its configuration
+    ///      says why. `_tryReadHook` is the read the slot will actually use when
+    ///      the hook attaches: a hook too expensive to answer under that stipend
+    ///      is attached as nothing, silently and a day later, so it is refused
+    ///      here instead.
     function _validateHook(HookTerms memory h) internal view returns (HookOffer memory offer) {
         if (h.target == address(0)) {
             // Configuration for a hook that is not there. Nothing would read it,
@@ -142,6 +175,8 @@ abstract contract SlotAdmin is SlotEscrow {
             if (h.config != bytes32(0)) revert InvalidHook();
             return offer;
         }
-        return _readHook(h);
+        offer = _readHook(h);
+        (bool affordable, ) = _tryReadHook(h);
+        if (!affordable) revert HookReadTooExpensive();
     }
 }

@@ -6,7 +6,6 @@ import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
 import {SlotsTest, DenyBuys} from "./Slots.t.sol";
 import {Slot} from "../../src/Slot.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {InsufficientGasForTerms} from "../../src/errors/SlotErrors.sol";
 
 /**
  * The two defects this file was written to demonstrate, now asserting the fix.
@@ -63,40 +62,29 @@ contract QuickAuditTest is SlotsTest {
     }
 
     /**
-     * @notice A buy too gas-starved to apply ripe terms reverts, rather than
-     *         buying under the old ones.
+     * @notice A buyer cannot be seated under terms a ripe proposal replaced.
      *
-     * @dev `_applyPending` was gas-guarded so a hostile hook could not block a
-     *      slot, and `buy` inherited the guard. That let a buyer CHOOSE to skip
-     *      it: send just enough gas for the buy and not enough for the terms,
-     *      and a ripe hook that would have vetoed you never ran, while the tax
-     *      rate stayed at the old one. The manager's change sat ripe and
-     *      unapplied for as long as buyers kept starving it.
-     *
-     *      The guard still exists everywhere it was protecting somebody —
-     *      settlement, release, liquidation — and `buy` alone now insists.
-     *      Nobody is trapped by that: a buy is optional, and the person it
-     *      inconveniences is the one who chose the gas.
+     * @dev REGRESSION, restated. `buy` applies the queue BEFORE asking the hook,
+     *      so a buyer always faces the hook their purchase brings in. It used to
+     *      be skippable by starving the gas the application needed; exits no
+     *      longer apply terms, so there is no starvation path left to inherit.
      */
-    function test_LowGasBuyCannotSkipRipeTerms() public {
+    function test_ABuyCannotSlipPastRipeTerms() public {
         Slot s = _slot(address(0));
         DenyBuys deny = new DenyBuys();
         vm.prank(manager);
         s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), HookTerms({target: address(deny), config: bytes32(0)}), uint8(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms());
+
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        // With gas to spare, the ripe hook applies and then vetoes.
         vm.expectRevert(DenyBuys.Denied.selector);
         s.buy(bob, 100 ether, 1 ether, 1 ether);
-
-        // Starved of gas, it no longer slips past — it says so.
-        vm.expectRevert(InsufficientGasForTerms.selector);
-        s.buy{gas: 300_000}(bob, 100 ether, 1 ether, 1 ether);
         vm.stopPrank();
 
         assertEq(s.occupant(), address(0), "nobody bought under the old terms");
         assertTrue(s.hasRipeTerms(), "and the change is still waiting");
     }
+
 }

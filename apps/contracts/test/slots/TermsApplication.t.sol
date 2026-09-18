@@ -4,31 +4,21 @@ pragma solidity ^0.8.24;
 import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
 
 import {Slot} from "../../src/Slot.sol";
-import {InsufficientGasForTerms} from "../../src/errors/SlotErrors.sol";
+import "../../src/errors/SlotErrors.sol";
 import {DenyBuys, SlotsTest} from "./Slots.t.sol";
 
 /**
- * Ripe terms are not opt-in for the buyer they constrain.
+ * WHERE queued terms land, now that exits do not carry them.
  *
- * `_applyPending` returns early when there is not enough gas to read the
- * incoming hook, so that a starved read defers the manager's proposal instead
- * of erasing it. That protects a change from a griefer with no stake in it.
+ * Terms are applied when the seat is TAKEN — by `buy`, or by `applyTerms` when
+ * somebody entitled to asks for them. `release` and `liquidate` leave the queue
+ * standing: applying reads the incoming hook, and a read on the eviction path
+ * is something a hook can make expensive.
  *
- * It did not hold in `buy`, which applies pending terms BEFORE asking the hook
- * for permission. A buyer facing a hook that would refuse them could send the
- * buy with a gas limit under the threshold, skip the application, and be seated
- * under the old terms with the new hook never consulted.
- *
- * So a buy now refuses rather than defers. Refusing a buy is safe — the buyer
- * retries with more gas. Refusing an eviction is not, which is why the other
- * two transitions keep the early return.
+ * What the occupant is promised is unchanged: nothing lands under them without
+ * their say, and a buyer is always seated under the terms they funded.
  */
 contract TermsApplicationTest is SlotsTest {
-    /// @dev The gas floor `_applyPending` needs before it will read a hook.
-    function _floor(Slot s) internal view returns (uint256) {
-        return (s.HOOK_GAS() * 64) / 63 + s.HOOK_READ_FLOOR();
-    }
-
     function _ripeDenial(Slot s) internal returns (DenyBuys deny) {
         deny = new DenyBuys();
         vm.prank(manager);
@@ -37,23 +27,16 @@ contract TermsApplicationTest is SlotsTest {
         assertTrue(s.hasRipeTerms(), "terms are ripe");
     }
 
-    /// @notice A low-gas buy is refused, not quietly exempted.
-    function test_ABuyerCannotSkipTheHookThatWouldRefuseThem() public {
-        Slot s = _slot(address(0));
-        _ripeDenial(s);
-
-        vm.startPrank(bob);
+    function _seat(Slot s, address who) internal {
+        uint256 dep = s.minDepositForBuy(1 ether);
+        vm.startPrank(who);
         token.approve(address(s), type(uint256).max);
-        vm.expectRevert(InsufficientGasForTerms.selector);
-        s.buy{gas: 300_000}(bob, 100 ether, 1 ether, 1 ether);
+        s.buy(who, 1 ether, dep, 0);
         vm.stopPrank();
-
-        assertEq(s.occupant(), address(0), "nobody was seated");
-        assertTrue(s.hasRipeTerms(), "and the proposal survives");
     }
 
-    /// @notice With gas to spare the hook lands first and does its job.
-    function test_TheSameBuyWithGasIsJudgedByTheNewHook() public {
+    /// @notice A buyer is judged by the hook their purchase brings in.
+    function test_ABuyerIsSeatedUnderTheTermsTheyFund() public {
         Slot s = _slot(address(0));
         _ripeDenial(s);
 
@@ -64,74 +47,94 @@ contract TermsApplicationTest is SlotsTest {
         vm.stopPrank();
     }
 
-    /// @notice A buy under the floor is refused even when it would have passed.
-    /// @dev The refusal is about the terms not landing, not about the hook's
-    ///      answer — so it cannot be dodged by proposing something permissive
-    ///      and it does not depend on what the hook would have said.
-    function test_TheRefusalIsAboutTheTermsNotTheVerdict() public {
+    /// @notice An eviction carries no terms, so no hook runs on that path.
+    function test_ALiquidationLeavesTheQueueStanding() public {
         Slot s = _slot(address(0));
-        // A tax change alone still carries `hasHook`, because the proposal
-        // below changes both. The point is that any ripe hook change under the
-        // floor stops the buy.
-        _ripeDenial(s);
-
-        vm.startPrank(bob);
-        token.approve(address(s), type(uint256).max);
-        vm.expectRevert(InsufficientGasForTerms.selector);
-        s.buy{gas: 400_000}(bob, 1 ether, 1 ether, 1 ether);
-        vm.stopPrank();
-    }
-
-    /**
-     * Rule 1 is untouched: an eviction still cannot be blocked.
-     *
-     * `liquidate` keeps the early return, so a hook that cannot be read at the
-     * gas available defers rather than reverting. A ripe proposal that made an
-     * insolvent occupant un-evictable would be the one thing the protocol
-     * promises nothing can do.
-     */
-    function test_ALowGasLiquidationStillEvicts() public {
-        Slot s = _slot(address(0));
-        vm.startPrank(alice);
-        token.approve(address(s), type(uint256).max);
-        s.buy(alice, 1 ether, s.minDepositForBuy(1 ether), 0);
-        vm.stopPrank();
-
+        _seat(s, alice);
         _ripeDenial(s);
         vm.warp(block.timestamp + 365 days);
         assertTrue(s.isInsolvent(), "escrow is gone");
 
         vm.prank(bob);
-        s.liquidate{gas: 300_000}();
+        s.liquidate();
 
-        assertEq(s.occupant(), address(0), "evicted anyway");
-        assertTrue(s.hasRipeTerms(), "the proposal was deferred, not erased");
+        assertEq(s.occupant(), address(0), "evicted");
+        assertEq(s.hook(), address(0), "the queued hook did not attach");
+        assertTrue(s.hasRipeTerms(), "it is still queued");
     }
 
-    /// @notice And a release under the floor still lets go.
-    function test_ALowGasReleaseStillWorks() public {
+    /// @notice Nor does a release.
+    function test_AReleaseLeavesTheQueueStanding() public {
         Slot s = _slot(address(0));
-        vm.startPrank(alice);
-        token.approve(address(s), type(uint256).max);
-        s.buy(alice, 1 ether, s.minDepositForBuy(1 ether), 0);
-        vm.stopPrank();
-
+        _seat(s, alice);
         _ripeDenial(s);
 
         vm.prank(alice);
-        s.release{gas: 300_000}();
+        s.release();
 
         assertEq(s.occupant(), address(0), "released");
         assertTrue(s.hasRipeTerms(), "proposal intact");
     }
 
-    /// @notice A buy with nothing queued is not affected by any of this.
-    function test_AnOrdinaryBuyNeedsNoExtraGas() public {
+    /// @notice The next buyer lands them, however the seat came free.
+    function test_TheNextBuyerLandsWhatTheEvictionLeft() public {
         Slot s = _slot(address(0));
+        _seat(s, alice);
+        DenyBuys deny = _ripeDenial(s);
+        vm.warp(block.timestamp + 365 days);
+        vm.prank(bob);
+        s.liquidate();
+
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        s.buy{gas: 300_000}(bob, 1 ether, s.minDepositForBuy(1 ether), 0);
+        vm.expectRevert(DenyBuys.Denied.selector);
+        s.buy(bob, 100 ether, 1 ether, 1 ether);
         vm.stopPrank();
-        assertEq(s.occupant(), bob, "seated on a modest gas limit");
+        assertEq(s.hook(), address(0), "still nothing attached; the buy never landed");
+        assertEq(address(deny), address(deny));
+    }
+
+    /// @notice Anyone may land them once the slot stands empty.
+    function test_AnyoneAppliesTermsToAVacantSlot() public {
+        Slot s = _slot(address(0));
+        DenyBuys deny = _ripeDenial(s);
+
+        vm.prank(bob);
+        s.applyTerms();
+
+        assertEq(s.hook(), address(deny), "the queued hook attached");
+        assertEq(s.taxRateBps(), 10_000);
+        assertFalse(s.hasRipeTerms(), "the queue is empty");
+    }
+
+    /// @notice While somebody is seated it is their call, and nobody else's.
+    function test_OnlyTheOccupantAppliesTermsToTheirOwnSeat() public {
+        Slot s = _slot(address(0));
+        _seat(s, alice);
+        DenyBuys deny = _ripeDenial(s);
+
+        vm.prank(bob);
+        vm.expectRevert(NotOccupant.selector);
+        s.applyTerms();
+        assertEq(s.hook(), address(0), "nothing moved under alice");
+
+        vm.prank(alice);
+        s.applyTerms();
+        assertEq(s.hook(), address(deny), "she waived the wait herself");
+        assertEq(s.occupant(), alice, "and kept her seat");
+    }
+
+    /// @notice Nothing ripe is nothing to apply.
+    function test_ApplyingNothingIsRefused() public {
+        Slot s = _slot(address(0));
+        vm.prank(bob);
+        vm.expectRevert(NoPendingTerms.selector);
+        s.applyTerms();
+
+        vm.prank(manager);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(600), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
+        vm.prank(bob);
+        vm.expectRevert(NoPendingTerms.selector);
+        s.applyTerms();
     }
 }

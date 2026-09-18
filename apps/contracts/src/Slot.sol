@@ -8,6 +8,7 @@ import {SlotAdmin} from "./slot/SlotAdmin.sol";
 import "./errors/SlotErrors.sol";
 import {Versioned} from "./utils/Versioned.sol";
 import {SlotInit, HookOffer} from "./types/SlotTypes.sol";
+import {ISlotHook} from "./interfaces/ISlotHook.sol";
 import {Settings} from "./slot/SlotStorage.sol";
 import {TermsLib} from "./libraries/TermsLib.sol";
 
@@ -30,9 +31,9 @@ import {TermsLib} from "./libraries/TermsLib.sol";
  *         which kind of slot this is can be told before committing to it.
  *
  *      2. Terms do not move under an occupant. Rent and hook changes, and new
- *         permissions a manager accepts from the hook, land at the next
- *         occupancy transition, so what you bought into holds for as long as
- *         you hold the slot. A hook's fee may move sooner: it splits the rent
+ *         permissions a manager accepts from the hook, land at the next buy —
+ *         or sooner if the occupant lands them themselves with `applyTerms` —
+ *         so what you bought into holds for as long as you hold the slot. A hook's fee may move sooner: it splits the rent
  *         between recipient and hook and never changes what an occupant pays.
  *
  *      ── Extension ───────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         _disableInitializers();
     }
 
-    function initialize(SlotInit calldata p) external initializer {
+    function initialize(SlotInit calldata p) external initializer nonReentrant {
         if (
             address(p.currency) != address(0) &&
             address(p.currency).code.length == 0
@@ -89,6 +90,14 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         accepted.feeRecipient = offer.feeRecipient;
 
         _occupancy().lastSettled = uint64(block.timestamp);
+
+        // The hook is attached; tell it, if it asked to be told. Honoured
+        // strictly when it declared `strict`: refusing here fails the creation,
+        // which is the creator's own transaction and nobody else's problem.
+        _after(
+            F_AFTER_ATTACH,
+            abi.encodeCall(ISlotHook.afterAttach, (_ctx(msg.sender, address(0), 0, 0)))
+        );
 
         emit Initialized(
             address(p.currency),
