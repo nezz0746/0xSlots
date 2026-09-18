@@ -35,9 +35,9 @@ abstract contract AdLandLens is AdLandStorage {
 
         v.slot = slot;
 
-        // One call where V1's lens needed ten. `SlotInfo` carries the tenure and
-        // the hook, so the creative resolves from the same result rather than
-        // from two more reads.
+        // One call. `SlotInfo` carries the tenure and the hook, so the
+        // creative resolves from the same result rather than from two more
+        // reads.
         try ISlotAd(slot).getSlotInfo() returns (SlotInfo memory info) {
             v.info = info;
             v.managed = info.terms.hookTerms.target == address(this);

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {VersionedUUPS} from "../../utils/VersionedUUPS.sol";
-import {IAdLand, Creative, Moderation, Pending} from "./IAdLand.sol";
+import {IAdLand, Creative, Pending} from "./IAdLand.sol";
 
 /**
  * @title AdLandStorage
@@ -33,11 +33,6 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
     //
     // A UUPS proxy: append new state at the end, never above.
 
-    /// @notice The factory {AdLandCreate-createAdSlot} deploys through.
-    /// @dev Stored rather than taken as an argument: a caller who can name the
-    ///      factory can name one that returns something that is not a slot.
-    address public slotFactory;
-
     // registry
 
     /// @notice What each key resolves to right now.
@@ -48,7 +43,7 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
 
     /**
      * @notice Who may repoint each key, besides the owner.
-     * @dev Set once, when a key is claimed through {AdLandCreate-createAdSlot},
+     * @dev Set once, when a key is claimed through {AdLandRegistry-claimKey},
      *      and never cleared. It grants one power, over one key, and does not
      *      outrank `owner()`.
      */
@@ -69,7 +64,4 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
      *      Approval is the only write that moves it.
      */
     mapping(address slot => Creative) internal _pendingCreative;
-
-    /// @notice Each slot's mode. The zero value is `Open`.
-    mapping(address slot => Moderation) internal _moderation;
 }

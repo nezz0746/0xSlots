@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AdLandStorage} from "./AdLandStorage.sol";
-import {Pending} from "./IAdLand.sol";
+import {AdLandCreatives} from "./AdLandCreatives.sol";
+import {AdConfig, ISlotAd, Pending} from "./IAdLand.sol";
 
 /**
  * @title AdLandRegistry
@@ -19,7 +19,7 @@ import {Pending} from "./IAdLand.sol";
  *      Our own API does not fix it either; that puts a host back in the render
  *      path that inline metadata took out.
  */
-abstract contract AdLandRegistry is AdLandStorage {
+abstract contract AdLandRegistry is AdLandCreatives {
     /// @notice Point a key at a slot.
     /// @dev Immediate the first time, delayed every time after, and the caller
     ///      does not choose which — an owner who picks whether their own change
@@ -29,7 +29,7 @@ abstract contract AdLandRegistry is AdLandStorage {
     ///      move their own name and nothing else; the owner may move anyone's,
     ///      which is what makes a squatted key cost two days rather than being
     ///      gone. A key nobody has claimed has no holder, so it stays
-    ///      owner-only here — claiming happens in {AdLandCreate-createAdSlot}.
+    ///      owner-only here — claiming happens in {claimKey}.
     function setSlot(bytes32 key, address slot) external {
         if (msg.sender != owner() && msg.sender != keyOwner[key]) {
             revert NotKeyOwner(key);
@@ -45,6 +45,25 @@ abstract contract AdLandRegistry is AdLandStorage {
         uint64 readyAt = uint64(block.timestamp + CHANGE_DELAY);
         pendingOf[key] = Pending({slot: slot, readyAt: readyAt});
         emit SlotProposed(key, slot, readyAt);
+    }
+
+    /**
+     * @notice Claim the key `slot` asks for in its AdLand configuration.
+     *
+     * @dev Permissionless, and first come first served. What it trusts is the
+     *      SLOT: the key is read from the slot's own hook configuration, and
+     *      only a slot that actually attached this hook can be claimed for. The
+     *      claim goes to that slot, and its manager becomes the holder.
+     */
+    function claimKey(address slot) external {
+        AdConfig memory c = adConfig(slot);
+        if (c.key == bytes32(0)) revert ZeroSlot();
+        if (ISlotAd(slot).hook() != address(this)) revert ZeroSlot();
+        if (slotOf[c.key] != address(0)) revert KeyTaken(c.key);
+
+        slotOf[c.key] = slot;
+        keyOwner[c.key] = ISlotAd(slot).manager();
+        emit SlotSet(c.key, address(0), slot);
     }
 
     /// @notice Apply a change once its delay has passed.

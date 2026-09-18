@@ -7,7 +7,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
-import {IAdLand, ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
+import {AdConfig, IAdLand, ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 
@@ -47,8 +47,27 @@ contract AdLandModerationTest is Test {
 
     // ─── helpers ────────────────────────────────────────────────────────────
 
+    /// @dev The mode is the slot's AdLand configuration, registered and named
+    ///      by its hash, so setting it is creating the slot with it.
+    function _config(ModerationMode mode) internal returns (bytes32) {
+        return adland.registerHookConfig(
+            abi.encode(AdConfig({tenureWindow: 0, moderation: mode, key: bytes32(0)}))
+        );
+    }
+
+    /// @dev Replaces `slot` with one configured for `mode`. Only meaningful
+    ///      before anyone is seated, which is where every caller uses it.
+    function _mode(ModerationMode mode) internal {
+        slot = _makeSlot(address(this), mode);
+    }
+
     function _makeSlot(address manager) internal returns (Slot) {
+        return _makeSlot(manager, ModerationMode.Open);
+    }
+
+    function _makeSlot(address manager, ModerationMode mode) internal returns (Slot) {
         bool mutable_ = manager != address(0);
+        bytes32 config = mode == ModerationMode.Open ? bytes32(0) : _config(mode);
         return Slot(
             payable(factory.createSlot(
                     SlotInit({
@@ -56,7 +75,7 @@ contract AdLandModerationTest is Test {
                         manager: manager,
                         mutableTax: mutable_, mutableRecipient: mutable_, mutableHook: mutable_,
                         taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-                        hookTerms: HookTerms({target: address(adland), config: bytes32(0)})
+                        hookTerms: HookTerms({target: address(adland), config: config})
                     })
                 ))
         );
@@ -105,7 +124,7 @@ contract AdLandModerationTest is Test {
 
     /// @notice A submission shows nowhere until the manager approves it.
     function test_EveryHoldsASubmissionUntilApproved() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
 
         vm.expectEmit(true, false, false, true, address(adland));
@@ -129,7 +148,7 @@ contract AdLandModerationTest is Test {
     /// @notice The same occupant's last approved creative keeps showing while
     ///         their update waits.
     function test_EveryKeepsThePreviousCreativeWhileAnUpdateWaits() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
         adland.approveCreative(address(slot), _hash(V1));
@@ -144,7 +163,7 @@ contract AdLandModerationTest is Test {
     /// @notice A different occupant does not inherit the previous advertiser's
     ///         ad while their own waits.
     function test_ANewOccupantDoesNotInheritThePreviousAd() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
         adland.approveCreative(address(slot), _hash(V1));
@@ -161,7 +180,7 @@ contract AdLandModerationTest is Test {
     /// @notice Once an occupant has had a creative approved this tenure, they
     ///         publish directly. A new occupant is screened again.
     function test_FirstPerTenureTrustsAnApprovedOccupant() public {
-        adland.setModerationMode(address(slot), ModerationMode.FirstPerTenure);
+        _mode(ModerationMode.FirstPerTenure);
         _seat(alice, 1 ether);
 
         _publish(alice, V1);
@@ -181,7 +200,7 @@ contract AdLandModerationTest is Test {
     /// @notice An occupant who swaps their submission after the manager has
     ///         reviewed it cannot ride the approval.
     function test_ApprovalIsPinnedToWhatWasReviewed() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
 
@@ -196,7 +215,7 @@ contract AdLandModerationTest is Test {
     /// @notice A submission from an ended tenure is dead, even though nothing
     ///         deleted it.
     function test_ASubmissionFromAnEndedTenureCannotBeApproved() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
 
@@ -209,7 +228,7 @@ contract AdLandModerationTest is Test {
 
     /// @notice Vacating also kills a submission.
     function test_AReleasedSlotHasNothingToApprove() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
 
@@ -222,7 +241,7 @@ contract AdLandModerationTest is Test {
 
     /// @notice Rejecting discards the submission and leaves the live creative.
     function test_RejectDiscardsTheSubmissionAndKeepsTheLiveOne() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
         adland.approveCreative(address(slot), _hash(V1));
@@ -238,7 +257,7 @@ contract AdLandModerationTest is Test {
 
     /// @notice Clearing your own ad never waits, and drops anything waiting.
     function test_ClearingNeverWaits() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
         adland.approveCreative(address(slot), _hash(V1));
@@ -252,7 +271,7 @@ contract AdLandModerationTest is Test {
 
     /// @notice Buying and publishing in one call is screened like any publish.
     function test_BuyAndPublishIsModerated() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
 
         uint256 dep = slot.minDepositForBuy(1 ether);
         vm.prank(bob);
@@ -265,11 +284,17 @@ contract AdLandModerationTest is Test {
 
     // ─── mode changes ───────────────────────────────────────────────────────
 
-    /// @notice An occupant keeps the mode they bought under; the change applies
-    ///         to whoever is seated next.
-    function test_AModeChangeWaitsForTheNextOccupant() public {
+    /// @notice An occupant keeps the mode they bought under: changing it is a
+    ///         hook term, so it lands at the next buy.
+    function test_AModeChangeIsAHookTermAndWaitsForTheNextOccupant() public {
         _seat(alice, 1 ether);
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+
+        TaxTerms memory none;
+        slot.proposeTerms(
+            none,
+            HookTerms({target: address(adland), config: _config(ModerationMode.Every)}),
+            8
+        );
 
         (ModerationMode current, ModerationMode next,) = adland.moderationOf(address(slot));
         assertEq(uint8(current), uint8(ModerationMode.Open), "alice still bought under Open");
@@ -278,28 +303,20 @@ contract AdLandModerationTest is Test {
         _publish(alice, V1);
         assertEq(_showing(), V1, "so alice still publishes directly");
 
+        vm.warp(block.timestamp + slot.TERMS_DELAY() + 1);
         _seat(bob, 2 ether);
         _publish(bob, V2);
         assertEq(_showing(), "", "bob is seated under Every");
     }
 
-    /// @notice A vacant slot has nobody to protect, so it changes at once.
-    function test_AVacantSlotChangesImmediately() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
-        (ModerationMode current,,) = adland.moderationOf(address(slot));
-        assertEq(uint8(current), uint8(ModerationMode.Every));
-    }
-
     // ─── who ────────────────────────────────────────────────────────────────
 
     function test_OnlyTheManagerModerates() public {
-        adland.setModerationMode(address(slot), ModerationMode.Every);
+        _mode(ModerationMode.Every);
         _seat(alice, 1 ether);
         _publish(alice, V1);
 
         vm.startPrank(alice);
-        vm.expectRevert(IAdLand.NotSlotManager.selector);
-        adland.setModerationMode(address(slot), ModerationMode.Open);
         vm.expectRevert(IAdLand.NotSlotManager.selector);
         adland.approveCreative(address(slot), _hash(V1));
         vm.expectRevert(IAdLand.NotSlotManager.selector);
@@ -307,13 +324,20 @@ contract AdLandModerationTest is Test {
         vm.stopPrank();
     }
 
-    /// @notice Terms fixed at birth mean nobody holds the key, so the slot
-    ///         stays `Open` for good.
-    function test_ASlotWithNoManagerCannotBeModerated() public {
-        Slot fixedTerms = _makeSlot(address(0));
+    /// @notice A slot with no manager has nobody to approve, so a creative
+    ///         waits for ever — which is why such a slot should stay `Open`.
+    function test_ASlotWithNoManagerHasNobodyToModerate() public {
+        Slot fixedTerms = _makeSlot(address(0), ModerationMode.Every);
+
+        uint256 dep = fixedTerms.minDepositForBuy(1 ether);
+        vm.prank(alice);
+        fixedTerms.buy{value: dep}(alice, 1 ether, dep, type(uint256).max);
+        vm.prank(alice);
+        adland.publish(address(fixedTerms), V1);
+        assertEq(adland.creativeOf(address(fixedTerms)), "", "nothing can approve it");
 
         vm.expectRevert(IAdLand.NotSlotManager.selector);
-        adland.setModerationMode(address(fixedTerms), ModerationMode.Every);
+        adland.approveCreative(address(fixedTerms), _hash(V1));
     }
 
     function test_ModerationOfNeverReverts() public {
@@ -322,5 +346,44 @@ contract AdLandModerationTest is Test {
         assertEq(uint8(current), uint8(ModerationMode.Open));
         assertEq(uint8(next), uint8(ModerationMode.Open));
         assertEq(waiting, "");
+    }
+
+    // ─── keys ───────────────────────────────────────────────────────────────
+
+    /// @notice A key is claimed from the slot that asks for it, first come.
+    function test_AKeyIsClaimedFromTheSlotThatAsksForIt() public {
+        bytes32 config = adland.registerHookConfig(
+            abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: "spot"}))
+        );
+        Slot keyed = Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(0)),
+            manager: address(this),
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(adland), config: config})
+        }))));
+
+        // Anyone may press it; what it trusts is the slot.
+        vm.prank(alice);
+        adland.claimKey(address(keyed));
+        assertEq(adland.slotOf("spot"), address(keyed));
+        assertEq(adland.keyOwner("spot"), address(this), "the slot's manager holds it");
+
+        // A second slot asking the same name loses.
+        Slot other = Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(0)),
+            manager: address(this),
+            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+            hookTerms: HookTerms({target: address(adland), config: config})
+        }))));
+        vm.expectRevert(abi.encodeWithSelector(IAdLand.KeyTaken.selector, bytes32("spot")));
+        adland.claimKey(address(other));
+    }
+
+    /// @notice A slot that asks for no key has nothing to claim.
+    function test_ASlotWithNoKeyCannotClaim() public {
+        vm.expectRevert(IAdLand.ZeroSlot.selector);
+        adland.claimKey(address(slot));
     }
 }

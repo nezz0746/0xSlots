@@ -199,13 +199,6 @@ contract DeployProtocol is ProtocolConfig {
             abi.encodeCall(AdLand.initialize, (cfg.admin))
         );
 
-        // `createAdSlot` reverts until AdLand knows the factory. Only its owner
-        // can set it, so a deployer who is not the admin leaves it for them.
-        if (AdLand(adLand).slotFactory() != factory && AdLand(adLand).owner() == msg.sender) {
-            AdLand(adLand).setSlotFactory(factory);
-            console2.log("adland   ", "setSlotFactory", factory);
-        }
-
         // Deployed here, once per chain, rather than per configuration. The
         // window a slot enforces is its own `hookData`, so one contract serves
         // every duration — which is what let the CREATE2 hook factory, its

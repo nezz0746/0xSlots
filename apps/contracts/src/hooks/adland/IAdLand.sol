@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 
 import {SlotInfo} from "../../slot/SlotViews.sol";
-import {SlotInit} from "../../types/SlotTypes.sol";
+import {HookTerms, PendingTerms} from "../../types/SlotTypes.sol";
 
 /// @dev The slice of `Slot` AdLand calls. Narrow on purpose: declaring the
 ///      whole surface would recompile this on every unrelated change to it.
@@ -15,6 +15,9 @@ interface ISlotAd {
     function price() external view returns (uint256);
     function quoteBuy(address account, uint256 depositAmount) external view returns (uint256);
     function manager() external view returns (address);
+    function hook() external view returns (address);
+    function hookTerms() external view returns (HookTerms memory);
+    function pendingTerms() external view returns (PendingTerms memory);
     function buy(
         address account,
         uint256 selfAssessedPrice,
@@ -48,8 +51,13 @@ struct Creative {
  *      existed reads back — so those slots behave exactly as they always did,
  *      and the upgrade changes nothing for anyone who never opts in.
  */
+/**
+ * @notice How a slot's manager screens creatives before they show.
+ *
+ * @dev `Open` is the zero value, so a slot that configures nothing is open.
+ */
 enum ModerationMode {
-    /// @notice A published creative shows immediately. The behaviour before v4.
+    /// @notice A published creative shows immediately.
     Open,
     /// @notice Each tenure's first creative waits for approval. Once one has
     ///         been approved in a tenure, that occupant publishes directly.
@@ -59,12 +67,22 @@ enum ModerationMode {
     Every
 }
 
-/// @notice A slot's moderation mode, and a change scheduled for a later tenure.
-struct Moderation {
-    ModerationMode current;
-    ModerationMode next;
-    /// @dev The tenure `next` takes over from. Zero means nothing scheduled.
-    uint64 nextFromTenure;
+/**
+ * @notice Everything a slot configures on AdLand, as one registered value.
+ *
+ * @dev The slot stores only `keccak256(abi.encode(AdConfig))` in its
+ *      `HookTerms.config`, so changing any of this is a hook term: it needs a
+ *      mutable hook, waits out the terms delay and lands at the next buy. A slot whose word is zero configures nothing: no window,
+ *      `Open`, no key.
+ */
+struct AdConfig {
+    /// Seconds an advertiser cannot be outbid off the space, except at ten
+    /// times their price. Zero means no window.
+    uint64 tenureWindow;
+    /// How creatives are screened.
+    ModerationMode moderation;
+    /// A registry name this slot asks for. Claimed by `claimKey`, first come.
+    bytes32 key;
 }
 
 /// @notice A key change waiting out its delay.
@@ -78,10 +96,7 @@ struct Pending {
 
 /// @notice Everything the render path reads, in one call.
 /// @dev `info` is the slot's own `SlotInfo` verbatim rather than a flattened
-///      copy. V1's lens declared eleven fields of its own and probed each with
-///      a separate `try`, which meant the struct drifted every time `Slot`
-///      gained a getter. Embedding it means this grows for free and cannot
-///      disagree.
+///      copy, so this grows with `Slot` for free and cannot disagree with it.
 struct AdView {
     /// @dev Zero is the cue that there is nothing to draw. Nothing here
     ///      reverts, so the SDK never has to tell a bad address apart from a
@@ -116,7 +131,6 @@ interface IAdLand {
 
     /// @notice `mode` applies to `slot` from `fromTenure` on. Equal to the
     ///         current tenure when it applied immediately.
-    event ModerationModeSet(address indexed slot, ModerationMode mode, uint64 fromTenure);
     /// @notice A creative is waiting for the manager. Not showing.
     event Submitted(address indexed slot, string uri, uint64 tenureId);
     /// @notice The manager approved a waiting creative. `Published` follows.
@@ -170,7 +184,3 @@ interface IAdLand {
     function primary() external view returns (address);
 }
 
-/// @notice The one thing {AdLandCreate} needs of the protocol it deploys into.
-interface ISlotFactory {
-    function createSlot(SlotInit calldata init) external returns (address);
-}

@@ -13,6 +13,7 @@ import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
 import {HookBounds, HookDescriptor} from "../../src/interfaces/IDescribedHook.sol";
 import {MinimumTenure} from "../../src/hooks/MinimumTenure.sol";
 import {SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {AdConfig, ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
 
 /**
  * AdLand enforcing a minimum tenure, on the one hook a slot is allowed.
@@ -60,7 +61,26 @@ contract AdLandTenureTest is Test {
         vm.warp(1_000_000);
     }
 
-    function _slot(bytes32 hookData) internal returns (Slot s) {
+    /// @dev The window is a field of AdLand's registered configuration now, so
+    ///      a slot's word is the hash that names it.
+    function _config(uint256 window) internal returns (bytes32) {
+        if (window == 0) return bytes32(0);
+        return adland.registerHookConfig(
+            abi.encode(
+                AdConfig({
+                    tenureWindow: uint64(window),
+                    moderation: ModerationMode.Open,
+                    key: bytes32(0)
+                })
+            )
+        );
+    }
+
+    function _slot(uint256 window) internal returns (Slot s) {
+        return _slotWithConfig(_config(window));
+    }
+
+    function _slotWithConfig(bytes32 hookData) internal returns (Slot s) {
         return
             Slot(
                 payable(
@@ -92,7 +112,7 @@ contract AdLandTenureTest is Test {
 
     /// @notice Inside the window, an ordinary outbid is refused.
     function test_AnAdvertiserCannotBeOutbidInsideTheirWindow() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
 
         vm.warp(block.timestamp + 1 days);
@@ -114,7 +134,7 @@ contract AdLandTenureTest is Test {
 
     /// @notice And the premium is a price, not a wall.
     function test_TenTimesTakesItEvenInsideTheWindow() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
         vm.warp(block.timestamp + 1 days);
 
@@ -125,7 +145,7 @@ contract AdLandTenureTest is Test {
 
     /// @notice Past the window it is an ordinary slot again.
     function test_AfterTheWindowAnyPriceTakesIt() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
 
         vm.warp(block.timestamp + WINDOW + 1);
@@ -135,7 +155,7 @@ contract AdLandTenureTest is Test {
 
     /// @notice The occupant cannot cut their price while protected.
     function test_NoCuttingThePriceWhileProtected() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
 
         vm.prank(alice);
@@ -146,7 +166,7 @@ contract AdLandTenureTest is Test {
     /// @notice Creatives still work on a slot that also enforces tenure.
     /// @dev The point of the whole exercise: one hook, both behaviours.
     function test_TheCreativeStillPublishesAndClears() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
 
         vm.prank(alice);
@@ -166,7 +186,7 @@ contract AdLandTenureTest is Test {
     /// @notice Whoever leaves cannot buy the vacant slot straight back and
     ///         restart their window, which would make the protection permanent.
     function test_AnAdvertiserWhoLeavesCannotBuyStraightBackIn() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
 
         vm.warp(block.timestamp + 1 days);
@@ -188,7 +208,7 @@ contract AdLandTenureTest is Test {
 
     /// @notice Liquidation bars the evicted advertiser the same way.
     function test_ALiquidatedAdvertiserIsBarredToo() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
 
         vm.warp(block.timestamp + 3650 days);
@@ -198,11 +218,11 @@ contract AdLandTenureTest is Test {
 
     /// @notice A forged context cannot write a bar through AdLand either.
     function test_NobodyButTheSlotCanBarOnAdLand() public {
-        Slot s = _slot(bytes32(WINDOW));
+        Slot s = _slot(WINDOW);
         SlotContext memory forged;
         forged.slot = address(s);
         forged.account = bob;
-        forged.hookTerms = HookTerms({target: address(adland), config: bytes32(WINDOW)});
+        forged.hookTerms = HookTerms({target: address(adland), config: _config(WINDOW)});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         adland.afterRelease(forged);
@@ -214,7 +234,7 @@ contract AdLandTenureTest is Test {
     /// @notice Zero data is no window, which is every AdLand slot already on
     ///         chain. They were attached before this hook took any data.
     function test_ASlotWithNoWindowIsUnaffected() public {
-        Slot s = _slot(bytes32(0));
+        Slot s = _slot(0);
         _take(s, alice, 1 ether);
 
         // Outbid immediately, by a hair, inside what would have been a window.
@@ -237,38 +257,33 @@ contract AdLandTenureTest is Test {
 
     /// @notice A window is optional, but a malformed one is still refused.
     function test_AnImpossibleWindowIsRefusedAtAttach() public {
+        bytes32 tooLong = _config(400 days);
         vm.expectRevert();
-        _slot(bytes32(uint256(400 days)));
+        _slotWithConfig(tooLong);
+    }
+
+    /// @notice An id nobody registered is not a configuration.
+    function test_AnUnregisteredConfigurationIsRefusedAtAttach() public {
+        vm.expectRevert();
+        _slotWithConfig(keccak256("never registered"));
     }
 
     /**
-     * @notice A consumer can tell that an AdLand slot enforces tenure.
-     *
-     * @dev Without this entry the hook announced only its creative family, and
-     *      a client matching on families would conclude the slot was freely
-     *      buyable — while `beforeBuy` refused every ordinary bid inside a
-     *      window. Flags alone do not say it either: `beforeBuy = true` means
-     *      "may refuse", not why.
+     * @notice A consumer can tell that an AdLand slot enforces tenure, and how
+     *         to configure one.
      */
     function test_AdLandAnnouncesBothFamilies() public view {
         HookDescriptor[] memory d = adland.descriptors();
         assertEq(d.length, 2, "creatives and tenure");
-        assertEq(d[0].family, adland.FAMILY(), "the creative family first");
+        assertEq(d[0].family, adland.FAMILY(), "its own family carries the schema");
         assertEq(
             d[1].family,
             keccak256("slots.hook.minimum-tenure"),
             "and the tenure rule, under the family it has always used"
         );
-        assertEq(
-            d[1].version,
-            adland.TENURE_DESCRIPTOR_VERSION(),
-            "at the rule's own version, not this contract's"
-        );
     }
 
     /// @notice The family is the rule's, so both hosts answer identically.
-    /// @dev A client that learned the family from {MinimumTenureHook} must
-    ///      recognise the same behaviour on AdLand without a second mapping.
     function test_BothHostsNameTheSameFamily() public {
         MinimumTenureHook standalone = new MinimumTenureHook();
         assertEq(standalone.FAMILY(), adland.TENURE_FAMILY());
@@ -279,66 +294,40 @@ contract AdLandTenureTest is Test {
     }
 
     /**
-     * @notice The schema is enough to build a form nobody hard-coded.
-     *
-     * @dev The point of putting it on chain: a client that has never heard of
-     *      minimum tenure renders the right control, with the right bounds,
-     *      for a hook it does not recognise. The signature is an ordinary ABI
-     *      type list, so a client parses it with the tools it already has
-     *      rather than a decoder written for this protocol.
+     * @notice The schema is enough to build a form nobody hard-coded: the three
+     *         fields a slot registers together.
      */
-    function test_TheSchemaDescribesTheWindow() public view {
+    function test_TheSchemaDescribesTheWholeConfiguration() public view {
         HookDescriptor[] memory d = adland.descriptors();
-        // Read straight off the call — no decode to reach the type.
-        assertEq(d[1].signature, "uint256 window", "one value, the whole word");
-        HookBounds[] memory b = abi.decode(d[1].data, (HookBounds[]));
+        assertEq(d[0].signature, "uint64 tenureWindow, uint8 moderation, bytes32 key");
 
-        assertEq(b.length, 1);
-        assertEq(b[0].name, "window");
+        HookBounds[] memory b = abi.decode(d[0].data, (HookBounds[]));
+        assertEq(b.length, 3);
+        assertEq(b[0].name, "tenureWindow");
         assertEq(b[0].unit, "seconds", "so a client shows 7 days, not 604800");
-        assertTrue(b[0].bounded, "a duration has a range");
-        assertEq(b[0].min, 1, "zero is unconfigured, not short");
         assertEq(b[0].max, adland.MAX_TENURE());
+        assertEq(b[1].name, "moderation");
+        assertEq(b[1].max, 2, "three modes");
+        assertEq(b[2].name, "key");
     }
 
     /**
      * @notice The published bounds are the enforced bounds.
      *
-     * @dev The reason this lives on chain rather than at `metadataURI`. A
-     *      schema that drifts from the check is worse than none: the form
+     * @dev A schema that drifts from the check is worse than none: the form
      *      accepts a value and the transaction refuses it.
      */
     function test_TheSchemaCannotDriftFromTheCheck() public {
-        HookBounds[] memory b = abi.decode(
-            adland.descriptors()[1].data,
-            (HookBounds[])
-        );
+        HookBounds[] memory b = abi.decode(adland.descriptors()[0].data, (HookBounds[]));
 
         // The top of the published range is accepted.
-        adland.validateHookConfig(bytes32(b[0].max));
+        adland.validateHookConfig(_config(b[0].max));
 
         // One past it is not, and the revert names the same number.
+        bytes32 tooLong = _config(b[0].max + 1);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MinimumTenure.TenureTooLong.selector,
-                b[0].max
-            )
+            abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, b[0].max)
         );
-        adland.validateHookConfig(bytes32(b[0].max + 1));
-    }
-
-    /// @notice Both hosts publish the same schema, byte for byte.
-    function test_BothHostsPublishOneSchema() public {
-        MinimumTenureHook standalone = new MinimumTenureHook();
-        assertEq(
-            standalone.descriptors()[0].signature,
-            adland.descriptors()[1].signature,
-            "the same type"
-        );
-        assertEq(
-            keccak256(standalone.descriptors()[0].data),
-            keccak256(adland.descriptors()[1].data),
-            "a client configures either without knowing which it has"
-        );
+        adland.validateHookConfig(tooLong);
     }
 }

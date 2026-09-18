@@ -2,9 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
-import {IDescribedHook, HookDescriptor} from "../../interfaces/IDescribedHook.sol";
+import {IDescribedHook, HookBounds, HookDescriptor} from "../../interfaces/IDescribedHook.sol";
 import {Versioned} from "../../utils/Versioned.sol";
-import {AdLandCreate} from "./AdLandCreate.sol";
 import {AdLandCreatives} from "./AdLandCreatives.sol";
 import {AdLandLens} from "./AdLandLens.sol";
 import {AdLandRegistry} from "./AdLandRegistry.sol";
@@ -18,23 +17,15 @@ import {AdLandRegistry} from "./AdLandRegistry.sol";
  *
  *      Called BY a slot it is that slot's hook (`AdLandCreatives`). Called
  *      directly it is the registry (`AdLandRegistry`) and the lens
- *      (`AdLandLens`). V1's `AdModule` merged the same three for the same
- *      reason: nothing is circular because nothing has to be discovered — the
- *      address is a constant in the SDK — and merging is what makes the lens
- *      cheap, because the creative is this contract's own storage rather than a
- *      cross-contract call.
- *
- *      V1's `MetadataModule` / `AdModule` split is gone. That split was an
- *      upgrade seam, not a design: `AdModule` inherited `MetadataModule` so the
- *      live proxy's slot order was guaranteed by the compiler. This is a fresh
- *      deployment with no proxy to preserve.
+ *      (`AdLandLens`). Nothing is circular because nothing has to be discovered
+ *      — the address is a constant in the SDK — and merging the three is what
+ *      makes the lens cheap, because the creative is this contract's own storage
+ *      rather than a cross-contract call.
  *
  *      Everything here is what is left once the three concerns are elsewhere:
  *      construction, identity, and who may replace the code.
  */
 contract AdLand is
-    AdLandCreate,
-    AdLandCreatives,
     AdLandLens,
     AdLandRegistry,
 
@@ -55,8 +46,8 @@ contract AdLand is
      *
      * `multicall` is a self-`delegatecall` per entry, so `msg.sender` is
      * preserved throughout: a batch of `publish` calls is still the
-     * occupant publishing, and a batch of `createAdSlot` calls still
-     * records the caller in `keyOwner`. That is the difference from routing
+     * occupant publishing, and a batch of `claimKey` calls still records the
+     * caller in `keyOwner`. That is the difference from routing
      * the same batch through a generic aggregator like Multicall3, where
      * every call arrives from the aggregator and a claimed name ends up
      * owned by it.
@@ -100,26 +91,33 @@ contract AdLand is
      */
     function descriptors() external pure returns (HookDescriptor[] memory d) {
         d = new HookDescriptor[](2);
+        // One value, registered with `registerHookConfig`, named by its hash.
+        // A slot's word is that hash, so the fields below travel together.
         d[0] = HookDescriptor({
             family: FAMILY,
-            version: 1,
-            // Creatives take no per-slot configuration.
-            signature: "",
-            // The creative side takes no configuration and behaves identically
-            // for every slot pointing here.
-            data: "",
+            version: 2,
+            signature: "uint64 tenureWindow, uint8 moderation, bytes32 key",
+            data: abi.encode(adConfigBounds()),
             metadataURI: ""
         });
         d[1] = HookDescriptor({
             family: TENURE_FAMILY,
             version: TENURE_DESCRIPTOR_VERSION,
-            signature: tenureSignature(),
-            // The same schema {MinimumTenureHook} publishes, from the same
-            // base — so a client that can configure a tenure hook can
-            // configure an AdLand slot's window without knowing it is AdLand.
-            data: tenureBounds_(),
+            // The window is a field of this hook's own configuration, not a
+            // word of its own, so the rule is announced without a schema: a
+            // client configures it through the family above.
+            signature: "",
+            data: "",
             metadataURI: ""
         });
+    }
+
+    /// @notice What each field of {AdConfig} means, and what it may be.
+    function adConfigBounds() public pure returns (HookBounds[] memory b) {
+        b = new HookBounds[](3);
+        b[0] = HookBounds({name: "tenureWindow", unit: "seconds", bounded: true, min: 0, max: MAX_TENURE});
+        b[1] = HookBounds({name: "moderation", unit: "mode", bounded: true, min: 0, max: 2});
+        b[2] = HookBounds({name: "key", unit: "name", bounded: false, min: 0, max: 0});
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

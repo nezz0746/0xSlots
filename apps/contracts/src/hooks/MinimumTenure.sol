@@ -11,12 +11,12 @@ import {SlotContext} from "../interfaces/ISlotHook.sol";
  * @notice The minimum-tenure rule, without a hook around it.
  *
  * @dev A slot has exactly one hook, so a work that wants BOTH a tenure window
- *      and something else — AdLand's creatives, say — cannot attach two. The
- *      protocol briefly had a fan-out hook for this and it is gone: one
- *      `bytes32` of hook data cannot configure two children, `_afterOn`'s
- *      500k gas cap does not divide cleanly, strictness is ambiguous when one
- *      child declares it and another does not, and a veto arrives wearing the
- *      forwarder's name instead of its own.
+ *      and something else — AdLand's creatives, say — cannot attach two. A
+ *      fan-out hook forwarding to both does not work: one `bytes32` of hook data
+ *      cannot configure two children, the 500k gas cap on a callback does not
+ *      divide cleanly, strictness is ambiguous when one child declares it and
+ *      another does not, and a veto arrives wearing the forwarder's name
+ *      instead of its own.
  *
  *      So the rule is a base rather than a peer. {MinimumTenureHook} is this
  *      plus the `ISlotHook` surface, for a slot that wants tenure alone; any
@@ -176,10 +176,17 @@ abstract contract MinimumTenure {
 
     // ─── the rule ───────────────────────────────────────────────────────────
 
+    /// @dev How this host reads a slot's window out of its configuration.
+    ///      The word IS the window here; a host whose configuration holds more
+    ///      overrides this.
+    function _windowOf(bytes32 config) internal view virtual returns (uint256) {
+        return tenureOf(config);
+    }
+
     /// @dev Refuse a buy that is underfunded, or that lands inside somebody
     ///      else's protection window. Call from `beforeBuy`.
     function _enforceTenureOnBuy(SlotContext calldata ctx) internal view {
-        uint256 window = tenureOf(ctx.hookTerms.config);
+        uint256 window = _windowOf(ctx.hookTerms.config);
         _requireFunded(ctx, window);
 
         // The account that just vacated cannot immediately retake it. This is
@@ -211,7 +218,7 @@ abstract contract MinimumTenure {
     function _enforceTenureOnSelfAssess(
         SlotContext calldata ctx
     ) internal view {
-        uint256 window = tenureOf(ctx.hookTerms.config);
+        uint256 window = _windowOf(ctx.hookTerms.config);
         if (ctx.occupiedSince == 0) return;
         if (block.timestamp >= ctx.occupiedSince + window) return;
         if (ctx.newPrice < ctx.currentPrice) revert PriceCutDuringTenure();
@@ -233,7 +240,7 @@ abstract contract MinimumTenure {
         if (msg.sender != ctx.slot) revert NotTheSlot();
         _tenure().reentryAllowedAt[ctx.slot][ctx.account] =
             block.timestamp +
-            tenureOf(ctx.hookTerms.config);
+            _windowOf(ctx.hookTerms.config);
     }
 
     function _requireFunded(

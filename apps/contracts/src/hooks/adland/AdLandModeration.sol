@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {AdLandStorage} from "./AdLandStorage.sol";
-import {Creative, ISlotAd, Moderation, ModerationMode} from "./IAdLand.sol";
+import {Creative, ISlotAd, ModerationMode} from "./IAdLand.sol";
 
 /**
  * @title AdLandModeration
@@ -49,36 +49,6 @@ import {Creative, ISlotAd, Moderation, ModerationMode} from "./IAdLand.sol";
  *      separate power, and not one this adds.
  */
 abstract contract AdLandModeration is AdLandStorage {
-    /**
-     * @notice Set how `slot` screens creatives.
-     * @dev Immediately if the slot is vacant; from the next tenure otherwise.
-     *      The latest call wins — a second change before the first applies
-     *      replaces it rather than queueing behind it.
-     */
-    function setModerationMode(address slot, ModerationMode mode) external {
-        _onlyManager(slot);
-
-        uint64 tenure = ISlotAd(slot).tenureId();
-        Moderation storage m = _moderation[slot];
-
-        // Collapse a schedule that has already taken effect, so `current` holds
-        // what applies right now before anything is decided from it.
-        ModerationMode live = _modeAt(m, tenure);
-
-        if (ISlotAd(slot).occupant() == address(0)) {
-            m.current = mode;
-            m.next = ModerationMode.Open;
-            m.nextFromTenure = 0;
-            emit ModerationModeSet(slot, mode, tenure);
-            return;
-        }
-
-        m.current = live;
-        m.next = mode;
-        m.nextFromTenure = tenure + 1;
-        emit ModerationModeSet(slot, mode, tenure + 1);
-    }
-
     /**
      * @notice Put the waiting creative live.
      * @param uriHash `keccak256` of the URI the manager actually reviewed.
@@ -148,9 +118,8 @@ abstract contract AdLandModeration is AdLandStorage {
             return (current, nextTenure, submission);
         }
 
-        Moderation storage m = _moderation[slot];
-        current = _modeAt(m, tenure);
-        nextTenure = _modeAt(m, tenure + 1);
+        current = _modeOf(slot);
+        nextTenure = _queuedModeOf(slot, current);
 
         try ISlotAd(slot).occupant() returns (address occupant) {
             Creative storage p = _pendingCreative[slot];
@@ -174,7 +143,7 @@ abstract contract AdLandModeration is AdLandStorage {
      *      answers immediately.
      */
     function _requiresApproval(address slot, uint64 tenure) internal view returns (bool) {
-        ModerationMode mode = _modeAt(_moderation[slot], tenure);
+        ModerationMode mode = _modeOf(slot);
         if (mode == ModerationMode.Open) return false;
         if (mode == ModerationMode.Every) return true;
 
@@ -182,10 +151,16 @@ abstract contract AdLandModeration is AdLandStorage {
         return bytes(live.uri).length == 0 || live.tenureId != tenure;
     }
 
-    function _modeAt(Moderation storage m, uint64 tenure) internal view returns (ModerationMode) {
-        if (m.nextFromTenure != 0 && tenure >= m.nextFromTenure) return m.next;
-        return m.current;
-    }
+    /// @dev The mode in force: the slot's own configuration, read from it.
+    function _modeOf(address slot) internal view virtual returns (ModerationMode);
+
+    /// @dev The mode a buyer would be seated under: a queued hook change is
+    ///      about to land, so it is the one to show before buying.
+    function _queuedModeOf(address slot, ModerationMode live)
+        internal
+        view
+        virtual
+        returns (ModerationMode);
 
     /// @dev The live submission, matching `uriHash`, or a revert that says which
     ///      of those failed.

@@ -7,11 +7,13 @@ import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC2
 
 import {ISlotHook, HookPermissions, SlotContext} from "../../interfaces/ISlotHook.sol";
 import {HookPermissionsLib} from "../../libraries/HookPermissionsLib.sol";
-import {HookOffer} from "../../types/SlotTypes.sol";
+import {HookOffer, HookTerms, PendingTerms} from "../../types/SlotTypes.sol";
+import {TermsLib} from "../../libraries/TermsLib.sol";
 import {MinimumTenure} from "../MinimumTenure.sol";
 import {AdLandModeration} from "./AdLandModeration.sol";
 import {AdLandStorage} from "./AdLandStorage.sol";
-import {Creative, ISlotAd} from "./IAdLand.sol";
+import {HookConfigStore} from "../base/HookConfigStore.sol";
+import {AdConfig, Creative, ISlotAd, ModerationMode} from "./IAdLand.sol";
 
 /**
  * @title AdLandCreatives
@@ -19,11 +21,10 @@ import {Creative, ISlotAd} from "./IAdLand.sol";
  *
  * @dev ── Why a creative stops applying ────────────────────────────────────
  *
- *      V1 wiped the entry from `onTransfer`/`onRelease`. Those calls were gas-
- *      capped and their failure swallowed, so a creative COULD outlive a
- *      transition and the next occupant inherited the last advertiser's ad. The
- *      `after` hooks here are capped and swallowed identically, so porting that
- *      design would port the bug with it.
+ *      A wipe driven from an `after` callback cannot be relied on: those calls
+ *      are gas-capped and their failure swallowed, so a creative would outlive
+ *      the transition and the next occupant would inherit the last advertiser's
+ *      ad.
  *
  *      Instead every creative carries the `tenureId` it was published for and
  *      reads resolve against it, so a wipe that never lands changes no answer.
@@ -38,12 +39,18 @@ import {Creative, ISlotAd} from "./IAdLand.sol";
  *
  *      ── Why vacancy is tested separately ─────────────────────────────────
  *
- *      `tenureId` increments in `_buy` and `sell` — the paths that SEAT an
- *      occupant. `release` and `liquidate` vacate without touching it. A stamp
+ *      `tenureId` increments in `_buy` — the path that SEATS an occupant.
+ *      `release` and `liquidate` vacate without touching it. A stamp
  *      comparison alone would keep showing the departed occupant's creative on
  *      an empty slot, which is the one state where a stale ad is worst.
  */
-abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTenure, ISlotHook {
+abstract contract AdLandCreatives is
+    AdLandStorage,
+    AdLandModeration,
+    MinimumTenure,
+    HookConfigStore,
+    ISlotHook
+{
     using SafeERC20 for IERC20;
 
     // ─── publishing ─────────────────────────────────────────────────────────
@@ -59,9 +66,9 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTen
     /// @dev Buying and publishing cannot be reordered or interleaved: `publish`
     ///      is occupant-only, and the buy clears the previous creative on its
     ///      way through. Two transactions leave the slot showing nothing in
-    ///      between — and V1 found the gap was not even an honest failure: the
-    ///      wallet's own RPC still held the old occupant, so `eth_estimateGas`
-    ///      on the metadata write reverted as a bare "internal error".
+    ///      between, and the gap is not even an honest failure: the wallet's own
+    ///      RPC still holds the old occupant, so `eth_estimateGas` on the
+    ///      publish reverts as a bare "internal error".
     ///
     ///      A wallet implementing EIP-5792 can batch and needs none of this. A
     ///      plain browser extension cannot, and that is who this is for.
@@ -224,12 +231,10 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTen
         f.afterLiquidate = true;
 
         // A slot takes ONE hook, so an advertising slot that also wants a
-        // minimum tenure cannot attach both. It used to say here that a
-        // `before` hook "has no business" vetoing a buy, and that was right
-        // while AdLand did only creatives — it is not right now that AdLand is
-        // the only hook such a slot can have. The rule itself is
-        // {MinimumTenure}'s, shared with {MinimumTenureHook} so there is one
-        // implementation rather than two that drift.
+        // minimum tenure cannot attach both — which is why AdLand vetoes buys
+        // itself. The rule is {MinimumTenure}'s, shared with
+        // {MinimumTenureHook} so there is one implementation rather than two
+        // that drift.
         //
         // Declared unconditionally because `hookOffer` is `pure` and
         // cannot see a slot's data. Slots that configure no window pay one
@@ -241,29 +246,77 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTen
     }
 
     /**
-     * @dev The word is the minimum-tenure window, in seconds, and ZERO means
-     *      no window at all.
+     * @dev The word is the id of a registered {AdConfig}: window, moderation
+     *      mode and the key this slot asks for. ZERO configures nothing — no
+     *      window, `Open`, no key — which is a legitimate advertising slot.
      *
-     *      Optional: zero means "creatives only". {MinimumTenure.tenureOf}
-     *      rejects zero as an unconfigured window, which is right for a hook
-     *      that exists only to enforce tenure and wrong here, so the check is
-     *      made before it.
+     *      Everything a slot configures here is therefore a hook term: changing
+     *      any of it goes through `proposeTerms`, needs a mutable hook, waits
+     *      out the delay and lands at the next buy.
      */
-    function validateHookConfig(bytes32 data) external pure {
-        if (data != bytes32(0)) tenureOf(data);
+    function validateHookConfig(bytes32 id) external view {
+        if (id == bytes32(0)) return;
+        AdConfig memory c = adConfigOf(id);
+        if (c.tenureWindow != 0) tenureOf(bytes32(uint256(c.tenureWindow)));
+    }
+
+    /// @notice The configuration registered under `id`.
+    /// @dev Reverts when nothing is registered, which is what stops a slot
+    ///      attaching an id nobody wrote.
+    function adConfigOf(bytes32 id) public view returns (AdConfig memory) {
+        return abi.decode(_hookConfig(id), (AdConfig));
+    }
+
+    /// @notice What a slot configured, or the defaults when it configured nothing.
+    function adConfig(address slot) public view returns (AdConfig memory c) {
+        if (slot.code.length == 0) return c;
+        try ISlotAd(slot).hookTerms() returns (HookTerms memory terms) {
+            if (terms.target != address(this) || terms.config == bytes32(0)) return c;
+            return adConfigOf(terms.config);
+        } catch {
+            return c;
+        }
+    }
+
+    /// @inheritdoc AdLandModeration
+    function _modeOf(address slot) internal view override returns (ModerationMode) {
+        return adConfig(slot).moderation;
+    }
+
+    /// @inheritdoc AdLandModeration
+    function _queuedModeOf(address slot, ModerationMode live)
+        internal
+        view
+        override
+        returns (ModerationMode)
+    {
+        try ISlotAd(slot).pendingTerms() returns (PendingTerms memory p) {
+            if (p.mask & TermsLib.HOOK == 0) return live;
+            if (p.hookTerms.target != address(this)) return ModerationMode.Open;
+            if (p.hookTerms.config == bytes32(0)) return ModerationMode.Open;
+            return adConfigOf(p.hookTerms.config).moderation;
+        } catch {
+            return live;
+        }
+    }
+
+    /// @inheritdoc MinimumTenure
+    function _windowOf(bytes32 config) internal view override returns (uint256) {
+        if (config == bytes32(0)) return 0;
+        return adConfigOf(config).tenureWindow;
     }
 
 
     /// @notice Refuse a buy that lands inside a protected window, when this
     ///         slot configured one.
     function beforeBuy(SlotContext calldata ctx) external view {
-        if (ctx.hookTerms.config == bytes32(0)) return;
+        if (_windowOf(ctx.hookTerms.config) == 0) return;
         _enforceTenureOnBuy(ctx);
     }
 
     /// @notice No cutting your price while nobody is allowed to take it.
     function beforeSelfAssess(SlotContext calldata ctx) external view {
-        if (ctx.hookTerms.config == bytes32(0)) return;
+        if (_windowOf(ctx.hookTerms.config) == 0) return;
         _enforceTenureOnSelfAssess(ctx);
     }
 
@@ -285,25 +338,23 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration, MinimumTen
     ///      whoever leaves can buy the vacant slot back at any price and restart
     ///      their window. Slots with no window configured have nothing to bar.
     function _barIfWindowed(SlotContext calldata ctx) private {
-        if (ctx.hookTerms.config == bytes32(0)) return;
+        if (_windowOf(ctx.hookTerms.config) == 0) return;
         _barReentry(ctx);
     }
 
     function afterSettle(SlotContext calldata) external {}
 
+    function afterAttach(SlotContext calldata) external {}
+
     /// @dev Keyed on `ctx.slot`, and the argument is not trusted to say so.
     ///
-    ///      It used to key on `msg.sender`, because every entry point here is
-    ///      world-callable and believing the argument would have let anyone
-    ///      clear anyone else's creative with a forged context.
-    ///
-    ///      The caller is not authenticated; the STATE is. This refuses any
+    ///      Every entry point here is world-callable, so the caller is not
+    ///      authenticated; the STATE is. This refuses any
     ///      entry the lens would still serve — see {AdLandLens-ad}, whose test
     ///      this mirrors exactly. A forged call can therefore only retire a row
     ///      that is already invisible, which is the whole of what an honest one
     ///      does. There is nothing left to steal, so there is nothing left to
-    ///      authenticate — and the wipe no longer depends on who is calling,
-    ///      which is what broke it when a fan-out hook forwarded the context.
+    ///      authenticate.
     ///
     ///      That the honest path passes the test is ordering, not luck:
     ///      `afterBuy` fires after `++tenureId`, and `afterRelease` and

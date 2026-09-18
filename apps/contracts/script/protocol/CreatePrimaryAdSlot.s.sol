@@ -5,8 +5,9 @@ import {console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolConfig} from "./ProtocolConfig.sol";
 import {AdLand} from "../../src/hooks/adland/AdLand.sol";
-import {AdLandCreate} from "../../src/hooks/adland/AdLandCreate.sol";
-import {ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
+import {AdConfig, ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
 
 /**
  * @title CreatePrimaryAdSlot
@@ -154,7 +155,6 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         console2.log("AdLand          ", adLandAddress);
         console2.log("owner           ", owner);
         console2.log("factory (record)", factory);
-        console2.log("factory (hook)  ", adLand.slotFactory());
         console2.log("slot owner      ", slotOwner);
         console2.log("currency        ", currency);
         console2.log("taxRateBps      ", taxRateBps);
@@ -164,22 +164,32 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
 
         vm.startBroadcast();
 
-        // Compared, not null-checked: a hook still pointing at the previous
-        // generation creates slots that work and that the indexer never sees.
-        if (adLand.slotFactory() != factory) {
-            console2.log("setSlotFactory   ->", factory);
-            adLand.setSlotFactory(factory);
-        }
+        // The slot's whole AdLand configuration, registered once and named by
+        // its hash. Keyless: `primary` is claimed below, delay and all.
+        bytes32 config = adLand.registerHookConfig(
+            abi.encode(
+                AdConfig({
+                    tenureWindow: uint64(tenure),
+                    moderation: ModerationMode(moderation),
+                    key: bytes32(0)
+                })
+            )
+        );
 
-        address slot = adLand.createAdSlot(
-            AdLandCreate.AdSlotParams({
-                owner: slotOwner,
+        // An ordinary slot from the ordinary factory, with AdLand as its hook.
+        address slot = SlotFactory(factory).createSlot(
+            SlotInit({
                 currency: IERC20(currency),
-                taxRateBps: uint16(taxRateBps),
-                minRunwaySeconds: uint32(minDeposit),
-                tenureWindow: tenure,
-                moderation: ModerationMode(moderation),
-                key: bytes32(0) // keyless; `primary` is claimed below, delay and all
+                manager: slotOwner,
+                mutableTax: true,
+                mutableRecipient: true,
+                mutableHook: false,
+                taxTerms: TaxTerms({
+                    recipient: slotOwner,
+                    rateBps: uint16(taxRateBps),
+                    minRunwaySeconds: uint32(minDeposit)
+                }),
+                hookTerms: HookTerms({target: adLandAddress, config: config})
             })
         );
 
