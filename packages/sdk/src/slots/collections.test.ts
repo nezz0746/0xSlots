@@ -44,11 +44,11 @@ const terms = (currency: string) => ({
   manager: ZERO,
   mutableTax: false,
   mutableRecipient: false,
-  mutableHook: false,
+  mutableApp: false,
   taxTerms: { recipient: ACCOUNT, rateBps: 1000, minRunwaySeconds: 604800 },
-  hookTerms: {
+  appTerms: {
     target: COLLECTION,
-    config: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    settings: "0x0000000000000000000000000000000000000000000000000000000000000000",
   },
 });
 

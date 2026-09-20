@@ -10,9 +10,9 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
-import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/hooks/nft/ISlotBoundNFTWrapper.sol";
-import {ISlotBoundNFT} from "../../src/hooks/nft/ISlotBoundNFT.sol";
+import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
+import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/apps/nft/ISlotBoundNFTWrapper.sol";
+import {ISlotBoundNFT} from "../../src/apps/nft/ISlotBoundNFT.sol";
 
 contract MockNFT is ERC721 {
     constructor() ERC721("Mock", "MOCK") {}
@@ -185,7 +185,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
 
         // Both hoisted: an external call inside the guarded frame is what
         // expectRevert would catch. The value must be EXACT — the core's
-        // `InvalidValue` check runs before any hook, so an approximate amount
+        // `InvalidValue` check runs before any app, so an approximate amount
         // never reaches the veto under test.
         uint256 dep = _dep(2 ether);
         uint256 pay = slot.price() + dep;

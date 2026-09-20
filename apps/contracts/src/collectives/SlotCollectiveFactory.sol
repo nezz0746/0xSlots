@@ -14,7 +14,7 @@ import {VersionedUUPS} from "../utils/VersionedUUPS.sol";
 ///
 /// @notice A `SlotCollective` is a 0xSplits PushSplit wearing a role-gated control
 ///         panel: it receives a slot's tax AND governs that slot's tax
-///         and hook. Deploying one by hand means getting a warehouse
+///         and app. Deploying one by hand means getting a warehouse
 ///         address, a validated split, three role arrays and a self-bound owner
 ///         right in a single constructor call, on every chain, every time.
 ///

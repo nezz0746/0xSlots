@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -42,7 +42,7 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, HookTerms calldata hook, uint8 mask)
+    function proposeTerms(TaxTerms calldata taxTerms, AppTerms calldata app, uint8 mask)
         external
         onlyManager
     {
@@ -52,8 +52,8 @@ contract MockSlot {
             hasTax = true;
         }
         if (mask & 8 != 0) {
-            hookData = hook.config;
-            hookAddr = hook.target;
+            hookData = app.settings;
+            hookAddr = app.target;
             hasHook = true;
         }
     }
@@ -177,7 +177,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: admin,
             taxManagers: taxManagers,
-            hookManagers: new address[](0),
+            appManagers: new address[](0),
             poolManagers: poolManagers
         });
 
@@ -417,17 +417,17 @@ contract SlotStreamCollectiveTest is Test {
         // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: address(0xBEEF), config: bytes32(0)}));
+        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xBEEF), settings: bytes32(0)}));
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposeHook(IManagedSlot(address(slot)), HookTerms({target: address(0xBEEF), config: bytes32(0)}));
+        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xBEEF), settings: bytes32(0)}));
         assertEq(slot.hookAddr(), address(0xBEEF));
 
         // Retracting one dimension leaves the other standing, on this engine
         // too — the governance half is shared, so this is the same code path.
         vm.prank(admin);
-        collective.cancelHookProposal(IManagedSlot(address(slot)));
+        collective.cancelAppProposal(IManagedSlot(address(slot)));
         assertTrue(slot.hasTax(), "the tax proposal survived");
         assertFalse(slot.hasHook());
     }
@@ -447,7 +447,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            hookManagers: new address[](0),
+            appManagers: new address[](0),
             poolManagers: new address[](0)
         });
 
@@ -476,7 +476,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: address(0),
             taxManagers: new address[](0),
-            hookManagers: new address[](0),
+            appManagers: new address[](0),
             poolManagers: new address[](0)
         });
 

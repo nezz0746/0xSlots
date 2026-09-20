@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
+
+import {Test} from "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Slot} from "../../src/Slot.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {ISlotApp, SlotContext, Scopes} from "../../src/interfaces/ISlotApp.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
+import {IDescribedApp} from "../../src/interfaces/IDescribedApp.sol";
+import {MinimumTenureApp} from "../../src/apps/MinimumTenureApp.sol";
+
+/// @dev An app that works but describes nothing — the case a client must
+///      degrade on rather than fail on.
+contract SilentApp is ISlotApp {
+    function checkSettings(bytes32) external pure {}
+
+    function manifest(bytes32) external pure returns (Manifest memory o) {
+        Scopes memory f;
+        f.beforeBuy = true;
+        o.scopes = ScopesLib.pack(f);
+    }
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+
+    function onUninstall(SlotContext calldata) external {}
+
+    function onInstall(SlotContext calldata) external {}
+
+
+}
+
+/// @dev An app whose `definition()` reverts. It must still be usable — the
+///      discovery layer is advisory and cannot be load-bearing.
+contract LyingApp is SilentApp, IDescribedApp {
+    function definition() external pure returns (string memory) {
+        revert("no");
+    }
+}
+
+contract DescribedHookTest is Test {
+    SlotFactory factory;
+    MinimumTenureApp tenure;
+
+    uint256 constant TENURE = 7 days;
+
+    function setUp() public {
+        factory = SlotFactory(address(new ERC1967Proxy(
+            address(new SlotFactory()),
+            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+        )));
+        tenure = new MinimumTenureApp();
+    }
+
+    function _slot(address app) internal returns (Slot) {
+        return _slot(app, bytes32(0));
+    }
+
+    function _slot(address app, bytes32 data) internal returns (Slot) {
+        return Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(0)),
+            manager: address(this),
+            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 hours)}),
+            appTerms: AppTerms({target: app, settings: data})
+        }))));
+    }
+
+    // ── the definition itself ───────────────────────────────────────────────
+
+    function test_TheTenureAppDescribesItself() public view {
+        string memory d = tenure.definition();
+        assertEq(vm.parseJsonUint(d, ".version"), 1, "the document's own version");
+        assertEq(vm.parseJsonString(d, ".title"), "Minimum tenure");
+        assertEq(
+            vm.parseJsonString(d, ".settings.$schema"),
+            "https://json-schema.org/draft/2020-12/schema",
+            "a standard schema, handed to a form library untouched"
+        );
+    }
+
+    /// @notice The definition names a window's SHAPE, never a window.
+    ///
+    /// @dev One deployment serves every duration, so any number published here
+    ///      would be one slot's terms reported to every other slot's reader.
+    ///      What it carries instead is this contract's own limits, from the
+    ///      same constant the check reads — which is what stops a form and a
+    ///      revert disagreeing.
+    function test_TheDefinitionNamesAShapeNotAWindow() public view {
+        string memory d = tenure.definition();
+
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].name"), "window");
+        assertEq(
+            vm.parseJsonString(d, ".settings[\'x-abi\'][0].type"),
+            "uint256",
+            "a type, not a value"
+        );
+
+        assertEq(
+            vm.parseUint(vm.parseJsonString(d, ".settings.properties.window[\'x-maximum\']")),
+            tenure.MAX_TENURE(),
+            "a limit, not a setting"
+        );
+        assertEq(
+            vm.parseJsonString(d, ".settings.properties.window[\'x-minimum\']"),
+            "1",
+            "and zero is unconfigured, not short"
+        );
+    }
+
+    /// @notice The word IS the value here, so a client encodes and attaches.
+    function test_TheWindowIsWrittenStraightIntoTheWord() public view {
+        string memory d = tenure.definition();
+        assertEq(vm.parseJsonString(d, '.settings["x-settings-encoding"]'), "inline");
+        assertEq(
+            vm.parseJsonString(d, ".settings.properties.window[\'x-semantic\']"),
+            "minimum-tenure",
+            "how an application recognises the rule without knowing this address"
+        );
+    }
+
+    /// @notice Two deployments of this app are indistinguishable, which is
+    ///         the point: nothing about a slot's terms lives in the address.
+    function test_EveryDeploymentDescribesItselfIdentically() public {
+        MinimumTenureApp other = new MinimumTenureApp();
+        assertEq(tenure.definition(), other.definition());
+    }
+
+    /// @notice The window comes from the slot's `settings` and nowhere else.
+    function test_TheWindowIsReadOffTheSlotsConfiguration() public view {
+        assertEq(tenure.tenureOf(bytes32(uint256(3 days))), 3 days);
+        assertEq(tenure.tenureOf(bytes32(TENURE)), TENURE);
+    }
+
+    // ── the rule that keeps it safe ──────────────────────────────────────────
+
+    /// @notice The protocol must never read this. An app whose `definition()`
+    ///         reverts has to remain completely usable, or the advisory layer
+    ///         has quietly become load-bearing.
+    function test_AAppWhoseDefinitionRevertsStillWorks() public {
+        LyingApp liar = new LyingApp();
+        Slot s = _slot(address(liar));
+
+        vm.expectRevert();
+        IDescribedApp(address(liar)).definition();
+
+        address buyer = address(0xB0B);
+        vm.deal(buyer, 10 ether);
+        uint256 need = s.minDepositForBuy(0.01 ether);
+        vm.prank(buyer);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, 0.01 ether, need, 0);
+
+        assertEq(s.occupant(), buyer, "execution is unaffected by discovery");
+        assertEq(s.app(), address(liar));
+        assertTrue(s.scopes().beforeBuy, "authority still comes from flags");
+    }
+
+    /// @notice An app that does not implement discovery at all is equally
+    ///         usable; the client just gets nothing to render.
+    function test_AHookThatDescribesNothingIsStillAFineApp() public {
+        SilentApp quiet = new SilentApp();
+        Slot s = _slot(address(quiet));
+
+        (bool ok, ) = address(quiet).staticcall(
+            abi.encodeCall(IDescribedApp.definition, ())
+        );
+        assertFalse(ok, "no such function; the client falls back to flags");
+
+        address buyer = address(0xB0B);
+        vm.deal(buyer, 10 ether);
+        uint256 need = s.minDepositForBuy(0.01 ether);
+        vm.prank(buyer);
+        s.buy{value: s.quoteBuy(address(this), need)}(buyer, 0.01 ether, need, 0);
+        assertEq(s.occupant(), buyer);
+    }
+
+    /// @notice And the slot itself never calls it — asserted against bytecode,
+    ///         not by reading the source and hoping.
+    ///
+    /// @dev Scans the IMPLEMENTATION, not the slot. A slot is a BeaconProxy,
+    ///      so `address(slot).code` is the proxy stub and contains no selector
+    ///      from the logic at all — scanning it would pass for every possible
+    ///      implementation, including one that reads `definition()` on every
+    ///      buy. Mutation-checked: adding such a read to `Slot` fails this.
+    function test_TheSlotBytecodeDoesNotContainTheDefinitionSelector() public {
+        _slot(address(tenure), bytes32(TENURE));
+        bytes4 sel = IDescribedApp.definition.selector;
+        bytes memory code = factory.implementation().code;
+        assertGt(code.length, 1000, "must be scanning the logic, not a proxy");
+
+        bool found;
+        for (uint256 i; i + 4 <= code.length; ++i) {
+            if (
+                code[i] == sel[0] && code[i + 1] == sel[1] &&
+                code[i + 2] == sel[2] && code[i + 3] == sel[3]
+            ) { found = true; break; }
+        }
+        assertFalse(found, "the protocol must not know this selector exists");
+    }
+}

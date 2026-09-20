@@ -1,5 +1,5 @@
 /**
- * The hook-based Slots protocol.
+ * The app-based Slots protocol.
  *
  * A separate entry point from the package root, not more names on it. Both
  * protocols have a `SlotsClient`, a `SlotInit`-shaped creation type and a
@@ -19,14 +19,16 @@ export {
   type BookOffer,
   type BuyParams,
   createSlotsClient,
-  HOOK_PERMISSION_BITS,
+  SCOPE_BITS,
   type HookConfigCheck,
-  type HookDescriptor,
-  type HookOffer,
+  type AppSettingsParam,
+  type AppSettingsSchema,
+  type AppDefinition,
+  type Manifest,
   type HookOfferStatus,
-  type HookPermissions,
-  type HookTerms,
-  NO_HOOK,
+  type Scopes,
+  type AppTerms,
+  NO_APP,
   type OfferBoard,
   MAX_PRICE,
   MAX_TAX_BPS,
@@ -42,8 +44,8 @@ export {
   type SlotsClientConfig,
   TERMS,
   TERMS_DELAY_SECONDS,
-  unpackHookPermissions,
-  ZERO_HOOK_DATA,
+  unpackScopes,
+  ZERO_SETTINGS,
 } from "./client";
 
 export {

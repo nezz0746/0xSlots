@@ -4,7 +4,7 @@ import {
   accountChain,
   accountSlot,
   currency,
-  hook,
+  app,
 } from "ponder:schema";
 import {
   type Abi,
@@ -22,7 +22,7 @@ const SPLIT_HASH_SELECTOR = toFunctionSelector("splitHash()").slice(2);
 export const ZERO_ADDR =
   "0x0000000000000000000000000000000000000000" as const satisfies Hex;
 
-/// "This slot configured nothing" — the `hookConfig` counterpart to ZERO_ADDR.
+/// "This slot configured nothing" — the `settings` counterpart to ZERO_ADDR.
 export const ZERO_DATA =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const satisfies Hex;
 
@@ -266,7 +266,7 @@ export async function getOrCreateCurrency(
 // HOOKS, AND THE STATE `SlotCreated` DOES NOT CARRY
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** The permissions a hook may declare. */
+/** The scopes an app may declare. */
 export type HookPermissionSet = {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
@@ -277,8 +277,8 @@ export type HookPermissionSet = {
   strict: boolean;
 };
 
-/** What a slot with no hook obeys: nothing. */
-export const NO_HOOK_PERMISSIONS: HookPermissionSet = {
+/** What a slot with no app obeys: nothing. */
+export const NO_SCOPES: HookPermissionSet = {
   beforeBuy: false,
   beforeSelfAssess: false,
   afterBuy: false,
@@ -288,9 +288,9 @@ export const NO_HOOK_PERMISSIONS: HookPermissionSet = {
   strict: false,
 };
 
-/** `HookOffer.permissions` as a set. Bits follow `HookPermissionsLib`. */
-export function unpackPermissions(permissions: number): HookPermissionSet {
-  const has = (bit: number) => (permissions & bit) !== 0;
+/** `Manifest.scopes` as a set. Bits follow `ScopesLib`. */
+export function unpackScopes(scopes: number): HookPermissionSet {
+  const has = (bit: number) => (scopes & bit) !== 0;
   return {
     beforeBuy: has(1),
     beforeSelfAssess: has(2),
@@ -358,25 +358,25 @@ async function readMany(
 }
 
 /**
- * A hook's own declaration of its permissions, for an empty config.
+ * An app's own declaration of its scopes, for an empty config.
  *
- * `null` when `hookOffer` does not answer. A hook whose offer reverts is
- * REFUSED at attach time, so seeing null here means either a hook that was
+ * `null` when `manifest` does not answer. An app whose offer reverts is
+ * REFUSED at attach time, so seeing null here means either an app that was
  * seen but never attached, or one that has since been upgraded into
  * something that no longer answers.
  */
 export async function readHookPermissions(
   ctx: Context,
-  hookAddr: Hex,
+  appAddr: Hex,
 ): Promise<HookPermissionSet | null> {
   try {
     const offer = (await ctx.client.readContract({
-      address: getAddress(lower(hookAddr)),
+      address: getAddress(lower(appAddr)),
       abi: SlotHookAbi,
-      functionName: "hookOffer",
+      functionName: "manifest",
       args: [ZERO_DATA],
-    })) as { permissions: number };
-    return unpackPermissions(offer.permissions);
+    })) as { scopes: number };
+    return unpackScopes(offer.scopes);
   } catch {
     return null;
   }
@@ -384,27 +384,27 @@ export async function readHookPermissions(
 
 /**
  * The terms `SlotCreated` leaves out, read back from the slot at the event's
- * block: rent, hook terms, manager, lock and the hook-flag snapshot.
+ * block: rent, app terms, manager, lock and the app-flag snapshot.
  */
 export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
-  const [taxTerms, hookTerms, manager, mutTax, mutRecipient, mutHook, offer] =
+  const [taxTerms, appTerms, manager, mutTax, mutRecipient, mutHook, offer] =
     await readMany(ctx, address, SlotAbi as unknown as Abi, [
       "taxTerms",
-      "hookTerms",
+      "appTerms",
       "manager",
       "mutableTax",
       "mutableRecipient",
-      "mutableHook",
-      "hookOffer",
+      "mutableApp",
+      "manifest",
     ]);
 
   const r = taxTerms as
     | { recipient: Hex; rateBps: number; minRunwaySeconds: number }
     | undefined;
-  const h = hookTerms as { target: Hex; config: Hex } | undefined;
+  const h = appTerms as { target: Hex; settings: Hex } | undefined;
   const o = offer as
-    | { permissions: number; feeBps: number; feeRecipient: Hex }
+    | { scopes: number; feeBps: number; feeRecipient: Hex }
     | undefined;
   const managerAddr =
     typeof manager === "string" && lower(manager as Hex) !== ZERO_ADDR
@@ -418,21 +418,21 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
     manager: managerAddr,
     mutableTax: mutTax === true,
     mutableRecipient: mutRecipient === true,
-    mutableHook: mutHook === true,
-    /// The hook's fee, as the slot accepted it.
+    mutableApp: mutHook === true,
+    /// The app's fee, as the slot accepted it.
     hookFeeBps: o?.feeBps ?? 0,
     hookFeeRecipient:
       o && lower(o.feeRecipient) !== ZERO_ADDR ? lower(o.feeRecipient) : null,
-    /// The permissions THIS SLOT obeys, as it accepted them.
-    permissions: o ? unpackPermissions(o.permissions) : NO_HOOK_PERMISSIONS,
-    hookConfig: h ? lower(h.config) : ZERO_DATA,
+    /// The scopes THIS SLOT obeys, as it accepted them.
+    scopes: o ? unpackScopes(o.scopes) : NO_SCOPES,
+    settings: h ? lower(h.settings) : ZERO_DATA,
   };
 }
 
 /**
- * The `hook` row, created on first sight with its declared permissions read once.
+ * The `app` row, created on first sight with its declared scopes read once.
  *
- * Keyed by (address, chainId): a hook is code, not an identity, and the same
+ * Keyed by (address, chainId): an app is code, not an identity, and the same
  * address on two chains is two deployments whose immutables may differ.
  */
 export async function getOrCreateHook(
@@ -442,13 +442,13 @@ export async function getOrCreateHook(
 ) {
   const id = lower(hookAddrRaw);
   const chainId = ctx.chain.id;
-  const existing = await ctx.db.find(hook, { id, chainId });
+  const existing = await ctx.db.find(app, { id, chainId });
   if (existing) return existing;
 
   const declared = await readHookPermissions(ctx, id);
-  const f = declared ?? NO_HOOK_PERMISSIONS;
+  const f = declared ?? NO_SCOPES;
 
-  return ctx.db.insert(hook).values({
+  return ctx.db.insert(app).values({
     id,
     chainId,
     declaredKnown: declared !== null,
@@ -466,8 +466,8 @@ export async function getOrCreateHook(
   });
 }
 
-/** Move a hook's slot count, creating the row if this is its first slot. */
-export async function bumpHookSlotCount(
+/** Move an app's slot count, creating the row if this is its first slot. */
+export async function bumpAppSlotCount(
   ctx: Context,
   hookAddrRaw: Hex,
   timestamp: bigint,
@@ -476,19 +476,19 @@ export async function bumpHookSlotCount(
   const id = lower(hookAddrRaw);
   if (id === ZERO_ADDR) return;
   await getOrCreateHook(ctx, id, timestamp);
-  await ctx.db.update(hook, { id, chainId: ctx.chain.id }).set((row) => ({
+  await ctx.db.update(app, { id, chainId: ctx.chain.id }).set((row) => ({
     slotCount: Math.max(0, row.slotCount + delta),
     updatedAt: timestamp,
   }));
 }
 
-/** Columns for `slot`, from the accepted permissions. */
+/** Columns for `slot`, from the accepted scopes. */
 export const hookPermissionColumns = (f: HookPermissionSet) => ({
-  permBeforeBuy: f.beforeBuy,
-  permBeforeSelfAssess: f.beforeSelfAssess,
-  permAfterBuy: f.afterBuy,
-  permAfterRelease: f.afterRelease,
-  permAfterLiquidate: f.afterLiquidate,
-  permAfterSettle: f.afterSettle,
-  permStrict: f.strict,
+  scopeBeforeBuy: f.beforeBuy,
+  scopeBeforeSelfAssess: f.beforeSelfAssess,
+  scopeAfterBuy: f.afterBuy,
+  scopeAfterRelease: f.afterRelease,
+  scopeAfterLiquidate: f.afterLiquidate,
+  scopeAfterSettle: f.afterSettle,
+  scopeStrict: f.strict,
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownApp } from "@0xslots/contracts/slots";
 import { ArrowDown, ArrowUp, Check, Filter, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { isAddress } from "viem";
@@ -41,12 +41,12 @@ import { truncateAddress } from "@/utils";
 /**
  * A NEW key, not the old `0xslots:slot-filters`.
  *
- * The stored shape changed — `moduleIds` became `hooks` — and a browser that
+ * The stored shape changed — `moduleIds` became `apps` — and a browser that
  * used the previous app still holds the old value. Reusing the key would
  * silently restore a filter naming contracts that no longer exist, and the
  * table would come up empty for reasons nothing on screen explains.
  */
-const STORAGE_KEY = "0xslots:slot-filters:hooks";
+const STORAGE_KEY = "0xslots:slot-filters:apps";
 
 /**
  * The explorer's slots table: filtered, sorted and paged by the indexer.
@@ -79,7 +79,7 @@ export function SlotsTable() {
   const [addressField, setAddressField] = useState<
     "recipient" | "occupant" | null
   >(null);
-  const { data: hooks } = useHooks();
+  const { data: apps } = useHooks();
   // One clock for every row — see `SlotRow`.
   const now = useChainClock();
 
@@ -90,7 +90,7 @@ export function SlotsTable() {
   const updateFilters = (next: SlotFilters) => {
     // Clean empty values
     const clean: SlotFilters = {};
-    if (next.hooks && next.hooks.length > 0) clean.hooks = next.hooks;
+    if (next.apps && next.apps.length > 0) clean.apps = next.apps;
     if (next.recipient) clean.recipient = next.recipient;
     if (next.occupant) clean.occupant = next.occupant;
     setFilters(clean);
@@ -98,7 +98,7 @@ export function SlotsTable() {
   };
 
   const hasFilters =
-    (filters.hooks && filters.hooks.length > 0) ||
+    (filters.apps && filters.apps.length > 0) ||
     !!filters.recipient ||
     !!filters.occupant;
 
@@ -162,11 +162,11 @@ export function SlotsTable() {
   };
 
   const toggleHook = (hookId: string) => {
-    const current = filters.hooks ?? [];
+    const current = filters.apps ?? [];
     const next = current.includes(hookId)
       ? current.filter((id) => id !== hookId)
       : [...current, hookId];
-    updateFilters({ ...filters, hooks: next });
+    updateFilters({ ...filters, apps: next });
   };
 
   const applyAddress = () => {
@@ -179,7 +179,7 @@ export function SlotsTable() {
   };
 
   const removeFilter = (key: keyof SlotFilters, value?: string) => {
-    if (key === "hooks" && value) {
+    if (key === "apps" && value) {
       toggleHook(value);
     } else {
       const next = { ...filters };
@@ -195,7 +195,7 @@ export function SlotsTable() {
   };
 
   const hookLabel = (id: string) =>
-    findKnownHook(chainId, id as `0x${string}`)?.name ?? truncateAddress(id);
+    findKnownApp(chainId, id as `0x${string}`)?.name ?? truncateAddress(id);
 
   if (isLoading && !data) return <TableSkeleton />;
 
@@ -235,12 +235,12 @@ export function SlotsTable() {
         {/* Active filter pills */}
         {hasFilters && (
           <>
-            {filters.hooks?.map((id) => (
+            {filters.apps?.map((id) => (
               <Badge
-                key={`hook-${id}`}
+                key={`app-${id}`}
                 variant="secondary"
                 className="gap-1 text-xs cursor-pointer"
-                onClick={() => removeFilter("hooks", id)}
+                onClick={() => removeFilter("apps", id)}
               >
                 {hookLabel(id)}
                 <X className="size-3" />
@@ -318,7 +318,7 @@ export function SlotsTable() {
               Filters
               {hasFilters && (
                 <Badge variant="secondary" className="text-[9px] px-1 py-0">
-                  {(filters.hooks?.length ?? 0) +
+                  {(filters.apps?.length ?? 0) +
                     (filters.recipient ? 1 : 0) +
                     (filters.occupant ? 1 : 0)}
                 </Badge>
@@ -359,21 +359,21 @@ export function SlotsTable() {
 
             <DropdownMenuSeparator />
 
-            {/* Hook filters. Was "Utility", and listed modules — a slot has one
-                hook now, so this is a one-of dimension rather than a gallery. */}
-            <DropdownMenuLabel className="text-xs">Hook</DropdownMenuLabel>
-            {hooks?.map((h) => (
+            {/* App filters. Was "Utility", and listed modules — a slot has one
+                app now, so this is a one-of dimension rather than a gallery. */}
+            <DropdownMenuLabel className="text-xs">App</DropdownMenuLabel>
+            {apps?.map((h) => (
               <DropdownMenuCheckboxItem
                 key={h.id}
-                checked={filters.hooks?.includes(h.id) ?? false}
+                checked={filters.apps?.includes(h.id) ?? false}
                 onCheckedChange={() => toggleHook(h.id)}
               >
                 <span className="truncate">{hookLabel(h.id)}</span>
               </DropdownMenuCheckboxItem>
             ))}
-            {(!hooks || hooks.length === 0) && (
+            {(!apps || apps.length === 0) && (
               <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                No hooks in use
+                No apps in use
               </p>
             )}
           </DropdownMenuContent>
@@ -438,7 +438,7 @@ export function SlotsTable() {
                       ))}
                   </span>
                 </TableHead>
-                <TableHead>Hook</TableHead>
+                <TableHead>App</TableHead>
                 {/* Was "Flags", which named the mechanism rather than the fact.
     These are the slot's TERMS and whether they are still open. */}
                 <TableHead>Config</TableHead>

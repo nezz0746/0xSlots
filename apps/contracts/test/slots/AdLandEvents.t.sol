@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test, Vm} from "forge-std/Test.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
+import {AdLand} from "../../src/apps/adland/AdLand.sol";
 
 /**
  * The events the indexer reads, asserted from the outside.
@@ -69,9 +69,9 @@ contract AdLandEventsTest is Test {
                         SlotInit({
                             currency: IERC20(address(0)),
                             manager: address(this),
-                            mutableTax: true, mutableRecipient: true, mutableHook: true,
+                            mutableTax: true, mutableRecipient: true, mutableApp: true,
                             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-                            hookTerms: HookTerms({target: address(adland), config: bytes32(0)})
+                            appTerms: AppTerms({target: address(adland), settings: bytes32(0)})
                         })
                     )
                 )

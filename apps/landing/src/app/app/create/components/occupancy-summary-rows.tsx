@@ -1,6 +1,6 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownApp } from "@0xslots/contracts/slots";
 import { ShieldCheck } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 import { type Address, isAddress } from "viem";
@@ -17,7 +17,7 @@ import type { SectionId } from "../sections";
  * holding the slot feels like, so it must not be visible on only one of them.
  *
  * The terms used to come from a dedicated occupancy policy. They now come from
- * the hook, because the protocol folded policies into hooks — but the row
+ * the app, because the protocol folded policies into apps — but the row
  * stayed, and stayed labelled "Occupancy", because the question a reader is
  * asking here is "can this be taken from me, and when", not "which contract
  * implements that".
@@ -29,18 +29,18 @@ export function OccupancySummaryRows({
 }) {
   const form = useFormContext<CreateSlotFormValues>();
   const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const app = form.watch("app");
   const { chainId } = useChain();
 
   const label = (() => {
-    if (hookMode === "none" || !hook) {
+    if (hookMode === "none" || !app) {
       // Always says something: "Instant buy" is itself a term worth confirming
       // before signing, not the absence of one.
       return "Instant buy";
     }
-    const known = findKnownHook(chainId, hook as Address);
+    const known = findKnownApp(chainId, app as Address);
     if (known) return known.name;
-    return isAddress(hook, { strict: false }) ? truncateAddress(hook) : "—";
+    return isAddress(app, { strict: false }) ? truncateAddress(app) : "—";
   })();
 
   const content = (
@@ -57,7 +57,7 @@ export function OccupancySummaryRows({
   return (
     <button
       type="button"
-      onClick={() => onJump("hook")}
+      onClick={() => onJump("app")}
       className="flex w-full justify-between rounded px-1 -mx-1 py-0.5 text-left hover:bg-muted/60 transition-colors"
     >
       {content}

@@ -8,8 +8,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotBoundNFTFactory, CollectionInit, WrapperInit}
-    from "../../src/hooks/nft/SlotBoundNFTFactory.sol";
-import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
+    from "../../src/apps/nft/SlotBoundNFTFactory.sol";
+import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
 
 contract SlotBoundNFTWrapperFactoryTest is Test {
     SlotFactory slots;
@@ -50,7 +50,7 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
         assertEq(SlotBoundNFTWrapper(w).version(), 1);
     }
 
-    /// @notice The fee config reaches the wrapper through the factory.
+    /// @notice The fee settings reaches the wrapper through the factory.
     function test_TheFactorySetsTheWrapperOwnerAndFee() public {
         address w = nftFactory.createWrapper(WrapperInit({
             name: "Paid", symbol: "PAID", owner: admin, wrapFeeWei: 0.02 ether

@@ -47,7 +47,7 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
-/** Another tab renamed something. Drop the cache and let every hook re-read. */
+/** Another tab renamed something. Drop the cache and let every app re-read. */
 function onStorage(event: StorageEvent) {
   if (event.key !== STORAGE_KEY) return;
   cache = null;
@@ -129,7 +129,7 @@ export function useCollectiveName(address: string | undefined) {
  * Name a collective outside of React's render cycle.
  *
  * The create form needs this: the address only exists once the receipt is in
- * hand, which is an effect, not a hook call.
+ * hand, which is an effect, not an app call.
  */
 export function setCollectiveName(
   chainId: number,

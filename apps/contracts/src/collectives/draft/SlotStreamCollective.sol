@@ -194,13 +194,13 @@ contract SlotStreamCollective is SlotGovernance {
 
     /// @param admin Holder of `DEFAULT_ADMIN_ROLE`.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
-    /// @param hookManagers Initial `POLICY_MANAGER_ROLE` holders — the role
-    ///        that governs the hook. May be empty.
+    /// @param appManagers Initial `POLICY_MANAGER_ROLE` holders — the role
+    ///        that governs the app. May be empty.
     /// @param poolManagers Initial `POOL_MANAGER_ROLE` holders. May be empty.
     struct InitialRoles {
         address admin;
         address[] taxManagers;
-        address[] hookManagers;
+        address[] appManagers;
         address[] poolManagers;
     }
 
@@ -288,7 +288,7 @@ contract SlotStreamCollective is SlotGovernance {
         _initGovernance(
             roles.admin,
             roles.taxManagers,
-            roles.hookManagers
+            roles.appManagers
         );
         _grantRoleBatch(POOL_MANAGER_ROLE, roles.poolManagers);
     }

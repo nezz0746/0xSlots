@@ -1,13 +1,15 @@
 import {
-  minimumTenureHookAbi,
+  minimumTenureAppAbi,
   offerBookAbi,
   offerBookAddress,
   slotAbi,
   slotFactoryAbi,
 } from "@0xslots/contracts/slots";
 import {
+  type AbiParameter,
   type Address,
   type Chain,
+  decodeAbiParameters,
   encodeFunctionData,
   erc20Abi,
   type Hash,
@@ -44,21 +46,21 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
  */
 export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
 
-/** "This hook configured nothing" — 32 zero bytes. */
-export const ZERO_HOOK_DATA =
+/** "This app configured nothing" — 32 zero bytes. */
+export const ZERO_SETTINGS =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
 
 /**
  * Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
- * `HOOK` always covers the whole {@link HookTerms}. `HOOK_PERMISSIONS` is never
- * proposed: it is queued by {@link SlotsClient.acceptHookOffer}.
+ * `APP` always covers the whole {@link AppTerms}. `SCOPES` is never
+ * proposed: it is queued by {@link SlotsClient.grant}.
  */
 export const TERMS = {
   TAX_RATE: 1,
   RECIPIENT: 2,
   MIN_RUNWAY: 4,
-  HOOK: 8,
-  HOOK_PERMISSIONS: 16,
+  APP: 8,
+  SCOPES: 16,
 } as const;
 export const ALL_TERMS = 31;
 
@@ -66,7 +68,7 @@ export const ALL_TERMS = 31;
 
 /** What the slot charges and who receives it. Mirrors `TaxTerms`. */
 export interface TaxTerms {
-  /** Receives the rent, less any hook fee. Never zero. */
+  /** Receives the rent, less any app fee. Never zero. */
   recipient: Address;
   /** Basis points of the declared price per 30 days. 1..10000. */
   rateBps: number;
@@ -74,29 +76,29 @@ export interface TaxTerms {
   minRunwaySeconds: number;
 }
 
-/** The slot's hook and its configuration. Mirrors `HookTerms`. */
-export interface HookTerms {
-  /** The hook contract. {@link zeroAddress} for none, with `config` zero too. */
+/** The slot's app and its configuration. Mirrors `AppTerms`. */
+export interface AppTerms {
+  /** The app contract. {@link zeroAddress} for none, with `config` zero too. */
   target: Address;
-  /** This slot's configuration for the hook. Opaque to the slot. */
-  config: Hex;
+  /** This slot's settings for the app. Opaque to the slot. */
+  settings: Hex;
 }
 
 /**
- * What a hook asks of a slot: its callbacks and a share of rent. Declared by the
- * hook; the slot keeps a copy from when it attached or its manager last
- * accepted. Mirrors `HookOffer`.
+ * What an app asks of a slot: its callbacks and a share of rent. Declared by the
+ * app; the slot keeps a copy from when it attached or its manager last
+ * accepted. Mirrors `Manifest`.
  */
-export interface HookOffer {
-  /** Callbacks, as {@link HOOK_PERMISSION_BITS}. See {@link unpackHookPermissions}. */
-  permissions: number;
+export interface Manifest {
+  /** Callbacks, as {@link SCOPE_BITS}. See {@link unpackScopes}. */
+  scopes: number;
   /** Basis points of collected rent. 0..10000. */
   feeBps: number;
   feeRecipient: Address;
 }
 
-/** Bits of {@link HookOffer.permissions}. Mirrors `HookPermissionsLib`. */
-export const HOOK_PERMISSION_BITS = {
+/** Bits of {@link Manifest.scopes}. Mirrors `ScopesLib`. */
+export const SCOPE_BITS = {
   beforeBuy: 1,
   beforeSelfAssess: 2,
   afterBuy: 4,
@@ -104,9 +106,11 @@ export const HOOK_PERMISSION_BITS = {
   afterLiquidate: 16,
   afterSettle: 32,
   strict: 64,
+  onInstall: 128,
+  onUninstall: 256,
 } as const;
 
-export const NO_HOOK: HookTerms = { target: zeroAddress, config: ZERO_HOOK_DATA };
+export const NO_APP: AppTerms = { target: zeroAddress, settings: ZERO_SETTINGS };
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
@@ -123,16 +127,16 @@ export interface SlotInit {
   /** Tax rate and minimum runway can change. */
   mutableTax: boolean;
   mutableRecipient: boolean;
-  mutableHook: boolean;
+  mutableApp: boolean;
   taxTerms: TaxTerms;
-  /** Omit for no hook. */
-  hookTerms?: Partial<HookTerms> & { target: Address };
+  /** Omit for no app. */
+  appTerms?: Partial<AppTerms> & { target: Address };
 }
 
-function fullHook(hook?: Partial<HookTerms> & { target: Address }): HookTerms {
+function fullHook(app?: Partial<AppTerms> & { target: Address }): AppTerms {
   return {
-    target: hook?.target ?? zeroAddress,
-    config: hook?.config ?? ZERO_HOOK_DATA,
+    target: app?.target ?? zeroAddress,
+    settings: app?.settings ?? ZERO_SETTINGS,
   };
 }
 
@@ -143,13 +147,13 @@ function encodeSlotInit(init: SlotInit) {
     manager: init.manager,
     mutableTax: init.mutableTax,
     mutableRecipient: init.mutableRecipient,
-    mutableHook: init.mutableHook,
+    mutableApp: init.mutableApp,
     taxTerms: {
       recipient: init.taxTerms.recipient,
       rateBps: init.taxTerms.rateBps,
       minRunwaySeconds: init.taxTerms.minRunwaySeconds,
     },
-    hookTerms: fullHook(init.hookTerms),
+    appTerms: fullHook(init.appTerms),
   } as const;
 }
 
@@ -168,14 +172,14 @@ function assertTaxTerms(taxTerms: Partial<TaxTerms>, mask: number, where: string
   }
 }
 
-function assertHook(hook: HookTerms, where: string) {
-  if (hook.target === zeroAddress && hook.config !== ZERO_HOOK_DATA)
-    throw new SlotsError(where, "hook config needs a hook — pass a target, or drop the config");
+function assertApp(app: AppTerms, where: string) {
+  if (app.target === zeroAddress && app.settings !== ZERO_SETTINGS)
+    throw new SlotsError(where, "app config needs an app — pass a target, or drop the config");
 }
 
 /** Throw on the initialisations `Slot.initialize` refuses, before spending gas. */
 export function assertSlotInit(init: SlotInit): void {
-  const anyMutable = init.mutableTax || init.mutableRecipient || init.mutableHook;
+  const anyMutable = init.mutableTax || init.mutableRecipient || init.mutableApp;
   if (anyMutable && init.manager === zeroAddress)
     throw new SlotsError("createSlot", "a slot with anything mutable needs a manager");
   if (!anyMutable && init.manager !== zeroAddress)
@@ -184,20 +188,20 @@ export function assertSlotInit(init: SlotInit): void {
       "a fully immutable slot must have no manager — the zero address is what makes it immutable",
     );
   assertTaxTerms(init.taxTerms, ALL_TERMS, "createSlot");
-  assertHook(fullHook(init.hookTerms), "createSlot");
+  assertApp(fullHook(init.appTerms), "createSlot");
 }
 
-// ─── Hooks ────────────────────────────────────────────────────────────────────
+// ─── Apps ────────────────────────────────────────────────────────────────────
 
 /**
- * A hook's permissions, as the slot accepted them when it was
- * attached — not as the hook reports them today.
+ * An app's scopes, as the slot accepted them when it was
+ * attached — not as the app reports them today.
  *
  * `before` decides and may refuse; `after` records and cannot. That is the whole
  * interface. A flag being false means the callback is skipped entirely, so an
- * `afterBuy` that never fires is usually a hook that forgot to declare it.
+ * `afterBuy` that never fires is usually an app that forgot to declare it.
  */
-export interface HookPermissions {
+export interface Scopes {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
@@ -205,27 +209,27 @@ export interface HookPermissions {
   afterLiquidate: boolean;
   afterSettle: boolean;
   /**
-   * Not a callback — a mode. The hook's `after` calls run uncapped and their
+   * Not a callback — a mode. The app's `after` calls run uncapped and their
    * revert propagates, so its writes cannot be silently dropped.
    *
-   * A slot whose hook declares this is only as evictable as that hook: a
+   * A slot whose app declares this is only as evictable as that app: a
    * failing `afterLiquidate` blocks the eviction rather than being swallowed.
    * Surface it wherever a user commits funds to a slot.
    */
   strict: boolean;
 }
 
-/** {@link HookOffer.permissions} as {@link HookPermissions}. */
-export function unpackHookPermissions(permissions: number): HookPermissions {
-  const has = (bit: number) => (permissions & bit) !== 0;
+/** {@link Manifest.scopes} as {@link Scopes}. */
+export function unpackScopes(scopes: number): Scopes {
+  const has = (bit: number) => (scopes & bit) !== 0;
   return {
-    beforeBuy: has(HOOK_PERMISSION_BITS.beforeBuy),
-    beforeSelfAssess: has(HOOK_PERMISSION_BITS.beforeSelfAssess),
-    afterBuy: has(HOOK_PERMISSION_BITS.afterBuy),
-    afterRelease: has(HOOK_PERMISSION_BITS.afterRelease),
-    afterLiquidate: has(HOOK_PERMISSION_BITS.afterLiquidate),
-    afterSettle: has(HOOK_PERMISSION_BITS.afterSettle),
-    strict: has(HOOK_PERMISSION_BITS.strict),
+    beforeBuy: has(SCOPE_BITS.beforeBuy),
+    beforeSelfAssess: has(SCOPE_BITS.beforeSelfAssess),
+    afterBuy: has(SCOPE_BITS.afterBuy),
+    afterRelease: has(SCOPE_BITS.afterRelease),
+    afterLiquidate: has(SCOPE_BITS.afterLiquidate),
+    afterSettle: has(SCOPE_BITS.afterSettle),
+    strict: has(SCOPE_BITS.strict),
   };
 }
 
@@ -234,9 +238,9 @@ export interface PendingTerms {
   /** Only the fields named by `mask` are meaningful. */
   taxTerms: TaxTerms;
   /** Meaningful when `hasHook`. */
-  hookTerms: HookTerms;
-  /** Meaningful when `hasHookPermissions`: permissions accepted from the attached hook. */
-  hookPermissions: number;
+  appTerms: AppTerms;
+  /** Meaningful when `hasHookPermissions`: scopes accepted from the attached app. */
+  scopes: number;
   /** Which terms are queued. See {@link TERMS}. */
   mask: number;
   hasTaxRate: boolean;
@@ -261,34 +265,89 @@ export interface PendingTerms {
 
 /**
  * A change of terms to queue. Presence is the signal, not truthiness:
- * `{ hookTerms: NO_HOOK }` means "detach the hook".
+ * `{ appTerms: NO_APP }` means "detach the app".
  */
 export interface ProposeTermsParams {
   /** Basis points per 30 days. */
   taxRateBps?: number;
   recipient?: Address;
   minRunwaySeconds?: number;
-  /** The whole hook terms. The offer is the hook's own, read when it attaches. */
-  hookTerms?: Partial<HookTerms> & { target: Address };
+  /** The whole app terms. The offer is the app's own, read when it attaches. */
+  appTerms?: Partial<AppTerms> & { target: Address };
 }
 
 /** Every term in force. Mirrors `Terms`. */
 export interface SlotTerms {
   taxTerms: TaxTerms;
-  hookTerms: HookTerms;
-  hookOffer: HookOffer;
+  appTerms: AppTerms;
+  manifest: Manifest;
 }
 
-/** A hook's self-description. Mirrors `IDescribedHook.HookDescriptor`. */
-export interface HookDescriptor {
-  family: Hex;
+/**
+ * The two reads any app may answer, declared here rather than taken from a
+ * generated ABI.
+ *
+ * Both are optional surface that any app may implement, so borrowing one
+ * app's ABI to call them on another would tie this to whichever app happened
+ * to be generated. `settingsById` exists on every app that registers its
+ * configuration rather than inlining it.
+ */
+const describedAppAbi = [
+  {
+    type: "function",
+    name: "definition",
+    stateMutability: "pure",
+    inputs: [],
+    outputs: [{ type: "string" }],
+  },
+  {
+    type: "function",
+    name: "settingsById",
+    stateMutability: "view",
+    inputs: [{ name: "id", type: "bytes32" }],
+    outputs: [{ type: "bytes" }],
+  },
+] as const;
+
+/** One `x-abi` entry: viem's own `AbiParameter`, in encoding order. */
+export interface AppSettingsParam {
+  name: string;
+  type: string;
+}
+
+/**
+ * The configuration half of an app's definition: a JSON Schema 2020-12
+ * document, passable to `react-jsonschema-form` or AJV untouched, plus the
+ * `x-` conventions the protocol adds.
+ *
+ * Every value is a string — a `uint64` bound does not survive `JSON.parse` as a
+ * number — so ranges travel as `x-minimum` / `x-maximum` strings and the
+ * app's own `checkSettings` remains the authority on what is accepted.
+ */
+export interface AppSettingsSchema {
+  $schema: string;
+  title: string;
+  type: "object";
+  properties: Record<string, Record<string, unknown>>;
+  required: string[];
+  /** `registered`: encode, `registerSettings`, attach the returned id. */
+  "x-config-encoding": "inline" | "registered";
+  /** Whether a slot may carry no configuration at all. */
+  "x-optional"?: boolean;
+  "x-abi": AppSettingsParam[];
+}
+
+/** What an app says it is. `IDescribedApp.definition`, parsed. */
+export interface AppDefinition {
   version: number;
-  signature: string;
-  data: Hex;
-  metadataURI: string;
+  title: string;
+  description: string;
+  docs?: string;
+  /** Absent for an app that takes no configuration. */
+  config?: AppSettingsSchema;
 }
 
-/** Whether a hook accepts a configuration, and why not. */
+/** Whether an app accepts a configuration, and why not. */
 export type HookConfigCheck = { ok: true } | { ok: false; reason: string };
 
 /** One entry on the OfferBook. `id` is what `acceptOffer` and `cancelOffer` take. */
@@ -322,17 +381,17 @@ export interface PostOfferParams {
   expiry: bigint;
 }
 
-/** The slot's accepted hook offer beside what the hook offers today. */
+/** The slot's accepted app offer beside what the app offers today. */
 export interface HookOfferStatus {
-  accepted: HookOffer;
-  offered: HookOffer;
+  accepted: Manifest;
+  offered: Manifest;
   /** Accepting would change the fee, at once. */
   feeDiffers: boolean;
   /**
-   * Accepting would queue new permissions for the next buy. Always false when
-   * the slot's hook is immutable, or those permissions are already queued.
+   * Accepting would queue new scopes for the next buy. Always false when
+   * the slot's app is immutable, or those scopes are already queued.
    */
-  permissionsDiffer: boolean;
+  scopesDiffer: boolean;
 }
 
 // ─── Selling ──────────────────────────────────────────────────────────────────
@@ -340,7 +399,7 @@ export interface HookOfferStatus {
 // There is no `SellOrder` any more. The core carried `sell` — an occupant
 // submitting a buyer's EIP-712 order — and it was a SECOND seating path: it
 // reset the tenure like `buy` but ran `beforeSell` instead of `beforeBuy`, so a
-// hook author had two doors to police.
+// app author had two doors to police.
 //
 // A consensual sale is now `selfAssess` then `buy`, performed by the OfferBook
 // inside the occupant's own transaction. The occupant makes the book their
@@ -395,13 +454,13 @@ export interface SlotState {
   manager: Address;
   mutableTax: boolean;
   mutableRecipient: boolean;
-  mutableHook: boolean;
-  hook: Address;
-  /** The hook's configuration: 32 bytes only the hook can interpret. */
-  hookConfig: Hex;
-  /** What the hook asks — callbacks and fee — as this slot accepted it. */
-  hookOffer: HookOffer;
-  hookPermissions: HookPermissions;
+  mutableApp: boolean;
+  app: Address;
+  /** The app's configuration: 32 bytes only the app can interpret. */
+  settings: Hex;
+  /** What the app asks — callbacks and fee — as this slot accepted it. */
+  manifest: Manifest;
+  scopes: Scopes;
   pending: PendingTerms;
   /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
   occupiedSince: bigint;
@@ -436,7 +495,7 @@ export interface SlotState {
 }
 
 export interface SlotsClientConfig {
-  /** The hook-protocol `SlotFactory`. Only `createSlot` needs it. */
+  /** The app-protocol `SlotFactory`. Only `createSlot` needs it. */
   factoryAddress?: Address;
   /**
    * The `OfferBook`. Only {@link SlotsClient.acceptOffer} needs it, and it
@@ -450,15 +509,15 @@ export interface SlotsClientConfig {
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 /**
- * `slotAbi` plus every hook error this package can name.
+ * `slotAbi` plus every app error this package can name.
  *
- * A hook's veto reverts with the HOOK'S error, and viem decodes an error only
+ * An app's veto reverts with the APP'S error, and viem decodes an error only
  * if it is in the ABI it was handed — so simulating against `slotAbi` alone
  * yields a bare four-byte selector, which is a hex string nobody can act on.
  * Extra error entries cost nothing: the function being called is still resolved
  * by name out of `slotAbi`.
  *
- * A hook this package has never heard of still degrades to the selector. That
+ * An app this package has never heard of still degrades to the selector. That
  * is the honest floor for an open extension point, and it is strictly more than
  * a mined revert with no reason at all.
  */
@@ -467,11 +526,11 @@ type RawOffer = Omit<BookOffer, "id">;
 
 const SIMULATION_ABI = [
   ...slotAbi,
-  ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
+  ...minimumTenureAppAbi.filter((entry) => entry.type === "error"),
 ] as const;
 
 /**
- * Client for the hook-based Slots protocol.
+ * Client for the app-based Slots protocol.
  *
  * Reads go straight to the chain. There is no indexer namespace here on purpose:
  * the ponder deployment indexes the previous protocol, and a read method that
@@ -678,19 +737,19 @@ export class SlotsClient {
   }
 
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
-  hook(slot: Address): Promise<Address> {
-    return this.read<Address>(slot, "hook");
+  app(slot: Address): Promise<Address> {
+    return this.read<Address>(slot, "app");
   }
 
   /**
-   * The hook's permissions AS ACCEPTED by this slot.
+   * The app's scopes AS ACCEPTED by this slot.
    *
-   * Not what the hook's own `hooks()` says today: the snapshot is deliberate, so
-   * a hook cannot widen its reach mid-tenure and start spending an occupant's
+   * Not what the app's own `apps()` says today: the snapshot is deliberate, so
+   * an app cannot widen its reach mid-tenure and start spending an occupant's
    * gas on callbacks they never agreed to.
    */
-  hookPermissions(slot: Address): Promise<HookPermissions> {
-    return this.read<HookPermissions>(slot, "hookPermissions");
+  scopes(slot: Address): Promise<Scopes> {
+    return this.read<Scopes>(slot, "scopes");
   }
 
   /**
@@ -751,14 +810,14 @@ export class SlotsClient {
     return this.read<bigint>(slot, "tenureId");
   }
 
-  /** Every term in force: tax terms, hook terms and the accepted hook offer. */
+  /** Every term in force: tax terms, app terms and the accepted app offer. */
   terms(slot: Address): Promise<SlotTerms> {
     return this.read<SlotTerms>(slot, "terms");
   }
 
-  /** The hook's offer as this slot accepted it. */
-  hookOffer(slot: Address): Promise<HookOffer> {
-    return this.read<HookOffer>(slot, "hookOffer");
+  /** The app's offer as this slot accepted it. */
+  manifest(slot: Address): Promise<Manifest> {
+    return this.read<Manifest>(slot, "manifest");
   }
 
   /** Who may propose terms. Zero when nothing about the slot can change. */
@@ -794,32 +853,32 @@ export class SlotsClient {
     return this.read<bigint>(slot, "minRunwaySeconds");
   }
 
-  // ─── Hooks ──────────────────────────────────────────────────────────────────
+  // ─── Apps ──────────────────────────────────────────────────────────────────
 
   /**
-   * What `hook` asks of a slot configured with `config`, as it declares it
-   * today. Not what any slot has accepted: that is {@link hookOffer}.
+   * What `app` asks of a slot configured with `config`, as it declares it
+   * today. Not what any slot has accepted: that is {@link manifest}.
    */
-  readHookOffer(hook: Address, config: Hex = ZERO_HOOK_DATA): Promise<HookOffer> {
+  readManifest(app: Address, config: Hex = ZERO_SETTINGS): Promise<Manifest> {
     return this.publicClient.readContract({
-      address: hook,
-      abi: minimumTenureHookAbi,
-      functionName: "hookOffer",
+      address: app,
+      abi: minimumTenureAppAbi,
+      functionName: "manifest",
       args: [config],
-    }) as Promise<HookOffer>;
+    }) as Promise<Manifest>;
   }
 
   /**
-   * Ask `hook` whether it accepts `config`, the same check a slot runs when the
-   * hook is proposed or attached. Resolves with the hook's reason instead of
+   * Ask `app` whether it accepts `config`, the same check a slot runs when the
+   * app is proposed or attached. Resolves with the app's reason instead of
    * throwing, so a form can show it.
    */
-  async checkHookConfig(hook: Address, config: Hex): Promise<HookConfigCheck> {
+  async checkSettings(app: Address, config: Hex): Promise<HookConfigCheck> {
     try {
       await this.publicClient.readContract({
-        address: hook,
-        abi: minimumTenureHookAbi,
-        functionName: "validateHookConfig",
+        address: app,
+        abi: minimumTenureAppAbi,
+        functionName: "checkSettings",
         args: [config],
       });
       return { ok: true };
@@ -835,19 +894,63 @@ export class SlotsClient {
   }
 
   /**
-   * A hook's self-description (`IDescribedHook.descriptors`). Empty for a hook
-   * that does not describe itself.
+   * What an app says it is (`IDescribedApp.definition`), parsed.
+   *
+   * `null` for an app that does not describe itself, that reverts, or that
+   * answers with something that is not JSON — all of which are legal. The
+   * caller falls back to the scopes, which still say whether the app may
+   * refuse a buy.
+   *
+   * The answer is fixed by the app's code, so it can be cached by address
+   * indefinitely.
    */
-  async hookDescriptors(hook: Address): Promise<HookDescriptor[]> {
+  async appDefinition(app: Address): Promise<AppDefinition | null> {
     try {
-      const result = await this.publicClient.readContract({
-        address: hook,
-        abi: minimumTenureHookAbi,
-        functionName: "descriptors",
+      const raw = await this.publicClient.readContract({
+        address: app,
+        abi: describedAppAbi,
+        functionName: "definition",
       });
-      return [...(result as readonly HookDescriptor[])];
+      return JSON.parse(raw) as AppDefinition;
     } catch {
-      return [];
+      return null;
+    }
+  }
+
+  /**
+   * The bytes a slot's app configuration stands for.
+   *
+   * When a schema says `x-config-encoding: "registered"`, the slot's word is an
+   * id and the values live in the app's own store. This resolves the word and
+   * decodes it against `x-abi`, which is how a client reads back a
+   * configuration it did not write — generically, for any app.
+   *
+   * `null` when the word is unregistered or does not decode.
+   */
+  async appSettings(
+    app: Address,
+    schema: AppSettingsSchema,
+    config: Hex,
+  ): Promise<Record<string, string> | null> {
+    try {
+      let encoded = config;
+      if (schema["x-config-encoding"] === "registered") {
+        encoded = await this.publicClient.readContract({
+          address: app,
+          abi: describedAppAbi,
+          functionName: "settingsById",
+          args: [config],
+        });
+      }
+      const values = decodeAbiParameters(
+        schema["x-abi"] as readonly AbiParameter[],
+        encoded,
+      );
+      return Object.fromEntries(
+        schema["x-abi"].map((p, i) => [p.name, String(values[i])]),
+      );
+    } catch {
+      return null;
     }
   }
 
@@ -869,11 +972,11 @@ export class SlotsClient {
       manager: i.manager,
       mutableTax: i.mutableTax,
       mutableRecipient: i.mutableRecipient,
-      mutableHook: i.mutableHook,
-      hook: i.terms.hookTerms.target,
-      hookConfig: i.terms.hookTerms.config,
-      hookOffer: i.terms.hookOffer,
-      hookPermissions: i.hookPermissions,
+      mutableApp: i.mutableApp,
+      app: i.terms.appTerms.target,
+      settings: i.terms.appTerms.settings,
+      manifest: i.terms.manifest,
+      scopes: i.scopes,
       pending: toPendingTerms(i.pending),
       occupiedSince: i.occupiedSince,
       lastSettled: i.lastSettled,
@@ -971,7 +1074,7 @@ export class SlotsClient {
    * this is a gas convenience and not an authority.
    *
    * Each collection is isolated on chain. A slot that reverts —
-   * `NothingToCollect` on one already flushed, or a `strict` hook that reverts
+   * `NothingToCollect` on one already flushed, or a `strict` app that reverts
    * in `afterSettle` — leaves a zero in the result rather than failing the batch
    * for every other recipient. Addresses the factory did not create are skipped.
    *
@@ -979,7 +1082,7 @@ export class SlotsClient {
    *
    * There is no cap here, and that is deliberate: the real limit is the block
    * gas limit, which differs per chain and per slot — a slot with a `strict`
-   * hook costs far more to settle than a bare one. Call
+   * app costs far more to settle than a bare one. Call
    * {@link simulateCollectAll} first; it fails the same way the transaction
    * would, for free.
    */
@@ -1110,7 +1213,7 @@ export class SlotsClient {
   /**
    * Ask the chain what {@link buy} would do, WITHOUT sending it.
    *
-   * A hook's veto is a `view` revert carrying the hook's own error —
+   * An app's veto is a `view` revert carrying the app's own error —
    * `TenureNotElapsed(availableAt)`, not "execution reverted" — and that reason
    * is readable only from a simulation. Sent blind, the same veto arrives as a
    * MINED, reverted transaction whose receipt carries no reason at all, and the
@@ -1458,19 +1561,19 @@ export class SlotsClient {
    * the terms an occupant bought into hold for their whole tenure.
    *
    * Both dimensions travel in one call because they share one deferral and one
-   * apply. Omit a field to leave it alone; pass `hook: zeroAddress` to detach the
-   * hook, which is why presence rather than truthiness decides.
+   * apply. Omit a field to leave it alone; pass `app: zeroAddress` to detach the
+   * app, which is why presence rather than truthiness decides.
    */
   async proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
     const mask =
       (params.taxRateBps !== undefined ? TERMS.TAX_RATE : 0) |
       (params.recipient !== undefined ? TERMS.RECIPIENT : 0) |
       (params.minRunwaySeconds !== undefined ? TERMS.MIN_RUNWAY : 0) |
-      (params.hookTerms !== undefined ? TERMS.HOOK : 0);
+      (params.appTerms !== undefined ? TERMS.APP : 0);
     if (mask === 0)
       throw new SlotsError(
         "proposeTerms",
-        "nothing to propose — pass taxRateBps, recipient, minRunwaySeconds or hookTerms",
+        "nothing to propose — pass taxRateBps, recipient, minRunwaySeconds or appTerms",
       );
     const taxTerms: TaxTerms = {
       recipient: params.recipient ?? zeroAddress,
@@ -1478,30 +1581,30 @@ export class SlotsClient {
       minRunwaySeconds: params.minRunwaySeconds ?? 0,
     };
     assertTaxTerms(taxTerms, mask, "proposeTerms");
-    const hookTerms = fullHook(params.hookTerms);
-    if (mask & TERMS.HOOK) assertHook(hookTerms, "proposeTerms");
-    return this.write(slot, "proposeTerms", [taxTerms, hookTerms, mask]);
+    const appTerms = fullHook(params.appTerms);
+    if (mask & TERMS.APP) assertApp(appTerms, "proposeTerms");
+    return this.write(slot, "proposeTerms", [taxTerms, appTerms, mask]);
   }
 
-  /** The slot's accepted hook offer beside what the hook offers today. */
-  async hookOfferStatus(slot: Address): Promise<HookOfferStatus> {
-    const [accepted, offered, feeDiffers, permissionsDiffer] = await this.read<
-      readonly [HookOffer, HookOffer, boolean, boolean]
-    >(slot, "hookOfferStatus");
-    return { accepted, offered, feeDiffers, permissionsDiffer };
+  /** The slot's accepted app offer beside what the app offers today. */
+  async grantStatus(slot: Address): Promise<HookOfferStatus> {
+    const [accepted, offered, feeDiffers, scopesDiffer] = await this.read<
+      readonly [Manifest, Manifest, boolean, boolean]
+    >(slot, "grantStatus");
+    return { accepted, offered, feeDiffers, scopesDiffer };
   }
 
   /**
-   * Accept the hook's current offer. Manager only.
+   * Accept the app's current offer. Manager only.
    *
-   * A new fee applies at once. New permissions queue for the next occupancy
-   * transition, and only when the slot's hook is mutable. `expected` is the
-   * offer the manager reviewed; the call reverts `HookOfferChanged` if the hook
+   * A new fee applies at once. New scopes queue for the next occupancy
+   * transition, and only when the slot's app is mutable. `expected` is the
+   * offer the manager reviewed; the call reverts `ManifestChanged` if the app
    * declares anything else by the time it lands, and `NothingToAccept` if it
    * would change nothing.
    */
-  async acceptHookOffer(slot: Address, expected: HookOffer): Promise<Hash> {
-    return this.write(slot, "acceptHookOffer", [expected]);
+  async grant(slot: Address, expected: Manifest): Promise<Hash> {
+    return this.write(slot, "grant", [expected]);
   }
 
   /** Hand the slot to another manager, immediately. Manager only. */
@@ -1783,8 +1886,8 @@ export function createSlotsClient(config: SlotsClientConfig): SlotsClient {
 /** `pendingTerms()` as viem decodes it. */
 interface PendingTermsResult {
   taxTerms: TaxTerms;
-  hookTerms: HookTerms;
-  hookPermissions: number;
+  appTerms: AppTerms;
+  scopes: number;
   mask: number;
   proposedAt: bigint;
   ripe: boolean;
@@ -1796,9 +1899,9 @@ interface SlotInfoResult {
   manager: Address;
   mutableTax: boolean;
   mutableRecipient: boolean;
-  mutableHook: boolean;
-  terms: { taxTerms: TaxTerms; hookTerms: HookTerms; hookOffer: HookOffer };
-  hookPermissions: HookPermissions;
+  mutableApp: boolean;
+  terms: { taxTerms: TaxTerms; appTerms: AppTerms; manifest: Manifest };
+  scopes: Scopes;
   occupant: Address;
   price: bigint;
   deposit: bigint;
@@ -1817,14 +1920,14 @@ function toPendingTerms(p: PendingTermsResult): PendingTerms {
   const isEmpty = p.mask === 0;
   return {
     taxTerms: p.taxTerms,
-    hookTerms: p.hookTerms,
-    hookPermissions: p.hookPermissions,
+    appTerms: p.appTerms,
+    scopes: p.scopes,
     mask: p.mask,
     hasTaxRate: (p.mask & TERMS.TAX_RATE) !== 0,
     hasRecipient: (p.mask & TERMS.RECIPIENT) !== 0,
     hasMinRunway: (p.mask & TERMS.MIN_RUNWAY) !== 0,
-    hasHook: (p.mask & TERMS.HOOK) !== 0,
-    hasHookPermissions: (p.mask & TERMS.HOOK_PERMISSIONS) !== 0,
+    hasHook: (p.mask & TERMS.APP) !== 0,
+    hasHookPermissions: (p.mask & TERMS.SCOPES) !== 0,
     proposedAt: p.proposedAt,
     appliesAt: isEmpty ? 0n : p.proposedAt + TERMS_DELAY_SECONDS,
     applies: p.ripe,

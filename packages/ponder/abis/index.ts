@@ -16,6 +16,6 @@ export {
 } from "@0xslots/contracts/slots";
 
 // Hand-written, and not generated from this protocol's build: a minimal ERC-20
-// for currency reads, and the hook interface as the indexer needs to see it.
+// for currency reads, and the app interface as the indexer needs to see it.
 export { ERC20Abi } from "./ERC20";
 export { SlotHookAbi } from "./Hook";

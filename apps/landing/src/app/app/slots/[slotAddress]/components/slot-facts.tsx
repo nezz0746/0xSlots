@@ -1,12 +1,12 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
-import type { HookPermissions, SlotState } from "@0xslots/sdk/slots";
+import { findKnownApp } from "@0xslots/contracts/slots";
+import type { Scopes, SlotState } from "@0xslots/sdk/slots";
 import { AlertTriangle, Clock, ShieldCheck } from "lucide-react";
 import { zeroAddress } from "viem";
 import { MutabilityChip } from "@/components/detail-group";
 import { EnsIdentity } from "@/components/ens-identity";
-import { HookPermissionRow } from "@/components/hook-permissions";
+import { AppScopeRow } from "@/components/app-scopes";
 import { TenureMeter } from "@/components/occupancy-timeline";
 import { Badge } from "@/components/ui/badge";
 import { useChain } from "@/context/chain";
@@ -70,11 +70,11 @@ export function SlotStatus({
   );
 }
 
-const _DECIDES: [keyof HookPermissions, string][] = [
+const _DECIDES: [keyof Scopes, string][] = [
   ["beforeBuy", "beforeBuy"],
   ["beforeSelfAssess", "beforeSelfAssess"],
 ];
-const _RECORDS: [keyof HookPermissions, string][] = [
+const _RECORDS: [keyof Scopes, string][] = [
   ["afterBuy", "afterBuy"],
   ["afterRelease", "afterRelease"],
   ["afterLiquidate", "afterLiquidate"],
@@ -82,18 +82,18 @@ const _RECORDS: [keyof HookPermissions, string][] = [
 ];
 
 /**
- * A hook's declared permissions, struck through where it was not granted one.
+ * An app's declared scopes, struck through where it was not granted one.
  *
  * Both halves are always drawn, present and absent alike. A list of only what a
- * hook DOES leaves the reader unable to tell "this hook cannot refuse a buy"
+ * app DOES leaves the reader unable to tell "this app cannot refuse a buy"
  * from "this app did not check" — and the first is a guarantee worth having.
  */
 function _PermissionList({
-  permissions,
+  scopes,
   entries,
 }: {
-  permissions: HookPermissions;
-  entries: [keyof HookPermissions, string][];
+  scopes: Scopes;
+  entries: [keyof Scopes, string][];
 }) {
   return (
     <div className="flex flex-wrap gap-1">
@@ -102,7 +102,7 @@ function _PermissionList({
           key={key}
           className={cn(
             "px-1.5 py-0.5 text-[10px]",
-            permissions[key]
+            scopes[key]
               ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
               : "bg-muted/60 text-muted-foreground/50 line-through",
           )}
@@ -123,7 +123,7 @@ function _PermissionList({
  * form once can find any value here without hunting.
  *
  * Hierarchy is carried by `weight` rather than by position alone. The terms
- * decide whether to buy, so they lead at body size; the hook is consequential
+ * decide whether to buy, so they lead at body size; the app is consequential
  * but conditional — absent from most slots and meaningless to most readers —
  * so it sits last and quiet rather than competing with the rate.
  *
@@ -135,8 +135,8 @@ function _PermissionList({
 /**
  * Everything the slot IS, cut by who can change it.
  *
- * This was six sections — Terms, Currency, Recipient, Occupancy, Permissions,
- * Hook — each an icon tile over a list of rows, every one looking identical. The
+ * This was six sections — Terms, Currency, Recipient, Occupancy, Scopes,
+ * App — each an icon tile over a list of rows, every one looking identical. The
  * shape of the page carried no information, and the one distinction that decides
  * whether to buy was a padlock chip on two rows.
  *
@@ -174,11 +174,11 @@ export function SlotDetails({
   banner?: React.ReactNode;
 }) {
   const { chainId } = useChain();
-  const attached = state.hook !== zeroAddress;
-  const known = findKnownHook(chainId, attached ? state.hook : undefined);
+  const attached = state.app !== zeroAddress;
+  const known = findKnownApp(chainId, attached ? state.app : undefined);
   const tenureSeconds = useTenureWindow(
-    attached ? state.hook : undefined,
-    attached ? state.hookConfig : undefined,
+    attached ? state.app : undefined,
+    attached ? state.settings : undefined,
   );
   const now = useNow(!!tenureSeconds && !state.isVacant, 1000);
   /**
@@ -298,13 +298,13 @@ export function SlotDetails({
           check". */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-y px-3 py-2.5 sm:px-4">
         <Term
-          label="Hook"
-          lock={<MutabilityChip mutable={state.mutableHook} what="hook" />}
+          label="App"
+          lock={<MutabilityChip mutable={state.mutableApp} what="app" />}
         >
           {attached ? (
             <span className="inline-flex items-center gap-1.5">
               {known?.name ?? "unrecognised"}
-              <AddressText address={state.hook} />
+              <AddressText address={state.app} />
             </span>
           ) : (
             <span className="text-muted-foreground">none</span>
@@ -336,17 +336,17 @@ export function SlotDetails({
           )}
         </Term>
 
-        {/* What the hook may DO, in the same words the create form uses when
-            you attach one. Naming it was never enough: "MinimumTenureHook" does
+        {/* What the app may DO, in the same words the create form uses when
+            you attach one. Naming it was never enough: "MinimumTenureApp" does
             not say whether it can refuse your buy, and that is the only
             question a buyer has. Read from the slot's snapshot, so it describes
-            what this slot obeys rather than what the hook currently claims. */}
+            what this slot obeys rather than what the app currently claims. */}
         {attached && (
           <div className="w-full space-y-1">
-            <HookPermissionRow permissions={state.hookPermissions} fee={state.hookOffer} />
+            <AppScopeRow scopes={state.scopes} fee={state.manifest} />
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-                Unrecognised hook — read its code before buying.
+                Unrecognised app — read its code before buying.
               </p>
             )}
           </div>

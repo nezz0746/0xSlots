@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {TaxTerms, HookTerms, HookOffer} from "../types/SlotTypes.sol";
+import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
 
 /**
  * @title ISlotEvents
  * @notice The slot's occupancy and terms vocabulary, in one place.
  *
  * @dev Events only. The accounting layer keeps `Settled`, `TaxPaid`,
- *      `TaxCollected`, `HookFeePaid`, `Credited`, `Claimed`, `TermsApplied`,
- *      `HookDetached` and `HookPermissionsDropped`; `SlotHooks` keeps `HookCallFailed`.
+ *      `TaxCollected`, `AppFeePaid`, `Credited`, `Claimed`, `TermsApplied`,
+ *      `AppDropped` and `ScopesDropped`; `SlotApps` keeps `AppCallFailed`.
  */
 interface ISlotEvents {
     event Initialized(
@@ -17,9 +17,9 @@ interface ISlotEvents {
         address indexed manager,
         bool mutableTax,
         bool mutableRecipient,
-        bool mutableHook,
+        bool mutableApp,
         TaxTerms taxTerms,
-        HookTerms hookTerms
+        AppTerms appTerms
     );
     event Bought(
         address indexed buyer,
@@ -41,12 +41,12 @@ interface ISlotEvents {
         bool allowed,
         uint64 indexed tenureId
     );
-    /// @dev `taxTerms` and `hookTerms` carry only the fields named by `mask`; the
+    /// @dev `taxTerms` and `appTerms` carry only the fields named by `mask`; the
     ///      rest are zero.
-    event TermsProposed(TaxTerms taxTerms, HookTerms hookTerms, uint8 mask);
+    event TermsProposed(TaxTerms taxTerms, AppTerms appTerms, uint8 mask);
     event TermsCancelled(uint8 mask);
     event ManagerSet(address indexed previous, address indexed next);
-    /// @dev `feeApplied`: the fee changed now. `permissionsQueued`: the permissions wait
-    ///      queued under `TERM_HOOK_PERMISSIONS` for the next buy.
-    event HookOfferAccepted(HookOffer offer, bool feeApplied, bool permissionsQueued);
+    /// @dev `feeApplied`: the fee changed now. `scopesQueued`: the scopes wait
+    ///      queued under `TERM_SCOPES` for the next buy.
+    event ScopesGranted(Manifest offer, bool feeApplied, bool scopesQueued);
 }

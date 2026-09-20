@@ -30,7 +30,7 @@ function rows(field: any): any[] {
  * Every event table, flattened into one sortable stream.
  *
  * The SHAPE and the display craft below are the original's; the inputs are all
- * that changed. The mapping onto the hook-based protocol, event by event:
+ * that changed. The mapping onto the app-based protocol, event by event:
  *
  *   * `Buy` reads `boughtEvent`. `from` is the previous occupant — zero when
  *     the slot was vacant, which is the "claimed" wording rather than a
@@ -43,7 +43,7 @@ function rows(field: any): any[] {
  *     from a contested one. The feed says "bought" rather than guessing.
  *   * `Liquidate` no longer carries a bounty. There ISN'T one in this
  *     protocol, so the row shows how long the evicted occupant had held it.
- *   * `Tax Proposed` and `Hook Proposed` both come from ONE
+ *   * `Tax Proposed` and `App Proposed` both come from ONE
  *     `termsProposedEvent`, split back apart on its `changeTax`/`changeHook`
  *     flags. They stay two rows because they are two decisions with different
  *     consequences, and a manager may propose either alone.
@@ -53,13 +53,13 @@ function rows(field: any): any[] {
  *   * `Credit` and `Claim` are new and worth their space: a credit means a
  *     push payment could not reach somebody and nothing on chain will ever
  *     tell them.
- *   * `Hook Failed` is an `after` callback that reverted and was swallowed. A
- *     hook accumulating these is broken in a way its users cannot otherwise
+ *   * `App Failed` is an `after` callback that reverted and was swallowed. A
+ *     app accumulating these is broken in a way its users cannot otherwise
  *     see.
  *
  * Dropped, with nothing to map onto: `LiquidationBountyUpdated` (bounties are
  * gone from the protocol) and `ModuleProposed` in its module sense (there are
- * no modules — the hook dimension of `termsProposedEvent` replaces it).
+ * no modules — the app dimension of `termsProposedEvent` replaces it).
  */
 // biome-ignore lint/suspicious/noExplicitAny: rows are untyped indexer JSON
 export function normalizeEvents(data: any): UnifiedEvent[] {
@@ -258,14 +258,14 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     }
     if (e.changeHook) {
       events.push({
-        id: `${e.id}-hook`,
-        type: "Hook Proposed",
+        id: `${e.id}-app`,
+        type: "App Proposed",
         slot: getSlot(e),
         actor: e.manager,
-        // The zero address is a real proposal — "detach the hook" — not an
+        // The zero address is a real proposal — "detach the app" — not an
         // absent one, so it is named rather than shown as a bare 0x0000…
         detail:
-          !e.hook || e.hook === ZERO ? "detach hook" : truncateAddress(e.hook),
+          !e.app || e.app === ZERO ? "detach app" : truncateAddress(e.app),
         timestamp: Number(e.timestamp),
         tx: e.tx,
       });
@@ -280,7 +280,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
       );
     if (e.hookChanged)
       changes.push(
-        `hook → ${!e.hook || e.hook === ZERO ? "none" : truncateAddress(e.hook)}`,
+        `app → ${!e.app || e.app === ZERO ? "none" : truncateAddress(e.app)}`,
       );
     events.push({
       id: e.id,
@@ -296,7 +296,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
   for (const e of rows(data.termsCancelledEvents)) {
     const cancelled = [
       e.cancelTax ? "tax" : null,
-      e.cancelHook ? "hook" : null,
+      e.cancelHook ? "app" : null,
     ].filter(Boolean);
     events.push({
       id: e.id,
@@ -312,9 +312,9 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
   for (const e of rows(data.hookCallFailedEvents)) {
     events.push({
       id: e.id,
-      type: "Hook Failed",
+      type: "App Failed",
       slot: getSlot(e),
-      actor: e.hook,
+      actor: e.app,
       detail: `reverted in ${e.selector}`,
       timestamp: Number(e.timestamp),
       tx: e.tx,

@@ -17,7 +17,7 @@ import {SlotMath} from "../libraries/SlotMath.sol";
  *      exactly what drifted from `quoteBuy` and `minDepositForBuy` in this
  *      codebase already. A caller that can ask does not have to guess.
  *
- *      Inherited by `SlotStorage` and by the hooks, which sit outside the
+ *      Inherited by `SlotStorage` and by the apps, which sit outside the
  *      slot's chain and would otherwise import the same numbers by hand. It
  *      declares no state, so it costs no storage slot and moves nothing.
  */
@@ -36,9 +36,9 @@ abstract contract SlotConstants {
     uint256 public constant BASIS_POINTS = SlotMath.BASIS_POINTS;
     uint256 public constant MONTH = SlotMath.MONTH;
 
-    // Gas handed to a hook's `after` callbacks.
-    // Bounded because these run inside `buy`, `release` and `liquidate`. A hook must never be able to price out an eviction.
-    uint256 public constant HOOK_GAS = 500_000;
+    // Gas handed to an app's `after` callbacks.
+    // Bounded because these run inside `buy`, `release` and `liquidate`. An app must never be able to price out an eviction.
+    uint256 public constant APP_GAS = 500_000;
 
     // Gas for a native payout before it degrades to a claimable credit.
     // A native send runs the recipient's code, and this fires inside SOMEONE
@@ -55,10 +55,10 @@ abstract contract SlotConstants {
     uint64 public constant TERMS_DELAY = 1 days;
 
     // Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
-    // `TERM_HOOK_PERMISSIONS` is queued by `acceptHookOffer`, never proposed.
+    // `TERM_SCOPES` is queued by `grant`, never proposed.
     uint8 public constant TERM_TAX_RATE = 1 << 0;
     uint8 public constant TERM_RECIPIENT = 1 << 1;
     uint8 public constant TERM_MIN_RUNWAY = 1 << 2;
-    uint8 public constant TERM_HOOK = 1 << 3;
-    uint8 public constant TERM_HOOK_PERMISSIONS = 1 << 4;
+    uint8 public constant TERM_APP = 1 << 3;
+    uint8 public constant TERM_SCOPES = 1 << 4;
 }

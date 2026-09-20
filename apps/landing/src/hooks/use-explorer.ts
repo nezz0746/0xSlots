@@ -23,10 +23,10 @@ import { indexerUrlFor } from "@/lib/indexer";
  *     old `{ first, skip }` shape has no equivalent, so the callers page with a
  *     cursor stack instead. See `useExplorerSlots`.
  *
- * The raw-fetch style is deliberate and matches `hooks/use-collectives.ts`: one
+ * The raw-fetch style is deliberate and matches `apps/use-collectives.ts`: one
  * endpoint per chain from `indexerUrlFor`, hand-written documents, row types
  * declared here. Move this into the SDK once codegen has run against the
- * hook-based indexer.
+ * app-based indexer.
  */
 
 /**
@@ -37,7 +37,7 @@ import { indexerUrlFor } from "@/lib/indexer";
  * database. Retrying it three times behind a spinner turned "this instance runs
  * the old schema" into "the network is slow" — and it was not hypothetical.
  * With `NEXT_PUBLIC_SLOTS_ENV` unset, the app read the production instance,
- * which still serves the retired protocol: no `hook`, no `hookRef`, no
+ * which still serves the retired protocol: no `app`, no `hookRef`, no
  * `tenureId`. Every explorer query failed validation and took about seven
  * seconds of exponential backoff to say so.
  */
@@ -101,11 +101,11 @@ interface CurrencyRef {
 }
 
 /**
- * The hook a slot points at, as the indexer sees it TODAY.
+ * The app a slot points at, as the indexer sees it TODAY.
  *
- * `declared*` here and `hook*` on the slot are two different facts and the
+ * `declared*` here and `app*` on the slot are two different facts and the
  * schema stores both on purpose: the slot obeys the snapshot it took when the
- * hook was attached, and a hook behind a proxy can change its declaration
+ * app was attached, and an app behind a proxy can change its declaration
  * afterwards. A row where they disagree is the interesting one.
  */
 export interface HookRow {
@@ -130,10 +130,10 @@ export interface ExplorerSlot {
   taxRateBps: string;
   minRunwaySeconds: string;
   /** Null is an ordinary configuration — the plain Harberger slot. */
-  hook: Address | null;
+  app: Address | null;
   hookRef: HookRow | null;
   mutableTax: boolean;
-  mutableHook: boolean;
+  mutableApp: boolean;
   /** Which terms are queued. Non-zero means a change is waiting. */
   pendingMask: number;
   createdAt: string;
@@ -174,7 +174,7 @@ const SLOT_FIELDS = /* GraphQL */ `
   deposit
   taxRateBps
   minRunwaySeconds
-  hook
+  app
   hookRef {
     id
     declaredKnown
@@ -182,7 +182,7 @@ const SLOT_FIELDS = /* GraphQL */ `
     failedCallCount
   }
   mutableTax
-  mutableHook
+  mutableApp
   pendingMask
   createdAt
   lastSettled
@@ -286,12 +286,12 @@ export function useAccounts() {
 }
 
 // ──────────────────────────────────────────
-// Hooks (the protocol's one extension point)
+// Apps (the protocol's one extension point)
 // ──────────────────────────────────────────
 
 const HOOKS_QUERY = /* GraphQL */ `
-  query Hooks($chainId: Int!) {
-    hooks(
+  query Apps($chainId: Int!) {
+    apps(
       where: { chainId: $chainId }
       orderBy: "slotCount"
       orderDirection: "desc"
@@ -308,25 +308,25 @@ const HOOKS_QUERY = /* GraphQL */ `
 `;
 
 /**
- * Every hook any slot on this chain points at.
+ * Every app any slot on this chain points at.
  *
  * The successor to `useModules`, and not a rename: a slot had a gallery of
- * modules and now has exactly ONE hook, so this is a filter dimension with one
+ * modules and now has exactly ONE app, so this is a filter dimension with one
  * value per slot rather than many.
  */
 export function useHooks() {
   const { chainId } = useChain();
 
   return useQuery({
-    queryKey: ["explorer", "hooks", chainId],
+    queryKey: ["explorer", "apps", chainId],
     queryFn: async ({ signal }) => {
-      const data = await indexerFetch<{ hooks: { items: HookRow[] } }>(
+      const data = await indexerFetch<{ apps: { items: HookRow[] } }>(
         chainId,
         HOOKS_QUERY,
         { chainId },
         signal,
       );
-      return data.hooks?.items ?? [];
+      return data.apps?.items ?? [];
     },
   });
 }
@@ -336,8 +336,8 @@ export function useHooks() {
 // ──────────────────────────────────────────
 
 export interface SlotFilters {
-  /** Hook addresses to include. Empty or absent means every hook. */
-  hooks?: string[];
+  /** App addresses to include. Empty or absent means every app. */
+  apps?: string[];
   recipient?: string;
   occupant?: string;
   /**
@@ -379,8 +379,8 @@ export interface PageInfo {
  */
 function buildSlotWhere(chainId: number, filters?: SlotFilters): string {
   const parts = [`chainId: ${chainId}`];
-  if (filters?.hooks && filters.hooks.length > 0) {
-    const list = filters.hooks.map((h) => `"${h.toLowerCase()}"`).join(", ");
+  if (filters?.apps && filters.apps.length > 0) {
+    const list = filters.apps.map((h) => `"${h.toLowerCase()}"`).join(", ");
     parts.push(`hook_in: [${list}]`);
   }
   if (filters?.recipient)
@@ -443,9 +443,9 @@ function slotsQuery(
  * `endCursor`. The caller keeps the cursor for each page it has visited so
  * Prev still works — see `SlotsTable`.
  *
- * `hooks` filters with `hook_in`. A slot with no hook has `hook: null` and is
+ * `apps` filters with `hook_in`. A slot with no app has `app: null` and is
  * excluded by that filter, which is correct: "show me slots running the minimum
- * tenure hook" should not return the plain Harberger ones.
+ * tenure app" should not return the plain Harberger ones.
  */
 export function useExplorerSlots(
   filters: SlotFilters | undefined,
@@ -459,7 +459,7 @@ export function useExplorerSlots(
       "explorer",
       "slots",
       chainId,
-      filters?.hooks?.join(",") ?? "",
+      filters?.apps?.join(",") ?? "",
       filters?.recipient ?? "",
       filters?.occupant ?? "",
       filters?.creator ?? "",
@@ -514,7 +514,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         recipient
         creator
         deployer
-        hook
+        app
         timestamp
         tx
       }
@@ -762,7 +762,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         changeTax
         changeHook
         taxRateBps
-        hook
+        app
         timestamp
         tx
       }
@@ -777,7 +777,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         id
         slot
         taxRateBps
-        hook
+        app
         previousTaxPercentage
         previousHook
         taxChanged
@@ -811,7 +811,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
       items {
         id
         slot
-        hook
+        app
         selector
         timestamp
         tx

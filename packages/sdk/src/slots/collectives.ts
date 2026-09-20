@@ -17,8 +17,8 @@ import {
   zeroHash,
 } from "viem";
 import { SlotsError } from "../errors";
-import type { HookOffer, HookTerms } from "./client";
-import { NO_HOOK } from "./client";
+import type { Manifest, AppTerms } from "./client";
+import { NO_APP } from "./client";
 
 /**
  * A collective's payout split. `totalAllocation` is derived from the
@@ -35,7 +35,7 @@ export interface CollectiveSplit {
 export interface CollectiveRoles {
   admin: Address;
   taxManagers?: readonly Address[];
-  hookManagers?: readonly Address[];
+  appManagers?: readonly Address[];
   splitManagers?: readonly Address[];
 }
 
@@ -48,13 +48,13 @@ export interface CreateCollectiveParams {
 export const SPLITS_NATIVE_TOKEN: Address = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 /** The roles a collective recognises, by name. */
-export type CollectiveRole = "admin" | "tax" | "hook" | "split";
+export type CollectiveRole = "admin" | "tax" | "app" | "split";
 
 /** The on-chain role ids. `admin` is OpenZeppelin's `DEFAULT_ADMIN_ROLE`. */
 export const COLLECTIVE_ROLES: Record<CollectiveRole, Hex> = {
   admin: zeroHash,
   tax: keccak256(toBytes("TAX_MANAGER_ROLE")),
-  hook: keccak256(toBytes("POLICY_MANAGER_ROLE")),
+  app: keccak256(toBytes("POLICY_MANAGER_ROLE")),
   split: keccak256(toBytes("SPLIT_MANAGER_ROLE")),
 };
 
@@ -209,7 +209,7 @@ export class CollectivesClient {
       {
         admin: params.roles.admin,
         taxManagers: [...(params.roles.taxManagers ?? [])],
-        hookManagers: [...(params.roles.hookManagers ?? [])],
+        appManagers: [...(params.roles.appManagers ?? [])],
         splitManagers: [...(params.roles.splitManagers ?? [])],
       },
     ] as const;
@@ -252,27 +252,27 @@ export class CollectivesClient {
   }
 
   /**
-   * Queue a new hook on slots this collective manages. Hook managers or admin.
-   * `NO_HOOK` detaches.
+   * Queue a new app on slots this collective manages. App managers or admin.
+   * `NO_APP` detaches.
    */
-  async proposeHook(
+  async proposeApp(
     collective: Address,
     slots: Address | readonly Address[],
-    hookTerms: HookTerms = NO_HOOK,
+    appTerms: AppTerms = NO_APP,
   ): Promise<Hash> {
     const list = many(slots);
-    this.assertSlots(list, "proposeHook");
+    this.assertSlots(list, "proposeApp");
     return list.length === 1
-      ? this.write(collective, "proposeHook", [list[0], hookTerms])
-      : this.write(collective, "proposeHookBatch", [list, hookTerms]);
+      ? this.write(collective, "proposeApp", [list[0], appTerms])
+      : this.write(collective, "proposeAppBatch", [list, appTerms]);
   }
 
   /**
-   * Accept the attached hook's current offer on `slot`. Hook managers or admin.
-   * `expected` is the offer reviewed; see `SlotsClient.hookOfferStatus`.
+   * Accept the attached app's current offer on `slot`. App managers or admin.
+   * `expected` is the offer reviewed; see `SlotsClient.grantStatus`.
    */
-  acceptHookOffer(collective: Address, slot: Address, expected: HookOffer): Promise<Hash> {
-    return this.write(collective, "acceptHookOffer", [slot, expected]);
+  grant(collective: Address, slot: Address, expected: Manifest): Promise<Hash> {
+    return this.write(collective, "grant", [slot, expected]);
   }
 
   /** Drop a queued tax change. */
@@ -280,9 +280,9 @@ export class CollectivesClient {
     return this.cancel(collective, slots, "cancelTaxProposal");
   }
 
-  /** Drop a queued hook change. */
-  cancelHookProposal(collective: Address, slots: Address | readonly Address[]): Promise<Hash> {
-    return this.cancel(collective, slots, "cancelHookProposal");
+  /** Drop a queued app change. */
+  cancelAppProposal(collective: Address, slots: Address | readonly Address[]): Promise<Hash> {
+    return this.cancel(collective, slots, "cancelAppProposal");
   }
 
   /** Drop everything queued. Admin only. */

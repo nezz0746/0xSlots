@@ -3,17 +3,17 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {TaxTerms, HookTerms, HookOffer} from "../types/SlotTypes.sol";
+import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 
 
 /// @notice The subset of `Slot` a collective drives.
 interface IManagedSlot {
-    function proposeTerms(TaxTerms calldata taxTerms, HookTerms calldata hook, uint8 mask) external;
+    function proposeTerms(TaxTerms calldata taxTerms, AppTerms calldata app, uint8 mask) external;
 
     function cancelTerms(uint8 mask) external;
 
-    function acceptHookOffer(HookOffer calldata expected) external;
+    function grant(Manifest calldata expected) external;
 
     function collect() external;
 
@@ -24,7 +24,7 @@ interface IManagedSlot {
 ///         never passed to a slot — see the note on `IManagedSlot`.
 enum Dimension {
     Tax,
-    Hook
+    App
 }
 
 abstract contract SlotGovernance is AccessControl, Initializable {
@@ -35,10 +35,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     /// @notice May change the tax rate — what the slot costs to hold.
     bytes32 public constant TAX_MANAGER_ROLE = keccak256("TAX_MANAGER_ROLE");
 
-    /// @notice May change the hook — both what holding the slot grants and who
+    /// @notice May change the app — both what holding the slot grants and who
     ///         is allowed to hold it.
     ///
-    /// @dev One role, because one hook governs both halves: a hook decides who
+    /// @dev One role, because one app governs both halves: an app decides who
     ///      may hold a slot AND what holding it does, and nobody can be granted
     ///      one of those without the other.
     bytes32 public constant POLICY_MANAGER_ROLE = keccak256("POLICY_MANAGER_ROLE");
@@ -75,7 +75,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // ── One shape for both dimensions ────────────────────────────
     //
     // `value` is the proposed value widened to 32 bytes: raw basis points for
-    // `Tax`, the left-padded address for `Hook`.
+    // `Tax`, the left-padded address for `App`.
 
     /// @notice A role holder relayed a pending-update proposal to `slot`.
     event TermsRelayed(
@@ -92,11 +92,11 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         Dimension indexed kind
     );
 
-    /// @notice A hook manager accepted the attached hook's current offer on `slot`.
-    event HookOfferAcceptRelayed(
+    /// @notice An app manager accepted the attached app's current offer on `slot`.
+    event ScopesGrantRelayed(
         address indexed slot,
         address indexed by,
-        HookOffer offer
+        Manifest offer
     );
 
     /// @notice An admin dropped every pending proposal on `slot` at once.
@@ -136,17 +136,17 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///
     ///      Deliberately NOT an `initializer` itself — the engine's entry point
     ///      carries that modifier, and nesting them would revert.
-    /// @dev `hookManagers` receive `POLICY_MANAGER_ROLE`.
+    /// @dev `appManagers` receive `POLICY_MANAGER_ROLE`.
     function _initGovernance(
         address admin,
         address[] memory taxManagers,
-        address[] memory hookManagers
+        address[] memory appManagers
     ) internal {
         if (admin == address(0)) revert AdminRequired();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRoleBatch(TAX_MANAGER_ROLE, taxManagers);
-        _grantRoleBatch(POLICY_MANAGER_ROLE, hookManagers);
+        _grantRoleBatch(POLICY_MANAGER_ROLE, appManagers);
     }
 
     function _grantRoleBatch(bytes32 role, address[] memory accounts) internal {
@@ -196,65 +196,65 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     function _proposeTax(IManagedSlot slot, uint16 newTaxRateBps) internal {
         TaxTerms memory taxTerms;
         taxTerms.rateBps = newTaxRateBps;
-        HookTerms memory none;
+        AppTerms memory none;
         slot.proposeTerms(taxTerms, none, TermsLib.TAX_RATE);
         emit TermsRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(uint256(newTaxRateBps)));
     }
 
-    /// @notice Propose a new hook on `slot`: its address, configuration and
+    /// @notice Propose a new app on `slot`: its address, configuration and
     ///         fee, as one decision.
     ///
-    /// @dev A zero `hook.target` detaches. The slot validates the terms with the
-    ///      hook now, so this relay does not re-check. One validation, one
+    /// @dev A zero `app.target` detaches. The slot validates the terms with the
+    ///      app now, so this relay does not re-check. One validation, one
     ///      authority.
-    function proposeHook(
+    function proposeApp(
         IManagedSlot slot,
-        HookTerms calldata hook
+        AppTerms calldata app
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
-        _proposeHook(slot, hook);
+        _proposeApp(slot, app);
     }
 
-    /// @notice The same hook terms across many slots.
+    /// @notice The same app terms across many slots.
     /// @dev All-or-nothing, for the reason given on {proposeTaxBatch}.
-    function proposeHookBatch(
+    function proposeAppBatch(
         IManagedSlot[] calldata slots,
-        HookTerms calldata hook
+        AppTerms calldata app
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
-            _proposeHook(slots[i], hook);
+            _proposeApp(slots[i], app);
         }
     }
 
-    function _proposeHook(IManagedSlot slot, HookTerms calldata hook) internal {
+    function _proposeApp(IManagedSlot slot, AppTerms calldata app) internal {
         TaxTerms memory none;
-        slot.proposeTerms(none, hook, TermsLib.HOOK);
+        slot.proposeTerms(none, app, TermsLib.APP);
         emit TermsRelayed(
             address(slot),
             msg.sender,
-            Dimension.Hook,
-            _asValue(hook.target)
+            Dimension.App,
+            _asValue(app.target)
         );
     }
 
-    /// @notice Accept the attached hook's current offer on `slot`: a new fee at
-    ///         once, new permissions at the next buy.
+    /// @notice Accept the attached app's current offer on `slot`: a new fee at
+    ///         once, new scopes at the next buy.
     ///
-    /// @dev The hook manager's decision, like proposing a hook. `expected` is
-    ///      the offer they reviewed; the slot reverts if the hook now offers
+    /// @dev The app manager's decision, like proposing an app. `expected` is
+    ///      the offer they reviewed; the slot reverts if the app now offers
     ///      anything else.
-    function acceptHookOffer(IManagedSlot slot, HookOffer calldata expected)
+    function grant(IManagedSlot slot, Manifest calldata expected)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
-        slot.acceptHookOffer(expected);
-        emit HookOfferAcceptRelayed(address(slot), msg.sender, expected);
+        slot.grant(expected);
+        emit ScopesGrantRelayed(address(slot), msg.sender, expected);
     }
 
     /// @notice Retract this role's own queued tax proposal on `slot`.
     /// @dev Single-dimension, and that is load-bearing rather than tidy. The
     ///      slot's cancel takes a mask like its propose, so a tax
-    ///      manager retracting their own work cannot destroy the hook
+    ///      manager retracting their own work cannot destroy the app
     ///      manager's queued change as a side effect.
     function cancelTaxProposal(IManagedSlot slot)
         external
@@ -282,26 +282,26 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         }
     }
 
-    /// @notice Retract this role's own queued hook proposal on `slot`.
-    function cancelHookProposal(IManagedSlot slot)
+    /// @notice Retract this role's own queued app proposal on `slot`.
+    function cancelAppProposal(IManagedSlot slot)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
-        slot.cancelTerms(TermsLib.HOOK);
-        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Hook);
+        slot.cancelTerms(TermsLib.APP);
+        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.App);
     }
 
-    /// @notice Retract this role's queued hook proposals across many slots.
+    /// @notice Retract this role's queued app proposals across many slots.
     /// @dev Tolerant, for the reason given on {cancelTaxProposalBatch}.
-    function cancelHookProposalBatch(IManagedSlot[] calldata slots)
+    function cancelAppProposalBatch(IManagedSlot[] calldata slots)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].cancelTerms(TermsLib.HOOK) {
-                emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.Hook);
+            try slots[i].cancelTerms(TermsLib.APP) {
+                emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.App);
             } catch {}
         }
     }

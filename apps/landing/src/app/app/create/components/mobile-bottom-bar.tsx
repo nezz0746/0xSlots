@@ -1,4 +1,4 @@
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownApp } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
 import {
   ChevronUp,
@@ -69,10 +69,10 @@ export function MobileBottomBar({
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
   const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const app = form.watch("app");
   const mutableTax = form.watch("mutableTax");
   const mutableRecipient = form.watch("mutableRecipient");
-  const mutableHook = form.watch("mutableHook");
+  const mutableApp = form.watch("mutableApp");
   const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
@@ -98,8 +98,8 @@ export function MobileBottomBar({
         ? erc20.data.name
         : null;
 
-  const knownHook = findKnownHook(chainId, hook as Address);
-  const hasMutable = mutableTax || mutableRecipient || mutableHook;
+  const knownHook = findKnownApp(chainId, app as Address);
+  const hasMutable = mutableTax || mutableRecipient || mutableApp;
   // Nothing is sequential any more, so "ready" means the form actually
   // validates — not that you reached the last of three steps.
   const ready = submitState.isFormValid && !submitState.initError;
@@ -220,19 +220,19 @@ export function MobileBottomBar({
                 {formatValueUnit(minDepositValue || "0", minDepositUnit)}
               </SummaryRow>
 
-              {/* Hook */}
+              {/* App */}
               <SummaryRow
-                section="hook"
-                label="Hook"
+                section="app"
+                label="App"
                 icon={<Plug className="size-3" />}
                 onJump={jumpTo}
               >
                 <span className="truncate max-w-32 inline-block align-bottom">
-                  {hookMode === "none" || !hook
+                  {hookMode === "none" || !app
                     ? "None"
                     : (knownHook?.name ??
-                      (isAddress(hook, { strict: false })
-                        ? truncateAddress(hook)
+                      (isAddress(app, { strict: false })
+                        ? truncateAddress(app)
                         : "—"))}
                 </span>
               </SummaryRow>
@@ -241,7 +241,7 @@ export function MobileBottomBar({
 
               {/* Mutability */}
               <SummaryRow
-                section="permissions"
+                section="scopes"
                 label="Mutable"
                 icon={<KeyRound className="size-3" />}
                 onJump={jumpTo}
@@ -250,7 +250,7 @@ export function MobileBottomBar({
                   ? [
                       mutableTax && "Tax",
                       mutableRecipient && "Recipient",
-                      mutableHook && "Hook",
+                      mutableApp && "App",
                     ]
                       .filter(Boolean)
                       .join(", ")
@@ -259,7 +259,7 @@ export function MobileBottomBar({
 
               {hasMutable && (
                 <SummaryRow
-                  section="permissions"
+                  section="scopes"
                   label="Manager"
                   onJump={jumpTo}
                 >

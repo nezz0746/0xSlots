@@ -25,7 +25,7 @@ import {
  *
  * The file at this path used to read `SlotCreated` logs straight off the chain
  * and then ask every row for its own state. That was never the design — the
- * profile page was subgraph-backed until the hook-protocol port, when the
+ * profile page was subgraph-backed until the app-protocol port, when the
  * generated GraphQL types still described the retired protocol and the
  * quickest way forward was to read logs. The stopgap outlived its reason.
  *
@@ -127,7 +127,7 @@ export function SlotList({
             <TableHead>Recipient</TableHead>
             <TableHead>Occupant</TableHead>
             <TableHead className="text-right">Price / Tax</TableHead>
-            <TableHead>Hook</TableHead>
+            <TableHead>App</TableHead>
             <TableHead>Config</TableHead>
             <TableHead className="text-right">Created</TableHead>
           </TableRow>

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -10,9 +10,9 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot} from "../../src/Slot.sol";
 import {SlotInfo} from "../../src/slot/SlotViews.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFT} from "../../src/hooks/nft/SlotBoundNFT.sol";
-import {ISlotBoundNFT} from "../../src/hooks/nft/ISlotBoundNFT.sol";
-import {ISlotHook, SlotContext} from "../../src/interfaces/ISlotHook.sol";
+import {SlotBoundNFT} from "../../src/apps/nft/SlotBoundNFT.sol";
+import {ISlotBoundNFT} from "../../src/apps/nft/ISlotBoundNFT.sol";
+import {ISlotApp, SlotContext} from "../../src/interfaces/ISlotApp.sol";
 
 contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,uint256 a) external {_mint(t,a);} }
 
@@ -88,8 +88,8 @@ contract SlotBoundNFTTest is Test {
 
     function test_TheCollectionMintsItsTermsNotTheMintersTerms() public view {
         SlotInit memory t = nft.terms();
-        assertEq(t.hookTerms.target, address(nft), "forced to the collection");
-        assertFalse(t.mutableHook, "and permanently so");
+        assertEq(t.appTerms.target, address(nft), "forced to the collection");
+        assertFalse(t.mutableApp, "and permanently so");
         assertEq(slot.taxRateBps(), t.taxTerms.rateBps, "every slot, the same terms");
         assertEq(slot.recipient(), recipient);
     }
@@ -362,24 +362,24 @@ contract SlotBoundNFTTest is Test {
     }
 
     /// @notice A stranger cannot claim someone's token by standing up their own
-    ///         slot that points at this hook.
+    ///         slot that points at this app.
     ///
-    /// @dev Hooks are permissionless: anyone may create a slot naming this
+    /// @dev Apps are permissionless: anyone may create a slot naming this
     ///      contract, with any `hookData` they like, then buy their own slot to
     ///      fire a callback whose every field is GENUINE — `msg.sender` is a
     ///      real slot, `ctx.slot` matches it, `ctx.occupant` is really them.
     ///
     ///      So the identifying question is not "did a slot call" but "did I mint
     ///      this slot", which only `tokenOf` answers. Taking a token id from
-    ///      `ctx.hookTerms.config` would hand Mallory whatever token she named.
+    ///      `ctx.appTerms.settings` would hand Mallory whatever token she named.
     function test_AStrangerCannotClaimATokenWithTheirOwnSlot() public {
         vm.startPrank(carol);
         address rogue = factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableHook: false,
+            mutableTax: false, mutableRecipient: false, mutableApp: false,
             taxTerms: TaxTerms({recipient: carol, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)}),
-            hookTerms: HookTerms({target: address(nft), config: bytes32(tokenId)})
+            appTerms: AppTerms({target: address(nft), settings: bytes32(tokenId)})
         }));
 
         token.approve(rogue, type(uint256).max);
@@ -423,7 +423,7 @@ contract SlotBoundNFTTest is Test {
     function test_TheOwnerHasNoPowerOverTheSlots() public {
         vm.startPrank(owner);
         vm.expectRevert();
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
         vm.expectRevert();
         slot.selfAssess(1 ether);
         vm.stopPrank();
@@ -455,14 +455,14 @@ contract SlotBoundNFTTest is Test {
         forged.occupant = carol;
 
         vm.prank(carol);
-        ISlotHook(address(nft)).afterBuy(forged);   // succeeds, and does nothing
+        ISlotApp(address(nft)).afterBuy(forged);   // succeeds, and does nothing
         assertEq(nft.ownerOf(tokenId), alice, "still the real occupant's");
     }
 
-    function test_TheHookIsStrictAndPermanent() public view {
-        assertTrue(slot.getSlotInfo().hookPermissions.strict);
-        assertFalse(slot.mutableHook(), "a detachable hook would strand the token");
-        assertEq(slot.hook(), address(nft));
+    function test_TheAppIsStrictAndPermanent() public view {
+        assertTrue(slot.getSlotInfo().scopes.strict);
+        assertFalse(slot.mutableApp(), "a detachable app would strand the token");
+        assertEq(slot.app(), address(nft));
     }
 
     /// @notice The terms a collection cannot express are the ones it cannot
@@ -471,10 +471,10 @@ contract SlotBoundNFTTest is Test {
     ///      rest, so there is no argument to reject.
     function test_TheCollectionsTermsAreFixedByConstruction() public view {
         SlotInit memory t = nft.terms();
-        assertFalse(t.mutableHook, "never - a detachable hook strands the token");
+        assertFalse(t.mutableApp, "never - a detachable app strands the token");
         assertEq(t.manager, manager);
-        assertEq(t.hookTerms.target, address(nft));
-        assertEq(t.hookTerms.config, bytes32(0));
+        assertEq(t.appTerms.target, address(nft));
+        assertEq(t.appTerms.settings, bytes32(0));
     }
 
     /// @notice There is no admin on these slots at all.
@@ -499,7 +499,7 @@ contract SlotBoundNFTTest is Test {
         SlotBoundNFT m = _managed();
         SlotInit memory t = m.terms();
         assertEq(t.manager, address(this), "the named address, not this contract");
-        assertFalse(t.mutableHook, "never - a detachable hook strands the token");
+        assertFalse(t.mutableApp, "never - a detachable app strands the token");
     }
 
     /// @notice No manager fixes the rent for ever, and the owner is unaffected.
@@ -528,7 +528,7 @@ contract SlotBoundNFTTest is Test {
         vm.stopPrank();
 
         Slot managed = Slot(payable(s));
-        managed.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
+        managed.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
         assertEq(managed.taxRateBps(), 1000, "alice keeps what she bought");
 
         vm.warp(block.timestamp + 1 days + 1);   // TERMS_DELAY
@@ -548,7 +548,7 @@ contract SlotBoundNFTTest is Test {
 
         vm.prank(carol);
         vm.expectRevert();
-        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
+        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
     }
 
     /// @notice The collection holds no privileged role of its own.
@@ -561,7 +561,7 @@ contract SlotBoundNFTTest is Test {
 
         vm.prank(address(m));
         vm.expectRevert();
-        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), HookTerms({target: address(0), config: bytes32(0)}), uint8(1));
+        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
     }
 
     /// @notice One relay, and it is the slot's own answer.
@@ -572,7 +572,7 @@ contract SlotBoundNFTTest is Test {
         assertEq(i.deposit, _depositOf(nft, 100 ether), "escrowed to the minimum");
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
         assertEq((i.price * i.terms.taxTerms.rateBps) / 10_000, _taxTerms(100 ether));
-        assertTrue(i.hookPermissions.strict, "and carries what a buyer needs");
+        assertTrue(i.scopes.strict, "and carries what a buyer needs");
     }
 
     /// @notice It follows the slot when the occupant reprices. The quote cannot:

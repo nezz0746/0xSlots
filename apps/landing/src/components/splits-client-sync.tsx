@@ -7,8 +7,8 @@ import { splitsSupported } from "@/lib/splits-support";
 
 export function SplitsClientSync() {
   const { chainId } = useChain();
-  // The hooks live in the inner component so they are never called on a chain
-  // splits would reject — a hook cannot be skipped, but a component can.
+  // The apps live in the inner component so they are never called on a chain
+  // splits would reject — an app cannot be skipped, but a component can.
   if (!splitsSupported(chainId)) return null;
   return <Sync chainId={chainId} />;
 }

@@ -23,7 +23,7 @@ import { useNow } from "@/hooks/use-duration";
  *   price * taxRateBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
  *
  * so the same arithmetic run in the browser reproduces it exactly, for free and
- * for any instant. The formula is UNCHANGED under the hook-based protocol —
+ * for any instant. The formula is UNCHANGED under the app-based protocol —
  * `Slot.taxOwed()` is still `Math.mulDiv(price, taxRateBps * elapsed, MONTH *
  * BASIS_POINTS)` — so what needed porting here was the shape of the input, not
  * a line of the mathematics.
@@ -124,7 +124,7 @@ export function useLiveAccrual(
   const perMonth = slot ? slot.price * slot.taxRateBps : ZERO;
   const nowSec = BigInt(now);
 
-  // Computed before the early return so the flash hook is called unconditionally.
+  // Computed before the early return so the flash app is called unconditionally.
   const elapsed =
     slot && nowSec > slot.lastSettled ? nowSec - slot.lastSettled : ZERO;
   const interpolated = slot

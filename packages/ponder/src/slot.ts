@@ -7,7 +7,7 @@ import {
   claimedEvent,
   creditedEvent,
   depositedEvent,
-  hook,
+  app,
   hookCallFailedEvent,
   liquidatedEvent,
   operatorSetEvent,
@@ -29,13 +29,13 @@ import {
 import type { Hex } from "viem";
 import {
   bumpAccountChain,
-  bumpHookSlotCount,
+  bumpAppSlotCount,
   evtId,
   getOrCreateAccount,
   getOrCreateAccountSlot,
   hookPermissionColumns,
   lower,
-  unpackPermissions,
+  unpackScopes,
   ZERO_ADDR,
   ZERO_DATA,
 } from "./helpers";
@@ -726,7 +726,7 @@ ponder.on("Slot:OperatorSet", async ({ event, context }) => {
 const TERM_TAX = 1;
 const TERM_RECIPIENT = 2;
 const TERM_MIN_DEPOSIT = 4;
-const TERM_HOOK = 8;
+const TERM_APP = 8;
 const TERM_HOOK_FLAGS = 16;
 
 /**
@@ -736,11 +736,11 @@ const TERM_HOOK_FLAGS = 16;
 ponder.on("Slot:TermsProposed", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { taxTerms, hookTerms: h, mask } = event.args;
+  const { taxTerms, appTerms: h, mask } = event.args;
   const tax = (mask & TERM_TAX) !== 0;
   const rec = (mask & TERM_RECIPIENT) !== 0;
   const min = (mask & TERM_MIN_DEPOSIT) !== 0;
-  const hk = (mask & TERM_HOOK) !== 0;
+  const hk = (mask & TERM_APP) !== 0;
 
   await context.db
     .update(slot, { id: slotAddr, chainId: context.chain.id })
@@ -756,7 +756,7 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
         : row.pendingMinRunwaySeconds,
       pendingHasHook: hk || row.pendingHasHook,
       pendingHook: hk ? lower(h.target) : row.pendingHook,
-      pendingHookConfig: hk ? lower(h.config) : row.pendingHookConfig,
+      pendingHookConfig: hk ? lower(h.settings) : row.pendingHookConfig,
       pendingProposedAt: event.block.timestamp,
       updatedAt: event.block.timestamp,
     }));
@@ -774,8 +774,8 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     taxRateBps: BigInt(taxTerms.rateBps),
     recipient: lower(taxTerms.recipient),
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    hook: lower(h.target),
-    hookConfig: lower(h.config),
+    app: lower(h.target),
+    settings: lower(h.settings),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -784,32 +784,32 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
 
 /**
  * Queued terms landed, at a buy or at `applyTerms`. The event carries the
- * terms now in force, hook offer included.
+ * terms now in force, app offer included.
  */
 ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { taxTerms, hookTerms: h, hookOffer: offer, mask } = event.args;
+  const { taxTerms, appTerms: h, manifest: offer, mask } = event.args;
 
   const nextHook = lower(h.target);
-  const nextHookConfig = lower(h.config);
+  const nextHookConfig = lower(h.settings);
   const nextRecipient = lower(taxTerms.recipient);
-  const prevHook = s.hook;
-  const prevHookConfig = s.hookConfig ?? ZERO_DATA;
+  const prevHook = s.app;
+  const prevHookConfig = s.settings ?? ZERO_DATA;
   const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
   const hookDataChanged = prevHookConfig !== nextHookConfig;
   const taxChanged = s.taxRateBps !== BigInt(taxTerms.rateBps);
   const recipientChanged = s.recipient !== nextRecipient;
 
-  const permissions = unpackPermissions(offer.permissions);
+  const scopes = unpackScopes(offer.scopes);
 
   if (hookChanged) {
     if (prevHook) {
-      await bumpHookSlotCount(context, prevHook, event.block.timestamp, -1);
+      await bumpAppSlotCount(context, prevHook, event.block.timestamp, -1);
     }
     if (nextHook !== ZERO_ADDR) {
-      await bumpHookSlotCount(context, nextHook, event.block.timestamp, 1);
+      await bumpAppSlotCount(context, nextHook, event.block.timestamp, 1);
     }
   }
 
@@ -841,11 +841,11 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     recipient: nextRecipient,
     recipientAccount,
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    hook: noHook ? null : nextHook,
-    hookConfig: noHook ? null : nextHookConfig,
+    app: noHook ? null : nextHook,
+    settings: noHook ? null : nextHookConfig,
     hookFeeBps: offer.feeBps,
     hookFeeRecipient: offer.feeBps === 0 ? null : lower(offer.feeRecipient),
-    ...hookPermissionColumns(permissions),
+    ...hookPermissionColumns(scopes),
     pendingMask: 0,
     pendingHasTaxRate: false,
     pendingTaxRateBps: null,
@@ -856,8 +856,8 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     pendingHasHook: false,
     pendingHook: null,
     pendingHookConfig: null,
-    pendingHasHookPermissions: false,
-    pendingHookPermissions: null,
+    pendingHasScopes: false,
+    pendingScopes: null,
     pendingProposedAt: null,
     updatedAt: event.block.timestamp,
   });
@@ -870,9 +870,9 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     taxRateBps: BigInt(taxTerms.rateBps),
     recipient: nextRecipient,
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    hook: nextHook,
-    hookConfig: nextHookConfig,
-    hookPermissions: offer.permissions,
+    app: nextHook,
+    settings: nextHookConfig,
+    scopes: offer.scopes,
     hookFeeBps: offer.feeBps,
     hookFeeRecipient: lower(offer.feeRecipient),
     previousTaxPercentage: s.taxRateBps,
@@ -900,7 +900,7 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   const tax = (mask & TERM_TAX) !== 0;
   const rec = (mask & TERM_RECIPIENT) !== 0;
   const min = (mask & TERM_MIN_DEPOSIT) !== 0;
-  const hk = (mask & TERM_HOOK) !== 0;
+  const hk = (mask & TERM_APP) !== 0;
   const hf = (mask & TERM_HOOK_FLAGS) !== 0;
   const left = s.pendingMask & ~mask;
 
@@ -917,8 +917,8 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
       pendingHasHook: hk ? false : s.pendingHasHook,
       pendingHook: hk ? null : s.pendingHook,
       pendingHookConfig: hk ? null : s.pendingHookConfig,
-      pendingHasHookPermissions: hf ? false : s.pendingHasHookPermissions,
-      pendingHookPermissions: hf ? null : s.pendingHookPermissions,
+      pendingHasScopes: hf ? false : s.pendingHasScopes,
+      pendingScopes: hf ? null : s.pendingScopes,
       pendingProposedAt: left === 0 ? null : s.pendingProposedAt,
       updatedAt: event.block.timestamp,
     });
@@ -942,8 +942,8 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   });
 });
 
-/** The hook's share of a payout. Emitted just before `TaxCollected`. */
-ponder.on("Slot:HookFeePaid", async ({ event, context }) => {
+/** The app's share of a payout. Emitted just before `TaxCollected`. */
+ponder.on("Slot:AppFeePaid", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
@@ -960,7 +960,7 @@ ponder.on("Slot:HookFeePaid", async ({ event, context }) => {
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId: context.chain.id,
     slot: slotAddr,
-    hook: lower(event.args.hook),
+    app: lower(event.args.app),
     recipient: lower(event.args.recipient),
     currency: s.currency,
     amount: event.args.amount,
@@ -1005,25 +1005,25 @@ ponder.on("Slot:DebtRepaid", async ({ event, context }) => {
  * is `OfferBook.cancel`, which the book emits `Cancelled` for.
  */
 
-// ─── hooks ─────────────────────────────────────────────────────────────────
+// ─── apps ─────────────────────────────────────────────────────────────────
 
 /**
  * An `after` callback reverted and was swallowed.
  *
- * The protocol's only observability into a broken hook: nothing reverts,
- * nothing retries, and the action the hook was watching succeeded anyway. If
- * this is not indexed, a hook that has stopped working is completely silent.
+ * The protocol's only observability into a broken app: nothing reverts,
+ * nothing retries, and the action the app was watching succeeded anyway. If
+ * this is not indexed, an app that has stopped working is completely silent.
  *
  * Never emitted for the `before` side — a failing `before` reverts the whole
  * transaction and never reaches here.
  */
-ponder.on("Slot:HookCallFailed", async ({ event, context }) => {
+ponder.on("Slot:AppCallFailed", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
-  const hookAddr = lower(event.args.hook);
+  const appAddr = lower(event.args.app);
 
-  await bumpHookSlotCount(context, hookAddr, event.block.timestamp, 0);
-  await context.db.update(hook, { id: hookAddr, chainId }).set((row) => ({
+  await bumpAppSlotCount(context, appAddr, event.block.timestamp, 0);
+  await context.db.update(app, { id: appAddr, chainId }).set((row) => ({
     failedCallCount: row.failedCallCount + 1,
     updatedAt: event.block.timestamp,
   }));
@@ -1032,7 +1032,7 @@ ponder.on("Slot:HookCallFailed", async ({ event, context }) => {
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
-    hook: hookAddr,
+    app: appAddr,
     selector: event.args.selector,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
@@ -1048,11 +1048,11 @@ ponder.on("Slot:ManagerSet", async ({ event, context }) => {
 });
 
 /**
- * The manager accepted the hook's current offer. A new fee applies now; new
- * permissions queue for the next buy, restarting the queue's clock.
+ * The manager accepted the app's current offer. A new fee applies now; new
+ * scopes queue for the next buy, restarting the queue's clock.
  */
-ponder.on("Slot:HookOfferAccepted", async ({ event, context }) => {
-  const { offer, feeApplied, permissionsQueued } = event.args;
+ponder.on("Slot:ScopesGranted", async ({ event, context }) => {
+  const { offer, feeApplied, scopesQueued } = event.args;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
   await context.db.update(slot, { id: slotAddr, chainId: context.chain.id }).set({
@@ -1063,11 +1063,11 @@ ponder.on("Slot:HookOfferAccepted", async ({ event, context }) => {
             offer.feeBps === 0 ? null : lower(offer.feeRecipient),
         }
       : {}),
-    ...(permissionsQueued
+    ...(scopesQueued
       ? {
           pendingMask: s.pendingMask | TERM_HOOK_FLAGS,
-          pendingHasHookPermissions: true,
-          pendingHookPermissions: offer.permissions,
+          pendingHasScopes: true,
+          pendingScopes: offer.scopes,
           pendingProposedAt: event.block.timestamp,
         }
       : {}),

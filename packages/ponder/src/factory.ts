@@ -4,7 +4,7 @@ import {
   adminTransferredEvent,
   beaconUpgradedEvent,
   factory,
-  hook,
+  app,
   slot,
   slotCreatedEvent,
 } from "ponder:schema";
@@ -16,7 +16,7 @@ import {
   getOrCreateHook,
   hookPermissionColumns,
   lower,
-  NO_HOOK_PERMISSIONS,
+  NO_SCOPES,
   readSlotTerms,
   ZERO_ADDR,
 } from "./helpers";
@@ -64,7 +64,7 @@ async function touchFactory(
 /**
  * A new slot.
  *
- * `SlotCreated` carries slot, recipient, creator, currency and hook — and
+ * `SlotCreated` carries slot, recipient, creator, currency and app — and
  * nothing about the terms. They are read back from the slot with
  * `readSlotTerms` at the creation block.
  *
@@ -78,8 +78,8 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
   const slotId = lower(event.args.slot);
-  const hookAddr = lower(event.args.hook);
-  const hasHook = hookAddr !== ZERO_ADDR;
+  const appAddr = lower(event.args.app);
+  const hasApp = appAddr !== ZERO_ADDR;
 
   await touchFactory(context, factoryId, { slotCount: 1n });
 
@@ -105,9 +105,9 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
 
   const terms = await readSlotTerms(context, slotId);
 
-  if (hasHook) {
-    await getOrCreateHook(context, hookAddr, event.block.timestamp);
-    await context.db.update(hook, { id: hookAddr, chainId }).set((row) => ({
+  if (hasApp) {
+    await getOrCreateHook(context, appAddr, event.block.timestamp);
+    await context.db.update(app, { id: appAddr, chainId }).set((row) => ({
       slotCount: row.slotCount + 1,
       updatedAt: event.block.timestamp,
     }));
@@ -126,14 +126,14 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     minRunwaySeconds: terms.minRunwaySeconds,
     mutableTax: terms.mutableTax,
     mutableRecipient: terms.mutableRecipient,
-    mutableHook: terms.mutableHook,
-    hook: hasHook ? hookAddr : null,
-    hookConfig: hasHook ? terms.hookConfig : null,
+    mutableApp: terms.mutableApp,
+    app: hasApp ? appAddr : null,
+    settings: hasApp ? terms.settings : null,
     hookFeeBps: terms.hookFeeBps,
     hookFeeRecipient: terms.hookFeeRecipient,
     hookFeesTotal: 0n,
     debtRepaidTotal: 0n,
-    ...hookPermissionColumns(hasHook ? terms.permissions : NO_HOOK_PERMISSIONS),
+    ...hookPermissionColumns(hasApp ? terms.scopes : NO_SCOPES),
     occupant: null,
     occupantAccount: null,
     isOccupied: false,
@@ -157,8 +157,8 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     pendingHasHook: false,
     pendingHook: null,
     pendingHookConfig: null,
-    pendingHasHookPermissions: false,
-    pendingHookPermissions: null,
+    pendingHasScopes: false,
+    pendingScopes: null,
     pendingProposedAt: null,
     createdAt: event.block.timestamp,
     createdTx: event.transaction.hash,
@@ -174,13 +174,13 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     recipient: lower(event.args.recipient),
     creator: lower(event.args.creator),
     currency: cur.id,
-    hook: hookAddr,
-    hookConfig: terms.hookConfig,
+    app: appAddr,
+    settings: terms.settings,
     taxRateBps: terms.taxRateBps,
     minRunwaySeconds: terms.minRunwaySeconds,
     mutableTax: terms.mutableTax,
     mutableRecipient: terms.mutableRecipient,
-    mutableHook: terms.mutableHook,
+    mutableApp: terms.mutableApp,
     hookFeeBps: terms.hookFeeBps,
     hookFeeRecipient: terms.hookFeeRecipient,
     manager: terms.manager,

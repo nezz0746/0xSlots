@@ -7,26 +7,26 @@ import {
 } from "ponder";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// THE HOOK-BASED SLOTS PROTOCOL
+// THE APP-BASED SLOTS PROTOCOL
 //
-// One `hook` address per slot. There is no policy table and no module table,
+// One `app` address per slot. There is no policy table and no module table,
 // because there are no policies and no modules — the three extension surfaces
 // the previous protocol had (occupancy policy, utility head, module gallery)
 // collapsed into a single address with one interface. A slot wanting several
-// behaviours points at one hook that implements all of them, so the indexer
+// behaviours points at one app that implements all of them, so the indexer
 // sees exactly one address and there is no tree to reconstruct.
 //
 // Two things follow from that and shape everything below:
 //
-//   1. `hook` is a first-class entity, not a column. It is shared across slots
-//      (MinimumTenureHook is a stateless singleton — ONE deploy, every
-//      duration, since the window is the slot's `hookConfig`),
+//   1. `app` is a first-class entity, not a column. It is shared across slots
+//      (MinimumTenureApp is a stateless singleton — ONE deploy, every
+//      duration, since the window is the slot's `settings`),
 //      and it carries a declared flag set. It wants a row of its own.
 //
-//   2. A slot stores a COPY of the hook's permissions taken when it was
-//      attached, and the hook's own `hooks()` can drift from it afterwards —
-//      a hook may be a proxy, and the snapshot is deliberately never re-read.
-//      Both sides are stored, on `slot` and on `hook`, precisely so the drift
+//   2. A slot stores a COPY of the app's scopes taken when it was
+//      attached, and the app's own `apps()` can drift from it afterwards —
+//      an app may be a proxy, and the snapshot is deliberately never re-read.
+//      Both sides are stored, on `slot` and on `app`, precisely so the drift
 //      is visible rather than averaged away.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -117,7 +117,7 @@ export const accountChain = onchainTable(
 /**
  * An ERC-20, or the native-ETH sentinel at the zero address.
  *
- * Chain-scoped for the same reason `hook` is: a token is code. The same
+ * Chain-scoped for the same reason `app` is: a token is code. The same
  * address on two chains is two deployments, and `name`/`symbol`/`decimals`
  * are read off whichever one this row belongs to — merging them would label a
  * slot's price in another network's token.
@@ -169,25 +169,25 @@ export const factory = onchainTable(
 );
 
 /**
- * A hook contract.
+ * An app contract.
  *
- * Chain-scoped by primary key, unlike `account` and `currency`. A hook is code
+ * Chain-scoped by primary key, unlike `account` and `currency`. An app is code
  * rather than an identity: the same address on two chains is two deployments
  * that may differ in code or in constructor arguments, each with its own
  * declaration and its own slots. Merging the two rows would merge those facts.
  *
- * The `declared*` permissions are read from the hook's own `hookOffer()` the first time
+ * The `declared*` scopes are read from the app's own `manifest()` the first time
  * it is seen. They are NOT what any particular slot obeys: a slot obeys the
  * snapshot it took at attach time, stored on `slot`. Comparing the two is how
- * you find a hook that changed its declaration after slots had already
+ * you find an app that changed its declaration after slots had already
  * committed to it.
  */
-export const hook = onchainTable(
-  "hook",
+export const app = onchainTable(
+  "app",
   (t) => ({
     id: t.hex().notNull(),
     chainId: t.integer().notNull(),
-    /// False when `hooks()` did not answer — a hook that cannot be attached.
+    /// False when `apps()` did not answer — an app that cannot be attached.
     /// The columns below are then all false rather than unknown, so read this
     /// one before trusting them.
     declaredKnown: t.boolean().notNull(),
@@ -198,11 +198,11 @@ export const hook = onchainTable(
     declaredAfterLiquidate: t.boolean().notNull(),
     declaredAfterSettle: t.boolean().notNull(),
     /// Not a callback — a mode. `after` calls run uncapped and their revert
-    /// propagates, so a slot attaching this hook is only as evictable as it is.
+    /// propagates, so a slot attaching this app is only as evictable as it is.
     declaredStrict: t.boolean().notNull(),
-    /// Slots pointing at this hook right now.
+    /// Slots pointing at this app right now.
     slotCount: t.integer().notNull(),
-    /// `after` callbacks that reverted and were swallowed. A hook accumulating
+    /// `after` callbacks that reverted and were swallowed. An app accumulating
     /// these is broken in a way nothing on chain will ever tell its users.
     failedCallCount: t.integer().notNull(),
     firstSeenAt: t.bigint().notNull(),
@@ -382,7 +382,7 @@ export const collectionToken = onchainTable(
  * One Harberger-taxed slot.
  *
  * Most of this row cannot be read from `SlotCreated`, which carries only
- * recipient, creator, currency and hook. The terms — tax, minimum deposit,
+ * recipient, creator, currency and app. The terms — tax, minimum deposit,
  * which dimensions are mutable, the manager — are read back from the slot with
  * an eth_call at creation. See `readSlotTerms` in src/helpers.ts.
  */
@@ -404,7 +404,7 @@ export const slot = onchainTable(
     creator: t.hex().notNull(),
     mutableTax: t.boolean().notNull(),
     mutableRecipient: t.boolean().notNull(),
-    mutableHook: t.boolean().notNull(),
+    mutableApp: t.boolean().notNull(),
 
     // ── terms ─────────────────────────────────────────────────────────────
     /// Basis points per 30 days.
@@ -412,37 +412,37 @@ export const slot = onchainTable(
     /// Minimum runway, in seconds, a buyer must fund. Zero means no minimum.
     minRunwaySeconds: t.bigint().notNull(),
 
-    // ── the hook, and the permissions THIS SLOT obeys ───────────────────────────
-    /// NULL when the slot has no hook at all — which is the plain Harberger
+    // ── the app, and the scopes THIS SLOT obeys ───────────────────────────
+    /// NULL when the slot has no app at all — which is the plain Harberger
     /// slot, and a perfectly ordinary configuration rather than a gap.
-    hook: t.hex(),
-    /// This slot's configuration FOR THAT HOOK, 32 bytes, handed back on every
-    /// callback. Opaque here — only the hook knows what it means. A
-    /// minimum-tenure window lives here, which is why one hook deployment can
-    /// serve every duration. NULL when there is no hook.
-    hookConfig: t.hex(),
-    /// The hook's fee as the slot accepted it, in basis points. Taken when the
-    /// hook attached, or when the manager last accepted its offer.
+    app: t.hex(),
+    /// This slot's configuration FOR THAT APP, 32 bytes, handed back on every
+    /// callback. Opaque here — only the app knows what it means. A
+    /// minimum-tenure window lives here, which is why one app deployment can
+    /// serve every duration. NULL when there is no app.
+    settings: t.hex(),
+    /// The app's fee as the slot accepted it, in basis points. Taken when the
+    /// app attached, or when the manager last accepted its offer.
     hookFeeBps: t.integer().notNull(),
     hookFeeRecipient: t.hex(),
-    /// Every wei ever paid out as the hook's fee.
+    /// Every wei ever paid out as the app's fee.
     hookFeesTotal: t.bigint().notNull(),
     /// Every wei of debt repaid into collected tax: from a debtor's rebuy, out
     /// of their buyout, or out of their top-up.
     debtRepaidTotal: t.bigint().notNull(),
-    /// Accepted when the hook attached and changed only by a manager accepting
-    /// new ones, at the next buy, so a hook cannot widen its own reach
-    /// mid-tenure. Compare against the `declared*` columns on `hook`.
-    permBeforeBuy: t.boolean().notNull(),
-    permBeforeSelfAssess: t.boolean().notNull(),
-    permAfterBuy: t.boolean().notNull(),
-    permAfterRelease: t.boolean().notNull(),
-    permAfterLiquidate: t.boolean().notNull(),
-    permAfterSettle: t.boolean().notNull(),
+    /// Accepted when the app attached and changed only by a manager accepting
+    /// new ones, at the next buy, so an app cannot widen its own reach
+    /// mid-tenure. Compare against the `declared*` columns on `app`.
+    scopeBeforeBuy: t.boolean().notNull(),
+    scopeBeforeSelfAssess: t.boolean().notNull(),
+    scopeAfterBuy: t.boolean().notNull(),
+    scopeAfterRelease: t.boolean().notNull(),
+    scopeAfterLiquidate: t.boolean().notNull(),
+    scopeAfterSettle: t.boolean().notNull(),
     /// The one flag that changes what the SLOT promises rather than what the
-    /// hook hears about. Accepted like the rest: a hook cannot become strict
+    /// app hears about. Accepted like the rest: an app cannot become strict
     /// under a sitting occupant.
-    permStrict: t.boolean().notNull(),
+    scopeStrict: t.boolean().notNull(),
 
     // ── occupancy ─────────────────────────────────────────────────────────
     occupant: t.hex(),
@@ -501,7 +501,7 @@ export const slot = onchainTable(
     // ── deferred terms ────────────────────────────────────────────────────
     //
     // Mirrors the slot's queue: `pendingMask` says which terms are queued, and
-    // the booleans spell it out for queries. A queued hook TO the zero address
+    // the booleans spell it out for queries. A queued app TO the zero address
     // means "detach", which is why `pendingHasHook` exists.
     pendingMask: t.integer().notNull(),
     pendingHasTaxRate: t.boolean().notNull(),
@@ -513,10 +513,10 @@ export const slot = onchainTable(
     pendingHasHook: t.boolean().notNull(),
     pendingHook: t.hex(),
     pendingHookConfig: t.hex(),
-    /// Subscriptions the manager accepted from the attached hook, waiting for
+    /// Subscriptions the manager accepted from the attached app, waiting for
     /// the next buy.
-    pendingHasHookPermissions: t.boolean().notNull(),
-    pendingHookPermissions: t.integer(),
+    pendingHasScopes: t.boolean().notNull(),
+    pendingScopes: t.integer(),
     pendingProposedAt: t.bigint(),
 
     // ── bookkeeping ───────────────────────────────────────────────────────
@@ -533,7 +533,7 @@ export const slot = onchainTable(
     pk: primaryKey({ columns: [table.id, table.chainId] }),
     chainIdx: index().on(table.chainId),
     factoryIdx: index().on(table.factory),
-    hookIdx: index().on(table.hook),
+    hookIdx: index().on(table.app),
     recipientIdx: index().on(table.recipient),
     occupantIdx: index().on(table.occupant),
   }),
@@ -689,12 +689,12 @@ export const cancelledOrder = onchainTable(
  *
  * ── Why this is a table and not a column on `slot` ──────────────────────────
  *
- * Because the creative belongs to the HOOK, not to the slot. A slot's row is
+ * Because the creative belongs to the APP, not to the slot. A slot's row is
  * assembled from the core protocol's own events, and every column on it is
- * something `Slot` emits; a creative is one hook's idea of what a slot is for,
- * and AdLand is one hook among however many people write. Putting `uri` on
+ * something `Slot` emits; a creative is one app's idea of what a slot is for,
+ * and AdLand is one app among however many people write. Putting `uri` on
  * `slot` would make the core schema carry a field that is null for every slot
- * running any other hook — and would have to grow another for the next hook
+ * running any other app — and would have to grow another for the next app
  * that stores something.
  *
  * ── Why `tenureId` is stored beside the URI ─────────────────────────────────
@@ -711,9 +711,9 @@ export const creative = onchainTable(
   (t) => ({
     slot: t.hex().notNull(),
     chainId: t.integer().notNull(),
-    /// The hook holding it. A slot may be repointed, and then this is the
+    /// The app holding it. A slot may be repointed, and then this is the
     /// contract that answered when it was last published to.
-    hook: t.hex().notNull(),
+    app: t.hex().notNull(),
     /// Empty after a clear. Not deleted — see `clearedAt`.
     uri: t.text().notNull(),
     /// The tenure this creative was published in.
@@ -735,7 +735,7 @@ export const creative = onchainTable(
     // different slots. The chain is part of the identity, here and everywhere.
     pk: primaryKey({ columns: [table.slot, table.chainId] }),
     chainIdx: index().on(table.chainId),
-    hookIdx: index().on(table.hook),
+    hookIdx: index().on(table.app),
     publisherIdx: index().on(table.publisher),
   }),
 );
@@ -755,7 +755,7 @@ export const publishedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    app: t.hex().notNull(),
     uri: t.text().notNull(),
     tenureId: t.bigint().notNull(),
     /// The occupant at the moment of publishing. Null when this indexer has no
@@ -775,10 +775,10 @@ export const publishedEvent = onchainTable(
 /**
  * A creative going blank because the slot changed hands.
  *
- * Emitted by the hook's `afterBuy`, `afterRelease` and `afterLiquidate`, and
+ * Emitted by the app's `afterBuy`, `afterRelease` and `afterLiquidate`, and
  * worth its own table rather than being inferred from `boughtEvent`: whether a
  * buy actually cleared anything depends on whether a creative was showing, and
- * that is the hook's answer, not something to recompute from the core's events.
+ * that is the app's answer, not something to recompute from the core's events.
  */
 export const clearedEvent = onchainTable(
   "cleared_event",
@@ -786,7 +786,7 @@ export const clearedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    app: t.hex().notNull(),
     fromTenure: t.bigint().notNull(),
     toTenure: t.bigint().notNull(),
     timestamp: t.bigint().notNull(),
@@ -828,7 +828,7 @@ export const adKey = onchainTable(
     chainId: t.integer().notNull(),
     /// The AdLand deployment holding it — one per chain, but stored rather
     /// than assumed, so a second one does not silently merge into the first.
-    hook: t.hex().notNull(),
+    app: t.hex().notNull(),
     /// What it resolves to right now.
     slot: t.hex().notNull(),
     /// A queued repoint, waiting out `CHANGE_DELAY`. Null when none.
@@ -862,16 +862,16 @@ export const slotCreatedEvent = onchainTable(
     /// collective or a router may create a slot on someone's behalf.
     creator: t.hex().notNull(),
     currency: t.hex().notNull(),
-    /// Zero address when the slot has no hook.
-    hook: t.hex().notNull(),
-    /// The hook's configuration at creation. Read back from the slot.
-    hookConfig: t.hex().notNull(),
+    /// Zero address when the slot has no app.
+    app: t.hex().notNull(),
+    /// The app's configuration at creation. Read back from the slot.
+    settings: t.hex().notNull(),
     /// Read back from the slot, not carried by the event. See `readSlotTerms`.
     taxRateBps: t.bigint().notNull(),
     minRunwaySeconds: t.bigint().notNull(),
     mutableTax: t.boolean().notNull(),
     mutableRecipient: t.boolean().notNull(),
-    mutableHook: t.boolean().notNull(),
+    mutableApp: t.boolean().notNull(),
     hookFeeBps: t.integer().notNull(),
     hookFeeRecipient: t.hex(),
     manager: t.hex(),
@@ -1245,9 +1245,9 @@ export const termsProposedEvent = onchainTable(
     taxRateBps: t.bigint().notNull(),
     recipient: t.hex().notNull(),
     minRunwaySeconds: t.bigint().notNull(),
-    /// Zero means "detach the hook".
-    hook: t.hex().notNull(),
-    hookConfig: t.hex().notNull(),
+    /// Zero means "detach the app".
+    app: t.hex().notNull(),
+    settings: t.hex().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),
@@ -1272,9 +1272,9 @@ export const termsAppliedEvent = onchainTable(
     taxRateBps: t.bigint().notNull(),
     recipient: t.hex().notNull(),
     minRunwaySeconds: t.bigint().notNull(),
-    hook: t.hex().notNull(),
-    hookConfig: t.hex().notNull(),
-    hookPermissions: t.integer().notNull(),
+    app: t.hex().notNull(),
+    settings: t.hex().notNull(),
+    scopes: t.integer().notNull(),
     hookFeeBps: t.integer().notNull(),
     hookFeeRecipient: t.hex().notNull(),
     previousTaxPercentage: t.bigint().notNull(),
@@ -1350,14 +1350,14 @@ export const debtRepaidEvent = onchainTable(
   }),
 );
 
-/** A hook's fee, paid out of collected rent. */
+/** An app's fee, paid out of collected rent. */
 export const hookFeePaidEvent = onchainTable(
   "hook_fee_paid_event",
   (t) => ({
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    app: t.hex().notNull(),
     recipient: t.hex().notNull(),
     currency: t.hex().notNull(),
     amount: t.bigint().notNull(),
@@ -1368,7 +1368,7 @@ export const hookFeePaidEvent = onchainTable(
   (table) => ({
     chainIdx: index().on(table.chainId),
     slotIdx: index().on(table.slot),
-    hookIdx: index().on(table.hook),
+    hookIdx: index().on(table.app),
   }),
 );
 
@@ -1408,7 +1408,7 @@ export const factoryRelations = relations(factory, ({ many }) => ({
   upgrades: many(beaconUpgradedEvent),
 }));
 
-export const hookRelations = relations(hook, ({ many }) => ({
+export const hookRelations = relations(app, ({ many }) => ({
   slots: many(slot),
   failures: many(hookCallFailedEvent),
 }));
@@ -1674,12 +1674,12 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     fields: [slot.factory, slot.chainId],
     references: [factory.id, factory.chainId],
   }),
-  // Two columns, because `hook` is chain-scoped by primary key — the same
+  // Two columns, because `app` is chain-scoped by primary key — the same
   // address on two chains is two deployments with possibly different
   // constructor arguments.
-  hookRef: one(hook, {
-    fields: [slot.hook, slot.chainId],
-    references: [hook.id, hook.chainId],
+  hookRef: one(app, {
+    fields: [slot.app, slot.chainId],
+    references: [app.id, app.chainId],
   }),
 
   // A slot names two addresses, and a SlotCollective can be BOTH of them. Each
@@ -1730,9 +1730,9 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
 /**
  * An `after` callback reverted and was swallowed.
  *
- * The protocol's only observability into a broken hook. Nothing on chain
- * reverts, nothing retries, and the action the hook was watching succeeded
- * anyway — so if this is not indexed, a hook that stopped working is
+ * The protocol's only observability into a broken app. Nothing on chain
+ * reverts, nothing retries, and the action the app was watching succeeded
+ * anyway — so if this is not indexed, an app that stopped working is
  * completely silent.
  */
 export const hookCallFailedEvent = onchainTable(
@@ -1741,7 +1741,7 @@ export const hookCallFailedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    app: t.hex().notNull(),
     /// The 4-byte selector of the callback that failed, as hex.
     selector: t.hex().notNull(),
     timestamp: t.bigint().notNull(),
@@ -1751,7 +1751,7 @@ export const hookCallFailedEvent = onchainTable(
   (table) => ({
     chainIdx: index().on(table.chainId),
     slotIdx: index().on(table.slot),
-    hookIdx: index().on(table.hook),
+    hookIdx: index().on(table.app),
   }),
 );
 
@@ -1762,9 +1762,9 @@ export const hookCallFailedEventRelations = relations(
       fields: [hookCallFailedEvent.slot, hookCallFailedEvent.chainId],
       references: [slot.id, slot.chainId],
     }),
-    hookRef: one(hook, {
-      fields: [hookCallFailedEvent.hook, hookCallFailedEvent.chainId],
-      references: [hook.id, hook.chainId],
+    hookRef: one(app, {
+      fields: [hookCallFailedEvent.app, hookCallFailedEvent.chainId],
+      references: [app.id, app.chainId],
     }),
   }),
 );
@@ -1774,7 +1774,7 @@ export const hookCallFailedEventRelations = relations(
 // ═══════════════════════════════════════════════════════════
 //
 // A SlotCollective fills BOTH of a slot's named addresses at once: `recipient`
-// (tax flows to it) and `manager` (it may propose tax and hook changes).
+// (tax flows to it) and `manager` (it may propose tax and app changes).
 // Indexed here so those two columns on `slot` stop being opaque addresses and
 // become a join — "who governs this slot, and who actually gets paid".
 //
@@ -1782,19 +1782,19 @@ export const hookCallFailedEventRelations = relations(
 // without replaying logs: `splitHash` is a hash, and AccessControl keeps no
 // enumerable member list. Both are reconstructed below.
 //
-// ── What the port to the hook-based Slot changed here ──────────────────────
+// ── What the port to the app-based Slot changed here ──────────────────────
 //
 // TWO manager roles, not three. `UTILITY_MANAGER_ROLE` is gone with the
-// utility head it governed; a hook is the old policy and the old utility
+// utility head it governed; an app is the old policy and the old utility
 // unified, and `POLICY_MANAGER_ROLE` is the identifier that survived. So
-// wherever this schema says "policy", read HOOK — the label is preserved
+// wherever this schema says "policy", read APP — the label is preserved
 // deliberately (renaming a `keccak256` constant would move the role on every
 // live collective) and only the meaning moved.
 //
 // The relay events narrowed with it: `Dimension` has two members where
 // `UpdateKind` had three, and `LiquidationBountyRelayed` is gone entirely
 // along with the bounty. `collectiveActionEvent.kind` is therefore
-// "Tax" | "Hook", and its `action` no longer has a "bounty" value.
+// "Tax" | "App", and its `action` no longer has a "bounty" value.
 
 export const slotCollective = onchainTable(
   "slot_collective",
@@ -1845,7 +1845,7 @@ export const collectiveRole = onchainTable(
     chainId: t.integer().notNull(),
     granted: t.boolean().notNull(),
     /// Human-readable role name where the hash is one of the known ones.
-    /// "POLICY_MANAGER" is the HOOK role — see the section note. Null for any
+    /// "POLICY_MANAGER" is the APP role — see the section note. Null for any
     /// role added later, rather than a guess.
     label: t.text(),
     grantedAt: t.bigint(),
@@ -1941,11 +1941,11 @@ export const collectiveActionEvent = onchainTable(
     /// "propose" | "cancel" | "cancelAll". The old "bounty" value went with
     /// `LiquidationBountyRelayed`.
     action: t.text().notNull(),
-    /// "Tax" | "Hook" — null for cancelAll, which reaches across both.
+    /// "Tax" | "App" — null for cancelAll, which reaches across both.
     /// `Dimension` is positional across the ABI boundary, so an unrecognised
     /// ordinal stays null rather than being guessed at.
     kind: t.text(),
-    /// Raw basis points for Tax, the left-padded address for Hook. Left as the
+    /// Raw basis points for Tax, the left-padded address for App. Left as the
     /// widened bytes32 the event carries; null on every cancel, which carries
     /// no value.
     value: t.hex(),

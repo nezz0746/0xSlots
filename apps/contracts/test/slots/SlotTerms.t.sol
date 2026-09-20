@@ -6,19 +6,19 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, HookTerms, HookOffer, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms, Manifest, PendingTerms} from "../../src/types/SlotTypes.sol";
 import {ISlotEvents} from "../../src/interfaces/ISlotEvents.sol";
-import {ISlotHook, HookPermissions, SlotContext} from "../../src/interfaces/ISlotHook.sol";
-import {HookPermissionsLib} from "../../src/libraries/HookPermissionsLib.sol";
+import {ISlotApp, Scopes, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import "../../src/errors/SlotErrors.sol";
 
 /// @dev Takes no fee, subscribes to one harmless callback.
-contract AnyHook is ISlotHook {
-    function hookOffer(bytes32) external view virtual returns (HookOffer memory o) {
-        o.permissions = HookPermissionsLib.AFTER_SETTLE;
+contract AnyApp is ISlotApp {
+    function manifest(bytes32) external view virtual returns (Manifest memory o) {
+        o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
-    function validateHookConfig(bytes32) external pure {}
+    function checkSettings(bytes32) external pure {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external virtual {}
@@ -26,12 +26,16 @@ contract AnyHook is ISlotHook {
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
 
-    function afterAttach(SlotContext calldata) external {}
+    function onUninstall(SlotContext calldata) external {}
+
+    function onInstall(SlotContext calldata) external {}
+
+
 }
 
 /// @dev An offer its owner can change at any time, and a count of the buys it hears about.
-contract OfferHook is AnyHook {
-    uint8 public permissions = HookPermissionsLib.AFTER_SETTLE;
+contract OfferApp is AnyApp {
+    uint16 public scopes = ScopesLib.AFTER_SETTLE;
     uint16 public bps;
     address public to;
     uint256 public buys;
@@ -46,12 +50,12 @@ contract OfferHook is AnyHook {
         to = to_;
     }
 
-    function setPermissions(uint8 flags_) external {
-        permissions = flags_;
+    function setScopes(uint16 scopes_) external {
+        scopes = scopes_;
     }
 
-    function hookOffer(bytes32) external view override returns (HookOffer memory) {
-        return HookOffer(permissions, bps, to);
+    function manifest(bytes32) external view override returns (Manifest memory) {
+        return Manifest(scopes, bps, to);
     }
 
     function afterBuy(SlotContext calldata) external override {
@@ -59,18 +63,18 @@ contract OfferHook is AnyHook {
     }
 }
 
-/// @notice Terms queue per mutable term and land at transitions; hooks declare
+/// @notice Terms queue per mutable term and land at transitions; apps declare
 ///         an offer the slot keeps a copy of until its manager accepts another.
 contract SlotTermsTest is Test {
-    event HookPermissionsDropped(address indexed hook, uint8 permissions);
+    event ScopesDropped(address indexed app, uint16 scopes);
 
     uint8 constant TAX_RATE = 1;
     uint8 constant RECIPIENT = 2;
     uint8 constant MIN_RUNWAY = 4;
-    uint8 constant HOOK = 8;
-    uint8 constant HOOK_PERMISSIONS = 16;
-    uint8 constant SETTLE = HookPermissionsLib.AFTER_SETTLE;
-    uint8 constant SETTLE_AND_BUY = HookPermissionsLib.AFTER_SETTLE | HookPermissionsLib.AFTER_BUY;
+    uint8 constant APP = 8;
+    uint8 constant SCOPES = 16;
+    uint16 constant SETTLE = ScopesLib.AFTER_SETTLE;
+    uint16 constant SETTLE_AND_BUY = ScopesLib.AFTER_SETTLE | ScopesLib.AFTER_BUY;
 
     SlotFactory factory;
     Slot slot;
@@ -94,33 +98,33 @@ contract SlotTermsTest is Test {
 
     // ── helpers ─────────────────────────────────────────────────────────────
 
-    function _noHook() internal pure returns (HookTerms memory) {
-        return HookTerms({target: address(0), config: bytes32(0)});
+    function _noHook() internal pure returns (AppTerms memory) {
+        return AppTerms({target: address(0), settings: bytes32(0)});
     }
 
     function _taxTerms() internal view returns (TaxTerms memory) {
         return TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 hours});
     }
 
-    function _init(bool tax, bool rec, bool hook, HookTerms memory h) internal view returns (SlotInit memory) {
+    function _init(bool tax, bool rec, bool app, AppTerms memory h) internal view returns (SlotInit memory) {
         return SlotInit({
             currency: IERC20(address(0)),
-            manager: (tax || rec || hook) ? manager : address(0),
+            manager: (tax || rec || app) ? manager : address(0),
             mutableTax: tax,
             mutableRecipient: rec,
-            mutableHook: hook,
+            mutableApp: app,
             taxTerms: _taxTerms(),
-            hookTerms: h
+            appTerms: h
         });
     }
 
-    function _slot(bool tax, bool rec, bool hook, HookTerms memory h) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(_init(tax, rec, hook, h))));
+    function _slot(bool tax, bool rec, bool app, AppTerms memory h) internal returns (Slot) {
+        return Slot(payable(factory.createSlot(_init(tax, rec, app, h))));
     }
 
-    function _propose(Slot s, TaxTerms memory taxTerms, HookTerms memory hook, uint8 mask) internal {
+    function _propose(Slot s, TaxTerms memory taxTerms, AppTerms memory app, uint8 mask) internal {
         vm.prank(manager);
-        s.proposeTerms(taxTerms, hook, mask);
+        s.proposeTerms(taxTerms, app, mask);
     }
 
     function _buy(Slot s) internal {
@@ -155,7 +159,7 @@ contract SlotTermsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        taxOnly.proposeTerms(taxTerms, _noHook(), HOOK);
+        taxOnly.proposeTerms(taxTerms, _noHook(), APP);
 
         Slot recipientOnly = _slot(false, true, false, _noHook());
         _propose(recipientOnly, taxTerms, _noHook(), RECIPIENT);
@@ -210,7 +214,7 @@ contract SlotTermsTest is Test {
         vm.expectRevert(UnknownTerms.selector);
         slot.proposeTerms(_taxTerms(), _noHook(), 32);
         vm.expectRevert(UnknownTerms.selector);
-        slot.proposeTerms(_taxTerms(), _noHook(), HOOK_PERMISSIONS);
+        slot.proposeTerms(_taxTerms(), _noHook(), SCOPES);
         vm.stopPrank();
     }
 
@@ -237,7 +241,7 @@ contract SlotTermsTest is Test {
         _propose(slot, TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 0}), _noHook(), TAX_RATE | RECIPIENT);
 
         vm.prank(manager);
-        slot.cancelTerms(RECIPIENT | HOOK);
+        slot.cancelTerms(RECIPIENT | APP);
         PendingTerms memory __p3 = slot.pendingTerms();
         TaxTerms memory queued = __p3.taxTerms;
         uint8 mask = __p3.mask;
@@ -330,36 +334,36 @@ contract SlotTermsTest is Test {
         slot.setManager(address(0));
     }
 
-    // ── hook offer ──────────────────────────────────────────────────────────
+    // ── app offer ──────────────────────────────────────────────────────────
 
-    function _offerSlot(bool mutableHook, uint16 bps, address to) internal returns (Slot s, OfferHook h) {
-        h = new OfferHook(bps, to);
-        s = _slot(true, true, mutableHook, HookTerms({target: address(h), config: 0}));
+    function _offerSlot(bool mutableApp, uint16 bps, address to) internal returns (Slot s, OfferApp h) {
+        h = new OfferApp(bps, to);
+        s = _slot(true, true, mutableApp, AppTerms({target: address(h), settings: 0}));
     }
 
-    function test_TheOfferIsWhatTheHookDeclares() public {
+    function test_TheOfferIsWhatTheAppDeclares() public {
         (Slot s, ) = _offerSlot(true, 2_500, author);
 
-        HookOffer memory offer = s.hookOffer();
-        assertEq(offer.permissions, SETTLE);
+        Manifest memory offer = s.manifest();
+        assertEq(offer.scopes, SETTLE);
         assertEq(offer.feeBps, 2_500);
         assertEq(offer.feeRecipient, author);
-        assertTrue(s.hookPermissions().afterSettle);
+        assertTrue(s.scopes().afterSettle);
     }
 
-    function test_AHookWithABadOfferIsRefused() public {
-        OfferHook noRecipient = new OfferHook(100, address(0));
-        vm.expectRevert(InvalidHookFee.selector);
-        factory.createSlot(_init(true, true, true, HookTerms({target: address(noRecipient), config: 0})));
+    function test_AAppWithABadOfferIsRefused() public {
+        OfferApp noRecipient = new OfferApp(100, address(0));
+        vm.expectRevert(InvalidAppFee.selector);
+        factory.createSlot(_init(true, true, true, AppTerms({target: address(noRecipient), settings: 0})));
 
-        OfferHook tooMuch = new OfferHook(10_001, author);
-        vm.expectRevert(InvalidHookFee.selector);
-        factory.createSlot(_init(true, true, true, HookTerms({target: address(tooMuch), config: 0})));
+        OfferApp tooMuch = new OfferApp(10_001, author);
+        vm.expectRevert(InvalidAppFee.selector);
+        factory.createSlot(_init(true, true, true, AppTerms({target: address(tooMuch), settings: 0})));
 
-        OfferHook noFlags = new OfferHook(0, address(0));
-        noFlags.setPermissions(0);
-        vm.expectRevert(InvalidHook.selector);
-        factory.createSlot(_init(true, true, true, HookTerms({target: address(noFlags), config: 0})));
+        OfferApp noFlags = new OfferApp(0, address(0));
+        noFlags.setScopes(0);
+        vm.expectRevert(InvalidApp.selector);
+        factory.createSlot(_init(true, true, true, AppTerms({target: address(noFlags), settings: 0})));
 
     }
 
@@ -371,192 +375,192 @@ contract SlotTermsTest is Test {
         uint256 owed = s.taxOwed();
         s.collect();
 
-        assertEq(author.balance, owed / 4, "a quarter to the hook's fee recipient");
+        assertEq(author.balance, owed / 4, "a quarter to the app's fee recipient");
         assertEq(recipient.balance, owed - owed / 4, "the rest to the recipient");
     }
 
     function test_AnOfferIsVisibleUntilAccepted() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 1_000, author);
+        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
 
-        (, , bool feeDiffers, bool permissionsDiffer) = s.hookOfferStatus();
+        (, , bool feeDiffers, bool scopesDiffer) = s.grantStatus();
         assertFalse(feeDiffers);
-        assertFalse(permissionsDiffer);
+        assertFalse(scopesDiffer);
 
         h.set(2_000, author);
-        h.setPermissions(SETTLE_AND_BUY);
-        HookOffer memory accepted;
-        HookOffer memory offered;
-        (accepted, offered, feeDiffers, permissionsDiffer) = s.hookOfferStatus();
+        h.setScopes(SETTLE_AND_BUY);
+        Manifest memory accepted;
+        Manifest memory offered;
+        (accepted, offered, feeDiffers, scopesDiffer) = s.grantStatus();
         assertTrue(feeDiffers);
-        assertTrue(permissionsDiffer);
+        assertTrue(scopesDiffer);
         assertEq(accepted.feeBps, 1_000);
         assertEq(offered.feeBps, 2_000);
-        assertEq(offered.permissions, SETTLE_AND_BUY);
+        assertEq(offered.scopes, SETTLE_AND_BUY);
     }
 
-    function test_ANewFeeAppliesAtOnceEvenOnALockedHook() public {
-        (Slot s, OfferHook h) = _offerSlot(false, 1_000, author);
+    function test_ANewFeeAppliesAtOnceEvenOnALockedApp() public {
+        (Slot s, OfferApp h) = _offerSlot(false, 1_000, author);
         h.set(2_000, author);
 
         vm.expectEmit(address(s));
-        emit ISlotEvents.HookOfferAccepted(HookOffer(SETTLE, 2_000, author), true, false);
+        emit ISlotEvents.ScopesGranted(Manifest(SETTLE, 2_000, author), true, false);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE, 2_000, author));
+        s.grant(Manifest(SETTLE, 2_000, author));
 
-        assertEq(s.hookOffer().feeBps, 2_000);
-        (, , bool feeDiffers, ) = s.hookOfferStatus();
+        assertEq(s.manifest().feeBps, 2_000);
+        (, , bool feeDiffers, ) = s.grantStatus();
         assertFalse(feeDiffers);
     }
 
-    function test_ALockedHookKeepsItsFlags() public {
-        (Slot s, OfferHook h) = _offerSlot(false, 0, address(0));
-        h.setPermissions(SETTLE_AND_BUY);
+    function test_ALockedAppKeepsItsFlags() public {
+        (Slot s, OfferApp h) = _offerSlot(false, 0, address(0));
+        h.setScopes(SETTLE_AND_BUY);
 
-        (, , , bool permissionsDiffer) = s.hookOfferStatus();
-        assertFalse(permissionsDiffer, "nothing a manager could take");
+        (, , , bool scopesDiffer) = s.grantStatus();
+        assertFalse(scopesDiffer, "nothing a manager could take");
 
         vm.prank(manager);
         vm.expectRevert(NothingToAccept.selector);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
         // A fee change alongside is still taken, and the flags are not.
         h.set(500, author);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 500, author));
-        assertEq(s.hookOffer().feeBps, 500);
-        assertEq(s.hookOffer().permissions, SETTLE);
+        s.grant(Manifest(SETTLE_AND_BUY, 500, author));
+        assertEq(s.manifest().feeBps, 500);
+        assertEq(s.manifest().scopes, SETTLE);
         assertEq(s.pendingTerms().mask, 0);
     }
 
     function test_NewFlagsWaitForTheNextTransitionAfterTheDelay() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 0, address(0));
-        h.setPermissions(SETTLE_AND_BUY);
+        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+        h.setScopes(SETTLE_AND_BUY);
 
         vm.expectEmit(address(s));
-        emit ISlotEvents.HookOfferAccepted(HookOffer(SETTLE_AND_BUY, 0, address(0)), false, true);
+        emit ISlotEvents.ScopesGranted(Manifest(SETTLE_AND_BUY, 0, address(0)), false, true);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
         PendingTerms memory p = s.pendingTerms();
-        assertEq(p.mask, HOOK_PERMISSIONS);
-        assertEq(p.hookPermissions, SETTLE_AND_BUY);
-        assertEq(s.hookOffer().permissions, SETTLE, "not yet");
+        assertEq(p.mask, SCOPES);
+        assertEq(p.scopes, SETTLE_AND_BUY);
+        assertEq(s.manifest().scopes, SETTLE, "not yet");
 
         _buy(s);
         assertEq(h.buys(), 0, "the sitting occupant bought under the old flags");
 
         skip(s.TERMS_DELAY());
         _releaseAndApply(s);
-        assertEq(s.hookOffer().permissions, SETTLE_AND_BUY, "the seat changed hands");
+        assertEq(s.manifest().scopes, SETTLE_AND_BUY, "the seat changed hands");
         assertEq(s.pendingTerms().mask, 0);
 
         _buy(s);
         assertEq(h.buys(), 1);
     }
 
-    function test_FlagsTheHookNoLongerDeclaresAreDropped() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 0, address(0));
-        h.setPermissions(SETTLE_AND_BUY);
+    function test_FlagsTheAppNoLongerDeclaresAreDropped() public {
+        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+        h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
-        h.setPermissions(SETTLE);
+        h.setScopes(SETTLE);
         skip(s.TERMS_DELAY());
 
         vm.expectEmit(address(s));
-        emit HookPermissionsDropped(address(h), SETTLE_AND_BUY);
+        emit ScopesDropped(address(h), SETTLE_AND_BUY);
         _buy(s);
 
-        assertEq(s.hookOffer().permissions, SETTLE);
+        assertEq(s.manifest().scopes, SETTLE);
         assertEq(s.pendingTerms().mask, 0);
         assertEq(h.buys(), 0);
     }
 
     function test_AcceptingQueuedFlagsAgainIsNothing() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 0, address(0));
-        h.setPermissions(SETTLE_AND_BUY);
+        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+        h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
-        (, , , bool permissionsDiffer) = s.hookOfferStatus();
-        assertFalse(permissionsDiffer);
+        (, , , bool scopesDiffer) = s.grantStatus();
+        assertFalse(scopesDiffer);
         vm.prank(manager);
         vm.expectRevert(NothingToAccept.selector);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
     }
 
     function test_AcceptedFlagsCanBeCancelled() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 0, address(0));
-        h.setPermissions(SETTLE_AND_BUY);
+        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+        h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
         vm.prank(manager);
-        s.cancelTerms(HOOK_PERMISSIONS);
+        s.cancelTerms(SCOPES);
         PendingTerms memory p = s.pendingTerms();
         assertEq(p.mask, 0);
-        assertEq(p.hookPermissions, 0);
+        assertEq(p.scopes, 0);
     }
 
-    function test_AQueuedHookSupersedesAcceptedFlags() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 0, address(0));
-        h.setPermissions(SETTLE_AND_BUY);
+    function test_AQueuedAppSupersedesAcceptedFlags() public {
+        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+        h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE_AND_BUY, 0, address(0)));
+        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
-        AnyHook other = new AnyHook();
-        _propose(s, _taxTerms(), HookTerms({target: address(other), config: 0}), HOOK);
+        AnyApp other = new AnyApp();
+        _propose(s, _taxTerms(), AppTerms({target: address(other), settings: 0}), APP);
         skip(s.TERMS_DELAY());
         _buy(s);
 
-        assertEq(s.hook(), address(other));
-        assertEq(s.hookOffer().permissions, SETTLE, "the new hook's own offer");
+        assertEq(s.app(), address(other));
+        assertEq(s.manifest().scopes, SETTLE, "the new app's own offer");
         assertEq(s.pendingTerms().mask, 0);
     }
 
     function test_AcceptingPinsTheReviewedOffer() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 1_000, author);
+        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
         h.set(2_000, author);
-        // The hook raises again after the manager reviewed 2_000.
+        // The app raises again after the manager reviewed 2_000.
         h.set(9_000, author);
 
         vm.prank(manager);
-        vm.expectRevert(HookOfferChanged.selector);
-        s.acceptHookOffer(HookOffer(SETTLE, 2_000, author));
+        vm.expectRevert(ManifestChanged.selector);
+        s.grant(Manifest(SETTLE, 2_000, author));
 
         // And widens its subscriptions behind a fee the manager reviewed.
-        h.setPermissions(SETTLE_AND_BUY);
+        h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        vm.expectRevert(HookOfferChanged.selector);
-        s.acceptHookOffer(HookOffer(SETTLE, 9_000, author));
+        vm.expectRevert(ManifestChanged.selector);
+        s.grant(Manifest(SETTLE, 9_000, author));
     }
 
-    function test_OnlyTheManagerAcceptsAndOnlyWithAHook() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 1_000, author);
+    function test_OnlyTheManagerAcceptsAndOnlyWithAApp() public {
+        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
         h.set(2_000, author);
         vm.expectRevert(NotManager.selector);
-        s.acceptHookOffer(HookOffer(SETTLE, 2_000, author));
+        s.grant(Manifest(SETTLE, 2_000, author));
 
         vm.prank(manager);
-        vm.expectRevert(InvalidHook.selector);
-        slot.acceptHookOffer(HookOffer(SETTLE, 2_000, author));
+        vm.expectRevert(InvalidApp.selector);
+        slot.grant(Manifest(SETTLE, 2_000, author));
     }
 
     function test_AcceptingPaysEarnedRentUnderTheOldFee() public {
-        (Slot s, OfferHook h) = _offerSlot(false, 0, address(0));
+        (Slot s, OfferApp h) = _offerSlot(false, 0, address(0));
         _buy(s);
         skip(10 days);
 
         h.set(10_000, author);
         vm.prank(manager);
-        s.acceptHookOffer(HookOffer(SETTLE, 10_000, author));
+        s.grant(Manifest(SETTLE, 10_000, author));
 
         assertEq(author.balance, 0, "rent earned under a 0% fee pays no fee");
         assertGt(recipient.balance, 0);
     }
 
-    function test_AHookRaisingItsFeeDoesNotReachAttachedSlotsUntilAccepted() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 1_000, author);
+    function test_AAppRaisingItsFeeDoesNotReachAttachedSlotsUntilAccepted() public {
+        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
 
         h.set(9_000, author);
         _buy(s);
@@ -564,42 +568,42 @@ contract SlotTermsTest is Test {
         uint256 owed = s.taxOwed();
         s.collect();
 
-        assertEq(s.hookOffer().feeBps, 1_000, "the copy holds");
+        assertEq(s.manifest().feeBps, 1_000, "the copy holds");
         assertEq(author.balance, owed / 10);
     }
 
     function test_ReattachingPicksUpTheNewOfferAndNeverReachesEarnedRent() public {
-        (Slot s, OfferHook h) = _offerSlot(true, 0, address(0));
+        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
         _buy(s);
 
         h.set(10_000, author);
-        _propose(s, _taxTerms(), HookTerms({target: address(h), config: 0}), HOOK);
+        _propose(s, _taxTerms(), AppTerms({target: address(h), settings: 0}), APP);
         skip(10 days);
         _releaseAndApply(s);
 
         assertEq(author.balance, 0, "rent earned under a 0% fee pays no fee");
         assertGt(recipient.balance, 0);
-        assertEq(s.hookOffer().feeBps, 10_000, "and the new fee is in force");
+        assertEq(s.manifest().feeBps, 10_000, "and the new fee is in force");
     }
 
-    function test_DetachingClearsTheHookAndItsOffer() public {
+    function test_DetachingClearsTheAppAndItsOffer() public {
         (Slot s, ) = _offerSlot(true, 2_500, author);
         _buy(s);
-        _propose(s, _taxTerms(), _noHook(), HOOK);
+        _propose(s, _taxTerms(), _noHook(), APP);
         skip(s.TERMS_DELAY());
         _releaseAndApply(s);
 
-        HookOffer memory offer = s.hookOffer();
-        assertEq(s.hook(), address(0));
-        assertEq(offer.permissions, 0);
+        Manifest memory offer = s.manifest();
+        assertEq(s.app(), address(0));
+        assertEq(offer.scopes, 0);
         assertEq(offer.feeBps, 0);
         assertEq(offer.feeRecipient, address(0));
     }
 
-    function test_AnImmutableHookCannotBeProposed() public {
+    function test_AnImmutableAppCannotBeProposed() public {
         Slot fixedHook = _slot(true, true, false, _noHook());
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        fixedHook.proposeTerms(_taxTerms(), _noHook(), HOOK);
+        fixedHook.proposeTerms(_taxTerms(), _noHook(), APP);
     }
 }

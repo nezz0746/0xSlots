@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {console2} from "forge-std/Script.sol";
 import {ProtocolConfig} from "./ProtocolConfig.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
+import {AdLand} from "../../src/apps/adland/AdLand.sol";
 
 /**
  * @title SetPrimarySlot
@@ -11,7 +11,7 @@ import {AdLand} from "../../src/hooks/adland/AdLand.sol";
  *
  * @dev The successor to `script/SetPrimarySlot.s.sol`, which wrote to the V1
  *      `AdModule`. The key and the delay are the same idea; the contract
- *      holding them is the hook now.
+ *      holding them is the app now.
  *
  *      ── Why a key at all ────────────────────────────────────────────────
  *
@@ -54,24 +54,24 @@ contract SetPrimarySlot is ProtocolConfig {
         //
         // All three are things the registry itself will not catch. `setSlot`
         // takes any address: it never asks whether there is code there, whether
-        // it is a slot, or whether that slot runs THIS hook. A key pointed at
+        // it is a slot, or whether that slot runs THIS app. A key pointed at
         // the wrong address does not revert, it renders an empty ad space —
         // which is indistinguishable from an unsold one.
         if (slot.code.length == 0) revert SlotHasNoCode(slot);
 
-        // Staticcall rather than `Slot(slot).hook()`, so that an address which
-        // is not a slot of this protocol says so. A V1 slot has no `hook()` and
+        // Staticcall rather than `Slot(slot).app()`, so that an address which
+        // is not a slot of this protocol says so. A V1 slot has no `app()` and
         // the typed call reverts with nothing in it — an `EvmError: Revert` and
         // a stack trace, for what is almost always somebody pasting the address
         // they have been using for a year.
         (bool ok, bytes memory ret) = slot.staticcall(
-            abi.encodeWithSignature("hook()")
+            abi.encodeWithSignature("app()")
         );
         if (!ok || ret.length != 32) revert NotASlot(slot);
 
-        address hook = abi.decode(ret, (address));
-        if (hook != adLandAddress)
-            revert SlotPointsElsewhere(adLandAddress, hook);
+        address app = abi.decode(ret, (address));
+        if (app != adLandAddress)
+            revert SlotPointsElsewhere(adLandAddress, app);
 
         address current = adLand.primary();
         if (current == slot) revert AlreadyPrimary(slot);

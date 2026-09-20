@@ -4,10 +4,10 @@ pragma solidity ^0.8.24;
 import {console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolConfig} from "./ProtocolConfig.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
-import {AdConfig, ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
+import {AdLand} from "../../src/apps/adland/AdLand.sol";
+import {AdConfig, ModerationMode} from "../../src/apps/adland/IAdLand.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 /**
  * @title CreatePrimaryAdSlot
@@ -90,7 +90,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         t.currency = address(uint160(_word(slot, "currency()")));
         t.taxRateBps = _word(slot, "taxRateBps()");
         t.minRunwaySeconds = _word(slot, "minRunwaySeconds()");
-        // The hook stores the window as its 32 bytes of config; see
+        // The app stores the window as its 32 bytes of settings; see
         // `AdLandCreate.createAdSlot`, which encodes seconds into it.
         t.tenureWindow = _word(slot, "hookData()");
     }
@@ -123,7 +123,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
 
         // Checked before anything is sent. Both writes below are `onlyOwner`,
         // and a broadcast that reverts on the second one has already spent the
-        // first — which for `setSlotFactory` means a half-migrated hook.
+        // first — which for `setSlotFactory` means a half-migrated app.
         address owner = adLand.owner();
         address caller = msg.sender;
         if (owner != caller) revert NotOwner(owner, caller);
@@ -166,7 +166,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
 
         // The slot's whole AdLand configuration, registered once and named by
         // its hash. Keyless: `primary` is claimed below, delay and all.
-        bytes32 config = adLand.registerHookConfig(
+        bytes32 settings = adLand.registerSettings(
             abi.encode(
                 AdConfig({
                     tenureWindow: uint64(tenure),
@@ -176,20 +176,20 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
             )
         );
 
-        // An ordinary slot from the ordinary factory, with AdLand as its hook.
+        // An ordinary slot from the ordinary factory, with AdLand as its app.
         address slot = SlotFactory(factory).createSlot(
             SlotInit({
                 currency: IERC20(currency),
                 manager: slotOwner,
                 mutableTax: true,
                 mutableRecipient: true,
-                mutableHook: false,
+                mutableApp: false,
                 taxTerms: TaxTerms({
                     recipient: slotOwner,
                     rateBps: uint16(taxRateBps),
                     minRunwaySeconds: uint32(minDeposit)
                 }),
-                hookTerms: HookTerms({target: adLandAddress, config: config})
+                appTerms: AppTerms({target: adLandAddress, settings: settings})
             })
         );
 
@@ -206,7 +206,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         // different follow-ups, so they are said out loud.
         if (adLand.primary() == slot) {
             console2.log("effect           immediate");
-            console2.log("next             set config.miniapp.slot to the slot above");
+            console2.log("next             set settings.miniapp.slot to the slot above");
         } else {
             console2.log("effect           proposed; ready in (seconds):");
             console2.log("                ", adLand.CHANGE_DELAY());

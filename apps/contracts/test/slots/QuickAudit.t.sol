@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 import {SlotsTest, DenyBuys} from "./Slots.t.sol";
 import {Slot} from "../../src/Slot.sol";
@@ -64,8 +64,8 @@ contract QuickAuditTest is SlotsTest {
     /**
      * @notice A buyer cannot be seated under terms a ripe proposal replaced.
      *
-     * @dev REGRESSION, restated. `buy` applies the queue BEFORE asking the hook,
-     *      so a buyer always faces the hook their purchase brings in. It used to
+     * @dev REGRESSION, restated. `buy` applies the queue BEFORE asking the app,
+     *      so a buyer always faces the app their purchase brings in. It used to
      *      be skippable by starving the gas the application needed; exits no
      *      longer apply terms, so there is no starvation path left to inherit.
      */
@@ -73,7 +73,7 @@ contract QuickAuditTest is SlotsTest {
         Slot s = _slot(address(0));
         DenyBuys deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), HookTerms({target: address(deny), config: bytes32(0)}), uint8(9));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), AppTerms({target: address(deny), settings: bytes32(0)}), uint8(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms());
 

@@ -15,15 +15,15 @@ error InvalidManager();
 error InvalidCurrency();
 error InvalidDeposit();
 error InvalidValue();
-error InvalidHook();
-/// @dev A hook fee with no one to receive it, or above 100% of the rent.
-error InvalidHookFee();
-/// @dev The hook answers, but not within the stipend the slot reads it under,
+error InvalidApp();
+/// @dev An app fee with no one to receive it, or above 100% of the rent.
+error InvalidAppFee();
+/// @dev The app answers, but not within the stipend the slot reads it under,
 ///      so attaching it would attach nothing.
-error HookReadTooExpensive();
-/// @dev The hook's offer is not the one the manager reviewed.
-error HookOfferChanged();
-/// @dev The hook offers nothing this slot could take.
+error ManifestTooExpensive();
+/// @dev The app's offer is not the one the manager reviewed.
+error ManifestChanged();
+/// @dev The app offers nothing this slot could take.
 error NothingToAccept();
 
 error Vacant();

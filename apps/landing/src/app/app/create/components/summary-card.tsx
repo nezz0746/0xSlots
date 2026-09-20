@@ -1,4 +1,4 @@
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownApp } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
 import { Clock, Coins, HandCoins, KeyRound, Plug } from "lucide-react";
 import { useFormContext } from "react-hook-form";
@@ -49,10 +49,10 @@ export function SummaryCard({
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
   const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const app = form.watch("app");
   const mutableTax = form.watch("mutableTax");
   const mutableRecipient = form.watch("mutableRecipient");
-  const mutableHook = form.watch("mutableHook");
+  const mutableApp = form.watch("mutableApp");
   const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
@@ -76,8 +76,8 @@ export function SummaryCard({
         ? erc20.data.name
         : null;
 
-  const knownHook = findKnownHook(chainId, hook as Address);
-  const hasMutable = mutableTax || mutableRecipient || mutableHook;
+  const knownHook = findKnownApp(chainId, app as Address);
+  const hasMutable = mutableTax || mutableRecipient || mutableApp;
 
   return (
     // `self-stretch` is what makes the `sticky` below actually stick. A sticky
@@ -165,18 +165,18 @@ export function SummaryCard({
               {formatValueUnit(minDepositValue || "0", minDepositUnit)}
             </SummaryRow>
 
-            {/* Hook — the address; the row below says what it MEANS. */}
+            {/* App — the address; the row below says what it MEANS. */}
             <SummaryRow
-              section="hook"
-              label="Hook"
+              section="app"
+              label="App"
               icon={<Plug className="size-3" />}
             >
               <span className="truncate max-w-32 inline-block align-bottom">
-                {hookMode === "none" || !hook
+                {hookMode === "none" || !app
                   ? "None"
                   : (knownHook?.name ??
-                    (isAddress(hook, { strict: false })
-                      ? truncateAddress(hook)
+                    (isAddress(app, { strict: false })
+                      ? truncateAddress(app)
                       : "—"))}
               </span>
             </SummaryRow>
@@ -186,7 +186,7 @@ export function SummaryCard({
             {/* Mutability. Always stated, both ways round: "No manager" is the
                 stronger promise of the two and the one worth reading twice. */}
             <SummaryRow
-              section="permissions"
+              section="scopes"
               label="Mutable"
               icon={<KeyRound className="size-3" />}
             >
@@ -194,7 +194,7 @@ export function SummaryCard({
                 ? [
                     mutableTax && "Tax",
                     mutableRecipient && "Recipient",
-                    mutableHook && "Hook",
+                    mutableApp && "App",
                   ]
                     .filter(Boolean)
                     .join(", ")
@@ -202,7 +202,7 @@ export function SummaryCard({
             </SummaryRow>
 
             {hasMutable && (
-              <SummaryRow section="permissions" label="Manager">
+              <SummaryRow section="scopes" label="Manager">
                 <span className="truncate max-w-32 inline-block align-bottom">
                   {isAddress(manager, { strict: false })
                     ? truncateAddress(manager)

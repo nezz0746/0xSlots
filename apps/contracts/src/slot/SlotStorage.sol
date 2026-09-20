@@ -7,7 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {SlotConstants} from "./SlotConstants.sol";
 import {ISlotEvents} from "../interfaces/ISlotEvents.sol";
-import {TaxTerms, HookTerms, HookOffer} from "../types/SlotTypes.sol";
+import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
 import {TermsQueue} from "../libraries/TermsLib.sol";
 import "../errors/SlotErrors.sol";
 
@@ -17,7 +17,7 @@ struct Settings {
     address manager;
     bool mutableTax;
     bool mutableRecipient;
-    bool mutableHook;
+    bool mutableApp;
 }
 
 /// @notice Who holds the slot, at what price, funded by how much.
@@ -63,17 +63,17 @@ abstract contract SlotStorage is
     /// @custom:storage-location erc7201:slots.terms.tax
     bytes32 private constant TAX_TERMS =
         0x9ced1b0fc58b3fce277f0e66820898812467bac04a43b3f7986c99b5a310c200;
-    /// @custom:storage-location erc7201:slots.terms.hook
-    bytes32 private constant HOOK =
+    /// @custom:storage-location erc7201:slots.terms.app
+    bytes32 private constant APP =
         0xa720ce30f2f76ea33fe161ca5c8b954c1897ab42629cd4818e7b51fd9afede00;
-    /// @custom:storage-location erc7201:slots.hook.offer
-    bytes32 private constant HOOK_OFFER =
+    /// @custom:storage-location erc7201:slots.app.offer
+    bytes32 private constant MANIFEST =
         0x7091cf4ba863a5a9b217219464dfd46ef26b30975ee445b73741b197c3a9e400;
     /// @custom:storage-location erc7201:slots.next.tax
     bytes32 private constant NEXT_TAX_TERMS =
         0x1e619fe027dd60ed86eac21a27ef124c5a4e8d3dd02b3b53f9082a4582fc8a00;
-    /// @custom:storage-location erc7201:slots.next.hook
-    bytes32 private constant NEXT_HOOK =
+    /// @custom:storage-location erc7201:slots.next.app
+    bytes32 private constant NEXT_APP =
         0xd2dc278a1156089438bcf43efefbda76c5b02638aff18ea42826dc4b74055b00;
     /// @custom:storage-location erc7201:slots.queue
     bytes32 private constant QUEUE =
@@ -97,16 +97,16 @@ abstract contract SlotStorage is
         }
     }
 
-    function _hookTerms() internal pure returns (HookTerms storage $) {
+    function _appTerms() internal pure returns (AppTerms storage $) {
         assembly ("memory-safe") {
-            $.slot := HOOK
+            $.slot := APP
         }
     }
 
-    /// @dev The hook's offer as this slot accepted it.
-    function _hookOffer() internal pure returns (HookOffer storage $) {
+    /// @dev The app's offer as this slot accepted it.
+    function _manifest() internal pure returns (Manifest storage $) {
         assembly ("memory-safe") {
-            $.slot := HOOK_OFFER
+            $.slot := MANIFEST
         }
     }
 
@@ -116,9 +116,9 @@ abstract contract SlotStorage is
         }
     }
 
-    function _nextHookTerms() internal pure returns (HookTerms storage $) {
+    function _nextAppTerms() internal pure returns (AppTerms storage $) {
         assembly ("memory-safe") {
-            $.slot := NEXT_HOOK
+            $.slot := NEXT_APP
         }
     }
 

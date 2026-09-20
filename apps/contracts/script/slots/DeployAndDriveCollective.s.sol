@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
 
 import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -52,9 +52,9 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
  *        2. mint a collective with TWO payees          → split membership
  *        3. create a slot naming it manager AND recipient
  *        4. proposeTax(750)          [tax manager]     → TermsRelayed(Tax)
- *        5. proposeHook(minTenure)   [hook manager]    → TermsRelayed(Hook)
- *        6. cancelHookProposal       [hook manager]    → the port's whole point:
- *           the tax manager's queued 750 must SURVIVE a hook cancel
+ *        5. proposeApp(minTenure)   [app manager]    → TermsRelayed(App)
+ *        6. cancelAppProposal       [app manager]    → the port's whole point:
+ *           the tax manager's queued 750 must SURVIVE a app cancel
  *        7. a real buy                                 → TermsApplied lands 750
  *        8. proposeTax(900)          [tax manager]
  *        9. cancelAllProposals       [admin]           → AllTermsCancelled
@@ -102,7 +102,7 @@ contract DeployAndDriveCollective is Script {
     /**
      * @param slotFactoryAddr The already-deployed `SlotFactory` — printed by
      *        `DeployProtocol`, and in `deployments/31337/SlotFactory.json`.
-     * @param hookAddr A hook that answers `hookOffer`. The slot validates it at
+     * @param hookAddr A app that answers `manifest`. The slot validates it at
      *        propose time, so a contract that cannot answer is refused there
      *        rather than here.
      */
@@ -143,9 +143,9 @@ contract DeployAndDriveCollective is Script {
                         manager: address(collective),
                         mutableTax: true,
                         mutableRecipient: true,
-                        mutableHook: true,
+                        mutableApp: true,
                         taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(TAX_AT_BIRTH), minRunwaySeconds: uint32(1 days)}),
-                        hookTerms: HookTerms({target: address(0), config: bytes32(0)})
+                        appTerms: AppTerms({target: address(0), settings: bytes32(0)})
                     })
                 )
             )
@@ -158,13 +158,13 @@ contract DeployAndDriveCollective is Script {
         collective.proposeTax(IManagedSlot(address(slot)), TAX_PROPOSED);
 
         vm.broadcast(PK_HOOK_MGR);
-        collective.proposeHook(
+        collective.proposeApp(
             IManagedSlot(address(slot)),
-            HookTerms({target: hookAddr, config: bytes32(uint256(7 days))})
+            AppTerms({target: hookAddr, settings: bytes32(uint256(7 days))})
         );
 
         vm.broadcast(PK_HOOK_MGR);
-        collective.cancelHookProposal(IManagedSlot(address(slot)));
+        collective.cancelAppProposal(IManagedSlot(address(slot)));
 
         // The assertion the port turns on, checked against the live chain
         // rather than against a fixture. If this trips, nothing downstream is
@@ -174,7 +174,7 @@ contract DeployAndDriveCollective is Script {
         uint8 mask = __p1.mask;
         require(mask & slot.TERM_TAX_RATE() != 0, "the tax manager's proposal did not survive");
         require(pendingTaxTerms.rateBps == TAX_PROPOSED, "wrong tax survived");
-        require(mask & slot.TERM_HOOK() == 0, "the hook proposal was not cancelled");
+        require(mask & slot.TERM_APP() == 0, "the app proposal was not cancelled");
 
         // ── 7. a real buy, so the surviving proposal lands ──────────────────
         // Both reads are hoisted above the broadcast on purpose: forge refuses a
@@ -275,22 +275,22 @@ contract DeployAndDriveCollective is Script {
     {
         address[] memory tax = new address[](1);
         tax[0] = taxMgr;
-        // `hookManagers`, which the initializer grants POLICY_MANAGER_ROLE.
+        // `appManagers`, which the initializer grants POLICY_MANAGER_ROLE.
         // The parameter renamed and the role did not — see SlotGovernance.
-        address[] memory hooks = new address[](1);
-        hooks[0] = hookMgr;
+        address[] memory apps = new address[](1);
+        apps[0] = hookMgr;
         address[] memory splits = new address[](1);
         splits[0] = splitMgr;
         r = SlotCollective.InitialRoles({
             admin: admin,
             taxManagers: tax,
-            hookManagers: hooks,
+            appManagers: apps,
             splitManagers: splits
         });
     }
 
     /// @dev Same shape `DeployProtocol` writes, and what the indexer's local
-    ///      config reads to find the collective factory — its address is a
+    ///      settings reads to find the collective factory — its address is a
     ///      function of when this ran, so it cannot be a constant anywhere.
     function _record(
         string memory name,

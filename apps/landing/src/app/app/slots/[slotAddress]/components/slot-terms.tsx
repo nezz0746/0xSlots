@@ -2,8 +2,8 @@
 
 import {
   type SlotState,
-  unpackHookPermissions,
-  ZERO_HOOK_DATA,
+  unpackScopes,
+  ZERO_SETTINGS,
 } from "@0xslots/sdk/slots";
 import { useQuery } from "@tanstack/react-query";
 import { Settings2, UserCog } from "lucide-react";
@@ -13,9 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { formatBps } from "@/utils";
-import { findKnownHook, knownHooks } from "@0xslots/contracts/slots";
-import { HookConfig } from "@/app/app/create/components/hook-config";
-import { HookPermissionRow } from "@/components/hook-permissions";
+import { findKnownApp, knownApps } from "@0xslots/contracts/slots";
+import { HookConfig } from "@/app/app/create/components/app-config";
+import { AppScopeRow } from "@/components/app-scopes";
 import {
   Select,
   SelectContent,
@@ -24,9 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChain } from "@/context/chain";
-import { useHookCheck } from "@/hooks/use-hook-check";
-import { useHookSchema } from "@/hooks/use-hook-schema";
-import { describePermissions } from "@/lib/hook-permissions";
+import { useAppCheck } from "@/hooks/use-app-check";
+import { useAppDefinition } from "@/hooks/use-app-schema";
+import { describePermissions } from "@/lib/app-scopes";
 import { NumberField, Panel } from "./panel";
 import { QueuedTermsControls } from "./pending-updates";
 
@@ -34,7 +34,7 @@ type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
  * The manager's controls: every term queues and lands at the next occupancy
- * transition. The hook is offered only when the slot did not lock it.
+ * transition. The app is offered only when the slot did not lock it.
  */
 export function ManageTermsPanel({
   slot,
@@ -48,8 +48,8 @@ export function ManageTermsPanel({
   const [tax, setTax] = useState("");
   const [recipient, setRecipient] = useState("");
   const [runway, setRunway] = useState("");
-  const [hook, setHook] = useState("");
-  const [hookData, setHookData] = useState("");
+  const [app, setHook] = useState("");
+  const [settings, setHookData] = useState("");
   const [hookConfigOk, setHookConfigOk] = useState(true);
   const [changeTax, setChangeTax] = useState(false);
   const [changeRecipient, setChangeRecipient] = useState(false);
@@ -71,12 +71,12 @@ export function ManageTermsPanel({
       runwaySeconds >= 0 &&
       runwaySeconds <= 0xffffffff);
 
-  // A blank hook means DETACH, which is a real intention.
-  const hookTrimmed = hook.trim();
+  // A blank app means DETACH, which is a real intention.
+  const hookTrimmed = app.trim();
   const hookAddress = (
     hookTrimmed === "" ? zeroAddress : hookTrimmed
   ) as Address;
-  const data = (hookData.trim() || ZERO_HOOK_DATA) as Hex;
+  const data = (settings.trim() || ZERO_SETTINGS) as Hex;
   const hookValid =
     !changeHook ||
     hookAddress === zeroAddress ||
@@ -162,10 +162,10 @@ export function ManageTermsPanel({
         </Toggle>
       ) : null}
 
-      {state.mutableHook ? (
-        <Toggle label="Change the hook" on={changeHook} set={setChangeHook}>
+      {state.mutableApp ? (
+        <Toggle label="Change the app" on={changeHook} set={setChangeHook}>
           <HookEditor
-            hook={hook}
+            app={app}
             onHook={(next) => {
               setHook(next);
               setHookData("");
@@ -176,8 +176,8 @@ export function ManageTermsPanel({
           />
           <p className="text-[10px] leading-snug text-muted-foreground">
             {hookTrimmed === ""
-              ? "No hook detaches the current one and its fee."
-              : "The hook checks its configuration and declares its own fee and permissions, when proposed and again when it attaches."}
+              ? "No app detaches the current one and its fee."
+              : "The app checks its configuration and declares its own fee and scopes, when proposed and again when it attaches."}
           </p>
         </Toggle>
       ) : null}
@@ -195,10 +195,10 @@ export function ManageTermsPanel({
               ...(changeRunway ? { minRunwaySeconds: runwaySeconds } : {}),
               ...(changeHook
                 ? {
-                    hookTerms: {
+                    appTerms: {
                       target: hookAddress,
-                      config:
-                        hookAddress === zeroAddress ? ZERO_HOOK_DATA : data,
+                      settings:
+                        hookAddress === zeroAddress ? ZERO_SETTINGS : data,
                     },
                   }
                 : {}),
@@ -217,38 +217,38 @@ export function ManageTermsPanel({
 }
 
 /**
- * Pick the hook to propose: a known hook, a custom address, or none. A hook
+ * Pick the app to propose: a known app, a custom address, or none. An app
  * that describes its configuration gets the same generated form as the create
- * page, checked against the hook on chain.
+ * page, checked against the app on chain.
  */
 function HookEditor({
-  hook,
+  app,
   onHook,
   onConfig,
   onVerdict,
 }: {
-  hook: string;
-  onHook: (hook: string) => void;
+  app: string;
+  onHook: (app: string) => void;
   onConfig: (encoded: string) => void;
   onVerdict: (ok: boolean) => void;
 }) {
   const { chainId } = useChain();
-  const available = knownHooks[chainId] ?? [];
-  const known = isAddress(hook) ? findKnownHook(chainId, hook as Address) : undefined;
+  const available = knownApps[chainId] ?? [];
+  const known = isAddress(app) ? findKnownApp(chainId, app as Address) : undefined;
   const [custom, setCustom] = useState(false);
-  const [values, setValues] = useState<string[]>([]);
-  const check = useHookCheck(hook, chainId);
-  const { families } = useHookSchema(hook);
-  const family = families.find((f) => f.fields.length > 0);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const check = useAppCheck(app, chainId);
+  const { definition } = useAppDefinition(app);
+  const config = definition?.config?.fields.length ? definition.config : undefined;
 
-  const selectValue = custom ? "custom" : hook === "" ? "none" : (known?.address ?? "custom");
+  const selectValue = custom ? "custom" : app === "" ? "none" : (known?.address ?? "custom");
 
   return (
     <div className="space-y-1.5">
       <Select
         value={selectValue}
         onValueChange={(v) => {
-          setValues([]);
+          setValues({});
           if (v === "none") {
             setCustom(false);
             onHook("");
@@ -262,10 +262,10 @@ function HookEditor({
         }}
       >
         <SelectTrigger className="w-full rounded-none text-xs">
-          <SelectValue placeholder="Select a hook" />
+          <SelectValue placeholder="Select an app" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">No hook (detach)</SelectItem>
+          <SelectItem value="none">No app (detach)</SelectItem>
           {available.map((h) => (
             <SelectItem key={h.address} value={h.address}>
               {h.name}
@@ -277,10 +277,10 @@ function HookEditor({
 
       {custom && (
         <Input
-          value={hook}
+          value={app}
           placeholder="0x…"
           onChange={(e) => {
-            setValues([]);
+            setValues({});
             onHook(e.target.value.trim());
           }}
           className="rounded-none text-xs"
@@ -288,27 +288,27 @@ function HookEditor({
       )}
 
       {check.data?.status === "ok" && (
-        <HookPermissionRow permissions={check.data.permissions} fee={check.data.fee} />
+        <AppScopeRow scopes={check.data.scopes} fee={check.data.fee} />
       )}
       {check.data && check.data.status !== "ok" && (
         <p className="text-[10px] text-destructive">
           {check.data.status === "no-code"
             ? "No contract at this address on this chain."
             : check.data.status === "inert"
-              ? "This hook asks for no permissions and cannot be attached."
-              : "Not a hook — no hookOffer()."}
+              ? "This app asks for no scopes and cannot be attached."
+              : "Not an app — no manifest()."}
         </p>
       )}
 
-      {family && (
+      {config && (
         <div className="border-l-2 border-muted pl-3">
           <HookConfig
-            hookAddress={hook}
-            family={family}
-            value={values}
-            onChange={(next, encoded) => {
+            hookAddress={app}
+            config={config}
+            values={values}
+            onChange={(next, word) => {
               setValues(next);
-              onConfig(encoded ?? "");
+              onConfig(word ?? "");
             }}
             onVerdict={onVerdict}
           />
@@ -396,7 +396,7 @@ export function OwnershipPanel({
 }
 
 /**
- * The hook's current offer, when accepting it would change something. A new fee
+ * The app's current offer, when accepting it would change something. A new fee
  * applies at once; new callbacks wait for the next buy. The
  * button pins exactly the offer shown here.
  */
@@ -411,25 +411,25 @@ function HookOfferRow({
 }) {
   const { data: status } = useQuery({
     queryKey: [
-      "hook-offer-status",
+      "app-offer-status",
       slot,
-      state.hook,
-      state.hookOffer.feeBps,
-      state.hookOffer.permissions,
+      state.app,
+      state.manifest.feeBps,
+      state.manifest.scopes,
       state.pending.mask,
     ],
-    queryFn: () => actions.client.hookOfferStatus(slot),
-    enabled: state.hook !== zeroAddress,
+    queryFn: () => actions.client.grantStatus(slot),
+    enabled: state.app !== zeroAddress,
   });
 
-  if (!status || (!status.feeDiffers && !status.permissionsDiffer)) return null;
+  if (!status || (!status.feeDiffers && !status.scopesDiffer)) return null;
   const { accepted, offered } = status;
-  const callbacks = (permissions: number) =>
-    describePermissions(unpackHookPermissions(permissions)).granted.join(", ") || "none";
+  const callbacks = (scopes: number) =>
+    describePermissions(unpackScopes(scopes)).granted.join(", ") || "none";
 
   return (
     <div className="space-y-1.5 border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs">
-      <p className="font-medium">The hook offers new terms</p>
+      <p className="font-medium">The app offers new terms</p>
       {status.feeDiffers ? (
         <p className="text-muted-foreground">
           Fee: {formatBps(accepted.feeBps)} → {formatBps(offered.feeBps)} of
@@ -441,20 +441,20 @@ function HookOfferRow({
           current fee.
         </p>
       ) : null}
-      {status.permissionsDiffer ? (
+      {status.scopesDiffer ? (
         <p className="text-muted-foreground">
-          Permissions: {callbacks(accepted.permissions)} → {callbacks(offered.permissions)}.
+          Scopes: {callbacks(accepted.scopes)} → {callbacks(offered.scopes)}.
           Applies at the next buy.
         </p>
       ) : null}
       <p className="text-muted-foreground">
-        A hook whose offer is ignored may refuse service.
+        An app whose offer is ignored may refuse service.
       </p>
       <Button
         size="sm"
         variant="outline"
         disabled={actions.busy}
-        onClick={() => actions.acceptHookOffer(slot, offered)}
+        onClick={() => actions.grant(slot, offered)}
       >
         Accept offer
       </Button>

@@ -74,7 +74,7 @@ interface IGDAv1Forwarder {
         bool distributionFromAnyAddress;
     }
 
-    function createPool(address token, address admin, PoolConfig memory config)
+    function createPool(address token, address admin, PoolConfig memory settings)
         external
         returns (bool success, ISuperfluidPool pool);
 

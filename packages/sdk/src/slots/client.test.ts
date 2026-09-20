@@ -6,13 +6,13 @@ import { decodeFunctionData } from "viem";
 import {
   ALL_TERMS,
   assertSlotInit,
-  NO_HOOK,
-  HOOK_PERMISSION_BITS,
+  NO_APP,
+  SCOPE_BITS,
   TERMS,
   type SlotInit,
   SlotsClient,
-  unpackHookPermissions,
-  ZERO_HOOK_DATA,
+  unpackScopes,
+  ZERO_SETTINGS,
 } from "./client";
 
 const TAX_TERMS_NONE = {
@@ -24,7 +24,8 @@ const TAX_TERMS_NONE = {
 const SLOT = "0x1111111111111111111111111111111111111111" as const;
 const ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
 const ERC20 = "0x3333333333333333333333333333333333333333" as const;
-const HOOK = "0x4444444444444444444444444444444444444444" as const;
+const APP = "0x4444444444444444444444444444444444444444" as const;
+const ID = "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
 const FACTORY = "0x5555555555555555555555555555555555555555" as const;
 const MANAGER = "0x6666666666666666666666666666666666666666" as const;
 const TAKER = "0x9999999999999999999999999999999999999999" as const;
@@ -523,21 +524,21 @@ describe("manager terms", () => {
 
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       { ...TAX0, rateBps: 250 },
-      NO_HOOK,
+      NO_APP,
       TERMS.TAX_RATE,
     ]);
   });
 
-  it("proposeTerms treats a zero-address hook as DETACH, not as absent", async () => {
+  it("proposeTerms treats a zero-address app as DETACH, not as absent", async () => {
     const { client, writeContract } = harness({});
 
-    await client.proposeTerms(SLOT, { hookTerms: NO_HOOK });
+    await client.proposeTerms(SLOT, { appTerms: NO_APP });
 
     // Presence decides, never truthiness.
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       TAX0,
-      NO_HOOK,
-      TERMS.HOOK,
+      NO_APP,
+      TERMS.APP,
     ]);
   });
 
@@ -546,22 +547,22 @@ describe("manager terms", () => {
     await client.proposeTerms(SLOT, {
       taxRateBps: 100,
       recipient: MANAGER,
-      hookTerms: { target: HOOK },
+      appTerms: { target: APP },
     });
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       { recipient: MANAGER, rateBps: 100, minRunwaySeconds: 0 },
-      { target: HOOK, config: ZERO_HOOK_DATA },
-      TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.HOOK,
+      { target: APP, settings: ZERO_SETTINGS },
+      TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.APP,
     ]);
   });
 
-  it("hook data without a hook is refused before it costs gas", async () => {
+  it("app data without an app is refused before it costs gas", async () => {
     const { client } = harness({});
     await expect(
       client.proposeTerms(SLOT, {
-        hookTerms: { target: ZERO, config: `0x${"1".padStart(64, "0")}` },
+        appTerms: { target: ZERO, settings: `0x${"1".padStart(64, "0")}` },
       }),
-    ).rejects.toThrow(/needs a hook/);
+    ).rejects.toThrow(/needs an app/);
   });
 
   it("proposeTerms refuses an empty proposal rather than reverting on-chain", async () => {
@@ -579,14 +580,14 @@ describe("creation", () => {
     manager: ZERO,
     mutableTax: false,
     mutableRecipient: false,
-    mutableHook: false,
+    mutableApp: false,
     taxTerms: { recipient: ACCOUNT, rateBps: 500, minRunwaySeconds: 86_400 },
   };
 
   it("createSlot sends the full tuple to the factory", async () => {
     const { client, writeContract } = harness({});
 
-    await client.createSlot({ ...base, hookTerms: { target: HOOK } });
+    await client.createSlot({ ...base, appTerms: { target: APP } });
 
     const call = sent(writeContract, "createSlot");
     expect(call.address).toBe(FACTORY);
@@ -594,7 +595,7 @@ describe("creation", () => {
       ...base,
       // Filled by `encodeSlotInit`: viem encodes a struct BY NAME, so a missing
       // key would silently encode a zero.
-      hookTerms: { target: HOOK, config: ZERO_HOOK_DATA },
+      appTerms: { target: APP, settings: ZERO_SETTINGS },
     });
   });
 
@@ -623,7 +624,7 @@ describe("creation", () => {
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, hookTerms: NO_HOOK, hookPermissions: 0, mask: 0, proposedAt: 0n, ripe: false },
+      pendingTerms: { taxTerms: TAX_TERMS_NONE, appTerms: NO_APP, scopes: 0, mask: 0, proposedAt: 0n, ripe: false },
     });
     const pending = await client.pending(SLOT);
     expect(pending.isEmpty).toBe(true);
@@ -633,17 +634,17 @@ describe("reads", () => {
     expect(pending.appliesAt).toBe(0n);
   });
 
-  it("pending unpacks a queued hook change", async () => {
-    const hook = { ...NO_HOOK, target: HOOK };
+  it("pending unpacks a queued app change", async () => {
+    const app = { ...NO_APP, target: APP };
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, hookTerms: hook, hookPermissions: 0, mask: TERMS.HOOK, proposedAt: 1234n, ripe: false },
+      pendingTerms: { taxTerms: TAX_TERMS_NONE, appTerms: app, scopes: 0, mask: TERMS.APP, proposedAt: 1234n, ripe: false },
     });
     const pending = await client.pending(SLOT);
     expect(pending).toEqual({
       taxTerms: TAX_TERMS_NONE,
-      hookTerms: hook,
-      hookPermissions: 0,
-      mask: TERMS.HOOK,
+      appTerms: app,
+      scopes: 0,
+      mask: TERMS.APP,
       hasTaxRate: false,
       hasRecipient: false,
       hasMinRunway: false,
@@ -661,8 +662,8 @@ describe("reads", () => {
     const { client, readContract } = harness({
       pendingTerms: {
         taxTerms: { ...TAX_TERMS_NONE, rateBps: 500 },
-        hookTerms: NO_HOOK,
-        hookPermissions: 0,
+        appTerms: NO_APP,
+        scopes: 0,
         mask: TERMS.TAX_RATE,
         proposedAt: 1234n,
         ripe: true,
@@ -686,8 +687,8 @@ describe("reads", () => {
     expect(read.args).toEqual([MANAGER]);
   });
 
-  it("hookPermissions passes the accepted struct through", async () => {
-    const permissions = {
+  it("scopes passes the accepted struct through", async () => {
+    const scopes = {
       beforeBuy: true,
       beforeSelfAssess: true,
       afterBuy: false,
@@ -696,31 +697,31 @@ describe("reads", () => {
       afterSettle: false,
       strict: false,
     };
-    const { client } = harness({ hookPermissions: permissions });
-    expect(await client.hookPermissions(SLOT)).toEqual(permissions);
+    const { client } = harness({ scopes: scopes });
+    expect(await client.scopes(SLOT)).toEqual(scopes);
   });
 
-  it("hookOfferStatus names both differences", async () => {
-    const accepted = { permissions: HOOK_PERMISSION_BITS.afterSettle, feeBps: 100, feeRecipient: HOOK };
+  it("grantStatus names both differences", async () => {
+    const accepted = { scopes: SCOPE_BITS.afterSettle, feeBps: 100, feeRecipient: APP };
     const offered = { ...accepted, feeBps: 200 };
-    const { client } = harness({ hookOfferStatus: [accepted, offered, true, false] });
-    expect(await client.hookOfferStatus(SLOT)).toEqual({
+    const { client } = harness({ grantStatus: [accepted, offered, true, false] });
+    expect(await client.grantStatus(SLOT)).toEqual({
       accepted,
       offered,
       feeDiffers: true,
-      permissionsDiffer: false,
+      scopesDiffer: false,
     });
   });
 
-  it("acceptHookOffer sends the reviewed offer as the pin", async () => {
+  it("grant sends the reviewed offer as the pin", async () => {
     const { client, writeContract } = harness({});
-    const expected = { permissions: HOOK_PERMISSION_BITS.afterBuy, feeBps: 0, feeRecipient: ZERO };
-    await client.acceptHookOffer(SLOT, expected);
-    expect(sent(writeContract, "acceptHookOffer").args).toEqual([expected]);
+    const expected = { scopes: SCOPE_BITS.afterBuy, feeBps: 0, feeRecipient: ZERO };
+    await client.grant(SLOT, expected);
+    expect(sent(writeContract, "grant").args).toEqual([expected]);
   });
 
-  it("unpackHookPermissions follows HookFlagsLib's bit order", () => {
-    expect(unpackHookPermissions(HOOK_PERMISSION_BITS.beforeBuy | HOOK_PERMISSION_BITS.strict)).toEqual({
+  it("unpackScopes follows HookFlagsLib's bit order", () => {
+    expect(unpackScopes(SCOPE_BITS.beforeBuy | SCOPE_BITS.strict)).toEqual({
       beforeBuy: true,
       beforeSelfAssess: false,
       afterBuy: false,
@@ -855,13 +856,13 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         manager: ZERO,
         mutableTax: false,
         mutableRecipient: false,
-        mutableHook: false,
+        mutableApp: false,
         terms: {
           taxTerms: { recipient: ACCOUNT, rateBps: 250, minRunwaySeconds: 0 },
-          hookTerms: NO_HOOK,
-          hookOffer: { permissions: 0, feeBps: 0, feeRecipient: ZERO },
+          appTerms: NO_APP,
+          manifest: { scopes: 0, feeBps: 0, feeRecipient: ZERO },
         },
-        hookPermissions: {
+        scopes: {
           beforeBuy: false,
           beforeSelfAssess: false,
           afterBuy: false,
@@ -883,8 +884,8 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         secondsUntilLiquidation: 10n,
         pending: {
           taxTerms: TAX_TERMS_NONE,
-          hookTerms: NO_HOOK,
-          hookPermissions: 0,
+          appTerms: NO_APP,
+          scopes: 0,
           mask: 0,
           proposedAt: 0n,
           ripe: false,
@@ -1150,30 +1151,80 @@ describe("offer book", () => {
   });
 });
 
-describe("hook reads", () => {
-  it("checkHookConfig resolves ok when the hook accepts", async () => {
-    const { client } = harness({ validateHookConfig: undefined });
-    expect(await client.checkHookConfig(HOOK, ZERO_HOOK_DATA)).toEqual({ ok: true });
+describe("app reads", () => {
+  it("checkSettings resolves ok when the app accepts", async () => {
+    const { client } = harness({ checkSettings: undefined });
+    expect(await client.checkSettings(APP, ZERO_SETTINGS)).toEqual({ ok: true });
   });
 
-  it("checkHookConfig resolves with the reason when the hook refuses", async () => {
+  it("checkSettings resolves with the reason when the app refuses", async () => {
     const { client } = harness({});
-    const check = await client.checkHookConfig(HOOK, ZERO_HOOK_DATA);
+    const check = await client.checkSettings(APP, ZERO_SETTINGS);
     expect(check.ok).toBe(false);
   });
 
-  it("hookDescriptors is empty for a hook that does not describe itself", async () => {
+  it("appDefinition is null for an app that does not describe itself", async () => {
     const { client } = harness({});
-    expect(await client.hookDescriptors(HOOK)).toEqual([]);
+    expect(await client.appDefinition(APP)).toBeNull();
   });
 
-  it("readHookOffer asks the hook for a config", async () => {
-    const offer = { permissions: 4, feeBps: 0, feeRecipient: ZERO };
-    const { client, readContract } = harness({ hookOffer: offer });
-    expect(await client.readHookOffer(HOOK, ZERO_HOOK_DATA)).toEqual(offer);
+  it("appDefinition parses what the app answered", async () => {
+    const definition = {
+      version: 1,
+      title: "Minimum tenure",
+      description: "…",
+      config: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        title: "Minimum tenure",
+        type: "object",
+        "x-config-encoding": "inline",
+        properties: { window: { type: "string", "x-maximum": "31536000" } },
+        required: ["window"],
+        "x-abi": [{ name: "window", type: "uint256" }],
+      },
+    };
+    const { client } = harness({ definition: JSON.stringify(definition) });
+    expect(await client.appDefinition(APP)).toEqual(definition);
+  });
+
+  it("appDefinition is null when the app answers something that is not JSON", async () => {
+    const { client } = harness({ definition: "not json" });
+    expect(await client.appDefinition(APP)).toBeNull();
+  });
+
+  it("appSettings decodes an inline word against x-abi", async () => {
+    const { client } = harness({});
+    const schema = {
+      "x-config-encoding": "inline",
+      "x-abi": [{ name: "window", type: "uint256" }],
+    } as never;
+    expect(
+      await client.appSettings(APP, schema, `0x${(604800).toString(16).padStart(64, "0")}`),
+    ).toEqual({ window: "604800" });
+  });
+
+  it("appSettings resolves a registered id through the app's own store", async () => {
+    const encoded = `0x${(604800).toString(16).padStart(64, "0")}` as const;
+    const { client, readContract } = harness({ settingsById: encoded });
+    const schema = {
+      "x-config-encoding": "registered",
+      "x-abi": [{ name: "window", type: "uint256" }],
+    } as never;
+    expect(await client.appSettings(APP, schema, ID)).toEqual({ window: "604800" });
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
+      address: APP,
+      functionName: "settingsById",
+      args: [ID],
+    });
+  });
+
+  it("readManifest asks the app for a config", async () => {
+    const offer = { scopes: 4, feeBps: 0, feeRecipient: ZERO };
+    const { client, readContract } = harness({ manifest: offer });
+    expect(await client.readManifest(APP, ZERO_SETTINGS)).toEqual(offer);
     const call = readContract.mock.calls.at(-1)![0];
-    expect(call.address).toBe(HOOK);
-    expect(call.args).toEqual([ZERO_HOOK_DATA]);
+    expect(call.address).toBe(APP);
+    expect(call.args).toEqual([ZERO_SETTINGS]);
   });
 });
 

@@ -87,7 +87,7 @@ contract SlotMathTest is Test {
 
     /// @notice But `mulDiv` survives where the plain form would wrap, and the
     ///         window is an unbounded constructor/init argument — so the
-    ///         guarantee is worth having even though no sane config reaches it.
+    ///         guarantee is worth having even though no sane settings reaches it.
     function test_SurvivesAProductThatWouldOverflow() public pure {
         uint256 price = type(uint128).max;
         uint256 taxRateBps = 10_000;

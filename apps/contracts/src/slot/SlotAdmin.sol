@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "../errors/SlotErrors.sol";
 import {SlotEscrow} from "./SlotEscrow.sol";
-import {TaxTerms, HookTerms, HookOffer} from "../types/SlotTypes.sol";
+import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
 import {Settings} from "./SlotStorage.sol";
 import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
 
@@ -14,7 +14,7 @@ import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
  * @dev Terms only ever QUEUE: they ripen for `TERMS_DELAY` and land at the next
  *      buy, so nothing an occupant bought into moves under them. A term moves only if the slot was created mutable for it. The
  *      immediate powers touch no occupant: handing the slot to another manager,
- *      and accepting a hook's new fee.
+ *      and accepting an app's new fee.
  */
 abstract contract SlotAdmin is SlotEscrow {
     using TermsLib for TermsQueue;
@@ -23,18 +23,18 @@ abstract contract SlotAdmin is SlotEscrow {
      * @notice Queue a change to any of the slot's terms.
      *
      * @param taxTerms Only the fields named by `mask` are read.
-     * @param hookTerms Read as a whole when `mask` includes `TERM_HOOK`. Its offer
-     *        is whatever the hook declares, never chosen here.
-     * @param mask `TERM_TAX_RATE | TERM_RECIPIENT | TERM_MIN_RUNWAY | TERM_HOOK`.
+     * @param appTerms Read as a whole when `mask` includes `TERM_APP`. Its offer
+     *        is whatever the app declares, never chosen here.
+     * @param mask `TERM_TAX_RATE | TERM_RECIPIENT | TERM_MIN_RUNWAY | TERM_APP`.
      *
      * @dev Validated now, so a bad value is refused while somebody is around to
-     *      fix it. A hook is asked to accept its terms here and asked again when
+     *      fix it. An app is asked to accept its terms here and asked again when
      *      it attaches. Proposing again overwrites the named fields, keeps the
      *      rest queued, and restarts the delay for all of them.
      */
     function proposeTerms(
         TaxTerms calldata taxTerms,
-        HookTerms calldata hookTerms,
+        AppTerms calldata appTerms,
         uint8 mask
     ) external onlyManager {
         if (mask == 0) revert NothingProposed();
@@ -42,10 +42,10 @@ abstract contract SlotAdmin is SlotEscrow {
         _requireMutable(mask);
 
         _validateRent(taxTerms, mask);
-        if (mask & TermsLib.HOOK != 0) _validateHook(hookTerms);
+        if (mask & TermsLib.APP != 0) _validateApp(appTerms);
 
-        _queue().propose(_nextTaxTerms(), _nextHookTerms(), taxTerms, hookTerms, mask);
-        emit TermsProposed(taxTerms, hookTerms, mask);
+        _queue().propose(_nextTaxTerms(), _nextAppTerms(), taxTerms, appTerms, mask);
+        emit TermsProposed(taxTerms, appTerms, mask);
     }
 
     /**
@@ -56,51 +56,51 @@ abstract contract SlotAdmin is SlotEscrow {
      */
     function cancelTerms(uint8 mask) external onlyManager {
         if (mask == 0) revert NothingProposed();
-        uint8 dropped = _queue().cancel(_nextTaxTerms(), _nextHookTerms(), mask);
+        uint8 dropped = _queue().cancel(_nextTaxTerms(), _nextAppTerms(), mask);
         if (dropped == 0) revert NoPendingTerms();
         emit TermsCancelled(dropped);
     }
 
     /**
-     * @notice Accept what the attached hook offers today.
+     * @notice Accept what the attached app offers today.
      *
      * @param expected The offer the manager reviewed. The call reverts if the
-     *        hook now declares anything else, so a hook cannot change its offer
+     *        app now declares anything else, so an app cannot change its offer
      *        between a manager signing and the transaction landing.
      *
      * @dev A new fee applies at once, on any slot: it only changes how collected
-     *      rent is split between the recipient and the hook, never what an
+     *      rent is split between the recipient and the app, never what an
      *      occupant pays. Rent collected so far is paid out under the old fee
      *      first.
      *
-     *      New permissions change what the hook may do to an occupant, so they queue
+     *      New scopes change what the app may do to an occupant, so they queue
      *      like any term and land at the next buy, and only on a slot whose
-     *      hook is mutable. An immutable hook keeps the
-     *      permissions it attached with.
+     *      app is mutable. An immutable app keeps the
+     *      scopes it attached with.
      */
-    function acceptHookOffer(HookOffer calldata expected) external nonReentrant onlyManager {
-        HookTerms memory h = _hookTerms();
-        if (h.target == address(0)) revert InvalidHook();
-        HookOffer memory offered = _readHook(h);
+    function grant(Manifest calldata expected) external nonReentrant onlyManager {
+        AppTerms memory h = _appTerms();
+        if (h.target == address(0)) revert InvalidApp();
+        Manifest memory offered = _readManifest(h);
         if (
-            offered.permissions != expected.permissions ||
+            offered.scopes != expected.scopes ||
             offered.feeBps != expected.feeBps ||
             offered.feeRecipient != expected.feeRecipient
-        ) revert HookOfferChanged();
+        ) revert ManifestChanged();
 
-        (bool feeChanges, bool permissionsChange) = _offerChanges(offered);
-        if (!feeChanges && !permissionsChange) revert NothingToAccept();
+        (bool feeChanges, bool scopesChange) = _manifestChanges(offered);
+        if (!feeChanges && !scopesChange) revert NothingToAccept();
 
         if (feeChanges) {
             _settle();
             _flush();
-            HookOffer storage live = _hookOffer();
+            Manifest storage live = _manifest();
             live.feeBps = offered.feeBps;
             live.feeRecipient = offered.feeRecipient;
         }
-        if (permissionsChange) _queue().queueHookPermissions(offered.permissions);
+        if (scopesChange) _queue().queueScopes(offered.scopes);
 
-        emit HookOfferAccepted(offered, feeChanges, permissionsChange);
+        emit ScopesGranted(offered, feeChanges, scopesChange);
     }
 
     /**
@@ -122,7 +122,7 @@ abstract contract SlotAdmin is SlotEscrow {
 
         _settle();
         if (_applyPending()) {
-            _afterAttach(
+            _onInstall(
                 _occupancy().occupant,
                 _occupancy().price,
                 _occupancy().deposit
@@ -157,26 +157,26 @@ abstract contract SlotAdmin is SlotEscrow {
         Settings storage st = _settings();
         if (mask & (TermsLib.TAX_RATE | TermsLib.MIN_RUNWAY) != 0 && !st.mutableTax) revert NotMutable();
         if (mask & TermsLib.RECIPIENT != 0 && !st.mutableRecipient) revert NotMutable();
-        if (mask & TermsLib.HOOK != 0 && !st.mutableHook) revert NotMutable();
+        if (mask & TermsLib.APP != 0 && !st.mutableApp) revert NotMutable();
     }
 
-    /// @dev Returns the hook's offer, as it declares it.
+    /// @dev Returns the app's offer, as it declares it.
     ///
-    ///      Read twice, for two different answers. `_readHook` is uncapped and
-    ///      bubbles the hook's own revert, so a hook refusing its configuration
-    ///      says why. `_tryReadHook` is the read the slot will actually use when
-    ///      the hook attaches: a hook too expensive to answer under that stipend
+    ///      Read twice, for two different answers. `_readManifest` is uncapped and
+    ///      bubbles the app's own revert, so an app refusing its configuration
+    ///      says why. `_tryReadManifest` is the read the slot will actually use when
+    ///      the app attaches: an app too expensive to answer under that stipend
     ///      is attached as nothing, silently and a day later, so it is refused
     ///      here instead.
-    function _validateHook(HookTerms memory h) internal view returns (HookOffer memory offer) {
+    function _validateApp(AppTerms memory h) internal view returns (Manifest memory offer) {
         if (h.target == address(0)) {
-            // Configuration for a hook that is not there. Nothing would read it,
-            // and it would silently go live the day a hook attaches without its own.
-            if (h.config != bytes32(0)) revert InvalidHook();
+            // Configuration for an app that is not there. Nothing would read it,
+            // and it would silently go live the day an app attaches without its own.
+            if (h.settings != bytes32(0)) revert InvalidApp();
             return offer;
         }
-        offer = _readHook(h);
-        (bool affordable, ) = _tryReadHook(h);
-        if (!affordable) revert HookReadTooExpensive();
+        offer = _readManifest(h);
+        (bool affordable, ) = _tryReadManifest(h);
+        if (!affordable) revert ManifestTooExpensive();
     }
 }

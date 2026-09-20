@@ -1,7 +1,7 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
-import { type SlotState, TERMS, unpackHookPermissions } from "@0xslots/sdk/slots";
+import { findKnownApp } from "@0xslots/contracts/slots";
+import { type SlotState, TERMS, unpackScopes } from "@0xslots/sdk/slots";
 import { Info, Loader2 } from "lucide-react";
 import { type Address, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { useChain } from "@/context/chain";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { cn } from "@/lib/utils";
-import { describePermissions } from "@/lib/hook-permissions";
+import { describePermissions } from "@/lib/app-scopes";
 import { formatBps, formatDuration, truncateAddress } from "@/utils";
 
 type Actions = ReturnType<typeof useSlotsAction>;
@@ -22,8 +22,8 @@ export type PendingDimension =
   | "tax"
   | "recipient"
   | "minDeposit"
-  | "hook"
-  | "hookPermissions";
+  | "app"
+  | "scopes";
 
 /**
  * This file owns one subject — terms queued but not yet in force — in the two
@@ -49,9 +49,9 @@ export function eligibleIn(appliesAt: bigint, nowSeconds: number): string {
   return `${Math.ceil(left / 86400)}d`;
 }
 
-function hookLabel(chainId: number, hook: Address): string {
-  if (hook === zeroAddress) return "none";
-  return findKnownHook(chainId, hook)?.name ?? truncateAddress(hook);
+function hookLabel(chainId: number, app: Address): string {
+  if (app === zeroAddress) return "none";
+  return findKnownApp(chainId, app)?.name ?? truncateAddress(app);
 }
 
 export type PendingRow = {
@@ -72,7 +72,7 @@ export type PendingRow = {
  * The queued changes, resolved into before/after strings.
  *
  * Reads the `has*` flags rather than testing values for emptiness: the zero
- * address is a REAL proposed value for the hook dimension — "detach the hook"
+ * address is a REAL proposed value for the app dimension — "detach the app"
  * is something someone deliberately queued, and treating it as "nothing
  * pending" would hide the more consequential of the two.
  */
@@ -110,20 +110,20 @@ export function pendingChanges(
   }
   if (pending.hasHook) {
     rows.push({
-      dimension: "hook",
-      label: "Hook",
-      current: hookLabel(chainId, state.hook),
-      next: hookLabel(chainId, pending.hookTerms.target),
+      dimension: "app",
+      label: "App",
+      current: hookLabel(chainId, state.app),
+      next: hookLabel(chainId, pending.appTerms.target),
     });
   }
   if (pending.hasHookPermissions) {
-    const callbacks = (permissions: number) =>
-      describePermissions(unpackHookPermissions(permissions)).granted.join(", ") || "none";
+    const callbacks = (scopes: number) =>
+      describePermissions(unpackScopes(scopes)).granted.join(", ") || "none";
     rows.push({
-      dimension: "hookPermissions",
-      label: "Hook permissions",
-      current: callbacks(state.hookOffer.permissions),
-      next: callbacks(pending.hookPermissions),
+      dimension: "scopes",
+      label: "App scopes",
+      current: callbacks(state.manifest.scopes),
+      next: callbacks(pending.scopes),
     });
   }
 
@@ -137,24 +137,24 @@ const CANCEL_LABEL: Record<PendingDimension, string> = {
   tax: "Cancel tax update",
   recipient: "Cancel recipient update",
   minDeposit: "Cancel minimum deposit update",
-  hook: "Cancel hook update",
-  hookPermissions: "Cancel hook permissions update",
+  app: "Cancel app update",
+  scopes: "Cancel app scopes update",
 };
 
 const MASK: Record<PendingDimension, number> = {
   tax: TERMS.TAX_RATE,
   recipient: TERMS.RECIPIENT,
   minDeposit: TERMS.MIN_RUNWAY,
-  hook: TERMS.HOOK,
-  hookPermissions: TERMS.HOOK_PERMISSIONS,
+  app: TERMS.APP,
+  scopes: TERMS.SCOPES,
 };
 
 const CANCEL_TEXT: Record<PendingDimension, string> = {
   tax: "Cancel tax change",
   recipient: "Cancel recipient change",
   minDeposit: "Cancel runway change",
-  hook: "Cancel hook change",
-  hookPermissions: "Cancel permissions change",
+  app: "Cancel app change",
+  scopes: "Cancel scopes change",
 };
 
 /** The changed value, tinted by direction. Shared so the two views cannot
@@ -209,7 +209,7 @@ export function PendingTermsBanner({
    * chain's clock. `appliesAt` is derived from a `block.timestamp`, and on a
    * warped local chain the browser's own clock reads days out. Measured from a
    * block header rather than assumed — see `useChainTimeSkew`. Read before the
-   * early return below, because it is a hook and the return is conditional.
+   * early return below, because it is an app and the return is conditional.
    */
   const skew = useChainTimeSkew();
 

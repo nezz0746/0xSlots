@@ -86,7 +86,7 @@ export function SlotView({ slotAddress }: { slotAddress: string }) {
   // actually leave rather than the one last read from the chain.
   const accrual = useLiveAccrual(state, !!state && !state.isVacant);
   const nowSeconds = useNow(true, 30_000);
-  // The count in the tab label. See the hook for why it counts only what this
+  // The count in the tab label. See the app for why it counts only what this
   // browser knows, and why that limitation is stated in the tab itself.
   const { count: orderCount } = useOrders(slot);
 

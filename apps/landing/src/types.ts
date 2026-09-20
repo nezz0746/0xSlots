@@ -8,8 +8,8 @@
  * as aliases:
  *
  *   * `LiquidationBountyUpdated` — there are no liquidation bounties.
- *   * `ModuleProposed` — there are no modules. The hook dimension of
- *     `termsProposedEvent` replaces it, and is named `Hook Proposed`.
+ *   * `ModuleProposed` — there are no modules. The app dimension of
+ *     `termsProposedEvent` replaces it, and is named `App Proposed`.
  *   * `PriceUpdate` / `TaxCollect` — the tables are `priceSetEvent` and
  *     `taxCollectedEvent`, and the labels follow them.
  *
@@ -30,7 +30,7 @@ export type EventType =
   | "Claim"
   | "Operator"
   | "Tax Proposed"
-  | "Hook Proposed"
+  | "App Proposed"
   | "Terms Applied"
   | "Update Cancelled"
-  | "Hook Failed";
+  | "App Failed";

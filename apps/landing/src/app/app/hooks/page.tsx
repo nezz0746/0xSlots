@@ -1,32 +1,32 @@
 "use client";
 
-import { CHAINS, type KnownHook, knownHooks } from "@0xslots/contracts";
+import { CHAINS, type KnownApp, knownApps } from "@0xslots/contracts";
 import { ExternalLink, Plug } from "lucide-react";
 import Image from "next/image";
 import type { Address } from "viem";
 import { CopyAddress } from "@/components/copy-address";
-import { HookPermissionRow } from "@/components/hook-permissions";
+import { AppScopeRow } from "@/components/app-scopes";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
 import { NavLink } from "@/context/navigation";
 import { useHooks } from "@/hooks/use-explorer";
-import { useHookCheck } from "@/hooks/use-hook-check";
+import { useAppCheck } from "@/hooks/use-app-check";
 import {
   describeSeconds,
-  type HookFamilySpec,
-  useHookDataCheck,
-  useHookSchema,
+  type AppSettingsSpec,
+  useSettingsCheck,
+  useAppDefinition,
   ZERO_WORD,
-} from "@/hooks/use-hook-schema";
+} from "@/hooks/use-app-schema";
 
 /**
- * The hooks this client can name, and what each of them asks for.
+ * The apps this client can name, and what each of them asks for.
  *
  * ── Why this is not the module gallery ──────────────────────────────────────
  *
  * The retired protocol had one, and it was removed on purpose: a slot had many
- * modules, so browsing them was browsing a slot's contents, and the hook a slot
+ * modules, so browsing them was browsing a slot's contents, and the app a slot
  * points at is a column on the slots table instead. That reasoning still holds
  * and this page does not undo it. It answers a different question, asked before
  * a slot exists rather than after — WHAT CAN I ATTACH, and what will it want
@@ -34,17 +34,17 @@ import {
  * what somebody already chose.
  *
  * Everything on a card is read from the chain at the address, not from this
- * app: the callbacks from `hookOffer()`, the configuration from
- * `descriptors()`, and whether that configuration is optional from
- * `validateHookConfig` itself. The name and the sentence are the only editorial
+ * app: the callbacks from `manifest()`, the configuration from
+ * `definition()`, and whether that configuration is optional from
+ * `checkSettings` itself. The name and the sentence are the only editorial
  * content, and they are the only part that could ever be out of date.
  */
 export default function HooksPage() {
   const { chainId } = useChain();
   const chain = CHAINS.find((c) => c.id === chainId);
-  const named = knownHooks[chainId] ?? [];
+  const named = knownApps[chainId] ?? [];
 
-  // Every hook any slot on this chain points at, whether or not this app can
+  // Every app any slot on this chain points at, whether or not this app can
   // name it. The two lists together are the honest picture: a catalogue alone
   // would imply these are the only ones, and a slot may point at any address.
   const { data: onChain } = useHooks();
@@ -61,7 +61,7 @@ export default function HooksPage() {
     <div>
       <PageHeader>
         <div>
-          <h1 className="text-xl font-semibold">Hooks</h1>
+          <h1 className="text-xl font-semibold">Apps</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             A slot has one extension point, fixed at creation unless its manager
             may move it. These are the ones this app can name on{" "}
@@ -77,19 +77,19 @@ export default function HooksPage() {
         {named.length === 0 ? (
           <p className="border border-dashed p-6 text-center text-sm text-muted-foreground">
             None on {chain?.name ?? `chain ${chainId}`}. A slot here can still
-            point at any hook by address.
+            point at any app by address.
           </p>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {named.map((hook) => (
+            {named.map((app) => (
               <HookCard
-                key={hook.address}
-                hook={hook}
+                key={app.address}
+                app={app}
                 chainId={chainId}
                 explorer={chain?.blockExplorers?.default.url}
-                slotCount={usage.get(hook.address.toLowerCase())?.slotCount}
+                slotCount={usage.get(app.address.toLowerCase())?.slotCount}
                 failedCalls={
-                  usage.get(hook.address.toLowerCase())?.failedCallCount
+                  usage.get(app.address.toLowerCase())?.failedCallCount
                 }
               />
             ))}
@@ -102,7 +102,7 @@ export default function HooksPage() {
               Also in use on {chain?.name ?? `chain ${chainId}`}
             </h2>
             <p className="text-xs text-muted-foreground">
-              Hooks slots point at that this app does not ship a name for.
+              Apps slots point at that this app does not ship a name for.
             </p>
             <div className="border">
               <table className="w-full text-sm">
@@ -144,33 +144,33 @@ export default function HooksPage() {
 }
 
 function HookCard({
-  hook,
+  app,
   chainId,
   explorer,
   slotCount,
   failedCalls,
 }: {
-  hook: KnownHook;
+  app: KnownApp;
   chainId: number;
   explorer?: string;
   slotCount?: number;
   failedCalls?: number;
 }) {
-  const check = useHookCheck(hook.address, chainId);
-  const { families } = useHookSchema(hook.address);
-  const configurable = families.filter((f) => f.fields.length > 0);
+  const check = useAppCheck(app.address, chainId);
+  const { definition } = useAppDefinition(app.address);
+  const config = definition?.config?.fields.length ? definition.config : undefined;
 
   return (
     <article className="flex flex-col gap-3 border p-4">
       <header className="space-y-1.5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
-            {/* The project's own mark where it has one. A stock hook carries
-                an app-relative path, so this app's logo stands for the hooks
+            {/* The project's own mark where it has one. A stock app carries
+                an app-relative path, so this app's logo stands for the apps
                 this app maintains. */}
-            {hook.logo ? (
+            {app.logo ? (
               <Image
-                src={hook.logo}
+                src={app.logo}
                 alt=""
                 width={20}
                 height={20}
@@ -180,77 +180,69 @@ function HookCard({
             ) : (
               <Plug className="size-4 shrink-0 text-muted-foreground" />
             )}
-            <h2 className="font-medium">{hook.name}</h2>
+            <h2 className="font-medium">{app.name}</h2>
             <span className="text-[10px] text-muted-foreground">
-              {hook.url ? (
+              {app.url ? (
                 <a
-                  href={hook.url}
+                  href={app.url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2 hover:text-foreground"
                 >
-                  {hook.by}
+                  {app.by}
                 </a>
               ) : (
-                hook.by
+                app.by
               )}
             </span>
           </div>
           {explorer && (
             <a
-              href={`${explorer}/address/${hook.address}`}
+              href={`${explorer}/address/${app.address}`}
               target="_blank"
               rel="noopener noreferrer"
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={`${hook.name} on the block explorer`}
+              aria-label={`${app.name} on the block explorer`}
             >
               <ExternalLink className="size-3.5" />
             </a>
           )}
         </div>
         <p className="text-sm leading-snug text-muted-foreground">
-          {hook.description}
+          {app.description}
         </p>
       </header>
 
-      <CopyAddress address={hook.address} className="text-xs" />
+      <CopyAddress address={app.address} className="text-xs" />
 
       <div className="space-y-1.5">
         <h3 className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-          Permissions
+          Scopes
         </h3>
         {/* The same row the create form and the slot page draw, from the same
-            `hookOffer()` call — so a hook looks identical here, while it is
+            `manifest()` call — so an app looks identical here, while it is
             being attached, and after it is attached. */}
-        <HookPermissionRow permissions={check.data?.permissions} fee={check.data?.fee} />
+        <AppScopeRow scopes={check.data?.scopes} fee={check.data?.fee} />
       </div>
 
       <div className="space-y-1.5">
         <h3 className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
           Configuration
         </h3>
-        {configurable.length === 0 ? (
+        {!config ? (
           <p className="text-xs text-muted-foreground">
-            {families.length === 0
-              ? "Publishes no schema. Attaches with an empty word."
+            {definition === null
+              ? "Describes itself to nobody. Attaches with an empty word."
               : "Takes no configuration."}
           </p>
         ) : (
-          <div className="space-y-2">
-            {configurable.map((family) => (
-              <FamilyRow
-                key={family.family}
-                address={hook.address}
-                family={family}
-              />
-            ))}
-          </div>
+          <ConfigRow address={app.address} config={config} />
         )}
       </div>
 
       {/* Absent rather than zero while the indexer has not answered: "0 slots"
           and "not asked yet" are different facts and only one of them is
-          about the hook. */}
+          about the app. */}
       {slotCount !== undefined && (
         <footer className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs text-muted-foreground">
           <span className="tabular-nums">
@@ -274,44 +266,49 @@ function HookCard({
 }
 
 /**
- * One configurable family, as the hook describes it.
+ * What an app takes, as it describes itself.
  *
- * The signature gives the type, the bounds give the label, the unit and the
- * range, and `validateHookConfig` on the empty word gives the one thing neither
- * can express: whether a slot may attach this hook without configuring it.
+ * `x-abi` gives the type, the schema gives the label, the unit and the range,
+ * and `checkSettings` on the empty word gives the one thing neither can
+ * express: whether a slot may attach this app without configuring it.
  */
-function FamilyRow({
+function ConfigRow({
   address,
-  family,
+  config,
 }: {
   address: Address;
-  family: HookFamilySpec;
+  config: AppSettingsSpec;
 }) {
-  const zero = useHookDataCheck(address, ZERO_WORD, 0);
+  const zero = useSettingsCheck(address, ZERO_WORD, 0);
 
   return (
     <div className="border-l-2 border-muted pl-3 text-xs">
-      {family.fields.map((field) => (
+      {config.fields.map((field) => (
         <div key={field.name} className="flex items-baseline gap-2">
-          <span className="font-medium capitalize">{field.name}</span>
+          <span className="font-medium">{field.title}</span>
           <span className="text-muted-foreground">
             {field.param.type}
             {field.unit ? `, ${field.unit}` : ""}
           </span>
-          {field.bounded && (
+          {(field.min || field.max) && (
             <span className="ml-auto text-muted-foreground">
               {field.unit === "seconds"
                 ? `${describeSeconds(field.min)} – ${describeSeconds(field.max)}`
-                : `${field.min.toString()} – ${field.max.toString()}`}
+                : `${field.min || "0"} – ${field.max}`}
             </span>
           )}
         </div>
       ))}
+      {config.registered && (
+        <p className="mt-0.5 text-[10px] text-muted-foreground">
+          Registered with the app, and the slot holds the id.
+        </p>
+      )}
       <p className="mt-0.5 text-[10px] text-muted-foreground">
         {zero.checking
-          ? "Asking the hook…"
+          ? "Asking the app…"
           : zero.ok
-            ? "Optional — a slot may attach this hook without it."
+            ? "Optional — a slot may attach this app without it."
             : "Required — the slot refuses an attach without it."}
       </p>
     </div>

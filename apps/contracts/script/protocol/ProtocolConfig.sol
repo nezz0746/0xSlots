@@ -7,12 +7,12 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 /**
  * @title ProtocolConfig
- * @notice Reads `deployments/config/<chainid>.json`, and the address book.
+ * @notice Reads `deployments/settings/<chainid>.json`, and the address book.
  *
  * @dev Configuration is per chain and lives on disk, so adding a chain is
  *      adding a file rather than editing a script. The script never contains a
  *      chain id, an RPC URL or an admin — the first is `block.chainid`, the
- *      second is an env var named by the config, and the third is the config's
+ *      second is an env var named by the settings, and the third is the settings's
  *      job to state.
  */
 abstract contract ProtocolConfig is Script {
@@ -58,7 +58,7 @@ abstract contract ProtocolConfig is Script {
     function chainConfig() internal view returns (ChainConfig memory c) {
         string memory path = string.concat(
             vm.projectRoot(),
-            "/deployments/config/",
+            "/deployments/settings/",
             vm.toString(block.chainid),
             ".json"
         );
@@ -71,7 +71,7 @@ abstract contract ProtocolConfig is Script {
         c.explorerVerify = json.readBool(".explorerVerify");
         c.testnet = json.readBool(".testnet");
 
-        // A placeholder admin is how a mainnet config ships, so that reaching
+        // A placeholder admin is how a mainnet settings ships, so that reaching
         // for it by accident fails here rather than deploying something nobody
         // can upgrade.
         if (c.admin == address(0)) revert AdminNotSet(block.chainid);

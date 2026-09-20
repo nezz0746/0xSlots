@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -48,9 +48,9 @@ contract BeaconUpgradeTest is Test {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: admin,
-            mutableTax: true, mutableRecipient: true, mutableHook: true,
+            mutableTax: true, mutableRecipient: true, mutableApp: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(1_000), minRunwaySeconds: uint32(1 hours)}),
-            hookTerms: HookTerms({target: address(0), config: bytes32(0)})
+            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
         }))));
     }
 

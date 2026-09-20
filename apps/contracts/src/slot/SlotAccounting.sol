@@ -5,9 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotMath} from "../libraries/SlotMath.sol";
-import {SlotHooks} from "./SlotHooks.sol";
-import {ISlotHook, SlotContext} from "../interfaces/ISlotHook.sol";
-import {TaxTerms, HookTerms, HookOffer} from "../types/SlotTypes.sol";
+import {SlotApps} from "./SlotApps.sol";
+import {ISlotApp, SlotContext} from "../interfaces/ISlotApp.sol";
+import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
 import "../errors/SlotErrors.sol";
@@ -16,28 +16,28 @@ import "../errors/SlotErrors.sol";
  * @title SlotAccounting
  * @notice Tax accrual, payout, and the deferred-terms boundary.
  */
-abstract contract SlotAccounting is SlotHooks {
+abstract contract SlotAccounting is SlotApps {
     using SafeERC20 for IERC20;
     using TermsLib for TermsQueue;
 
     event Settled(uint256 owed, uint256 paid, uint256 depositLeft);
     event TaxPaid(address indexed payer, uint256 owed, uint256 paid);
     event TaxCollected(address indexed recipient, uint256 amount);
-    event HookFeePaid(address indexed hook, address indexed recipient, uint256 amount);
+    event AppFeePaid(address indexed app, address indexed recipient, uint256 amount);
     event Credited(address indexed account, uint256 amount);
     event Claimed(address indexed account, uint256 amount);
     /// @notice Debt from an earlier shortfall was paid, out of a buy, a buyout
     ///         or a top-up.
     event DebtRepaid(address indexed account, uint256 amount);
-    /// @notice Queued terms took effect. `taxTerms`, `hookTerms` and `hookOffer`
+    /// @notice Queued terms took effect. `taxTerms`, `appTerms` and `manifest`
     ///         are what is now in force; `mask` says which terms changed.
-    event TermsApplied(TaxTerms taxTerms, HookTerms hookTerms, HookOffer hookOffer, uint8 mask);
-    /// @notice A queued hook could not be attached and was dropped instead of
+    event TermsApplied(TaxTerms taxTerms, AppTerms appTerms, Manifest manifest, uint8 mask);
+    /// @notice A queued app could not be attached and was dropped instead of
     ///         being allowed to block the transition.
-    event HookDetached(address indexed hook);
-    /// @notice Accepted permissions were not applied, because the hook no
-    ///         longer declares them. The slot keeps the permissions it had.
-    event HookPermissionsDropped(address indexed hook, uint8 permissions);
+    event AppDropped(address indexed app);
+    /// @notice Accepted scopes were not applied, because the app no
+    ///         longer declares them. The slot keeps the scopes it had.
+    event ScopesDropped(address indexed app, uint16 scopes);
 
     function _isNative() internal view returns (bool) {
         return address(_settings().currency) == address(0);
@@ -144,7 +144,7 @@ abstract contract SlotAccounting is SlotHooks {
         SlotContext memory ctx = _ctx(msg.sender, payer, o.price, o.deposit);
         ctx.owed = owed;
         ctx.paid = paid;
-        _after(F_AFTER_SETTLE, abi.encodeCall(ISlotHook.afterSettle, (ctx)));
+        _after(F_AFTER_SETTLE, abi.encodeCall(ISlotApp.afterSettle, (ctx)));
     }
 
     /// @notice Whether queued terms have sat long enough to land.
@@ -165,15 +165,15 @@ abstract contract SlotAccounting is SlotHooks {
      *      application seats somebody new under them.
      *
      *      Deliberately NOT called from `release` or `liquidate`. Applying
-     *      reads the incoming hook, and an eviction that reads a hook is an
-     *      eviction a hook can make expensive. A vacated slot keeps the terms
+     *      reads the incoming app, and an eviction that reads an app is an
+     *      eviction an app can make expensive. A vacated slot keeps the terms
      *      it had until the next buyer funds the new ones, which is when they
      *      matter.
      *
      *      ── Rent is paid out BEFORE anything changes ─────────────────────
      *
      *      Collected rent was earned under the outgoing terms: their recipient
-     *      and their hook fee. Flushing first means the pot only ever holds rent
+     *      and their app fee. Flushing first means the pot only ever holds rent
      *      earned under the terms in force, so a fee or recipient change can
      *      never reach back into it, and no history needs keeping.
      */
@@ -181,74 +181,101 @@ abstract contract SlotAccounting is SlotHooks {
         TermsQueue storage q = _queue();
         if (!q.isRipe(TERMS_DELAY)) return false;
 
-        HookTerms memory next = _nextHookTerms();
-        HookTerms memory current = _hookTerms();
-        bool hookChanges = q.mask & TermsLib.HOOK != 0;
-        // A queued hook brings its own offer, permissions included.
-        bool permissionsChange = !hookChanges && q.mask & TermsLib.HOOK_PERMISSIONS != 0;
-        address reading = hookChanges ? next.target : permissionsChange ? current.target : address(0);
+        AppTerms memory next = _nextAppTerms();
+        AppTerms memory current = _appTerms();
+        bool appChanges = q.mask & TermsLib.APP != 0;
+        // A queued app brings its own offer, scopes included.
+        bool scopesChange = !appChanges && q.mask & TermsLib.SCOPES != 0;
+        address reading = appChanges ? next.target : scopesChange ? current.target : address(0);
 
         _flush();
 
-        // Read the hook before the copy clears the queue. Re-read here rather
-        // than trusted from proposal or acceptance: a hook could have been
+        // Read the app before the copy clears the queue. Re-read here rather
+        // than trusted from proposal or acceptance: an app could have been
         // upgraded in the interval, and the copy has to describe the code that
         // will run.
         //
-        // FAIL-OPEN, unlike `proposeTerms`: a hook that stopped answering must
-        // not be able to wedge the queue shut. An incoming hook that will not
-        // say what it wants is attached as nothing; accepted permissions it no
+        // FAIL-OPEN, unlike `proposeTerms`: an app that stopped answering must
+        // not be able to wedge the queue shut. An incoming app that will not
+        // say what it wants is attached as nothing; accepted scopes it no
         // longer declares are dropped.
         bool ok;
-        HookOffer memory offer;
+        Manifest memory offer;
         if (reading != address(0)) {
-            (ok, offer) = _tryReadHook(hookChanges ? next : current);
+            (ok, offer) = _tryReadManifest(appChanges ? next : current);
         }
-        uint8 acceptedPermissions = q.hookPermissions;
+        uint16 acceptedScopes = q.scopes;
 
-        uint8 applied = q.applyQueued(_taxTerms(), _hookTerms(), _nextTaxTerms(), _nextHookTerms());
-        HookOffer storage live = _hookOffer();
+        // Told BEFORE the swap, while the slot's terms still describe the app
+        // being removed — so `ctx.appTerms` is its own configuration, and it can
+        // close whatever it opened at install. Never fatal: see
+        // {Scopes-onUninstall}.
+        if (appChanges && current.target != address(0)) {
+            _uninstall(current);
+        }
 
-        if (hookChanges) {
-            applied &= ~TermsLib.HOOK_PERMISSIONS;
+        uint8 applied = q.applyQueued(_taxTerms(), _appTerms(), _nextTaxTerms(), _nextAppTerms());
+        Manifest storage live = _manifest();
+
+        if (appChanges) {
+            applied &= ~TermsLib.SCOPES;
             if (next.target != address(0) && !ok) {
-                _hookTerms().target = address(0);
-                _hookTerms().config = bytes32(0);
-                emit HookDetached(next.target);
-                offer = HookOffer(0, 0, address(0));
+                _appTerms().target = address(0);
+                _appTerms().settings = bytes32(0);
+                emit AppDropped(next.target);
+                offer = Manifest(0, 0, address(0));
             }
-            live.permissions = offer.permissions;
+            live.scopes = offer.scopes;
             live.feeBps = offer.feeBps;
             live.feeRecipient = offer.feeRecipient;
-        } else if (permissionsChange) {
-            if (ok && offer.permissions == acceptedPermissions) {
-                live.permissions = acceptedPermissions;
+        } else if (scopesChange) {
+            if (ok && offer.scopes == acceptedScopes) {
+                live.scopes = acceptedScopes;
             } else {
-                applied &= ~TermsLib.HOOK_PERMISSIONS;
-                emit HookPermissionsDropped(current.target, acceptedPermissions);
+                applied &= ~TermsLib.SCOPES;
+                emit ScopesDropped(current.target, acceptedScopes);
             }
         }
 
-        emit TermsApplied(_taxTerms(), _hookTerms(), live, applied);
+        emit TermsApplied(_taxTerms(), _appTerms(), live, applied);
 
         // Told to the caller rather than sent from here: a buy applies terms
         // BEFORE it seats anybody, so a context built now would hand the
-        // incoming hook the outgoing occupant. The caller tells it once the
+        // incoming app the outgoing occupant. The caller tells it once the
         // seat is settled.
-        attached = hookChanges && _hookTerms().target != address(0);
+        attached = appChanges && _appTerms().target != address(0);
     }
 
-    /// @dev Tell a newly attached hook, if it asked to be told. Only ever
+    /**
+     * @dev Tell the outgoing app it is being removed, if it asked to be told.
+     *
+     *      Capped and swallowed even for a `strict` app, unlike every other
+     *      callback it declared. An app able to revert here is an app a manager
+     *      can never replace: the removal is the one action that must not
+     *      depend on the thing being removed.
+     */
+    function _uninstall(AppTerms memory outgoing) internal {
+        if (_manifest().scopes & F_ON_UNINSTALL == 0) return;
+        (bool ok, ) = outgoing.target.call{gas: APP_GAS}(
+            abi.encodeCall(
+                ISlotApp.onUninstall,
+                (_ctx(msg.sender, _occupancy().occupant, 0, 0))
+            )
+        );
+        if (!ok) emit AppCallFailed(outgoing.target, ISlotApp.onUninstall.selector);
+    }
+
+    /// @dev Tell a newly attached app, if it asked to be told. Only ever
     ///      called where a seat is taken, never on an eviction.
-    function _afterAttach(
+    function _onInstall(
         address account,
         uint256 price_,
         uint256 depositAmount
     ) internal {
         _after(
-            F_AFTER_ATTACH,
+            F_ON_INSTALL,
             abi.encodeCall(
-                ISlotHook.afterAttach,
+                ISlotApp.onInstall,
                 (_ctx(msg.sender, account, price_, depositAmount))
             )
         );
@@ -303,9 +330,9 @@ abstract contract SlotAccounting is SlotHooks {
     }
 
     /**
-     * @dev Pay out collected rent: the hook's accepted fee to its fee
+     * @dev Pay out collected rent: the app's accepted fee to its fee
      *      recipient, the rest to the recipient. Both through `_payOrCredit`, so
-     *      this never reverts and makes no call into the hook itself.
+     *      this never reverts and makes no call into the app itself.
      */
     function _flush() internal {
         Ledger storage l = _ledger();
@@ -313,11 +340,11 @@ abstract contract SlotAccounting is SlotHooks {
         if (amount == 0) return;
         l.collectedTax = 0;
 
-        HookOffer storage h = _hookOffer();
+        Manifest storage h = _manifest();
         uint256 fee = Math.mulDiv(amount, h.feeBps, BASIS_POINTS);
         if (fee > 0) {
             _payOrCredit(h.feeRecipient, fee);
-            emit HookFeePaid(_hookTerms().target, h.feeRecipient, fee);
+            emit AppFeePaid(_appTerms().target, h.feeRecipient, fee);
         }
 
         address recipient = _taxTerms().recipient;

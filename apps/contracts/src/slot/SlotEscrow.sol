@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ISlotHook} from "../interfaces/ISlotHook.sol";
+import {ISlotApp} from "../interfaces/ISlotApp.sol";
 import "../errors/SlotErrors.sol";
 import {SlotOccupancy} from "./SlotOccupancy.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
@@ -35,7 +35,7 @@ abstract contract SlotEscrow is SlotOccupancy {
         _before(
             F_BEFORE_SELF_ASSESS,
             abi.encodeCall(
-                ISlotHook.beforeSelfAssess,
+                ISlotApp.beforeSelfAssess,
                 (_ctx(msg.sender, o.occupant, newPrice, o.deposit))
             )
         );
@@ -49,7 +49,7 @@ abstract contract SlotEscrow is SlotOccupancy {
 
     /// @notice Add to the occupant's escrow. Permissionless — anyone may fund
     ///         a slot, which is what makes an external keeper possible with no
-    ///         protocol permission at all.
+    ///         protocol scope at all.
     function topUp(uint256 amount) external payable nonReentrant {
         Occupancy storage o = _occupancy();
         if (o.occupant == address(0)) revert Vacant();
@@ -98,7 +98,7 @@ abstract contract SlotEscrow is SlotOccupancy {
 
     // ─── money out ──────────────────────────────────────────────────────────
 
-    /// @notice Pay out collected rent: the hook fee, then the recipient.
+    /// @notice Pay out collected rent: the app fee, then the recipient.
     ///         Anyone may call.
     function collect() external nonReentrant {
         _settle();

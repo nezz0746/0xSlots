@@ -3,7 +3,7 @@
 // Almost everything here comes straight from `./generated`, which
 // `wagmi generate` writes from the Foundry build and the deployment records.
 // This file exists for the four things codegen cannot know: the widened types,
-// what to do when a contract is deployed nowhere, which hooks to offer by name,
+// what to do when a contract is deployed nowhere, which apps to offer by name,
 // and the one address no deploy script writes.
 
 import type { Address } from "viem";
@@ -79,49 +79,49 @@ export function deployBlockOf(
 }
 
 /**
- * The one `MinimumTenureHook` per chain.
+ * The one `MinimumTenureApp` per chain.
  *
  * ONE, now, where there used to be one per duration behind a CREATE2 factory.
- * The window a slot enforces is its own `hookData`, so every duration is served
+ * The window a slot enforces is its own `settings`, so every duration is served
  * by this address — which is why the factory, the predicted-address dance and
  * the "this duration is not deployed yet, expect two transactions" branch in
  * the create form are all gone.
  *
- * A client attaching it supplies the duration as `hookData`, 32 bytes,
- * big-endian seconds. The hook refuses zero, at creation, rather than attaching
+ * A client attaching it supplies the duration as `settings`, 32 bytes,
+ * big-endian seconds. The app refuses zero, at creation, rather than attaching
  * and vetoing every buy afterwards.
  */
-export const minimumTenureHookAddress = map("minimumTenureHookAddress");
+export const minimumTenureAppAddress = map("minimumTenureAppAddress");
 
-export interface KnownHook {
+export interface KnownApp {
   address: Address;
   name: string;
   /** One line, written for whoever is about to attach it to their slot. */
   description: string;
   /** Who maintains it. "0xSlots" is stock; anything else is somebody else's. */
   by: string;
-  /** Where the project behind the hook lives, when it has somewhere. */
+  /** Where the project behind the app lives, when it has somewhere. */
   url?: string;
   /**
    * Its mark, for a client that has room to show one.
    *
-   * Absolute for a third party, and app-relative for a stock hook — which
-   * makes the shipping app's own logo the mark of the hooks it maintains,
+   * Absolute for a third party, and app-relative for a stock app — which
+   * makes the shipping app's own logo the mark of the apps it maintains,
    * without this package having to know which app is rendering it.
    */
   logo?: string;
 }
 
 /**
- * The hooks this client can offer BY NAME, per chain.
+ * The apps this client can offer BY NAME, per chain.
  *
  * Derived, not typed. This was a hand-written array with one entry, for anvil,
  * naming an address the local deploy had long since stopped producing — so the
- * only hook the dropdown ever offered by name was a dead one, and no hook was
- * offered on any real chain at all. A hook now appears on exactly the chains it
+ * only app the dropdown ever offered by name was a dead one, and no app was
+ * offered on any real chain at all. A app now appears on exactly the chains it
  * is deployed to, because the deployment records say so.
  *
- * Adding a hook is one entry here plus a line in `DeployProtocol`. It then
+ * Adding a app is one entry here plus a line in `DeployProtocol`. It then
  * appears on every chain the protocol reaches, with no per-chain edit.
  */
 const catalogue: readonly {
@@ -142,7 +142,7 @@ const catalogue: readonly {
     logo: "https://adland.space/logo.png",
   },
   {
-    addresses: minimumTenureHookAddress,
+    addresses: minimumTenureAppAddress,
     name: "Minimum tenure",
     description:
       "Gives a new occupant a window they choose. Inside it, taking the slot costs a large premium on their price, and they cannot cut it.",
@@ -151,9 +151,9 @@ const catalogue: readonly {
   },
 ];
 
-export const knownHooks: Partial<Record<number, readonly KnownHook[]>> =
+export const knownApps: Partial<Record<number, readonly KnownApp[]>> =
   (() => {
-    const out: Record<number, KnownHook[]> = {};
+    const out: Record<number, KnownApp[]> = {};
     for (const c of catalogue)
       for (const [id, address] of Object.entries(c.addresses)) {
         (out[Number(id)] ??= []).push({
@@ -168,13 +168,13 @@ export const knownHooks: Partial<Record<number, readonly KnownHook[]>> =
     return out;
   })();
 
-/** The known hook at `address`, if this client can name it. */
-export function findKnownHook(
+/** The known app at `address`, if this client can name it. */
+export function findKnownApp(
   chainId: number,
   address: Address | undefined,
-): KnownHook | undefined {
+): KnownApp | undefined {
   if (!address) return undefined;
-  return knownHooks[chainId]?.find(
+  return knownApps[chainId]?.find(
     (h) => h.address.toLowerCase() === address.toLowerCase(),
   );
 }

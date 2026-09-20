@@ -1,30 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, HookTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
-import {MinimumTenureHook} from "../../src/hooks/MinimumTenureHook.sol";
-import {HookBounds, HookDescriptor} from "../../src/interfaces/IDescribedHook.sol";
-import {MinimumTenure} from "../../src/hooks/MinimumTenure.sol";
-import {SlotContext} from "../../src/interfaces/ISlotHook.sol";
-import {AdConfig, ModerationMode} from "../../src/hooks/adland/IAdLand.sol";
+import {AdLand} from "../../src/apps/adland/AdLand.sol";
+import {MinimumTenureApp} from "../../src/apps/MinimumTenureApp.sol";
+import {MinimumTenure} from "../../src/apps/MinimumTenure.sol";
+import {SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {AdConfig, ModerationMode} from "../../src/apps/adland/IAdLand.sol";
 
 /**
- * AdLand enforcing a minimum tenure, on the one hook a slot is allowed.
+ * AdLand enforcing a minimum tenure, on the one app a slot is allowed.
  *
  * An advertising slot wants both: creatives cleared when a tenure ends, AND a
  * window in which the advertiser who just paid cannot be outbid off the wall.
- * A slot takes one hook, so AdLand carries both — the rule from
- * {MinimumTenure}, shared with {MinimumTenureHook} rather than reimplemented.
+ * A slot takes one app, so AdLand carries both — the rule from
+ * {MinimumTenure}, shared with {MinimumTenureApp} rather than reimplemented.
  *
  * The window is `hookData`, and ZERO means none. That is what keeps the slots
- * already attached to AdLand working: they were configured when this hook took
+ * already attached to AdLand working: they were configured when this app took
  * no data at all.
  */
 contract AdLandTenureTest is Test {
@@ -65,7 +64,7 @@ contract AdLandTenureTest is Test {
     ///      a slot's word is the hash that names it.
     function _config(uint256 window) internal returns (bytes32) {
         if (window == 0) return bytes32(0);
-        return adland.registerHookConfig(
+        return adland.registerSettings(
             abi.encode(
                 AdConfig({
                     tenureWindow: uint64(window),
@@ -88,9 +87,9 @@ contract AdLandTenureTest is Test {
                         SlotInit({
                             currency: IERC20(address(0)),
                             manager: address(this),
-                            mutableTax: true, mutableRecipient: true, mutableHook: true,
+                            mutableTax: true, mutableRecipient: true, mutableApp: true,
                             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-                            hookTerms: HookTerms({target: address(adland), config: hookData})
+                            appTerms: AppTerms({target: address(adland), settings: hookData})
                         })
                     )
                 )
@@ -164,7 +163,7 @@ contract AdLandTenureTest is Test {
     }
 
     /// @notice Creatives still work on a slot that also enforces tenure.
-    /// @dev The point of the whole exercise: one hook, both behaviours.
+    /// @dev The point of the whole exercise: one app, both behaviours.
     function test_TheCreativeStillPublishesAndClears() public {
         Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
@@ -222,7 +221,7 @@ contract AdLandTenureTest is Test {
         SlotContext memory forged;
         forged.slot = address(s);
         forged.account = bob;
-        forged.hookTerms = HookTerms({target: address(adland), config: _config(WINDOW)});
+        forged.appTerms = AppTerms({target: address(adland), settings: _config(WINDOW)});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         adland.afterRelease(forged);
@@ -232,7 +231,7 @@ contract AdLandTenureTest is Test {
     // ── without one ─────────────────────────────────────────────────────────
 
     /// @notice Zero data is no window, which is every AdLand slot already on
-    ///         chain. They were attached before this hook took any data.
+    ///         chain. They were attached before this app took any data.
     function test_ASlotWithNoWindowIsUnaffected() public {
         Slot s = _slot(0);
         _take(s, alice, 1 ether);
@@ -269,65 +268,92 @@ contract AdLandTenureTest is Test {
     }
 
     /**
-     * @notice A consumer can tell that an AdLand slot enforces tenure, and how
-     *         to configure one.
+     * @notice The definition is enough to build a form nobody hard-coded: the
+     *         three fields a slot registers together, in encoding order.
      */
-    function test_AdLandAnnouncesBothFamilies() public view {
-        HookDescriptor[] memory d = adland.descriptors();
-        assertEq(d.length, 2, "creatives and tenure");
-        assertEq(d[0].family, adland.FAMILY(), "its own family carries the schema");
+    function test_TheDefinitionDescribesTheWholeConfiguration() public view {
+        string memory d = adland.definition();
+
+        assertEq(vm.parseJsonString(d, ".settings.title"), "AdLand");
         assertEq(
-            d[1].family,
-            keccak256("slots.hook.minimum-tenure"),
-            "and the tenure rule, under the family it has always used"
+            vm.parseJsonString(d, '.settings["x-settings-encoding"]'),
+            "registered",
+            "three values do not fit a word, so the slot holds their id"
+        );
+        assertTrue(vm.parseJsonBool(d, '.settings["x-optional"]'), "a slot may configure nothing");
+
+        // In ENCODING order: what `abi.encode` and `registerSettings` expect.
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].name"), "tenureWindow");
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].type"), "uint64");
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][1].name"), "moderation");
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][1].type"), "uint8");
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][2].name"), "key");
+        assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][2].type"), "bytes32");
+
+        assertEq(
+            vm.parseJsonString(d, ".settings.properties.tenureWindow[\'x-unit\']"),
+            "seconds",
+            "so a client shows 7 days, not 604800"
         );
     }
 
-    /// @notice The family is the rule's, so both hosts answer identically.
-    function test_BothHostsNameTheSameFamily() public {
-        MinimumTenureHook standalone = new MinimumTenureHook();
-        assertEq(standalone.FAMILY(), adland.TENURE_FAMILY());
+    /// @notice Every value is a string, so no client rounds a `uint64`.
+    function test_EveryValueIsAStringWithAPattern() public view {
+        string memory d = adland.definition();
+        assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.type"), "string");
+        assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.pattern"), "^[0-9]+$");
         assertEq(
-            standalone.DESCRIPTOR_VERSION(),
-            adland.TENURE_DESCRIPTOR_VERSION()
+            vm.parseJsonString(d, ".settings.properties.key.pattern"),
+            "^0x[0-9a-fA-F]{64}$"
         );
     }
 
     /**
-     * @notice The schema is enough to build a form nobody hard-coded: the three
-     *         fields a slot registers together.
+     * @notice Both hosts of the rule are recognisable as the same rule.
+     *
+     * @dev By the field's `x-semantic` tag, not by the contract: an application
+     *      that knows what a minimum tenure is finds it wherever it is hosted,
+     *      and under whatever name that host gave the field.
      */
-    function test_TheSchemaDescribesTheWholeConfiguration() public view {
-        HookDescriptor[] memory d = adland.descriptors();
-        assertEq(d[0].signature, "uint64 tenureWindow, uint8 moderation, bytes32 key");
+    function test_BothHostsTagTheWindowTheSameWay() public {
+        MinimumTenureApp standalone = new MinimumTenureApp();
 
-        HookBounds[] memory b = abi.decode(d[0].data, (HookBounds[]));
-        assertEq(b.length, 3);
-        assertEq(b[0].name, "tenureWindow");
-        assertEq(b[0].unit, "seconds", "so a client shows 7 days, not 604800");
-        assertEq(b[0].max, adland.MAX_TENURE());
-        assertEq(b[1].name, "moderation");
-        assertEq(b[1].max, 2, "three modes");
-        assertEq(b[2].name, "key");
+        assertEq(
+            vm.parseJsonString(adland.definition(), ".settings.properties.tenureWindow[\'x-semantic\']"),
+            "minimum-tenure"
+        );
+        assertEq(
+            vm.parseJsonString(standalone.definition(), ".settings.properties.window[\'x-semantic\']"),
+            "minimum-tenure"
+        );
+        assertEq(
+            vm.parseJsonString(standalone.definition(), '.settings["x-settings-encoding"]'),
+            "inline",
+            "one field fills the word, so there is nothing to register"
+        );
     }
 
     /**
      * @notice The published bounds are the enforced bounds.
      *
      * @dev A schema that drifts from the check is worse than none: the form
-     *      accepts a value and the transaction refuses it.
+     *      accepts a value and the transaction refuses it. The maximum is
+     *      interpolated from `MAX_TENURE`, which is what `tenureOf` reads.
      */
     function test_TheSchemaCannotDriftFromTheCheck() public {
-        HookBounds[] memory b = abi.decode(adland.descriptors()[0].data, (HookBounds[]));
+        uint256 max = vm.parseUint(
+            vm.parseJsonString(adland.definition(), ".settings.properties.tenureWindow[\'x-maximum\']")
+        );
+        assertEq(max, adland.MAX_TENURE());
 
         // The top of the published range is accepted.
-        adland.validateHookConfig(_config(b[0].max));
+        adland.checkSettings(_config(max));
 
         // One past it is not, and the revert names the same number.
-        bytes32 tooLong = _config(b[0].max + 1);
+        bytes32 tooLong = _config(max + 1);
         vm.expectRevert(
-            abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, b[0].max)
+            abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, max)
         );
-        adland.validateHookConfig(tooLong);
+        adland.checkSettings(tooLong);
     }
 }
