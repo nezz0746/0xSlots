@@ -314,7 +314,7 @@ const HOOKS_QUERY = /* GraphQL */ `
  * modules and now has exactly ONE app, so this is a filter dimension with one
  * value per slot rather than many.
  */
-export function useHooks() {
+export function useApps() {
   const { chainId } = useChain();
 
   return useQuery({

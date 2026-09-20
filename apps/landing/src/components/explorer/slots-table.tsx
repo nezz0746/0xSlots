@@ -33,7 +33,7 @@ import type { SlotFilters, SlotSort } from "@/hooks/use-explorer";
 import {
   useChainClock,
   useExplorerSlots,
-  useHooks,
+  useApps,
 } from "@/hooks/use-explorer";
 import { loadStorage, saveStorage } from "@/lib/storage";
 import { truncateAddress } from "@/utils";
@@ -79,7 +79,7 @@ export function SlotsTable() {
   const [addressField, setAddressField] = useState<
     "recipient" | "occupant" | null
   >(null);
-  const { data: apps } = useHooks();
+  const { data: apps } = useApps();
   // One clock for every row — see `SlotRow`.
   const now = useChainClock();
 

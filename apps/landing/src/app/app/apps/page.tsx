@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
 import { NavLink } from "@/context/navigation";
-import { useHooks } from "@/hooks/use-explorer";
+import { useApps } from "@/hooks/use-explorer";
 import { useAppCheck } from "@/hooks/use-app-check";
 import {
   describeSeconds,
@@ -39,7 +39,7 @@ import {
  * `checkSettings` itself. The name and the sentence are the only editorial
  * content, and they are the only part that could ever be out of date.
  */
-export default function HooksPage() {
+export default function AppsPage() {
   const { chainId } = useChain();
   const chain = CHAINS.find((c) => c.id === chainId);
   const named = knownApps[chainId] ?? [];
@@ -47,7 +47,7 @@ export default function HooksPage() {
   // Every app any slot on this chain points at, whether or not this app can
   // name it. The two lists together are the honest picture: a catalogue alone
   // would imply these are the only ones, and a slot may point at any address.
-  const { data: onChain } = useHooks();
+  const { data: onChain } = useApps();
   const namedSet = new Set(named.map((h) => h.address.toLowerCase()));
   const unnamed = (onChain ?? []).filter(
     (h) => !namedSet.has(h.id.toLowerCase()),
