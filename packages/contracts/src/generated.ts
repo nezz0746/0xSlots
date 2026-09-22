@@ -1340,7 +1340,7 @@ export const adLandAbi = [
  *
  */
 export const adLandAddress = {
-  31337: '0x8d1cBDD4a1fDcA4bF735b9f73eecDbaB691E41aF',
+  31337: '0xa9855F98c0A5346BA266472532a9830B40230Cc0',
 } as const
 
 /**
@@ -1352,6 +1352,9 @@ export const adLandConfig = { address: adLandAddress, abi: adLandAbi } as const
 // MinimumTenureApp
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/**
+ *
+ */
 export const minimumTenureAppAbi = [
   {
     type: 'function',
@@ -1731,6 +1734,21 @@ export const minimumTenureAppAbi = [
     name: 'TenureUnderfunded',
   },
 ] as const
+
+/**
+ *
+ */
+export const minimumTenureAppAddress = {
+  31337: '0x933BBE9b00C5323a827B8A0d5B70C7E237b50a83',
+} as const
+
+/**
+ *
+ */
+export const minimumTenureAppConfig = {
+  address: minimumTenureAppAddress,
+  abi: minimumTenureAppAbi,
+} as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // OfferBook
@@ -3492,7 +3510,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x0fC7ccf08ce3D67e55c5D9D631a970F7fD8407C0',
+  31337: '0x4cfbe67dC971ee80c9d00280E9ecF8097dAA524d',
 } as const
 
 /**
@@ -4776,7 +4794,7 @@ export const slotBoundNftFactoryAbi = [
  *
  */
 export const slotBoundNftFactoryAddress = {
-  31337: '0x93F9a6a36EA6fE5522602FfF1F1DfBDa02e75D58',
+  31337: '0xC49DBEcD0072Ebd7a1808Aa61761D47C0F178414',
 } as const
 
 /**
@@ -5632,7 +5650,7 @@ export const slotBoundNftWrapperAbi = [
  *
  */
 export const slotBoundNftWrapperAddress = {
-  31337: '0x3C6bB301e2A54717b984A72BabE1449469D74faC',
+  31337: '0x3F71d09fF751E55E6f0e5563Aac50e7F0F7FcBAD',
 } as const
 
 /**
@@ -6557,7 +6575,7 @@ export const slotCollectiveAbi = [
  *
  */
 export const slotCollectiveAddress = {
-  31337: '0xCffCA5F6A8b05c518EdFcF6654ea69ee8E832F72',
+  31337: '0x8680067792a5B785762A1C6430e992f2Cb4e3bd9',
 } as const
 
 /**
@@ -6833,7 +6851,7 @@ export const slotCollectiveFactoryAbi = [
  *
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0xF21B4453631131476378026E8C4856a2B6874D4f',
+  31337: '0x84eF6De6EbefE8c4892A01e2ee644771C423CC23',
 } as const
 
 /**
@@ -7122,7 +7140,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0x708C5DcAffce6C49328e733A050952667a6CD43c',
+  31337: '0x1B777E539F5fe5E2D7d3FBb167D5bCA615Be487F',
 } as const
 
 /**
@@ -7335,31 +7353,31 @@ export const slotsTestTokenConfig = {
  */
 export const deployBlocks = {
   AdLand: {
-    '31337': 0,
+    '31337': 4,
   },
-  MinimumTenureHook: {
-    '31337': 0,
+  MinimumTenureApp: {
+    '31337': 4,
   },
   OfferBook: {
-    '31337': 0,
+    '31337': 4,
   },
   Slot: {
-    '31337': 0,
+    '31337': 4,
   },
   SlotBoundNFTFactory: {
-    '31337': 0,
+    '31337': 4,
   },
   SlotBoundNFTWrapper: {
-    '31337': 0,
+    '31337': 4,
   },
   SlotCollective: {
-    '31337': 0,
+    '31337': 4,
   },
   SlotCollectiveFactory: {
-    '31337': 0,
+    '31337': 4,
   },
   SlotFactory: {
-    '31337': 0,
+    '31337': 4,
   },
   SlotsTestToken: {
     '31337': 0,

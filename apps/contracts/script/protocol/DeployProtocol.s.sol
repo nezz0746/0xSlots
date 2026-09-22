@@ -41,7 +41,7 @@ import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
  *      ── The one thing that must match across chains ─────────────────────
  *
  *      A proxy's initcode contains its initializer calldata, which contains
- *      the admin. Same admin everywhere or the proxies diverge. The settings
+ *      the admin. Same admin everywhere or the proxies diverge. The config
  *      README says so, and a zero admin is refused before anything is sent.
  */
 contract DeployProtocol is ProtocolConfig {
