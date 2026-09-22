@@ -45,7 +45,7 @@ type Actions = ReturnType<typeof useSlotsAction>;
  * valuation costs to hold, and how long it stays funded afterwards.
  *
  * Both rules were re-read against `Slot.sol` during the port and both still
- * hold verbatim under the app-based protocol — only the helper's name changed,
+ * hold verbatim under the v1 protocol — only the helper's name changed,
  * from `_enforceMinDepositExisting` to `_requireFunded`.
  */
 

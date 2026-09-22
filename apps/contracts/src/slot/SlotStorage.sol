@@ -7,7 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {SlotConstants} from "./SlotConstants.sol";
 import {ISlotEvents} from "../interfaces/ISlotEvents.sol";
-import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
 import {TermsQueue} from "../libraries/TermsLib.sol";
 import "../errors/SlotErrors.sol";
 
@@ -17,7 +17,7 @@ struct Settings {
     address manager;
     bool mutableTax;
     bool mutableRecipient;
-    bool mutableApp;
+    bool mutableModule;
 }
 
 /// @notice Who holds the slot, at what price, funded by how much.
@@ -63,18 +63,18 @@ abstract contract SlotStorage is
     /// @custom:storage-location erc7201:slots.terms.tax
     bytes32 private constant TAX_TERMS =
         0x9ced1b0fc58b3fce277f0e66820898812467bac04a43b3f7986c99b5a310c200;
-    /// @custom:storage-location erc7201:slots.terms.app
-    bytes32 private constant APP =
-        0xa720ce30f2f76ea33fe161ca5c8b954c1897ab42629cd4818e7b51fd9afede00;
-    /// @custom:storage-location erc7201:slots.app.offer
+    /// @custom:storage-location erc7201:slots.terms.module
+    bytes32 private constant MODULE =
+        0x6e2c248c6ad3808f2026b5e56231dce3bac9bc41e931114e49cf410c3adfa200;
+    /// @custom:storage-location erc7201:slots.module.manifest
     bytes32 private constant MANIFEST =
-        0x7091cf4ba863a5a9b217219464dfd46ef26b30975ee445b73741b197c3a9e400;
+        0x99b5ec0ea69a4a3ef3d4d212549c40394931a4a31277b53f45146f31040b4900;
     /// @custom:storage-location erc7201:slots.next.tax
     bytes32 private constant NEXT_TAX_TERMS =
         0x1e619fe027dd60ed86eac21a27ef124c5a4e8d3dd02b3b53f9082a4582fc8a00;
-    /// @custom:storage-location erc7201:slots.next.app
-    bytes32 private constant NEXT_APP =
-        0xd2dc278a1156089438bcf43efefbda76c5b02638aff18ea42826dc4b74055b00;
+    /// @custom:storage-location erc7201:slots.next.module
+    bytes32 private constant NEXT_MODULE =
+        0xa7945574a6263ae4eeeddef588b6b714dd7c2446bb67e757f7772e1bad0ead00;
     /// @custom:storage-location erc7201:slots.queue
     bytes32 private constant QUEUE =
         0xe9f1ac798b7198349ced27e440d004066b641454823f46f5452894d62d456d00;
@@ -97,13 +97,13 @@ abstract contract SlotStorage is
         }
     }
 
-    function _appTerms() internal pure returns (AppTerms storage $) {
+    function _moduleTerms() internal pure returns (ModuleTerms storage $) {
         assembly ("memory-safe") {
-            $.slot := APP
+            $.slot := MODULE
         }
     }
 
-    /// @dev The app's offer as this slot accepted it.
+    /// @dev The module's manifest as this slot accepted it.
     function _manifest() internal pure returns (Manifest storage $) {
         assembly ("memory-safe") {
             $.slot := MANIFEST
@@ -116,9 +116,9 @@ abstract contract SlotStorage is
         }
     }
 
-    function _nextAppTerms() internal pure returns (AppTerms storage $) {
+    function _nextModuleTerms() internal pure returns (ModuleTerms storage $) {
         assembly ("memory-safe") {
-            $.slot := NEXT_APP
+            $.slot := NEXT_MODULE
         }
     }
 

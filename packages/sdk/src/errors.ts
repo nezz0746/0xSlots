@@ -18,7 +18,7 @@ export class SlotsError extends Error {
  *
  * viem puts the decoded error on a `ContractFunctionRevertedError` several
  * links down the cause chain, and leaves `shortMessage` at the useless
- * `The contract function "buy" reverted.` — so an app's `TenureNotElapsed`
+ * `The contract function "buy" reverted.` — so a module's `TenureNotElapsed`
  * reads identically to running out of gas unless this is dug out. Walks the
  * chain rather than reaching for a fixed depth, because how deep it sits
  * depends on whether the call was a simulation or a send.

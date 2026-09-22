@@ -17,8 +17,8 @@ import {
   zeroHash,
 } from "viem";
 import { SlotsError } from "../errors";
-import type { Manifest, AppTerms } from "./client";
-import { NO_APP } from "./client";
+import type { Manifest, ModuleTerms } from "./client";
+import { NO_MODULE } from "./client";
 
 /**
  * A collective's payout split. `totalAllocation` is derived from the
@@ -35,7 +35,7 @@ export interface CollectiveSplit {
 export interface CollectiveRoles {
   admin: Address;
   taxManagers?: readonly Address[];
-  appManagers?: readonly Address[];
+  policyManagers?: readonly Address[];
   splitManagers?: readonly Address[];
 }
 
@@ -48,13 +48,13 @@ export interface CreateCollectiveParams {
 export const SPLITS_NATIVE_TOKEN: Address = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 /** The roles a collective recognises, by name. */
-export type CollectiveRole = "admin" | "tax" | "app" | "split";
+export type CollectiveRole = "admin" | "tax" | "policy" | "split";
 
 /** The on-chain role ids. `admin` is OpenZeppelin's `DEFAULT_ADMIN_ROLE`. */
 export const COLLECTIVE_ROLES: Record<CollectiveRole, Hex> = {
   admin: zeroHash,
   tax: keccak256(toBytes("TAX_MANAGER_ROLE")),
-  app: keccak256(toBytes("POLICY_MANAGER_ROLE")),
+  policy: keccak256(toBytes("POLICY_MANAGER_ROLE")),
   split: keccak256(toBytes("SPLIT_MANAGER_ROLE")),
 };
 
@@ -209,7 +209,7 @@ export class CollectivesClient {
       {
         admin: params.roles.admin,
         taxManagers: [...(params.roles.taxManagers ?? [])],
-        appManagers: [...(params.roles.appManagers ?? [])],
+        policyManagers: [...(params.roles.policyManagers ?? [])],
         splitManagers: [...(params.roles.splitManagers ?? [])],
       },
     ] as const;
@@ -252,24 +252,24 @@ export class CollectivesClient {
   }
 
   /**
-   * Queue a new app on slots this collective manages. App managers or admin.
-   * `NO_APP` detaches.
+   * Queue a new module on slots this collective manages. Module managers or admin.
+   * `NO_MODULE` detaches.
    */
-  async proposeApp(
+  async proposeModule(
     collective: Address,
     slots: Address | readonly Address[],
-    appTerms: AppTerms = NO_APP,
+    moduleTerms: ModuleTerms = NO_MODULE,
   ): Promise<Hash> {
     const list = many(slots);
-    this.assertSlots(list, "proposeApp");
+    this.assertSlots(list, "proposeModule");
     return list.length === 1
-      ? this.write(collective, "proposeApp", [list[0], appTerms])
-      : this.write(collective, "proposeAppBatch", [list, appTerms]);
+      ? this.write(collective, "proposeModule", [list[0], moduleTerms])
+      : this.write(collective, "proposeModuleBatch", [list, moduleTerms]);
   }
 
   /**
-   * Accept the attached app's current offer on `slot`. App managers or admin.
-   * `expected` is the offer reviewed; see `SlotsClient.grantStatus`.
+   * Accept the attached module's current offer on `slot`. Module managers or admin.
+   * `expected` is the manifest reviewed; see `SlotsClient.grantStatus`.
    */
   grant(collective: Address, slot: Address, expected: Manifest): Promise<Hash> {
     return this.write(collective, "grant", [slot, expected]);
@@ -280,9 +280,9 @@ export class CollectivesClient {
     return this.cancel(collective, slots, "cancelTaxProposal");
   }
 
-  /** Drop a queued app change. */
-  cancelAppProposal(collective: Address, slots: Address | readonly Address[]): Promise<Hash> {
-    return this.cancel(collective, slots, "cancelAppProposal");
+  /** Drop a queued module change. */
+  cancelModuleProposal(collective: Address, slots: Address | readonly Address[]): Promise<Hash> {
+    return this.cancel(collective, slots, "cancelModuleProposal");
   }
 
   /** Drop everything queued. Admin only. */

@@ -6,7 +6,7 @@ import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
-import {AdLand} from "../../src/apps/adland/AdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 
 /**

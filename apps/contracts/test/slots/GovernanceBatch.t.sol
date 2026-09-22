@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -39,9 +39,9 @@ contract GovernanceBatchTest is Test {
             slots.push(IManagedSlot(factory.createSlot(SlotInit({
                 currency: IERC20(address(0)),
                 manager: address(gov),
-                mutableTax: true, mutableRecipient: true, mutableApp: true,
+                mutableTax: true, mutableRecipient: true, mutableModule: true,
                 taxTerms: TaxTerms({recipient: address(gov), rateBps: uint16(1000), minRunwaySeconds: uint32(1 days)}),
-                appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+                moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
             }))));
         }
         vm.warp(1_000_000);
@@ -79,9 +79,9 @@ contract GovernanceBatchTest is Test {
         withStranger[1] = IManagedSlot(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: false,
+            mutableTax: true, mutableRecipient: true, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(1000), minRunwaySeconds: uint32(1 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         })));
 
         vm.expectRevert();
@@ -93,8 +93,8 @@ contract GovernanceBatchTest is Test {
         );
     }
 
-    function test_AAppBatchMovesEverySlot() public {
-        gov.proposeAppBatch(slots, AppTerms({target: address(0), settings: bytes32(0)}));
+    function test_AModuleBatchMovesEverySlot() public {
+        gov.proposeModuleBatch(slots, ModuleTerms({target: address(0), settings: bytes32(0)}));
         for (uint256 i; i < slots.length; ++i) {
             assertTrue(Slot(payable(address(slots[i]))).getSlotInfo().pending.mask & 8 != 0);
         }
@@ -118,7 +118,7 @@ contract GovernanceBatchTest is Test {
 
     function test_ACancelAllBatchClearsBothDimensions() public {
         gov.proposeTax(slots[0], 2000);
-        gov.proposeApp(slots[0], AppTerms({target: address(0), settings: bytes32(0)}));
+        gov.proposeModule(slots[0], ModuleTerms({target: address(0), settings: bytes32(0)}));
         gov.cancelAllProposalsBatch(slots);
 
         assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pending.mask & 1 != 0);

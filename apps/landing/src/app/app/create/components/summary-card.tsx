@@ -1,4 +1,4 @@
-import { findKnownApp } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
 import { Clock, Coins, HandCoins, KeyRound, Plug } from "lucide-react";
 import { useFormContext } from "react-hook-form";
@@ -48,11 +48,11 @@ export function SummaryCard({
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
-  const hookMode = form.watch("hookMode");
-  const app = form.watch("app");
+  const moduleMode = form.watch("moduleMode");
+  const module = form.watch("module");
   const mutableTax = form.watch("mutableTax");
   const mutableRecipient = form.watch("mutableRecipient");
-  const mutableApp = form.watch("mutableApp");
+  const mutableModule = form.watch("mutableModule");
   const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
@@ -76,8 +76,8 @@ export function SummaryCard({
         ? erc20.data.name
         : null;
 
-  const knownHook = findKnownApp(chainId, app as Address);
-  const hasMutable = mutableTax || mutableRecipient || mutableApp;
+  const knownModule = findKnownModule(chainId, module as Address);
+  const hasMutable = mutableTax || mutableRecipient || mutableModule;
 
   return (
     // `self-stretch` is what makes the `sticky` below actually stick. A sticky
@@ -165,18 +165,18 @@ export function SummaryCard({
               {formatValueUnit(minDepositValue || "0", minDepositUnit)}
             </SummaryRow>
 
-            {/* App — the address; the row below says what it MEANS. */}
+            {/* Module — the address; the row below says what it MEANS. */}
             <SummaryRow
-              section="app"
-              label="App"
+              section="module"
+              label="Module"
               icon={<Plug className="size-3" />}
             >
               <span className="truncate max-w-32 inline-block align-bottom">
-                {hookMode === "none" || !app
+                {moduleMode === "none" || !module
                   ? "None"
-                  : (knownHook?.name ??
-                    (isAddress(app, { strict: false })
-                      ? truncateAddress(app)
+                  : (knownModule?.name ??
+                    (isAddress(module, { strict: false })
+                      ? truncateAddress(module)
                       : "—"))}
               </span>
             </SummaryRow>
@@ -194,7 +194,7 @@ export function SummaryCard({
                 ? [
                     mutableTax && "Tax",
                     mutableRecipient && "Recipient",
-                    mutableApp && "App",
+                    mutableModule && "Module",
                   ]
                     .filter(Boolean)
                     .join(", ")

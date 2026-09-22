@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -9,7 +9,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotApp, SlotContext, Scopes} from "../../src/interfaces/ISlotApp.sol";
+import {ISlotModule, SlotContext, Scopes} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
@@ -23,7 +23,7 @@ contract Small is ERC20 {
 }
 
 /// @dev Answers honestly until flipped, then stops answering.
-contract FlipApp is ISlotApp {
+contract FlipModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
     function checkSettings(bytes32) external pure {}
@@ -53,7 +53,7 @@ contract FlipApp is ISlotApp {
 ///
 ///      Not a revert — a SUCCESS the compiler's decoder then rejects. The
 ///      decode sits outside `try`'s catch, which is why the read is raw.
-contract ShortAnswerApp is ISlotApp {
+contract ShortAnswerModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
     function checkSettings(bytes32) external pure {}
@@ -81,7 +81,7 @@ contract ShortAnswerApp is ISlotApp {
 /// @dev Honest until flipped, then answers with eight all-ones words: scope
 ///      bits the slot does not know, which solc's decoder would reject outside
 ///      the catch.
-contract DirtyBoolApp is ISlotApp {
+contract DirtyBoolModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
     function checkSettings(bytes32) external pure {}
@@ -115,7 +115,7 @@ contract DirtyBoolApp is ISlotApp {
 
 /// @dev Honest until flipped, then refuses every configuration. The one failure
 ///      mode `try` did catch — kept so the rewrite cannot silently lose it.
-contract RejectingApp is ISlotApp {
+contract RejectingModule is ISlotModule {
     error No();
     bool public broken;
     function flip() external { broken = true; }
@@ -143,7 +143,7 @@ contract RejectingApp is ISlotApp {
 }
 
 /// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
-contract Counter is ISlotApp {
+contract Counter is ISlotModule {
     uint256 public buys;
     function checkSettings(bytes32) external pure {}
     function manifest(bytes32) external pure returns (Manifest memory o) {
@@ -206,9 +206,9 @@ contract AuditRegressionsTest is Test {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(currency),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(minDep)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
     }
 
@@ -246,42 +246,42 @@ contract AuditRegressionsTest is Test {
         );
     }
 
-    // ── 2. a hostile queued app must stop nothing ─────────────────────────
+    // ── 2. a hostile queued module must stop nothing ─────────────────────────
 
-    /// @notice An eviction lands no terms, so a queued app cannot reach it at
+    /// @notice An eviction lands no terms, so a queued module cannot reach it at
     ///         all — and the buy that does land it is not blocked either.
-    function test_APendingAppReachesNeitherLiquidationNorABuy() public {
+    function test_APendingModuleReachesNeitherLiquidationNorABuy() public {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
         s.buy(occ, PRICE, 100, 0);
         vm.stopPrank();
 
-        FlipApp h = new FlipApp();
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), AppTerms({target: address(h), settings: bytes32(0)}), uint8(8));
+        FlipModule h = new FlipModule();
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(h), settings: bytes32(0)}), uint8(8));
 
         vm.warp(block.timestamp + 3650 days);
         assertTrue(s.isInsolvent());
-        h.flip(); // the queued app stops answering
+        h.flip(); // the queued module stops answering
 
         s.liquidate(); // must not revert
-        assertTrue(s.isVacant(), "evicted despite a hostile pending app");
-        assertEq(s.app(), address(0), "nothing was attached on the way out");
+        assertTrue(s.isVacant(), "evicted despite a hostile pending module");
+        assertEq(s.module(), address(0), "nothing was attached on the way out");
         assertTrue(s.hasRipeTerms(), "and the queued change is still standing");
 
         vm.startPrank(grinder);
         token.approve(address(s), type(uint256).max);
         s.buy(grinder, PRICE, s.minDepositForBuy(PRICE), 0); // must not revert
         vm.stopPrank();
-        assertEq(s.app(), address(0), "the unreadable app was dropped, not attached");
+        assertEq(s.module(), address(0), "the unreadable module was dropped, not attached");
     }
 
     /// @dev Shared body: seat an occupant, queue `pending`, break it, and let
-    ///      the next buyer land it. Every one of these queued apps breaks the
+    ///      the next buyer land it. Every one of these queued modules breaks the
     ///      slot in a way `try` could not catch, so the assertion is simply
-    ///      that `buy` returns — an app nobody can read is attached as nothing
+    ///      that `buy` returns — a module nobody can read is attached as nothing
     ///      rather than left barring the door.
-    function _buyThroughAPendingHook(address pending, bool etchAway) internal {
+    function _buyThroughAPendingModule(address pending, bool etchAway) internal {
         Slot s = _slot(address(token), 0);
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
@@ -291,7 +291,7 @@ contract AuditRegressionsTest is Test {
         // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
         // and would refuse it otherwise. The break happens afterwards, which is
         // the whole point: the apply path cannot re-verify what it accepted.
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), AppTerms({target: pending, settings: bytes32(0)}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: pending, settings: bytes32(0)}), uint8(8));
         if (etchAway) vm.etch(pending, "");
         else IFlippable(pending).flip();
 
@@ -305,36 +305,36 @@ contract AuditRegressionsTest is Test {
         vm.stopPrank();
 
         assertEq(s.occupant(), grinder, "the buy went through");
-        assertEq(s.app(), address(0), "and the app was dropped, not attached");
-        assertEq(s.appTerms().settings, bytes32(0), "its configuration went with it");
+        assertEq(s.module(), address(0), "and the module was dropped, not attached");
+        assertEq(s.moduleTerms().settings, bytes32(0), "its configuration went with it");
     }
 
-    /// @notice A queued app with NO CODE cannot block a buy.
+    /// @notice A queued module with NO CODE cannot block a buy.
     ///
     /// @dev The `extcodesize` guard solc emits for a function returning nothing
     ///      sits BEFORE the call and outside `try`'s catch, so this reverted
     ///      straight through it. Reachable on Base today: a 7702-delegated EOA
     ///      whose delegation is revoked between `proposeTerms` and the apply.
-    function test_ACodelessPendingAppCannotBlockABuy() public {
-        _buyThroughAPendingHook(address(new FlipApp()), true);
+    function test_ACodelessPendingModuleCannotBlockABuy() public {
+        _buyThroughAPendingModule(address(new FlipModule()), true);
     }
 
-    /// @notice A queued app whose answer is too short to decode cannot block
+    /// @notice A queued module whose answer is too short to decode cannot block
     ///         an eviction. The decode is outside the catch too.
-    function test_AShortAppAnswerCannotBlockABuy() public {
-        _buyThroughAPendingHook(address(new ShortAnswerApp()), false);
+    function test_AShortModuleAnswerCannotBlockABuy() public {
+        _buyThroughAPendingModule(address(new ShortAnswerModule()), false);
     }
 
     /// @notice Nor one whose bools are neither 0 nor 1.
-    function test_ADirtyAppAnswerCannotBlockABuy() public {
-        _buyThroughAPendingHook(address(new DirtyBoolApp()), false);
+    function test_ADirtyModuleAnswerCannotBlockABuy() public {
+        _buyThroughAPendingModule(address(new DirtyBoolModule()), false);
     }
 
     /// @notice Nor one that refuses its own configuration at apply time.
     /// @dev The one failure mode `try` DID catch. Kept so the rewrite to raw
     ///      staticcalls cannot silently lose it.
-    function test_AAppRejectingItsConfigurationCannotBlockABuy() public {
-        _buyThroughAPendingHook(address(new RejectingApp()), false);
+    function test_AModuleRejectingItsConfigurationCannotBlockABuy() public {
+        _buyThroughAPendingModule(address(new RejectingModule()), false);
     }
 
 
@@ -343,9 +343,9 @@ contract AuditRegressionsTest is Test {
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(w)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
         w.mint(occ, 1_000_000);
         vm.startPrank(occ);
@@ -378,7 +378,7 @@ contract AuditRegressionsTest is Test {
 
     function test_QueuedTermsCannotBindTheNextBlocksBuyer() public {
         Slot s = _slot(address(token), 0);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);

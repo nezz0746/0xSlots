@@ -8,14 +8,14 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {Slot} from "../../src/Slot.sol";
-import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFT} from "../../src/apps/nft/SlotBoundNFT.sol";
-import {ISlotBoundNFT} from "../../src/apps/nft/ISlotBoundNFT.sol";
+import {SlotBoundNFT} from "../../src/modules/nft/SlotBoundNFT.sol";
+import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
 import {
     SlotBoundNFTFactory,
     CollectionInit
-} from "../../src/apps/nft/SlotBoundNFTFactory.sol";
+} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
 
 contract TF is ERC20 { constructor() ERC20("T","T"){} function mint(address t,uint256 a) external {_mint(t,a);} }
 

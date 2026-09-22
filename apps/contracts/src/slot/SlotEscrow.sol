@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ISlotApp} from "../interfaces/ISlotApp.sol";
+import {ISlotModule} from "../interfaces/ISlotModule.sol";
 import "../errors/SlotErrors.sol";
 import {SlotOccupancy} from "./SlotOccupancy.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
@@ -35,7 +35,7 @@ abstract contract SlotEscrow is SlotOccupancy {
         _before(
             F_BEFORE_SELF_ASSESS,
             abi.encodeCall(
-                ISlotApp.beforeSelfAssess,
+                ISlotModule.beforeSelfAssess,
                 (_ctx(msg.sender, o.occupant, newPrice, o.deposit))
             )
         );
@@ -98,7 +98,7 @@ abstract contract SlotEscrow is SlotOccupancy {
 
     // ─── money out ──────────────────────────────────────────────────────────
 
-    /// @notice Pay out collected rent: the app fee, then the recipient.
+    /// @notice Pay out collected rent: the module fee, then the recipient.
     ///         Anyone may call.
     function collect() external nonReentrant {
         _settle();

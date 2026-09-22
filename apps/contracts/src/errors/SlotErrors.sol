@@ -15,15 +15,15 @@ error InvalidManager();
 error InvalidCurrency();
 error InvalidDeposit();
 error InvalidValue();
-error InvalidApp();
-/// @dev An app fee with no one to receive it, or above 100% of the rent.
-error InvalidAppFee();
-/// @dev The app answers, but not within the stipend the slot reads it under,
+error InvalidModule();
+/// @dev A module fee with no one to receive it, or above 100% of the rent.
+error InvalidModuleFee();
+/// @dev The module answers, but not within the stipend the slot reads it under,
 ///      so attaching it would attach nothing.
 error ManifestTooExpensive();
-/// @dev The app's offer is not the one the manager reviewed.
+/// @dev The module's manifest is not the one the manager reviewed.
 error ManifestChanged();
-/// @dev The app offers nothing this slot could take.
+/// @dev The module declares nothing this slot could take.
 error NothingToAccept();
 
 error Vacant();

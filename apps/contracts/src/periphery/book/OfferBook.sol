@@ -24,8 +24,8 @@ import "./OfferBookErrors.sol";
 ///
 ///      In one transaction, so nothing can be sniped between them, and `buy`
 ///      already refunds the outgoing occupant their deposit plus the price. The
-///      slot therefore has one seating path and one set of app checks, and a
-///      app author has one door to police rather than two.
+///      slot therefore has one seating path and one set of module checks, and a
+///      module author has one door to police rather than two.
 ///
 ///      ── WHAT THE OCCUPANT GRANTS, AND WHY THIS IS NOT A PROXY ──────────
 ///
@@ -135,10 +135,10 @@ contract OfferBook is OfferBookInternals {
      *      fill. If step 2 reverts, step 1 rolls back with it and the occupant
      *      is left at the price they started at.
      *
-     *      The apps a slot has attached still get their say — `beforeSelfAssess`
+     *      The modules a slot has attached still get their say — `beforeSelfAssess`
      *      on the reprice and `beforeBuy` on the seating — and either may veto.
      *      That is the point of routing a sale through the market path rather
-     *      than around it: there is no second door for an app to have missed.
+     *      than around it: there is no second door for a module to have missed.
      *
      * @param minPrice The lowest price the seller accepts. A bidder edits their
      *        offer in place under the same id, so without it a bidder could
@@ -178,7 +178,7 @@ contract OfferBook is OfferBookInternals {
         if (held < floor_) revert TopUpRequired(floor_ - held);
 
         // Marked before any external call. The book is about to hand control to
-        // the slot, its apps and an ERC-20, and a re-entrant `acceptOffer` on
+        // the slot, its modules and an ERC-20, and a re-entrant `acceptOffer` on
         // a half-filled row is not a state worth reasoning about.
         o.filled = true;
 

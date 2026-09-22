@@ -35,8 +35,9 @@ const state = await slots.slotState(slot);
 ```
 
 One call returns occupant, price, deposit, taxOwed, isVacant, isInsolvent,
-secondsUntilLiquidation, currency, taxBps, minDepositSeconds, recipient,
-manager, hook, hookData, hookFlags, pending terms and collectedTax.
+secondsUntilLiquidation, currency, taxRateBps, minRunwaySeconds, recipient,
+manager, the three mutability flags, module, settings, manifest, scopes,
+pending terms, occupiedSince, lastSettled, collectedTax and tenureId.
 
 Prefer it over assembling individual reads. The individual getters exist
 (`price`, `deposit`, `occupant`, `taxOwed`, …) and are fine for a single figure,
@@ -48,9 +49,9 @@ polls slot state every 5s and token lists every 10s.
 ### Derived figures you will need
 
 ```ts
-rentPerMonth = (price * taxBps) / 10_000n            // the contract's own formula
+rentPerMonth = (price * taxRateBps) / 10_000n        // the contract's own formula
 escrowLeft   = deposit > taxOwed ? deposit - taxOwed : 0n
-runway       = (escrowLeft * MONTH_SECONDS * BASIS_POINTS) / (price * taxBps)
+runway       = (escrowLeft * MONTH_SECONDS * BASIS_POINTS) / (price * taxRateBps)
 ```
 
 `secondsUntilLiquidation` returns `2^256 - 1` when the escrow outlives the
@@ -62,7 +63,7 @@ arithmetic. Render that as a symbol, never as a number of days.
 
 | Action | Who | Precondition |
 |---|---|---|
-| `buy` | anyone except the sitting occupant | price > 0, funded, hook allows |
+| `buy` | anyone except the sitting occupant | price > 0, funded, module allows |
 | `selfAssess` | occupant **or** their operator | escrow still covers the floor at the new price |
 | `topUp` | **anyone** | slot not vacant |
 | `withdraw` | occupant only | what remains still covers the floor |
@@ -71,7 +72,9 @@ arithmetic. Render that as a symbol, never as a number of days.
 | `liquidate` | **anyone** | occupied, and escrow fully drained |
 | `collect` | **anyone** | some rent has accrued |
 | `claim` | **anyone**, on anyone's behalf | that address is owed a failed payout |
-| `proposeTerms` / `cancelTerms` | manager only | the dimension is mutable |
+| `proposeTerms` / `cancelTerms` | manager only | the term is mutable |
+| `grant` | manager only | the module declares a manifest the slot has not accepted |
+| `applyTerms` | occupant, or anyone once vacant | queued terms are ripe |
 | `setBaseURI` | collection owner only | slot-bound collections only |
 
 Two of these surprise people, so say it in the copy:
@@ -95,22 +98,22 @@ reads as a permissions bug rather than as a state that has not arrived.
 const cost = await slots.quoteBuy(slot, buyerAddress, depositAmount);
 ```
 
-`quoteBuy` is `(occupied ? currentPrice : 0) + deposit + arrearsOf[buyer]`.
+`quoteBuy` is `(occupied ? currentPrice : 0) + deposit + debtOf(buyer)`.
 
 **The buyer's own valuation is not part of the payment.** They pay the *sitting
-holder's* declared price, plus their deposit, plus any arrears they personally
-carry from an earlier occupancy that ran dry. On a vacant slot the charge is the
-deposit alone.
+holder's* declared price, plus their deposit, plus any debt they personally
+carry from an earlier occupancy of this slot that ran dry. On a vacant slot the
+charge is the deposit alone.
 
 Deriving this locally as `newPrice + deposit` is wrong in every case and looks
 right only while the input still equals the standing price. It also silently
-omits arrears, which live on the account and are invisible to the client.
+omits debt, which lives on the account and is invisible to the client.
 
 ### Quote for the address being seated
 
 `buy` takes an `account` to seat and is paid by `msg.sender`. They need not be
-the same — that is what lets a contract acquire a slot for someone. Arrears
-follow the **occupant**, so quote for the address being seated.
+the same — that is what lets a contract acquire a slot for someone. Debt
+follows the **occupant**, so quote for the address being seated.
 
 ### Simulate before sending
 
@@ -119,7 +122,7 @@ await slots.simulateBuy(params);   // then
 await slots.buy(params);
 ```
 
-A hook's refusal is a view revert carrying its own reason — `BuyoutBelowPremium(…)`,
+A module's refusal is a view revert carrying its own reason — `BuyoutBelowPremium(…)`,
 `TenureNotElapsed(…)`. That reason survives a simulation and nothing else. Sent
 blind, the same veto arrives as a mined transaction with no reason at all, and
 the best your UI can say is "it failed".
@@ -127,8 +130,8 @@ the best your UI can say is "it failed".
 ### The deposit is a choice, not a constant
 
 `minDepositForBuy(slot, price)` is the floor. A buyer may post more, and the
-natural unit is time: offer ×1/×2/×3 of `minDepositSeconds`, each labelled with
-the runway it buys. `depositFor(price, taxBps, window)` prices them locally so
+natural unit is time: offer ×1/×2/×3 of `minRunwaySeconds`, each labelled with
+the runway it buys. `depositFor(price, taxRateBps, window)` prices them locally so
 the options respond instantly; ask the slot for the number you actually send.
 
 ---
@@ -160,8 +163,8 @@ Compute the shortfall and fold it in silently rather than refusing:
 
 ```ts
 const settled   = deposit > taxOwed ? deposit - taxOwed : 0n;
-const floor     = depositFor(newPrice, taxBps, minDepositSeconds);
-const margin    = rentFor(600n, newPrice, taxBps);   // see §7
+const floor     = depositFor(newPrice, taxRateBps, minRunwaySeconds);
+const margin    = rentFor(600n, newPrice, taxRateBps);   // ten minutes of rent, see §7
 const shortfall = raised && settled + chosen < floor + margin
   ? floor + margin - settled - chosen : 0n;
 ```
@@ -192,16 +195,19 @@ starts a fresh tenure that approves nobody.
 
 ## 6. The manager
 
-`proposeTerms(newTaxBps, newHook, newHookData, changeTax, changeHook)` queues a
-change. It **never applies immediately**: terms ripen for `TERMS_DELAY` (1 day)
-and land at the next buy, or when the occupant lands them with `applyTerms`.
-The terms an occupant bought into hold for their whole tenure.
+`proposeTerms(slot, { taxRateBps?, recipient?, minRunwaySeconds?, moduleTerms? })`
+queues a change. It **never applies immediately**: terms ripen for
+`TERMS_DELAY` (1 day) and land at the next buy, or when the occupant lands them
+with `applyTerms`. The terms an occupant bought into hold for their whole tenure.
 
-- `hookData` travels with `changeHook`, never separately. Swapping a hook and
-  leaving the old configuration behind hands the new hook a word meant for
-  someone else.
-- Check `mutableTax` / `mutableHook` before offering the control at all. A slot
-  with both false has no manager.
+- A module's `settings` travel inside `moduleTerms`, never separately. Swapping
+  a module and leaving the old configuration behind would hand the new module a
+  word meant for someone else.
+- Check `mutableTax` / `mutableRecipient` / `mutableModule` before offering a
+  control at all. A slot with all three false has no manager.
+- When the module declares a new fee or new scopes, `grantStatus(slot)` shows
+  the difference and `grant(slot, status.declared)` accepts it. The fee changes
+  at once; scopes queue like any other term.
 - `hasRipeTerms(slot)` is the chain's answer to "will the next transition
   actually land this". `pending.appliesAt` is derived locally and is the right
   thing to *render* and the wrong thing to branch on.
@@ -309,7 +315,7 @@ runway, not three more readings.
 Colour the runway, and never with colour alone — pair it with a word
 (`31d · funded`, `29d · running low`, `0d · unfunded`). Roughly eight percent of
 men cannot separate that red from that green, and this is the figure that decides
-whether a position is safe. Use the slot's own `minDepositSeconds` as the amber
+whether a position is safe. Use the slot's own `minRunwaySeconds` as the amber
 threshold, not a round number of days: a runway shorter than one funded window
 means the slot can be taken before the window being paid for has elapsed.
 
@@ -324,11 +330,11 @@ descriptions matter, because none of these words means anything on its own.
 
 | Name | Value | Meaning |
 |---|---|---|
-| `BASIS_POINTS` | 10 000 | denominator for `taxBps` |
+| `BASIS_POINTS` | 10 000 | denominator for `taxRateBps` |
 | `MONTH_SECONDS` | 2 592 000 | the tax period is 30 days, **not** a year |
 | `MAX_TAX_BPS` | 10 000 | 100% per month |
 | `MAX_PRICE` | `type(uint128).max` | |
 | `TERMS_DELAY_SECONDS` | 86 400 | how long a manager's proposal ripens |
 | `NATIVE_CURRENCY_ADDRESS` | zero address | test with `isNativeCurrency` |
 
-Reading `taxBps` as annual understates the cost of holding by a factor of twelve.
+Reading `taxRateBps` as annual understates the cost of holding by a factor of twelve.

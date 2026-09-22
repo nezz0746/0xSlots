@@ -8,8 +8,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
-import {ISlotApp, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {ISlotModule, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {SlotMath} from "../../src/libraries/SlotMath.sol";
 import {ManifestTooExpensive} from "../../src/errors/SlotErrors.sol";
@@ -35,9 +35,9 @@ contract GasHog is ERC20 {
     }
 }
 
-/// @dev A healthy app whose configuration check is expensive but well inside
+/// @dev A healthy module whose configuration check is expensive but well inside
 ///      its stipend.
-contract HeavyApp is ISlotApp {
+contract HeavyModule is ISlotModule {
     function checkSettings(bytes32) external pure {
         uint256 x;
         for (uint256 i; i < 700; ++i) x = uint256(keccak256(abi.encode(x, i)));
@@ -61,29 +61,29 @@ contract HeavyApp is ISlotApp {
 
 }
 
-/// @notice A queued app must never be erased by a caller tuning gas.
-contract HookReadGasTest is Test {
+/// @notice A queued module must never be erased by a caller tuning gas.
+contract ModuleReadGasTest is Test {
     address sink = makeAddr("sink");
     address alice = makeAddr("alice");
 
     /// @dev Swept across gas limits, against a payout whose token transfer burns
-    ///      more than an app read's whole stipend. An eviction carries no terms,
-    ///      so whatever gas it is given, the queued app is neither attached nor
+    ///      more than a module read's whole stipend. An eviction carries no terms,
+    ///      so whatever gas it is given, the queued module is neither attached nor
     ///      erased — there is no read on this path to starve.
-    function test_AnEvictionNeitherAttachesNorErasesAQueuedApp() public {
+    function test_AnEvictionNeitherAttachesNorErasesAQueuedModule() public {
         SlotFactory factory = SlotFactory(address(new ERC1967Proxy(
             address(new SlotFactory()),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
         )));
         GasHog token = new GasHog(sink);
-        HeavyApp heavy = new HeavyApp();
+        HeavyModule heavy = new HeavyModule();
 
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(this),
-            mutableTax: false, mutableRecipient: false, mutableApp: true,
+            mutableTax: false, mutableRecipient: false, mutableModule: true,
             taxTerms: TaxTerms({recipient: sink, rateBps: 1000, minRunwaySeconds: 1 days}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
 
         token.mint(alice, 1_000 ether);
@@ -93,7 +93,7 @@ contract HookReadGasTest is Test {
         vm.stopPrank();
 
         TaxTerms memory none;
-        s.proposeTerms(none, AppTerms({target: address(heavy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(heavy), settings: bytes32(0)}), 8);
         vm.warp(block.timestamp + 30 days);
         assertTrue(s.isInsolvent());
 
@@ -102,7 +102,7 @@ contract HookReadGasTest is Test {
             uint256 snap = vm.snapshotState();
             (bool ok, ) = address(s).call{gas: g}(abi.encodeWithSignature("liquidate()"));
             if (ok) {
-                assertEq(s.app(), address(0), "an eviction attaches nothing");
+                assertEq(s.module(), address(0), "an eviction attaches nothing");
                 assertEq(s.pendingTerms().mask & 8, 8, "and erases nothing");
                 ++evicted;
             }
@@ -112,12 +112,12 @@ contract HookReadGasTest is Test {
     }
 }
 
-/// @notice A buyer cannot starve the app read to dodge the app that would
+/// @notice A buyer cannot starve the module read to dodge the module that would
 ///         gate them.
 ///
 /// @dev The claim under test: with the gas guard gone, a buyer picks a gas
-///      limit that makes the incoming app's read fail, the slot detaches the
-///      app as unreachable, and `beforeBuy` never runs. EIP-150 is what stops
+///      limit that makes the incoming module's read fail, the slot detaches the
+///      module as unreachable, and `beforeBuy` never runs. EIP-150 is what stops
 ///      it: the read is a `staticcall` with a fixed stipend, so starving it
 ///      means `63/64` of what is left is under that stipend — and the `1/64`
 ///      kept back is then far too little to finish the buy. The transaction
@@ -126,24 +126,24 @@ contract BuyGasStarvationTest is Test {
     address alice = makeAddr("alice");
     address manager = makeAddr("manager");
 
-    function test_ABuyerCannotStarveTheAppReadAndBeSeatedUnguarded() public {
+    function test_ABuyerCannotStarveTheModuleReadAndBeSeatedUnguarded() public {
         SlotFactory factory = SlotFactory(address(new ERC1967Proxy(
             address(new SlotFactory()),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
         )));
-        VetoApp veto = new VetoApp();
+        VetoModule veto = new VetoModule();
 
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, AppTerms({target: address(veto), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(veto), settings: bytes32(0)}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
@@ -158,17 +158,17 @@ contract BuyGasStarvationTest is Test {
             );
             if (ok) {
                 ++seated;
-                assertEq(s.app(), address(veto), "seated only with the app attached");
+                assertEq(s.module(), address(veto), "seated only with the module attached");
             }
             vm.revertToState(snap);
         }
-        // The app vetoes every buy, so no gas limit should ever seat anybody.
+        // The module vetoes every buy, so no gas limit should ever seat anybody.
         assertEq(seated, 0, "no gas limit slips past the veto");
     }
 }
 
 /// @dev Refuses every buy, and costs little to read.
-contract VetoApp is ISlotApp {
+contract VetoModule is ISlotModule {
     error Vetoed();
 
     function manifest(bytes32) external pure returns (Manifest memory o) {
@@ -192,7 +192,7 @@ contract VetoApp is ISlotApp {
 
 /// @dev Healthy, and expensive to read: the costlier the read, the wider the
 ///      window a caller tuning gas would have to aim at.
-contract PricyApp is ISlotApp {
+contract PricyModule is ISlotModule {
     function checkSettings(bytes32) external pure {
         uint256 x;
         for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
@@ -217,36 +217,36 @@ contract PricyApp is ISlotApp {
 }
 
 /**
- * A buyer cannot detach the app they are about to be seated under.
+ * A buyer cannot detach the module they are about to be seated under.
  *
- * The read that attaches a queued app fails open, so a starved read would
+ * The read that attaches a queued module fails open, so a starved read would
  * attach nothing and let the buy through unguarded. It cannot be starved: the
- * stipend is capped, so the only way to give the app less than it needs is to
+ * stipend is capped, so the only way to give the module less than it needs is to
  * enter the read with less than the cap — and a read that dies there burns
  * 63/64 of what was left, which is the gas the rest of the buy needed.
  */
-contract QueuedHookStarvationTest is Test {
+contract QueuedModuleStarvationTest is Test {
     address alice = makeAddr("alice");
     address manager = makeAddr("manager");
 
-    function test_ABuyerCannotStarveTheReadThatAttachesAQueuedApp() public {
+    function test_ABuyerCannotStarveTheReadThatAttachesAQueuedModule() public {
         SlotFactory factory = SlotFactory(address(new ERC1967Proxy(
             address(new SlotFactory()),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
         )));
-        PricyApp pricy = new PricyApp();
+        PricyModule pricy = new PricyModule();
 
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, AppTerms({target: address(pricy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(pricy), settings: bytes32(0)}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
@@ -261,7 +261,7 @@ contract QueuedHookStarvationTest is Test {
             );
             if (ok) {
                 ++seated;
-                assertEq(s.app(), address(pricy), "a completed buy always attached the app");
+                assertEq(s.module(), address(pricy), "a completed buy always attached the module");
                 assertEq(s.occupant(), alice);
             }
             vm.revertToState(snap);
@@ -272,7 +272,7 @@ contract QueuedHookStarvationTest is Test {
 
 /// @dev Answers honestly, but costs more than the stipend the slot reads it
 ///      under.
-contract GluttonApp is ISlotApp {
+contract GluttonModule is ISlotModule {
     function checkSettings(bytes32) external pure {
         uint256 x;
         for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
@@ -297,13 +297,13 @@ contract GluttonApp is ISlotApp {
 }
 
 /**
- * An app too expensive to read is refused where somebody can see it.
+ * A module too expensive to read is refused where somebody can see it.
  *
- * The attach-time read is capped, and fails open: an app that cannot answer
+ * The attach-time read is capped, and fails open: a module that cannot answer
  * inside its stipend is attached as nothing. Proposing is uncapped, so without
- * this the app would pass proposal and then quietly vanish a day later.
+ * this the module would pass proposal and then quietly vanish a day later.
  */
-contract HookStipendTest is Test {
+contract ModuleStipendTest is Test {
     SlotFactory factory;
     address manager = makeAddr("manager");
 
@@ -314,36 +314,36 @@ contract HookStipendTest is Test {
         )));
     }
 
-    function _init(address app) internal view returns (SlotInit memory) {
+    function _init(address module) internal view returns (SlotInit memory) {
         return SlotInit({
             currency: IERC20(address(0)),
             manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            appTerms: AppTerms({target: app, settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
         });
     }
 
     function test_ASlotCannotBeCreatedWithOne() public {
-        GluttonApp glutton = new GluttonApp();
+        GluttonModule glutton = new GluttonModule();
         vm.expectRevert(ManifestTooExpensive.selector);
         factory.createSlot(_init(address(glutton)));
     }
 
     function test_ItCannotBeQueuedEither() public {
         Slot s = Slot(payable(factory.createSlot(_init(address(0)))));
-        GluttonApp glutton = new GluttonApp();
+        GluttonModule glutton = new GluttonModule();
 
         TaxTerms memory none;
         vm.prank(manager);
         vm.expectRevert(ManifestTooExpensive.selector);
-        s.proposeTerms(none, AppTerms({target: address(glutton), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(glutton), settings: bytes32(0)}), 8);
     }
 
-    /// @notice An app that fits is not caught by the same check.
-    function test_AAppInsideItsStipendIsFine() public {
-        PricyApp pricy = new PricyApp();
+    /// @notice A module that fits is not caught by the same check.
+    function test_AModuleInsideItsStipendIsFine() public {
+        PricyModule pricy = new PricyModule();
         Slot s = Slot(payable(factory.createSlot(_init(address(pricy)))));
-        assertEq(s.app(), address(pricy));
+        assertEq(s.module(), address(pricy));
     }
 }

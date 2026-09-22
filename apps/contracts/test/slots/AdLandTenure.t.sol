@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test} from "forge-std/Test.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {AdLand} from "../../src/apps/adland/AdLand.sol";
-import {MinimumTenureApp} from "../../src/apps/MinimumTenureApp.sol";
-import {MinimumTenure} from "../../src/apps/MinimumTenure.sol";
-import {SlotContext} from "../../src/interfaces/ISlotApp.sol";
-import {AdConfig, ModerationMode} from "../../src/apps/adland/IAdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
+import {MinimumTenure} from "../../src/modules/MinimumTenure.sol";
+import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
+import {AdConfig, ModerationMode} from "../../src/modules/adland/IAdLand.sol";
 
 /**
- * AdLand enforcing a minimum tenure, on the one app a slot is allowed.
+ * AdLand enforcing a minimum tenure, on the one module a slot is allowed.
  *
  * An advertising slot wants both: creatives cleared when a tenure ends, AND a
  * window in which the advertiser who just paid cannot be outbid off the wall.
- * A slot takes one app, so AdLand carries both — the rule from
- * {MinimumTenure}, shared with {MinimumTenureApp} rather than reimplemented.
+ * A slot takes one module, so AdLand carries both — the rule from
+ * {MinimumTenure}, shared with {MinimumTenureModule} rather than reimplemented.
  *
- * The window is `hookData`, and ZERO means none. That is what keeps the slots
- * already attached to AdLand working: they were configured when this app took
+ * The window is `settings`, and ZERO means none. That is what keeps the slots
+ * already attached to AdLand working: they were configured when this module took
  * no data at all.
  */
 contract AdLandTenureTest is Test {
@@ -76,10 +76,10 @@ contract AdLandTenureTest is Test {
     }
 
     function _slot(uint256 window) internal returns (Slot s) {
-        return _slotWithConfig(_config(window));
+        return _slotWithSettings(_config(window));
     }
 
-    function _slotWithConfig(bytes32 hookData) internal returns (Slot s) {
+    function _slotWithSettings(bytes32 settings) internal returns (Slot s) {
         return
             Slot(
                 payable(
@@ -87,9 +87,9 @@ contract AdLandTenureTest is Test {
                         SlotInit({
                             currency: IERC20(address(0)),
                             manager: address(this),
-                            mutableTax: true, mutableRecipient: true, mutableApp: true,
+                            mutableTax: true, mutableRecipient: true, mutableModule: true,
                             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-                            appTerms: AppTerms({target: address(adland), settings: hookData})
+                            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
                         })
                     )
                 )
@@ -163,7 +163,7 @@ contract AdLandTenureTest is Test {
     }
 
     /// @notice Creatives still work on a slot that also enforces tenure.
-    /// @dev The point of the whole exercise: one app, both behaviours.
+    /// @dev The point of the whole exercise: one module, both behaviours.
     function test_TheCreativeStillPublishesAndClears() public {
         Slot s = _slot(WINDOW);
         _take(s, alice, 1 ether);
@@ -221,7 +221,7 @@ contract AdLandTenureTest is Test {
         SlotContext memory forged;
         forged.slot = address(s);
         forged.account = bob;
-        forged.appTerms = AppTerms({target: address(adland), settings: _config(WINDOW)});
+        forged.moduleTerms = ModuleTerms({target: address(adland), settings: _config(WINDOW)});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         adland.afterRelease(forged);
@@ -231,7 +231,7 @@ contract AdLandTenureTest is Test {
     // ── without one ─────────────────────────────────────────────────────────
 
     /// @notice Zero data is no window, which is every AdLand slot already on
-    ///         chain. They were attached before this app took any data.
+    ///         chain. They were attached before this module took any data.
     function test_ASlotWithNoWindowIsUnaffected() public {
         Slot s = _slot(0);
         _take(s, alice, 1 ether);
@@ -258,13 +258,13 @@ contract AdLandTenureTest is Test {
     function test_AnImpossibleWindowIsRefusedAtAttach() public {
         bytes32 tooLong = _config(400 days);
         vm.expectRevert();
-        _slotWithConfig(tooLong);
+        _slotWithSettings(tooLong);
     }
 
     /// @notice An id nobody registered is not a configuration.
     function test_AnUnregisteredConfigurationIsRefusedAtAttach() public {
         vm.expectRevert();
-        _slotWithConfig(keccak256("never registered"));
+        _slotWithSettings(keccak256("never registered"));
     }
 
     /**
@@ -316,7 +316,7 @@ contract AdLandTenureTest is Test {
      *      and under whatever name that host gave the field.
      */
     function test_BothHostsTagTheWindowTheSameWay() public {
-        MinimumTenureApp standalone = new MinimumTenureApp();
+        MinimumTenureModule standalone = new MinimumTenureModule();
 
         assertEq(
             vm.parseJsonString(adland.definition(), ".settings.properties.tenureWindow[\'x-semantic\']"),

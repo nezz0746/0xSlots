@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms, Manifest, PendingTerms} from "../src/types/SlotTypes.sol";
-import {InvalidApp} from "../src/errors/SlotErrors.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../src/types/SlotTypes.sol";
+import {InvalidModule} from "../src/errors/SlotErrors.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -16,11 +16,11 @@ import {IManagedSlot} from "../src/collectives/SlotGovernance.sol";
 
 import {Slot} from "../src/Slot.sol";
 import {SlotFactory} from "../src/SlotFactory.sol";
-import {MinimumTenureApp} from "../src/apps/MinimumTenureApp.sol";
-import {Scopes} from "../src/interfaces/ISlotApp.sol";
+import {MinimumTenureModule} from "../src/modules/MinimumTenureModule.sol";
+import {Scopes} from "../src/interfaces/ISlotModule.sol";
 
 /**
- * @notice The collective driving a REAL app-based slot, not a mock.
+ * @notice The collective driving a REAL v1 slot, not a mock.
  *
  * @dev The other collective suites use a `MockSlot`, which is fine for role
  *      boundaries and useless for this: a mock implements whatever the port
@@ -33,11 +33,11 @@ contract CollectiveGovernsRealSlotTest is Test {
     SlotCollective collective;
     SlotFactory slotFactory;
     Slot slot;
-    address hookA;
+    address moduleA;
 
     address admin = makeAddr("admin");
     address taxMgr = makeAddr("taxMgr");
-    address hookMgr = makeAddr("hookMgr");
+    address policyMgr = makeAddr("policyMgr");
     address payee = makeAddr("payee");
     address buyer = makeAddr("buyer");
 
@@ -63,12 +63,12 @@ contract CollectiveGovernsRealSlotTest is Test {
         slot = Slot(payable(slotFactory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(collective),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
 
-        hookA = address(new MinimumTenureApp());
+        moduleA = address(new MinimumTenureModule());
         vm.deal(buyer, 100 ether);
     }
 
@@ -88,12 +88,12 @@ contract CollectiveGovernsRealSlotTest is Test {
     function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         address[] memory tax = new address[](1);
         tax[0] = taxMgr;
-        address[] memory apps = new address[](1);
-        apps[0] = hookMgr;
+        address[] memory modules = new address[](1);
+        modules[0] = policyMgr;
         r = SlotCollective.InitialRoles({
             admin: admin,
             taxManagers: tax,
-            appManagers: apps,
+            policyManagers: modules,
             splitManagers: new address[](0)
         });
     }
@@ -103,11 +103,11 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.warp(block.timestamp + 1 days + 1);
     }
 
-    /// @dev Funded generously on purpose: once a tenure app is attached its
+    /// @dev Funded generously on purpose: once a tenure module is attached its
     ///      own window requirement exceeds the core's `minRunwaySeconds`
     ///      floor, and this helper is used on both sides of that change.
     function _seat(address who) internal {
-        // Native slot, and funded generously on purpose: once a tenure app is
+        // Native slot, and funded generously on purpose: once a tenure module is
         // attached its own window requirement exceeds the core's floor, and
         // this helper is used on both sides of that change.
         uint256 need = slot.minDepositForBuy(PRICE) + 1 ether;
@@ -120,17 +120,17 @@ contract CollectiveGovernsRealSlotTest is Test {
     function _pending()
         internal
         view
-        returns (uint256 tax, address app, bool hasTax, bool hasHook)
+        returns (uint256 tax, address module, bool hasTax, bool hasModule)
     {
         PendingTerms memory __p1 = slot.pendingTerms();
         TaxTerms memory __r1 = __p1.taxTerms;
-        AppTerms memory __h1 = __p1.appTerms;
+        ModuleTerms memory __h1 = __p1.moduleTerms;
         uint8 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
         tax = __r1.rateBps;
-        app = __h1.target;
+        module = __h1.target;
         hasTax = (__m1 & 1 != 0);
-        hasHook = (__m1 & 8 != 0);
+        hasModule = (__m1 & 8 != 0);
     }
 
     /// @notice The tax manager's lever reaches a real slot.
@@ -148,33 +148,33 @@ contract CollectiveGovernsRealSlotTest is Test {
         assertEq(slot.taxRateBps(), 750, "landed on the occupancy change");
     }
 
-    /// @notice Accepting an app offer reaches a real slot as its manager: the
+    /// @notice Accepting a module manifest reaches a real slot as its manager: the
     ///         slot answers with its own refusal, not `NotManager`.
-    function test_TheAppOfferRelayReachesARealSlot() public {
-        vm.prank(hookMgr);
-        vm.expectRevert(InvalidApp.selector);
+    function test_TheGrantRelayReachesARealSlot() public {
+        vm.prank(policyMgr);
+        vm.expectRevert(InvalidModule.selector);
         collective.grant(IManagedSlot(address(slot)), Manifest(0, 0, address(0)));
     }
 
-    /// @notice The app manager's lever reaches a real slot, and the real slot
-    ///         validates the app rather than trusting the relay.
-    function test_TheAppRelayReachesARealSlotAndTheSlotValidates() public {
-        vm.prank(hookMgr);
-        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: hookA, settings: bytes32(uint256(7 days))}));
+    /// @notice The policy manager's lever reaches a real slot, and the real slot
+    ///         validates the module rather than trusting the relay.
+    function test_TheModuleRelayReachesARealSlotAndTheSlotValidates() public {
+        vm.prank(policyMgr);
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}));
 
         _ripen();
         _seat(buyer);
-        assertEq(slot.app(), hookA);
+        assertEq(slot.module(), moduleA);
 
         assertTrue(
             slot.scopes().beforeBuy,
-            "flags were copied from the real app"
+            "scopes were copied from the real module"
         );
 
-        // An app that cannot answer `manifest` is refused at the slot, not here.
-        vm.prank(hookMgr);
+        // A module that cannot answer `manifest` is refused at the slot, not here.
+        vm.prank(policyMgr);
         vm.expectRevert();
-        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(warehouse), settings: bytes32(0)}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: bytes32(0)}));
     }
 
     /// @notice The assertion the whole port turns on, against real contracts:
@@ -183,37 +183,37 @@ contract CollectiveGovernsRealSlotTest is Test {
     function test_OneRoleCancellingDoesNotDestroyTheOthersQueuedWork() public {
         vm.prank(taxMgr);
         collective.proposeTax(IManagedSlot(address(slot)), 750);
-        vm.prank(hookMgr);
-        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: hookA, settings: bytes32(uint256(7 days))}));
+        vm.prank(policyMgr);
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}));
 
-        vm.prank(hookMgr);
-        collective.cancelAppProposal(IManagedSlot(address(slot)));
+        vm.prank(policyMgr);
+        collective.cancelModuleProposal(IManagedSlot(address(slot)));
 
-        (uint256 tax, address app, bool hasTax, bool hasHook) = _pending();
+        (uint256 tax, address module, bool hasTax, bool hasModule) = _pending();
         assertTrue(hasTax, "the tax manager never agreed to lose this");
         assertEq(tax, 750);
-        assertFalse(hasHook);
-        assertEq(app, address(0));
+        assertFalse(hasModule);
+        assertEq(module, address(0));
 
         _ripen();
         _seat(buyer);
         assertEq(slot.taxRateBps(), 750);
-        assertEq(slot.app(), address(0), "the cancelled app did not land");
+        assertEq(slot.module(), address(0), "the cancelled module did not land");
     }
 
     /// @notice Roles do not leak, across the real boundary.
     function test_RolesDoNotLeakAgainstARealSlot() public {
-        vm.prank(hookMgr);
+        vm.prank(policyMgr);
         vm.expectRevert();
         collective.proposeTax(IManagedSlot(address(slot)), 750);
 
         vm.prank(taxMgr);
         vm.expectRevert();
-        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: hookA, settings: bytes32(uint256(7 days))}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}));
 
-        (, , bool hasTax, bool hasHook) = _pending();
+        (, , bool hasTax, bool hasModule) = _pending();
         assertFalse(hasTax);
-        assertFalse(hasHook);
+        assertFalse(hasModule);
     }
 
     /// @notice And a slot that never named this collective as its manager is
@@ -222,9 +222,9 @@ contract CollectiveGovernsRealSlotTest is Test {
         Slot other = Slot(payable(slotFactory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(0xA11CE),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
 
         vm.prank(taxMgr);
@@ -257,8 +257,8 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(admin);
         collective.cancelAllProposals(IManagedSlot(address(slot)));
 
-        (, , bool hasTax, bool hasHook) = _pending();
+        (, , bool hasTax, bool hasModule) = _pending();
         assertFalse(hasTax);
-        assertFalse(hasHook);
+        assertFalse(hasModule);
     }
 }

@@ -8,10 +8,10 @@ import {ProtocolConfig} from "./ProtocolConfig.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
-import {SlotBoundNFTFactory} from "../../src/apps/nft/SlotBoundNFTFactory.sol";
-import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
-import {AdLand} from "../../src/apps/adland/AdLand.sol";
-import {MinimumTenureApp} from "../../src/apps/MinimumTenureApp.sol";
+import {SlotBoundNFTFactory} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
@@ -187,7 +187,7 @@ contract DeployProtocol is ProtocolConfig {
             "upgradeWrapperBeacon(address)"
         );
 
-        // ── apps ─────────────────────────────────────────────────────────
+        // ── modules ─────────────────────────────────────────────────────────
         address adLandImpl = _deploy2(
             "AdLandImpl",
             v.adLand,
@@ -200,17 +200,17 @@ contract DeployProtocol is ProtocolConfig {
         );
 
         // Deployed here, once per chain, rather than per configuration. The
-        // window a slot enforces is its own `hookData`, so one contract serves
-        // every duration — which is what let the CREATE2 app factory, its
+        // window a slot enforces is its own `settings`, so one contract serves
+        // every duration — which is what let the CREATE2 module factory, its
         // predicted-address dance and its resolver UI all go away.
         //
         // Not a proxy. It holds no configuration to migrate and one mapping of
-        // history, and a app the whole protocol can be pointed at is a poor
+        // history, and a module the whole protocol can be pointed at is a poor
         // thing to make upgradeable by a single key.
-        address tenureHook = _deploy2(
-            "MinimumTenureApp",
-            TENURE_HOOK_VERSION,
-            type(MinimumTenureApp).creationCode
+        address tenureModule = _deploy2(
+            "MinimumTenureModule",
+            TENURE_MODULE_VERSION,
+            type(MinimumTenureModule).creationCode
         );
 
         vm.stopBroadcast();
@@ -225,7 +225,7 @@ contract DeployProtocol is ProtocolConfig {
             SlotCollectiveFactory(collectiveFactory).version()
         );
         record("AdLand", adLand, AdLand(adLand).version());
-        record("MinimumTenureApp", tenureHook, TENURE_HOOK_VERSION);
+        record("MinimumTenureModule", tenureModule, TENURE_MODULE_VERSION);
         record(
             "SlotBoundNFTFactory",
             nftFactory,
@@ -242,7 +242,7 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("OfferBook            ", book);
         console2.log("SlotCollectiveFactory", collectiveFactory);
         console2.log("AdLand               ", adLand);
-        console2.log("MinimumTenureApp    ", tenureHook);
+        console2.log("MinimumTenureModule    ", tenureModule);
         console2.log("SlotBoundNFTFactory  ", nftFactory);
         console2.log("SlotBoundNFTWrapper  ", wrapperImpl);
     }
@@ -293,9 +293,9 @@ contract DeployProtocol is ProtocolConfig {
         v.wrapper = new SlotBoundNFTWrapper().version();
     }
 
-    /// @dev `MinimumTenureApp` has no `version()` of its own — it is not
+    /// @dev `MinimumTenureModule` has no `version()` of its own — it is not
     ///      upgradeable — so the salt's discriminator is stated here.
-    uint64 internal constant TENURE_HOOK_VERSION = 1;
+    uint64 internal constant TENURE_MODULE_VERSION = 1;
 
     /// @dev Deploy at a deterministic address, or return what is already there.
     function _deploy2(

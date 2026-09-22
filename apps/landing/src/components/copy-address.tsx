@@ -42,7 +42,7 @@ export function CopyAddress({
    * wrong for a name, where it just looks like a terminal. Opting into ENS is
    * opting into "this is somebody", so the type follows.
    *
-   * Off by default: the app is disabled unless asked, so nothing that renders
+   * Off by default: the hook is disabled unless asked, so nothing that renders
    * a hundred addresses starts making a hundred mainnet lookups.
    */
   ens?: boolean;

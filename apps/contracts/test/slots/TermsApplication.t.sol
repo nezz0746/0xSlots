@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Slot} from "../../src/Slot.sol";
 import "../../src/errors/SlotErrors.sol";
@@ -12,8 +12,8 @@ import {DenyBuys, SlotsTest} from "./Slots.t.sol";
  *
  * Terms are applied when the seat is TAKEN — by `buy`, or by `applyTerms` when
  * somebody entitled to asks for them. `release` and `liquidate` leave the queue
- * standing: applying reads the incoming app, and a read on the eviction path
- * is something an app can make expensive.
+ * standing: applying reads the incoming module, and a read on the eviction path
+ * is something a module can make expensive.
  *
  * What the occupant is promised is unchanged: nothing lands under them without
  * their say, and a buyer is always seated under the terms they funded.
@@ -22,7 +22,7 @@ contract TermsApplicationTest is SlotsTest {
     function _ripeDenial(Slot s) internal returns (DenyBuys deny) {
         deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), AppTerms({target: address(deny), settings: bytes32(0)}), uint8(9));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(deny), settings: bytes32(0)}), uint8(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms(), "terms are ripe");
     }
@@ -35,7 +35,7 @@ contract TermsApplicationTest is SlotsTest {
         vm.stopPrank();
     }
 
-    /// @notice A buyer is judged by the app their purchase brings in.
+    /// @notice A buyer is judged by the module their purchase brings in.
     function test_ABuyerIsSeatedUnderTheTermsTheyFund() public {
         Slot s = _slot(address(0));
         _ripeDenial(s);
@@ -47,7 +47,7 @@ contract TermsApplicationTest is SlotsTest {
         vm.stopPrank();
     }
 
-    /// @notice An eviction carries no terms, so no app runs on that path.
+    /// @notice An eviction carries no terms, so no module runs on that path.
     function test_ALiquidationLeavesTheQueueStanding() public {
         Slot s = _slot(address(0));
         _seat(s, alice);
@@ -59,7 +59,7 @@ contract TermsApplicationTest is SlotsTest {
         s.liquidate();
 
         assertEq(s.occupant(), address(0), "evicted");
-        assertEq(s.app(), address(0), "the queued app did not attach");
+        assertEq(s.module(), address(0), "the queued module did not attach");
         assertTrue(s.hasRipeTerms(), "it is still queued");
     }
 
@@ -90,7 +90,7 @@ contract TermsApplicationTest is SlotsTest {
         vm.expectRevert(DenyBuys.Denied.selector);
         s.buy(bob, 100 ether, 1 ether, 1 ether);
         vm.stopPrank();
-        assertEq(s.app(), address(0), "still nothing attached; the buy never landed");
+        assertEq(s.module(), address(0), "still nothing attached; the buy never landed");
         assertEq(address(deny), address(deny));
     }
 
@@ -102,7 +102,7 @@ contract TermsApplicationTest is SlotsTest {
         vm.prank(bob);
         s.applyTerms();
 
-        assertEq(s.app(), address(deny), "the queued app attached");
+        assertEq(s.module(), address(deny), "the queued module attached");
         assertEq(s.taxRateBps(), 10_000);
         assertFalse(s.hasRipeTerms(), "the queue is empty");
     }
@@ -116,11 +116,11 @@ contract TermsApplicationTest is SlotsTest {
         vm.prank(bob);
         vm.expectRevert(NotOccupant.selector);
         s.applyTerms();
-        assertEq(s.app(), address(0), "nothing moved under alice");
+        assertEq(s.module(), address(0), "nothing moved under alice");
 
         vm.prank(alice);
         s.applyTerms();
-        assertEq(s.app(), address(deny), "she waived the wait herself");
+        assertEq(s.module(), address(deny), "she waived the wait herself");
         assertEq(s.occupant(), alice, "and kept her seat");
     }
 
@@ -132,7 +132,7 @@ contract TermsApplicationTest is SlotsTest {
         s.applyTerms();
 
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(600), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(600), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
         vm.prank(bob);
         vm.expectRevert(NoPendingTerms.selector);
         s.applyTerms();

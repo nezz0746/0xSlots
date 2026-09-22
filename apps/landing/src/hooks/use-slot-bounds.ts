@@ -15,12 +15,12 @@ import { useMemo } from "react";
  * ── Why this no longer reads the chain ──────────────────────────────────
  *
  * The previous protocol exposed `maxPrice()` and `maxTaxBps()` as view
- * functions, and this app read them on principle: a constant copied into a
+ * functions, and this hook read them on principle: a constant copied into a
  * client rots the day the contract changes, and this codebase had already paid
  * for that once when a stale `IUTILITY_INTERFACE_ID` quietly failed every
  * genuine utility's ERC-165 check.
  *
- * The app-based `Slot` does not expose them at all — they are compile-time
+ * The v1 `Slot` does not expose them at all — they are compile-time
  * constants in `SlotStorage.sol` with no getters — so there is nothing left to
  * read. The SDK mirrors them as `MAX_PRICE` / `MAX_TAX_BPS` and is versioned
  * alongside the ABIs, which is now the only place the value can come from and

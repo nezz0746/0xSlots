@@ -6,7 +6,7 @@ import { decodeFunctionData } from "viem";
 import {
   ALL_TERMS,
   assertSlotInit,
-  NO_APP,
+  NO_MODULE,
   SCOPE_BITS,
   TERMS,
   type SlotInit,
@@ -24,7 +24,7 @@ const TAX_TERMS_NONE = {
 const SLOT = "0x1111111111111111111111111111111111111111" as const;
 const ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
 const ERC20 = "0x3333333333333333333333333333333333333333" as const;
-const APP = "0x4444444444444444444444444444444444444444" as const;
+const MODULE = "0x4444444444444444444444444444444444444444" as const;
 const ID = "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
 const FACTORY = "0x5555555555555555555555555555555555555555" as const;
 const MANAGER = "0x6666666666666666666666666666666666666666" as const;
@@ -102,7 +102,7 @@ function harness(
 /**
  * A client whose WALLET answers `eth_call` from a node of its own.
  *
- * The whole point of the seam under test: `publicClient` is the app's RPC and
+ * The whole point of the seam under test: `publicClient` is the module's RPC and
  * `walletClient` is the user's, and the approve reaches them at different
  * moments. `walletAllowanceSeq` is what the wallet's node reports on each
  * successive read — `[0n, 0n, AMOUNT]` is a node two polls behind.
@@ -524,21 +524,21 @@ describe("manager terms", () => {
 
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       { ...TAX0, rateBps: 250 },
-      NO_APP,
+      NO_MODULE,
       TERMS.TAX_RATE,
     ]);
   });
 
-  it("proposeTerms treats a zero-address app as DETACH, not as absent", async () => {
+  it("proposeTerms treats a zero-address module as DETACH, not as absent", async () => {
     const { client, writeContract } = harness({});
 
-    await client.proposeTerms(SLOT, { appTerms: NO_APP });
+    await client.proposeTerms(SLOT, { moduleTerms: NO_MODULE });
 
     // Presence decides, never truthiness.
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       TAX0,
-      NO_APP,
-      TERMS.APP,
+      NO_MODULE,
+      TERMS.MODULE,
     ]);
   });
 
@@ -547,22 +547,22 @@ describe("manager terms", () => {
     await client.proposeTerms(SLOT, {
       taxRateBps: 100,
       recipient: MANAGER,
-      appTerms: { target: APP },
+      moduleTerms: { target: MODULE },
     });
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       { recipient: MANAGER, rateBps: 100, minRunwaySeconds: 0 },
-      { target: APP, settings: ZERO_SETTINGS },
-      TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.APP,
+      { target: MODULE, settings: ZERO_SETTINGS },
+      TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.MODULE,
     ]);
   });
 
-  it("app data without an app is refused before it costs gas", async () => {
+  it("module data without a module is refused before it costs gas", async () => {
     const { client } = harness({});
     await expect(
       client.proposeTerms(SLOT, {
-        appTerms: { target: ZERO, settings: `0x${"1".padStart(64, "0")}` },
+        moduleTerms: { target: ZERO, settings: `0x${"1".padStart(64, "0")}` },
       }),
-    ).rejects.toThrow(/needs an app/);
+    ).rejects.toThrow(/need a module/);
   });
 
   it("proposeTerms refuses an empty proposal rather than reverting on-chain", async () => {
@@ -580,14 +580,14 @@ describe("creation", () => {
     manager: ZERO,
     mutableTax: false,
     mutableRecipient: false,
-    mutableApp: false,
+    mutableModule: false,
     taxTerms: { recipient: ACCOUNT, rateBps: 500, minRunwaySeconds: 86_400 },
   };
 
   it("createSlot sends the full tuple to the factory", async () => {
     const { client, writeContract } = harness({});
 
-    await client.createSlot({ ...base, appTerms: { target: APP } });
+    await client.createSlot({ ...base, moduleTerms: { target: MODULE } });
 
     const call = sent(writeContract, "createSlot");
     expect(call.address).toBe(FACTORY);
@@ -595,7 +595,7 @@ describe("creation", () => {
       ...base,
       // Filled by `encodeSlotInit`: viem encodes a struct BY NAME, so a missing
       // key would silently encode a zero.
-      appTerms: { target: APP, settings: ZERO_SETTINGS },
+      moduleTerms: { target: MODULE, settings: ZERO_SETTINGS },
     });
   });
 
@@ -624,32 +624,32 @@ describe("creation", () => {
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, appTerms: NO_APP, scopes: 0, mask: 0, proposedAt: 0n, ripe: false },
+      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: NO_MODULE, scopes: 0, mask: 0, proposedAt: 0n, ripe: false },
     });
     const pending = await client.pending(SLOT);
     expect(pending.isEmpty).toBe(true);
-    expect(pending.hasHook).toBe(false);
+    expect(pending.hasModule).toBe(false);
     expect(pending.applies).toBe(false);
     // Nothing queued has no ripening date to show.
     expect(pending.appliesAt).toBe(0n);
   });
 
-  it("pending unpacks a queued app change", async () => {
-    const app = { ...NO_APP, target: APP };
+  it("pending unpacks a queued module change", async () => {
+    const module = { ...NO_MODULE, target: MODULE };
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, appTerms: app, scopes: 0, mask: TERMS.APP, proposedAt: 1234n, ripe: false },
+      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: module, scopes: 0, mask: TERMS.MODULE, proposedAt: 1234n, ripe: false },
     });
     const pending = await client.pending(SLOT);
     expect(pending).toEqual({
       taxTerms: TAX_TERMS_NONE,
-      appTerms: app,
+      moduleTerms: module,
       scopes: 0,
-      mask: TERMS.APP,
+      mask: TERMS.MODULE,
       hasTaxRate: false,
       hasRecipient: false,
       hasMinRunway: false,
-      hasHook: true,
-      hasHookPermissions: false,
+      hasModule: true,
+      hasScopes: false,
       proposedAt: 1234n,
       // proposedAt + TERMS_DELAY (1 day).
       appliesAt: 1234n + 86_400n,
@@ -662,7 +662,7 @@ describe("reads", () => {
     const { client, readContract } = harness({
       pendingTerms: {
         taxTerms: { ...TAX_TERMS_NONE, rateBps: 500 },
-        appTerms: NO_APP,
+        moduleTerms: NO_MODULE,
         scopes: 0,
         mask: TERMS.TAX_RATE,
         proposedAt: 1234n,
@@ -702,12 +702,12 @@ describe("reads", () => {
   });
 
   it("grantStatus names both differences", async () => {
-    const accepted = { scopes: SCOPE_BITS.afterSettle, feeBps: 100, feeRecipient: APP };
-    const offered = { ...accepted, feeBps: 200 };
-    const { client } = harness({ grantStatus: [accepted, offered, true, false] });
+    const accepted = { scopes: SCOPE_BITS.afterSettle, feeBps: 100, feeRecipient: MODULE };
+    const declared = { ...accepted, feeBps: 200 };
+    const { client } = harness({ grantStatus: [accepted, declared, true, false] });
     expect(await client.grantStatus(SLOT)).toEqual({
       accepted,
-      offered,
+      declared,
       feeDiffers: true,
       scopesDiffer: false,
     });
@@ -720,7 +720,7 @@ describe("reads", () => {
     expect(sent(writeContract, "grant").args).toEqual([expected]);
   });
 
-  it("unpackScopes follows HookFlagsLib's bit order", () => {
+  it("unpackScopes follows ScopesLib's bit order", () => {
     expect(unpackScopes(SCOPE_BITS.beforeBuy | SCOPE_BITS.strict)).toEqual({
       beforeBuy: true,
       beforeSelfAssess: false,
@@ -856,10 +856,10 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         manager: ZERO,
         mutableTax: false,
         mutableRecipient: false,
-        mutableApp: false,
+        mutableModule: false,
         terms: {
           taxTerms: { recipient: ACCOUNT, rateBps: 250, minRunwaySeconds: 0 },
-          appTerms: NO_APP,
+          moduleTerms: NO_MODULE,
           manifest: { scopes: 0, feeBps: 0, feeRecipient: ZERO },
         },
         scopes: {
@@ -884,7 +884,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         secondsUntilLiquidation: 10n,
         pending: {
           taxTerms: TAX_TERMS_NONE,
-          appTerms: NO_APP,
+          moduleTerms: NO_MODULE,
           scopes: 0,
           mask: 0,
           proposedAt: 0n,
@@ -1151,79 +1151,79 @@ describe("offer book", () => {
   });
 });
 
-describe("app reads", () => {
-  it("checkSettings resolves ok when the app accepts", async () => {
+describe("module reads", () => {
+  it("checkSettings resolves ok when the module accepts", async () => {
     const { client } = harness({ checkSettings: undefined });
-    expect(await client.checkSettings(APP, ZERO_SETTINGS)).toEqual({ ok: true });
+    expect(await client.checkSettings(MODULE, ZERO_SETTINGS)).toEqual({ ok: true });
   });
 
-  it("checkSettings resolves with the reason when the app refuses", async () => {
+  it("checkSettings resolves with the reason when the module refuses", async () => {
     const { client } = harness({});
-    const check = await client.checkSettings(APP, ZERO_SETTINGS);
+    const check = await client.checkSettings(MODULE, ZERO_SETTINGS);
     expect(check.ok).toBe(false);
   });
 
-  it("appDefinition is null for an app that does not describe itself", async () => {
+  it("moduleDefinition is null for a module that does not describe itself", async () => {
     const { client } = harness({});
-    expect(await client.appDefinition(APP)).toBeNull();
+    expect(await client.moduleDefinition(MODULE)).toBeNull();
   });
 
-  it("appDefinition parses what the app answered", async () => {
+  it("moduleDefinition parses what the module answered", async () => {
     const definition = {
       version: 1,
       title: "Minimum tenure",
       description: "…",
-      config: {
+      settings: {
         $schema: "https://json-schema.org/draft/2020-12/schema",
         title: "Minimum tenure",
         type: "object",
-        "x-config-encoding": "inline",
+        "x-settings-encoding": "inline",
         properties: { window: { type: "string", "x-maximum": "31536000" } },
         required: ["window"],
         "x-abi": [{ name: "window", type: "uint256" }],
       },
     };
     const { client } = harness({ definition: JSON.stringify(definition) });
-    expect(await client.appDefinition(APP)).toEqual(definition);
+    expect(await client.moduleDefinition(MODULE)).toEqual(definition);
   });
 
-  it("appDefinition is null when the app answers something that is not JSON", async () => {
+  it("moduleDefinition is null when the module answers something that is not JSON", async () => {
     const { client } = harness({ definition: "not json" });
-    expect(await client.appDefinition(APP)).toBeNull();
+    expect(await client.moduleDefinition(MODULE)).toBeNull();
   });
 
-  it("appSettings decodes an inline word against x-abi", async () => {
+  it("moduleSettings decodes an inline word against x-abi", async () => {
     const { client } = harness({});
     const schema = {
-      "x-config-encoding": "inline",
+      "x-settings-encoding": "inline",
       "x-abi": [{ name: "window", type: "uint256" }],
     } as never;
     expect(
-      await client.appSettings(APP, schema, `0x${(604800).toString(16).padStart(64, "0")}`),
+      await client.moduleSettings(MODULE, schema, `0x${(604800).toString(16).padStart(64, "0")}`),
     ).toEqual({ window: "604800" });
   });
 
-  it("appSettings resolves a registered id through the app's own store", async () => {
+  it("moduleSettings resolves a registered id through the module's own store", async () => {
     const encoded = `0x${(604800).toString(16).padStart(64, "0")}` as const;
     const { client, readContract } = harness({ settingsById: encoded });
     const schema = {
-      "x-config-encoding": "registered",
+      "x-settings-encoding": "registered",
       "x-abi": [{ name: "window", type: "uint256" }],
     } as never;
-    expect(await client.appSettings(APP, schema, ID)).toEqual({ window: "604800" });
+    expect(await client.moduleSettings(MODULE, schema, ID)).toEqual({ window: "604800" });
     expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
-      address: APP,
+      address: MODULE,
       functionName: "settingsById",
       args: [ID],
     });
   });
 
-  it("readManifest asks the app for a config", async () => {
+  it("readManifest asks the module about its settings", async () => {
     const offer = { scopes: 4, feeBps: 0, feeRecipient: ZERO };
     const { client, readContract } = harness({ manifest: offer });
-    expect(await client.readManifest(APP, ZERO_SETTINGS)).toEqual(offer);
+    expect(await client.readManifest(MODULE, ZERO_SETTINGS)).toEqual(offer);
     const call = readContract.mock.calls.at(-1)![0];
-    expect(call.address).toBe(APP);
+    expect(call.address).toBe(MODULE);
     expect(call.args).toEqual([ZERO_SETTINGS]);
   });
 });

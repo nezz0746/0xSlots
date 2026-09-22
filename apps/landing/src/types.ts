@@ -8,8 +8,9 @@
  * as aliases:
  *
  *   * `LiquidationBountyUpdated` — there are no liquidation bounties.
- *   * `ModuleProposed` — there are no modules. The app dimension of
- *     `termsProposedEvent` replaces it, and is named `App Proposed`.
+ *   * `ModuleProposed` — the retired protocol's module gallery is gone. The
+ *     module dimension of `termsProposedEvent` replaces it, and is named
+ *     `Module Proposed`.
  *   * `PriceUpdate` / `TaxCollect` — the tables are `priceSetEvent` and
  *     `taxCollectedEvent`, and the labels follow them.
  *
@@ -30,7 +31,7 @@ export type EventType =
   | "Claim"
   | "Operator"
   | "Tax Proposed"
-  | "App Proposed"
+  | "Module Proposed"
   | "Terms Applied"
   | "Update Cancelled"
-  | "App Failed";
+  | "Module Failed";

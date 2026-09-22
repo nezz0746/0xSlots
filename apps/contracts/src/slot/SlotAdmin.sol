@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "../errors/SlotErrors.sol";
 import {SlotEscrow} from "./SlotEscrow.sol";
-import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
 import {Settings} from "./SlotStorage.sol";
 import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
 
@@ -14,7 +14,7 @@ import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
  * @dev Terms only ever QUEUE: they ripen for `TERMS_DELAY` and land at the next
  *      buy, so nothing an occupant bought into moves under them. A term moves only if the slot was created mutable for it. The
  *      immediate powers touch no occupant: handing the slot to another manager,
- *      and accepting an app's new fee.
+ *      and accepting a module's new fee.
  */
 abstract contract SlotAdmin is SlotEscrow {
     using TermsLib for TermsQueue;
@@ -23,18 +23,18 @@ abstract contract SlotAdmin is SlotEscrow {
      * @notice Queue a change to any of the slot's terms.
      *
      * @param taxTerms Only the fields named by `mask` are read.
-     * @param appTerms Read as a whole when `mask` includes `TERM_APP`. Its offer
-     *        is whatever the app declares, never chosen here.
-     * @param mask `TERM_TAX_RATE | TERM_RECIPIENT | TERM_MIN_RUNWAY | TERM_APP`.
+     * @param moduleTerms Read as a whole when `mask` includes `TERM_MODULE`. Its manifest
+     *        is whatever the module declares, never chosen here.
+     * @param mask `TERM_TAX_RATE | TERM_RECIPIENT | TERM_MIN_RUNWAY | TERM_MODULE`.
      *
      * @dev Validated now, so a bad value is refused while somebody is around to
-     *      fix it. An app is asked to accept its terms here and asked again when
+     *      fix it. A module is asked to accept its terms here and asked again when
      *      it attaches. Proposing again overwrites the named fields, keeps the
      *      rest queued, and restarts the delay for all of them.
      */
     function proposeTerms(
         TaxTerms calldata taxTerms,
-        AppTerms calldata appTerms,
+        ModuleTerms calldata moduleTerms,
         uint8 mask
     ) external onlyManager {
         if (mask == 0) revert NothingProposed();
@@ -42,10 +42,10 @@ abstract contract SlotAdmin is SlotEscrow {
         _requireMutable(mask);
 
         _validateRent(taxTerms, mask);
-        if (mask & TermsLib.APP != 0) _validateApp(appTerms);
+        if (mask & TermsLib.MODULE != 0) _validateModule(moduleTerms);
 
-        _queue().propose(_nextTaxTerms(), _nextAppTerms(), taxTerms, appTerms, mask);
-        emit TermsProposed(taxTerms, appTerms, mask);
+        _queue().propose(_nextTaxTerms(), _nextModuleTerms(), taxTerms, moduleTerms, mask);
+        emit TermsProposed(taxTerms, moduleTerms, mask);
     }
 
     /**
@@ -56,31 +56,31 @@ abstract contract SlotAdmin is SlotEscrow {
      */
     function cancelTerms(uint8 mask) external onlyManager {
         if (mask == 0) revert NothingProposed();
-        uint8 dropped = _queue().cancel(_nextTaxTerms(), _nextAppTerms(), mask);
+        uint8 dropped = _queue().cancel(_nextTaxTerms(), _nextModuleTerms(), mask);
         if (dropped == 0) revert NoPendingTerms();
         emit TermsCancelled(dropped);
     }
 
     /**
-     * @notice Accept what the attached app offers today.
+     * @notice Accept what the attached module declares today.
      *
-     * @param expected The offer the manager reviewed. The call reverts if the
-     *        app now declares anything else, so an app cannot change its offer
+     * @param expected The manifest the manager reviewed. The call reverts if the
+     *        module now declares anything else, so a module cannot change its manifest
      *        between a manager signing and the transaction landing.
      *
      * @dev A new fee applies at once, on any slot: it only changes how collected
-     *      rent is split between the recipient and the app, never what an
+     *      rent is split between the recipient and the module, never what an
      *      occupant pays. Rent collected so far is paid out under the old fee
      *      first.
      *
-     *      New scopes change what the app may do to an occupant, so they queue
+     *      New scopes change what the module may do to an occupant, so they queue
      *      like any term and land at the next buy, and only on a slot whose
-     *      app is mutable. An immutable app keeps the
+     *      module is mutable. An immutable module keeps the
      *      scopes it attached with.
      */
     function grant(Manifest calldata expected) external nonReentrant onlyManager {
-        AppTerms memory h = _appTerms();
-        if (h.target == address(0)) revert InvalidApp();
+        ModuleTerms memory h = _moduleTerms();
+        if (h.target == address(0)) revert InvalidModule();
         Manifest memory offered = _readManifest(h);
         if (
             offered.scopes != expected.scopes ||
@@ -157,25 +157,25 @@ abstract contract SlotAdmin is SlotEscrow {
         Settings storage st = _settings();
         if (mask & (TermsLib.TAX_RATE | TermsLib.MIN_RUNWAY) != 0 && !st.mutableTax) revert NotMutable();
         if (mask & TermsLib.RECIPIENT != 0 && !st.mutableRecipient) revert NotMutable();
-        if (mask & TermsLib.APP != 0 && !st.mutableApp) revert NotMutable();
+        if (mask & TermsLib.MODULE != 0 && !st.mutableModule) revert NotMutable();
     }
 
-    /// @dev Returns the app's offer, as it declares it.
+    /// @dev Returns the module's manifest, as it declares it.
     ///
     ///      Read twice, for two different answers. `_readManifest` is uncapped and
-    ///      bubbles the app's own revert, so an app refusing its configuration
+    ///      bubbles the module's own revert, so a module refusing its configuration
     ///      says why. `_tryReadManifest` is the read the slot will actually use when
-    ///      the app attaches: an app too expensive to answer under that stipend
+    ///      the module attaches: a module too expensive to answer under that stipend
     ///      is attached as nothing, silently and a day later, so it is refused
     ///      here instead.
-    function _validateApp(AppTerms memory h) internal view returns (Manifest memory offer) {
+    function _validateModule(ModuleTerms memory h) internal view returns (Manifest memory declared) {
         if (h.target == address(0)) {
-            // Configuration for an app that is not there. Nothing would read it,
-            // and it would silently go live the day an app attaches without its own.
-            if (h.settings != bytes32(0)) revert InvalidApp();
-            return offer;
+            // Configuration for a module that is not there. Nothing would read it,
+            // and it would silently go live the day a module attaches without its own.
+            if (h.settings != bytes32(0)) revert InvalidModule();
+            return declared;
         }
-        offer = _readManifest(h);
+        declared = _readManifest(h);
         (bool affordable, ) = _tryReadManifest(h);
         if (!affordable) revert ManifestTooExpensive();
     }

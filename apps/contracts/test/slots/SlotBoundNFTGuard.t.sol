@@ -5,8 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFT} from "../../src/apps/nft/SlotBoundNFT.sol";
-import {ISlotBoundNFT} from "../../src/apps/nft/ISlotBoundNFT.sol";
+import {SlotBoundNFT} from "../../src/modules/nft/SlotBoundNFT.sol";
+import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
 
 contract GuardTest is Test {
     SlotFactory factory;

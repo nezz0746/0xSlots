@@ -15,7 +15,7 @@ import { usePublicClient } from "wagmi";
 import { useChain } from "@/context/chain";
 
 /**
- * Everything the app-based protocol needs from the chain, in one place.
+ * Everything the v1 protocol needs from the chain, in one place.
  *
  * Reads go straight to the node. The ponder deployment now indexes THIS
  * protocol — see `packages/ponder/ponder.schema.ts` — and the explorer reads it

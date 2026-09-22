@@ -11,7 +11,7 @@ export type SectionId =
   | "recipient"
   | "currency"
   | "economics"
-  | "app"
+  | "module"
   | "scopes";
 
 export interface SectionMeta {
@@ -57,8 +57,8 @@ export const SECTIONS: SectionMeta[] = [
     tint: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   },
   {
-    id: "app",
-    title: "App",
+    id: "module",
+    title: "Module",
     description: "The single extension point. What it does, and when.",
     icon: Plug,
     tint: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
@@ -84,7 +84,7 @@ export const SECTION = Object.fromEntries(
  * wizard used to guarantee by forcing you through every step.
  *
  * The `module*` and `occupancyPolicy*` rows are gone with the concepts: one
- * `app` per slot is the whole extension surface now.
+ * `module` per slot is the whole extension surface now.
  */
 const FIELD_SECTION: Record<string, SectionId> = {
   recipientMode: "recipient",
@@ -97,11 +97,11 @@ const FIELD_SECTION: Record<string, SectionId> = {
   taxRateBps: "economics",
   minDepositValue: "economics",
   minDepositUnit: "economics",
-  hookMode: "app",
-  app: "app",
+  moduleMode: "module",
+  module: "module",
   mutableTax: "scopes",
   mutableRecipient: "scopes",
-  mutableApp: "scopes",
+  mutableModule: "scopes",
   manager: "scopes",
 };
 

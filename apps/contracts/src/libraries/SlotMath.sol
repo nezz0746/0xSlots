@@ -9,12 +9,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
  *
  * @dev ── Why a library and not a base contract ──────────────────────────
  *
- *      Because one caller cannot inherit. `MinimumTenureApp` sits outside the
- *      slot's chain by design — an app is a stranger — yet it has to size a
+ *      Because one caller cannot inherit. `MinimumTenureModule` sits outside the
+ *      slot's chain by design — a module is a stranger — yet it has to size a
  *      deposit with exactly the formula the slot will charge against. It was
  *      computing that by hand, and the two agreeing was a coincidence
- *      maintained by nobody. When an app's funding check and the slot's
- *      disagree, the slot seats an occupant the app believed was funded.
+ *      maintained by nobody. When a module's funding check and the slot's
+ *      disagree, the slot seats an occupant the module believed was funded.
  *
  *      `internal` functions, so every call is inlined: no deployment, no
  *      library linking, no delegatecall, no storage. This is a shared spelling
@@ -61,7 +61,7 @@ library SlotMath {
      *
      * @dev Rounds UP, and that direction is load-bearing: rounding down let a
      *      short window on a low price price to zero, so a minimum runway —
-     *      or an app's protection window — could be bought for nothing.
+     *      or a module's protection window — could be bought for nothing.
      */
     function depositFor(
         uint256 price,

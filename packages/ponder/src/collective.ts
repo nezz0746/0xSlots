@@ -16,7 +16,7 @@ import { evtId, getOrCreateAccount, lower, ZERO_ADDR } from "./helpers";
  * SlotCollective indexing.
  *
  * A collective fills BOTH of a slot's named addresses: `recipient` (tax flows
- * to it) and `manager` (it may propose tax and app changes). Indexing it turns
+ * to it) and `manager` (it may propose tax and module changes). Indexing it turns
  * those two columns on `slot` from opaque addresses into a join.
  *
  * Two things here exist nowhere else and are the reason this file earns its
@@ -40,10 +40,10 @@ import { evtId, getOrCreateAccount, lower, ZERO_ADDR } from "./helpers";
  * `PushSplit` did not change when the slot underneath it did.
  *
  * The governance half narrowed. `UTILITY_MANAGER_ROLE` is gone; the relays are
- * `proposeTax` / `proposeApp` and their per-dimension cancels; `Dimension` has
+ * `proposeTax` / `proposeModule` and their per-dimension cancels; `Dimension` has
  * two members where `UpdateKind` had three; and `LiquidationBountyRelayed` went
  * with the bounty. `POLICY_MANAGER_ROLE` is deliberately still called that even
- * though it now governs the app — the identifier is a `keccak256` of that
+ * though it now governs the module — the identifier is a `keccak256` of that
  * exact string and live collectives already have holders of it.
  */
 
@@ -60,7 +60,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 for (const name of [
   "TAX_MANAGER_ROLE",
-  // The APP role. It kept the old identifier on purpose — see the file note.
+  // Governs the module. It kept the old identifier on purpose — see the file note.
   "POLICY_MANAGER_ROLE",
   // RETIRED by the port and kept here anyway. A collective deployed before it
   // and upgraded through the beacon still has the grants in its log, and
@@ -85,7 +85,7 @@ const labelFor = (roleHash: Hex): string | null =>
  * file has not caught up with, and both deserve a visible hole rather than a
  * guess.
  */
-const KIND_NAMES = ["Tax", "App"] as const;
+const KIND_NAMES = ["Tax", "Module"] as const;
 const kindName = (kind: number): string | null => KIND_NAMES[kind] ?? null;
 
 // ── Factory ─────────────────────────────────────────────────
@@ -372,7 +372,7 @@ ponder.on("SlotCollective:TermsRelayed", async ({ event, context }) => {
     by: lower(event.args.by),
     action: "propose",
     kind: kindName(event.args.kind),
-    // Raw bps for Tax, the widened address for App. The collective emits both
+    // Raw bps for Tax, the widened address for Module. The collective emits both
     // through one `bytes32`, so the column keeps that shape and `kind` says how
     // to read it.
     value: event.args.value as Hex,

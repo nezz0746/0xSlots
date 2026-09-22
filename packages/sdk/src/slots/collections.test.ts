@@ -44,9 +44,9 @@ const terms = (currency: string) => ({
   manager: ZERO,
   mutableTax: false,
   mutableRecipient: false,
-  mutableApp: false,
+  mutableModule: false,
   taxTerms: { recipient: ACCOUNT, rateBps: 1000, minRunwaySeconds: 604800 },
-  appTerms: {
+  moduleTerms: {
     target: COLLECTION,
     settings: "0x0000000000000000000000000000000000000000000000000000000000000000",
   },

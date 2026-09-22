@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
   const chainId = Number(params.get("chainId"));
 
   // Not an error — the caller asked about a chain we have no prices for, and
-  // an empty map is the honest answer. The app renders nothing on `{}`.
+  // an empty map is the honest answer. The hook renders nothing on `{}`.
   if (chainId !== BASE_CHAIN_ID) {
     return NextResponse.json({ prices: {} });
   }

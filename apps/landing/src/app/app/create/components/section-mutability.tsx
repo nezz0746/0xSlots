@@ -9,7 +9,7 @@ import type { CreateSlotFormValues } from "../schema";
 const FLAGS = [
   { name: "mutableTax", label: "Tax rate and minimum runway" },
   { name: "mutableRecipient", label: "Recipient" },
-  { name: "mutableApp", label: "App" },
+  { name: "mutableModule", label: "Module" },
 ] as const;
 
 /**
@@ -25,7 +25,7 @@ export function SectionMutability() {
   const needsManager =
     form.watch("mutableTax") ||
     form.watch("mutableRecipient") ||
-    form.watch("mutableApp");
+    form.watch("mutableModule");
 
   return (
     <div>

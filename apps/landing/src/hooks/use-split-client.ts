@@ -8,7 +8,7 @@ import { splitsSupported } from "@/lib/splits-support";
  * Null on chains 0xSplits does not deploy to.
  *
  * The constructor builds a read client eagerly and throws
- * `Unsupported chain: <id>`, so on a local anvil merely calling this app took
+ * `Unsupported chain: <id>`, so on a local anvil merely calling this hook took
  * the whole page down. Callers must handle null — which is honest, because a
  * split genuinely cannot be created there.
  */

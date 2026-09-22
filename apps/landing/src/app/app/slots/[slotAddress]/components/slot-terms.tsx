@@ -13,9 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { formatBps } from "@/utils";
-import { findKnownApp, knownApps } from "@0xslots/contracts/slots";
-import { HookConfig } from "@/app/app/create/components/app-config";
-import { AppScopeRow } from "@/components/app-scopes";
+import { findKnownModule, knownModules } from "@0xslots/contracts/slots";
+import { ModuleSettings } from "@/app/app/create/components/module-settings";
+import { ModuleScopeRow } from "@/components/module-scopes";
 import {
   Select,
   SelectContent,
@@ -24,9 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChain } from "@/context/chain";
-import { useAppCheck } from "@/hooks/use-app-check";
-import { useAppDefinition } from "@/hooks/use-app-schema";
-import { describePermissions } from "@/lib/app-scopes";
+import { useModuleCheck } from "@/hooks/use-module-check";
+import { useModuleDefinition } from "@/hooks/use-module-schema";
+import { describeScopes } from "@/lib/module-scopes";
 import { NumberField, Panel } from "./panel";
 import { QueuedTermsControls } from "./pending-updates";
 
@@ -34,7 +34,7 @@ type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
  * The manager's controls: every term queues and lands at the next occupancy
- * transition. The app is offered only when the slot did not lock it.
+ * transition. The module is offered only when the slot did not lock it.
  */
 export function ManageTermsPanel({
   slot,
@@ -48,13 +48,13 @@ export function ManageTermsPanel({
   const [tax, setTax] = useState("");
   const [recipient, setRecipient] = useState("");
   const [runway, setRunway] = useState("");
-  const [app, setHook] = useState("");
-  const [settings, setHookData] = useState("");
-  const [hookConfigOk, setHookConfigOk] = useState(true);
+  const [module, setModule] = useState("");
+  const [settings, setSettings] = useState("");
+  const [settingsOk, setSettingsOk] = useState(true);
   const [changeTax, setChangeTax] = useState(false);
   const [changeRecipient, setChangeRecipient] = useState(false);
   const [changeRunway, setChangeRunway] = useState(false);
-  const [changeHook, setChangeHook] = useState(false);
+  const [changeModule, setChangeModule] = useState(false);
 
   const taxRateBps = Math.round(Number(tax.replace(",", ".")) * 100 || 0);
   const taxValid = !changeTax || (taxRateBps > 0 && taxRateBps <= 10_000);
@@ -71,23 +71,23 @@ export function ManageTermsPanel({
       runwaySeconds >= 0 &&
       runwaySeconds <= 0xffffffff);
 
-  // A blank app means DETACH, which is a real intention.
-  const hookTrimmed = app.trim();
-  const hookAddress = (
-    hookTrimmed === "" ? zeroAddress : hookTrimmed
+  // A blank module means DETACH, which is a real intention.
+  const moduleTrimmed = module.trim();
+  const moduleAddress = (
+    moduleTrimmed === "" ? zeroAddress : moduleTrimmed
   ) as Address;
   const data = (settings.trim() || ZERO_SETTINGS) as Hex;
-  const hookValid =
-    !changeHook ||
-    hookAddress === zeroAddress ||
-    (isAddress(hookAddress) && isHex(data) && data.length === 66 && hookConfigOk);
+  const moduleValid =
+    !changeModule ||
+    moduleAddress === zeroAddress ||
+    (isAddress(moduleAddress) && isHex(data) && data.length === 66 && settingsOk);
 
   const ready =
-    (changeTax || changeRecipient || changeRunway || changeHook) &&
+    (changeTax || changeRecipient || changeRunway || changeModule) &&
     taxValid &&
     recipientValid &&
     runwayValid &&
-    hookValid;
+    moduleValid;
 
   return (
     <Panel
@@ -102,7 +102,7 @@ export function ManageTermsPanel({
           a manager has to see what they are about to replace. */}
       <QueuedTermsControls slot={slot} state={state} actions={actions} />
 
-      <HookOfferRow slot={slot} state={state} actions={actions} />
+      <ModuleGrantRow slot={slot} state={state} actions={actions} />
 
       {state.mutableTax ? (
         <Toggle label="Change the tax rate" on={changeTax} set={setChangeTax}>
@@ -162,22 +162,22 @@ export function ManageTermsPanel({
         </Toggle>
       ) : null}
 
-      {state.mutableApp ? (
-        <Toggle label="Change the app" on={changeHook} set={setChangeHook}>
-          <HookEditor
-            app={app}
-            onHook={(next) => {
-              setHook(next);
-              setHookData("");
-              setHookConfigOk(true);
+      {state.mutableModule ? (
+        <Toggle label="Change the module" on={changeModule} set={setChangeModule}>
+          <ModuleEditor
+            module={module}
+            onModule={(next) => {
+              setModule(next);
+              setSettings("");
+              setSettingsOk(true);
             }}
-            onConfig={setHookData}
-            onVerdict={setHookConfigOk}
+            onConfig={setSettings}
+            onVerdict={setSettingsOk}
           />
           <p className="text-[10px] leading-snug text-muted-foreground">
-            {hookTrimmed === ""
-              ? "No app detaches the current one and its fee."
-              : "The app checks its configuration and declares its own fee and scopes, when proposed and again when it attaches."}
+            {moduleTrimmed === ""
+              ? "No module detaches the current one and its fee."
+              : "The module checks its settings and declares its own fee and scopes, when proposed and again when it attaches."}
           </p>
         </Toggle>
       ) : null}
@@ -193,12 +193,12 @@ export function ManageTermsPanel({
                 ? { recipient: recipientTrimmed as Address }
                 : {}),
               ...(changeRunway ? { minRunwaySeconds: runwaySeconds } : {}),
-              ...(changeHook
+              ...(changeModule
                 ? {
-                    appTerms: {
-                      target: hookAddress,
+                    moduleTerms: {
+                      target: moduleAddress,
                       settings:
-                        hookAddress === zeroAddress ? ZERO_SETTINGS : data,
+                        moduleAddress === zeroAddress ? ZERO_SETTINGS : data,
                     },
                   }
                 : {}),
@@ -217,31 +217,31 @@ export function ManageTermsPanel({
 }
 
 /**
- * Pick the app to propose: a known app, a custom address, or none. An app
+ * Pick the module to propose: a known module, a custom address, or none. A module
  * that describes its configuration gets the same generated form as the create
- * page, checked against the app on chain.
+ * page, checked against the module on chain.
  */
-function HookEditor({
-  app,
-  onHook,
+function ModuleEditor({
+  module,
+  onModule,
   onConfig,
   onVerdict,
 }: {
-  app: string;
-  onHook: (app: string) => void;
+  module: string;
+  onModule: (module: string) => void;
   onConfig: (encoded: string) => void;
   onVerdict: (ok: boolean) => void;
 }) {
   const { chainId } = useChain();
-  const available = knownApps[chainId] ?? [];
-  const known = isAddress(app) ? findKnownApp(chainId, app as Address) : undefined;
+  const available = knownModules[chainId] ?? [];
+  const known = isAddress(module) ? findKnownModule(chainId, module as Address) : undefined;
   const [custom, setCustom] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
-  const check = useAppCheck(app, chainId);
-  const { definition } = useAppDefinition(app);
-  const config = definition?.config?.fields.length ? definition.config : undefined;
+  const check = useModuleCheck(module, chainId);
+  const { definition } = useModuleDefinition(module);
+  const config = definition?.settings?.fields.length ? definition.settings : undefined;
 
-  const selectValue = custom ? "custom" : app === "" ? "none" : (known?.address ?? "custom");
+  const selectValue = custom ? "custom" : module === "" ? "none" : (known?.address ?? "custom");
 
   return (
     <div className="space-y-1.5">
@@ -251,21 +251,21 @@ function HookEditor({
           setValues({});
           if (v === "none") {
             setCustom(false);
-            onHook("");
+            onModule("");
           } else if (v === "custom") {
             setCustom(true);
-            onHook("");
+            onModule("");
           } else {
             setCustom(false);
-            onHook(v);
+            onModule(v);
           }
         }}
       >
         <SelectTrigger className="w-full rounded-none text-xs">
-          <SelectValue placeholder="Select an app" />
+          <SelectValue placeholder="Select a module" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">No app (detach)</SelectItem>
+          <SelectItem value="none">No module (detach)</SelectItem>
           {available.map((h) => (
             <SelectItem key={h.address} value={h.address}>
               {h.name}
@@ -277,33 +277,33 @@ function HookEditor({
 
       {custom && (
         <Input
-          value={app}
+          value={module}
           placeholder="0x…"
           onChange={(e) => {
             setValues({});
-            onHook(e.target.value.trim());
+            onModule(e.target.value.trim());
           }}
           className="rounded-none text-xs"
         />
       )}
 
       {check.data?.status === "ok" && (
-        <AppScopeRow scopes={check.data.scopes} fee={check.data.fee} />
+        <ModuleScopeRow scopes={check.data.scopes} fee={check.data.fee} />
       )}
       {check.data && check.data.status !== "ok" && (
         <p className="text-[10px] text-destructive">
           {check.data.status === "no-code"
             ? "No contract at this address on this chain."
             : check.data.status === "inert"
-              ? "This app asks for no scopes and cannot be attached."
-              : "Not an app — no manifest()."}
+              ? "This module asks for no scopes and cannot be attached."
+              : "Not a module — no manifest()."}
         </p>
       )}
 
       {config && (
         <div className="border-l-2 border-muted pl-3">
-          <HookConfig
-            hookAddress={app}
+          <ModuleSettings
+            moduleAddress={module}
             config={config}
             values={values}
             onChange={(next, word) => {
@@ -396,11 +396,11 @@ export function OwnershipPanel({
 }
 
 /**
- * The app's current offer, when accepting it would change something. A new fee
- * applies at once; new callbacks wait for the next buy. The
- * button pins exactly the offer shown here.
+ * The module's current manifest, when granting it would change something. A new
+ * fee applies at once; new scopes wait for the next buy. The button pins
+ * exactly the manifest shown here.
  */
-function HookOfferRow({
+function ModuleGrantRow({
   slot,
   state,
   actions,
@@ -411,31 +411,31 @@ function HookOfferRow({
 }) {
   const { data: status } = useQuery({
     queryKey: [
-      "app-offer-status",
+      "module-grant-status",
       slot,
-      state.app,
+      state.module,
       state.manifest.feeBps,
       state.manifest.scopes,
       state.pending.mask,
     ],
     queryFn: () => actions.client.grantStatus(slot),
-    enabled: state.app !== zeroAddress,
+    enabled: state.module !== zeroAddress,
   });
 
   if (!status || (!status.feeDiffers && !status.scopesDiffer)) return null;
-  const { accepted, offered } = status;
+  const { accepted, declared } = status;
   const callbacks = (scopes: number) =>
-    describePermissions(unpackScopes(scopes)).granted.join(", ") || "none";
+    describeScopes(unpackScopes(scopes)).granted.join(", ") || "none";
 
   return (
     <div className="space-y-1.5 border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs">
-      <p className="font-medium">The app offers new terms</p>
+      <p className="font-medium">The module has new terms</p>
       {status.feeDiffers ? (
         <p className="text-muted-foreground">
-          Fee: {formatBps(accepted.feeBps)} → {formatBps(offered.feeBps)} of
+          Fee: {formatBps(accepted.feeBps)} → {formatBps(declared.feeBps)} of
           rent
-          {offered.feeBps > 0
-            ? `, paid to ${offered.feeRecipient.slice(0, 6)}…${offered.feeRecipient.slice(-4)}`
+          {declared.feeBps > 0
+            ? `, paid to ${declared.feeRecipient.slice(0, 6)}…${declared.feeRecipient.slice(-4)}`
             : ""}
           . Applies immediately; rent collected so far is paid under the
           current fee.
@@ -443,20 +443,20 @@ function HookOfferRow({
       ) : null}
       {status.scopesDiffer ? (
         <p className="text-muted-foreground">
-          Scopes: {callbacks(accepted.scopes)} → {callbacks(offered.scopes)}.
+          Scopes: {callbacks(accepted.scopes)} → {callbacks(declared.scopes)}.
           Applies at the next buy.
         </p>
       ) : null}
       <p className="text-muted-foreground">
-        An app whose offer is ignored may refuse service.
+        A module whose update is ignored may refuse service.
       </p>
       <Button
         size="sm"
         variant="outline"
         disabled={actions.busy}
-        onClick={() => actions.grant(slot, offered)}
+        onClick={() => actions.grant(slot, declared)}
       >
-        Accept offer
+        Accept update
       </Button>
     </div>
   );

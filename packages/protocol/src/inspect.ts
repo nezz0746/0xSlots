@@ -39,7 +39,7 @@ export interface Upgradeable {
  * whatever its admin deployed next. It ships immutable, and a new version is a
  * new deployment that competes with the old one.
  *
- * `MinimumTenureApp` is absent for the same reason, and so is every
+ * `MinimumTenureModule` is absent for the same reason, and so is every
  * SlotBoundNFT COLLECTION — the factory that deploys them is upgradeable, the
  * collections themselves are plain contracts with no key over them. An upgrade
  * there changes the next collection, never one people already hold tokens in.
@@ -52,9 +52,9 @@ export const PROXIES: Record<string, Upgradeable> = {
     target: "src/collectives/SlotCollectiveFactory.sol:SlotCollectiveFactory",
     kind: "uups",
   },
-  AdLand: { target: "src/apps/adland/AdLand.sol:AdLand", kind: "uups" },
+  AdLand: { target: "src/modules/adland/AdLand.sol:AdLand", kind: "uups" },
   SlotBoundNFTFactory: {
-    target: "src/apps/nft/SlotBoundNFTFactory.sol:SlotBoundNFTFactory",
+    target: "src/modules/nft/SlotBoundNFTFactory.sol:SlotBoundNFTFactory",
     kind: "uups",
   },
   Slot: {
@@ -76,7 +76,7 @@ export const PROXIES: Record<string, Upgradeable> = {
    * owns cannot be reached through the usual `beacon()`.
    */
   SlotBoundNFTWrapper: {
-    target: "src/apps/nft/SlotBoundNFTWrapper.sol:SlotBoundNFTWrapper",
+    target: "src/modules/nft/SlotBoundNFTWrapper.sol:SlotBoundNFTWrapper",
     kind: "beacon",
     owner: "SlotBoundNFTFactory",
     beaconGetter: "wrapperBeacon()",
@@ -92,12 +92,12 @@ export const PROXIES: Record<string, Upgradeable> = {
  * SECOND one at a new address, because the CREATE2 salt covers the initcode and
  * a changed contract predicts somewhere else. The old address keeps running and
  * keeps serving every slot already attached to it. That is the safe behaviour —
- * nobody's app changes under them — and it is exactly the thing an operator has
+ * nobody's module changes under them — and it is exactly the thing an operator has
  * to be told, because "upgrade" reads like the old one moved.
  *
  * And with no row here, an upgrade whose ONLY change was one of these counted as
  * zero changes: the CLI announced that everything was already running its
- * current code and returned without broadcasting. The new app could not be
+ * current code and returned without broadcasting. The new module could not be
  * deployed through this tool at all.
  *
  * No storage gate on these, deliberately. A new address has fresh storage, so
@@ -116,16 +116,16 @@ export interface Standalone {
 
 export const IMMUTABLES: Record<string, Standalone> = {
   OfferBook: { target: "src/periphery/book/OfferBook.sol:OfferBook" },
-  MinimumTenureApp: {
-    target: "src/apps/MinimumTenureApp.sol:MinimumTenureApp",
-    versionConstant: "TENURE_HOOK_VERSION",
+  MinimumTenureModule: {
+    target: "src/modules/MinimumTenureModule.sol:MinimumTenureModule",
+    versionConstant: "TENURE_MODULE_VERSION",
   },
 };
 
 /**
  * The salt version a constant in the deploy script carries.
  *
- * `MinimumTenureApp` has no `version()` — it is not a proxy and nothing calls
+ * `MinimumTenureModule` has no `version()` — it is not a proxy and nothing calls
  * one — so its version lives beside its deployment, as the constant that goes
  * into the salt. Reading it here keeps one source rather than a copy in this
  * package that could disagree with the script that actually deploys.

@@ -3,7 +3,7 @@
 // Almost everything here comes straight from `./generated`, which
 // `wagmi generate` writes from the Foundry build and the deployment records.
 // This file exists for the four things codegen cannot know: the widened types,
-// what to do when a contract is deployed nowhere, which apps to offer by name,
+// what to do when a contract is deployed nowhere, which modules to offer by name,
 // and the one address no deploy script writes.
 
 import type { Address } from "viem";
@@ -79,7 +79,7 @@ export function deployBlockOf(
 }
 
 /**
- * The one `MinimumTenureApp` per chain.
+ * The one `MinimumTenureModule` per chain.
  *
  * ONE, now, where there used to be one per duration behind a CREATE2 factory.
  * The window a slot enforces is its own `settings`, so every duration is served
@@ -88,40 +88,40 @@ export function deployBlockOf(
  * the create form are all gone.
  *
  * A client attaching it supplies the duration as `settings`, 32 bytes,
- * big-endian seconds. The app refuses zero, at creation, rather than attaching
+ * big-endian seconds. The module refuses zero, at creation, rather than attaching
  * and vetoing every buy afterwards.
  */
-export const minimumTenureAppAddress = map("minimumTenureAppAddress");
+export const minimumTenureModuleAddress = map("minimumTenureModuleAddress");
 
-export interface KnownApp {
+export interface KnownModule {
   address: Address;
   name: string;
   /** One line, written for whoever is about to attach it to their slot. */
   description: string;
   /** Who maintains it. "0xSlots" is stock; anything else is somebody else's. */
   by: string;
-  /** Where the project behind the app lives, when it has somewhere. */
+  /** Where the project behind the module lives, when it has somewhere. */
   url?: string;
   /**
    * Its mark, for a client that has room to show one.
    *
-   * Absolute for a third party, and app-relative for a stock app — which
-   * makes the shipping app's own logo the mark of the apps it maintains,
+   * Absolute for a third party, and app-relative for a stock module — which
+   * makes the shipping app's own logo the mark of the modules it maintains,
    * without this package having to know which app is rendering it.
    */
   logo?: string;
 }
 
 /**
- * The apps this client can offer BY NAME, per chain.
+ * The modules this client can offer BY NAME, per chain.
  *
  * Derived, not typed. This was a hand-written array with one entry, for anvil,
  * naming an address the local deploy had long since stopped producing — so the
- * only app the dropdown ever offered by name was a dead one, and no app was
- * offered on any real chain at all. A app now appears on exactly the chains it
- * is deployed to, because the deployment records say so.
+ * only module the dropdown ever offered by name was a dead one, and no module
+ * was offered on any real chain at all. A module now appears on exactly the
+ * chains it is deployed to, because the deployment records say so.
  *
- * Adding a app is one entry here plus a line in `DeployProtocol`. It then
+ * Adding a module is one entry here plus a line in `DeployProtocol`. It then
  * appears on every chain the protocol reaches, with no per-chain edit.
  */
 const catalogue: readonly {
@@ -142,7 +142,7 @@ const catalogue: readonly {
     logo: "https://adland.space/logo.png",
   },
   {
-    addresses: minimumTenureAppAddress,
+    addresses: minimumTenureModuleAddress,
     name: "Minimum tenure",
     description:
       "Gives a new occupant a window they choose. Inside it, taking the slot costs a large premium on their price, and they cannot cut it.",
@@ -151,9 +151,9 @@ const catalogue: readonly {
   },
 ];
 
-export const knownApps: Partial<Record<number, readonly KnownApp[]>> =
+export const knownModules: Partial<Record<number, readonly KnownModule[]>> =
   (() => {
-    const out: Record<number, KnownApp[]> = {};
+    const out: Record<number, KnownModule[]> = {};
     for (const c of catalogue)
       for (const [id, address] of Object.entries(c.addresses)) {
         (out[Number(id)] ??= []).push({
@@ -168,13 +168,13 @@ export const knownApps: Partial<Record<number, readonly KnownApp[]>> =
     return out;
   })();
 
-/** The known app at `address`, if this client can name it. */
-export function findKnownApp(
+/** The known module at `address`, if this client can name it. */
+export function findKnownModule(
   chainId: number,
   address: Address | undefined,
-): KnownApp | undefined {
+): KnownModule | undefined {
   if (!address) return undefined;
-  return knownApps[chainId]?.find(
+  return knownModules[chainId]?.find(
     (h) => h.address.toLowerCase() === address.toLowerCase(),
   );
 }

@@ -9,7 +9,7 @@ import { useRefreshSlots, useSlotsFactory } from "./use-slots";
 /**
  * Every slot write, wired to this app's chain, factory and toasts.
  *
- * One wrapper rather than the SDK app at each call site, because the three
+ * One wrapper rather than the SDK hook at each call site, because the three
  * things every call site would otherwise repeat — which chain, which factory,
  * and re-reading the slot once the receipt lands — are the three things that
  * are silently wrong when one of them is forgotten.
@@ -31,7 +31,7 @@ export function useSlotsAction() {
     [refresh],
   );
 
-  // The SDK surfaces an app's own revert reason here rather than "call
+  // The SDK surfaces a module's own revert reason here rather than "call
   // failed" — a `TenureNotElapsed` or a `NotManager` is the most useful thing
   // this app can say, so it is shown verbatim.
   const onError = useCallback((label: string, error: string) => {

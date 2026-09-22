@@ -34,7 +34,7 @@ const INCLUDE = [
   "SlotCollective",
   "SlotCollectiveFactory",
   "AdLand",
-  "MinimumTenureApp",
+  "MinimumTenureModule",
   "SlotBoundNFTFactory",
   "SlotBoundNFT",
   "SlotBoundNFTWrapper",

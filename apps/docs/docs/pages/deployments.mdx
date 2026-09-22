@@ -2,142 +2,110 @@ import { Callout } from 'vocs'
 
 # Deployments
 
-The protocol is live on **Base**, **Base Sepolia** and **Ethereum Sepolia**, and
-runs locally on anvil.
-
-The SDK never needs these hardcoded — `CHAINS`, `DEFAULT_CHAIN` and
-`isDeployedOn(chainId)` from `@0xslots/contracts` are all derived from the
-address maps below, so the set of usable chains is exactly the set that has a
-`SlotFactory` recorded. Chains sort local, then testnets, then mainnets, off
-`chain.testnet`, so `DEFAULT_CHAIN` is never a mainnet by accident.
-
-Every address here is written by `DeployProtocol` into
-`apps/contracts/deployments/<chainid>/`. That directory is the source; this page
-is a copy of it, and the copy is the one that goes stale.
-
-## Base — 8453
-
-| Contract | Address | Version |
-|---|---|---|
-| SlotFactory | `0x14df7d78ef556A80F0AD3ede3F10F1e24f92E1cE` | 2 |
-| Slot (beacon impl) | `0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530` | 3 |
-| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` | 2 |
-| SlotCollectiveFactory | `0x0552807845Ba2090bE65b8823D8A56514d38Ee72` | 2 |
-| SlotCollective (beacon impl) | `0x627c716889a7Cba789b787fDCfb37EcC41C1Fdf0` | 2 |
-| SlotBoundNFTFactory | `0x34E5dBeca60c26aeF6513f1cade6679cE4DBfDB8` | 1 |
-| AdLand (hook) | `0xf93d43532E1cC486479c9cF83CFc6161aAa8F4A9` | 1 |
-| MinimumTenureHook | `0xB1e68532Ba467b2310A931abcDD682E718426c9C` | 2 |
-
-## Base Sepolia — 84532
-
-| Contract | Address | Version |
-|---|---|---|
-| SlotFactory | `0xc20bD429Acb3f85ae12b46e3980a8a5184936b8C` | 2 |
-| Slot (beacon impl) | `0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530` | 3 |
-| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` | 2 |
-| SlotCollectiveFactory | `0x0552807845Ba2090bE65b8823D8A56514d38Ee72` | 2 |
-| SlotCollective (beacon impl) | `0x627c716889a7Cba789b787fDCfb37EcC41C1Fdf0` | 2 |
-| SlotBoundNFTFactory | `0x960438BAEb1586Ac2B3fCfdC3fBa196F1226b45a` | 1 |
-| AdLand (hook) | `0xf93d43532E1cC486479c9cF83CFc6161aAa8F4A9` | 1 |
-| MinimumTenureHook | `0xB1e68532Ba467b2310A931abcDD682E718426c9C` | 2 |
-
-## Ethereum Sepolia — 11155111
-
-| Contract | Address | Version |
-|---|---|---|
-| SlotFactory | `0x14df7d78ef556A80F0AD3ede3F10F1e24f92E1cE` | 2 |
-| Slot (beacon impl) | `0xfc2Bf27aD41C9C4B23b675Ef5c270161Ab87f530` | 3 |
-| OfferBook | `0xa8A9D7940ceb6bFD4ffeDfB565358B83A9BCc7C2` | 2 |
-| SlotCollectiveFactory | `0x0552807845Ba2090bE65b8823D8A56514d38Ee72` | 2 |
-| SlotCollective (beacon impl) | `0x627c716889a7Cba789b787fDCfb37EcC41C1Fdf0` | 2 |
-| SlotBoundNFTFactory | `0x34E5dBeca60c26aeF6513f1cade6679cE4DBfDB8` | 1 |
-| AdLand (hook) | `0xA8079a3226C29D0D91DaDc698823Fd3cE96D7Ee7` | 1 |
-| MinimumTenureHook | `0xB1e68532Ba467b2310A931abcDD682E718426c9C` | 2 |
-
-<Callout>
-Most addresses repeat across chains because deployment is CREATE2 from one salt
-and `bytecode_hash = "none"` — identical code lands at an identical address. The
-ones that differ (`SlotFactory` on Base Sepolia, `AdLand` on Sepolia) were
-deployed from initcode that differed at the time. Do not infer the rule from the
-pattern; read the records.
+<Callout type="warning">
+The v1 protocol these docs describe is **not deployed on any public
+chain yet**. It runs locally on anvil. The Base, Base Sepolia and Ethereum
+Sepolia addresses this page used to list belong to a retired protocol and do not
+speak this API.
 </Callout>
+
+## Where addresses come from
+
+`DeployProtocol` writes one record per contract to
+`apps/contracts/deployments/<chainId>/<Contract>.json`, with an `address`, the
+`startBlock` the indexer begins from, and a `version`. Only records carrying a
+`version` belong to this protocol: the retired protocol's scripts wrote the
+same filenames, so `@0xslots/contracts`, the indexer and the deploy script all
+ignore a record without one.
+
+`@0xslots/contracts` generates its address maps from those records, so a
+contract appears on exactly the chains it has been deployed to. `CHAINS`,
+`DEFAULT_CHAIN` and `isDeployedOn(chainId)` are derived from
+`slotFactoryAddress`, so the set of usable chains is exactly the set that has a
+`SlotFactory` recorded. Chains sort local, then testnets, then mainnets, so
+`DEFAULT_CHAIN` is never a mainnet by accident.
+
+Addresses are CREATE2 through the canonical deployer, salted by contract name
+and version, so the same code with the same admin and constructor arguments
+lands at the same address on every chain.
+
+## Deploying to a chain
+
+Each chain the deploy tooling knows has a config file in
+`apps/contracts/deployments/config/` — today anvil, Base, Base Sepolia and
+Ethereum Sepolia. From the repo root:
+
+```bash
+pnpm protocol deploy --dry --chain base-sepolia   # simulate, send nothing
+pnpm protocol deploy --chain base-sepolia
+```
 
 ## Local anvil — 31337
 
-`pnpm dev:local` at the repo root starts a chain, deploys the protocol and runs
-an indexer against it — the same `DeployProtocol` script every testnet uses, so a
-local address is a real address. CREATE2 with `bytecode_hash = "none"`, so these
-survive a rebuild but move when a contract's own code changes; read them back
-from `apps/contracts/deployments/31337/` rather than trusting this table.
-
-No table here on purpose. Local addresses move whenever a contract's own code
-changes — that is what CREATE2 over initcode means — so any list printed here is
-wrong by the next commit and was, repeatedly. Read them back:
+`pnpm dev:local` at the repo root starts a chain, deploys the protocol with the
+same `DeployProtocol` script and runs an indexer against it. Local addresses move
+whenever a contract's code changes, so read them back rather than copying them:
 
 ```bash
 cat apps/contracts/deployments/31337/SlotFactory.json
 ```
 
-`dev-chain.sh` re-checks the generated address table against those records on
-every boot and refuses to start when they disagree, so a stale local address is
-a startup error rather than an empty page.
+`CHAINS` includes anvil only when `NODE_ENV === "development"`. Bundlers inline
+`NODE_ENV`, so a production build drops it at compile time. The address maps
+themselves are unconditional.
 
-`CHAINS` filters anvil out unless `NODE_ENV === "development"`. Bundlers inline
-`NODE_ENV`, so a production build drops the entry at compile time rather than
-shipping a chain option pointing at nobody's localhost. The address tables
-themselves are unconditional — they are only data, and a consumer that knows it
-wants the local factory can still ask for it by id.
+## Naming a module
 
-<Callout type="warning">
-Use the SlotFactory listed here and nothing else. A slot created through a
-factory the indexer does not watch is **invisible to every consumer** — and it
-fails silently, because the transaction itself succeeds.
-</Callout>
-
-## Naming a hook
-
-A slot stores its hook as a bare address. To turn that back into something a
-person recognises, `@0xslots/contracts` ships a small catalogue of the hooks it
-can name, per chain:
+A slot stores its module as a bare address. `@0xslots/contracts` ships a small
+catalogue of the modules a client can name, per chain:
 
 ```ts
-import { knownHooks, findKnownHook } from "@0xslots/contracts";
+import { findKnownModule, knownModules } from "@0xslots/contracts";
 
-const known = findKnownHook(84532, slot.hook);
-// known?.name — e.g. "AdLand — publish a creative", or undefined for a hook
-//                this client does not recognise
+const known = findKnownModule(chainId, slot.module);
+// known?.name — "AdLand", "Minimum tenure", or undefined for a module this
+// client does not recognise
 ```
 
-A hook appears in `knownHooks` on exactly the chains it is deployed to, because
-the entries are derived from the deployment records — there is no per-chain edit
-to keep in sync. An address the catalogue does not know reads back as `undefined`
-rather than a guess; that is the honest answer for a hook anyone can deploy.
+A module appears in `knownModules` on exactly the chains it is deployed to,
+because the entries are derived from the deployment records. An unknown address
+reads back as `undefined` rather than a guess — the honest answer for a module
+anyone can deploy.
 
-There is exactly ONE `MinimumTenureHook` per chain. It used to be one per
-duration, minted by a factory at a CREATE2 address; the window a slot enforces is
-now the slot's own `hookData`, so a single deployment serves every duration and
-there is nothing to predict or verify. What a client checks instead is what the
-hook CLAIMS — its `descriptors()` family id — so somebody else's implementation
-of the same rule reads correctly without the client learning its address.
+There is one `MinimumTenureModule` per chain. The window a slot enforces is its
+own `settings`, so a single deployment serves every duration.
 
-## ABIs
+## ABIs and addresses
 
 ```ts
 import {
   slotAbi,
   slotFactoryAbi,
   offerBookAbi,
-  minimumTenureHookAbi,
-  slotBoundNftFactoryAbi,
-  slotBoundNftAbi,
+  minimumTenureModuleAbi,
   adLandAbi,
+  slotCollectiveAbi,
+  slotCollectiveFactoryAbi,
+  slotBoundNftAbi,
+  slotBoundNftFactoryAbi,
+  slotBoundNftWrapperAbi,
 } from "@0xslots/contracts";
+
+import {
+  slotFactoryAddress,
+  offerBookAddress,
+  minimumTenureModuleAddress,
+  adLandAddress,
+  slotCollectiveFactoryAddress,
+  slotImplementationAddress, // the beacon implementation, not a slot
+  deployBlockOf,             // the lower bound for historical log queries
+} from "@0xslots/contracts";
+
+const factory = slotFactoryAddress[chainId]; // Address | undefined
 ```
 
-Addresses are exported as per-chain maps, so you rarely need to hardcode one:
-
-```ts
-import { slotFactoryAddress, offerBookAddress } from "@0xslots/contracts";
-
-const factory = slotFactoryAddress[84532];
-```
+<Callout type="warning">
+Use the recorded `SlotFactory` and nothing else. A slot created through a
+factory the indexer does not watch is **invisible to every indexed consumer** —
+and it fails silently, because the transaction itself succeeds.
+</Callout>

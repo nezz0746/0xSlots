@@ -8,8 +8,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotBoundNFTFactory, CollectionInit, WrapperInit}
-    from "../../src/apps/nft/SlotBoundNFTFactory.sol";
-import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
+    from "../../src/modules/nft/SlotBoundNFTFactory.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
 
 contract SlotBoundNFTWrapperFactoryTest is Test {
     SlotFactory slots;

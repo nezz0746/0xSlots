@@ -1,0 +1,260 @@
+import { Callout } from 'vocs'
+
+# Module reference
+
+The interfaces a module implements, and the modules the protocol ships. See
+[the concept](/concepts/modules) for the model; this is the surface.
+
+`ISlotModule` is required. `IDescribedModule` is optional and client-only.
+
+## `ISlotModule`
+
+```solidity
+interface ISlotModule {
+    function checkSettings(bytes32 settings) external view;
+    function manifest(bytes32 settings) external view returns (Manifest memory);
+
+    // decisions — view, revert to veto
+    function beforeBuy(SlotContext calldata ctx) external view;
+    function beforeSelfAssess(SlotContext calldata ctx) external view;
+
+    // effects — capped and swallowed, unless `strict` is declared
+    function afterBuy(SlotContext calldata ctx) external;
+    function afterRelease(SlotContext calldata ctx) external;
+    function afterLiquidate(SlotContext calldata ctx) external;
+    function afterSettle(SlotContext calldata ctx) external;
+    function onInstall(SlotContext calldata ctx) external;
+    function onUninstall(SlotContext calldata ctx) external; // never fatal
+}
+```
+
+A module implements every function; the slot calls only those its manifest
+declares.
+
+**`checkSettings`** reverts if `settings` is not a configuration the module
+accepts. The slot calls it when the module is proposed and when it is installed.
+A module that takes no configuration implements it as a no-op and so accepts
+anything, zero included.
+
+**`manifest`** is `view`, not `pure` — a module may answer from storage. The
+answer must have non-zero `scopes` using only known bits, and a non-zero `feeBps`
+needs a `feeRecipient` and may not exceed 10,000. It must also answer within half
+of `MODULE_GAS`, which is what the slot allows the read when the module is
+installed; one that cannot is refused at proposal with `ManifestTooExpensive`.
+
+<Callout type="warning">
+The effect callbacks are `external` and state-changing, so **anyone** can call
+them with a context they invented. Only the slot fills `ctx` in honestly. Either
+`require(msg.sender == ctx.slot)`, or read what you need from the slot itself
+(`occupant()`, `moduleTerms()`) — never key storage on an unauthenticated `ctx`.
+</Callout>
+
+## `SlotContext`
+
+One shape for every callback. Fields not meaningful for a given call are zero.
+
+```solidity
+struct SlotContext {
+    address slot;           // the slot calling — only trustworthy when msg.sender == slot
+    address caller;         // who called the slot; not necessarily the occupant
+    address account;        // incoming occupant on a transition; current otherwise
+    address occupant;       // who holds it now; zero when vacant
+    uint256 occupiedSince;  // when the current occupancy began; zero when vacant
+    uint256 taxRateBps;     // basis points per 30 days
+    uint256 currentPrice;
+    uint256 newPrice;       // proposed in `before`, just set in `after`
+    uint256 depositAmount;
+    uint256 owed;           // afterSettle only — tax that accrued
+    uint256 paid;           // afterSettle only — what the deposit could cover
+    ModuleTerms moduleTerms; // this slot's module address and settings
+}
+```
+
+`owed > paid` on `afterSettle` means the occupant has run dry. On `afterRelease`
+and `afterLiquidate` the context is built after the slot is vacated, so
+`occupant`, `occupiedSince` and `currentPrice` are zero and `account` is the
+occupant who left. `beforeBuy` runs after ripe queued terms have landed, so it
+judges the terms the buyer is seated under.
+
+## `ModuleTerms`
+
+```solidity
+struct ModuleTerms {
+    address target;   // the module; zero for none
+    bytes32 settings; // this slot's configuration for it; must be zero when target is
+}
+```
+
+## `Manifest` and `Scopes`
+
+```solidity
+struct Manifest {
+    uint16  scopes;       // ScopesLib bits; never zero
+    uint16  feeBps;       // share of collected tax, 0..10_000
+    address feeRecipient; // required when feeBps is non-zero
+}
+
+struct Scopes {           // `scopes`, unpacked — what Slot.scopes() returns
+    bool beforeBuy;
+    bool beforeSelfAssess;
+    bool afterBuy;
+    bool afterRelease;
+    bool afterLiquidate;
+    bool afterSettle;
+    bool strict;          // not a callback — a mode
+    bool onInstall;
+    bool onUninstall;
+}
+```
+
+| Bit | Scope | | Bit | Scope |
+|---|---|---|---|---|
+| `1 << 0` | `beforeBuy` | | `1 << 5` | `afterSettle` |
+| `1 << 1` | `beforeSelfAssess` | | `1 << 6` | `strict` |
+| `1 << 2` | `afterBuy` | | `1 << 7` | `onInstall` |
+| `1 << 3` | `afterRelease` | | `1 << 8` | `onUninstall` |
+| `1 << 4` | `afterLiquidate` | | | |
+
+`strict` changes how the effect callbacks run: uncapped, and their revert
+propagates — eviction included. `onUninstall` stays capped and swallowed
+regardless. Leave `strict` off unless a swallowed write would be worse than a
+stuck slot; the NFT modules below set it because they hold real ERC-721
+ownership.
+
+The slot's accepted copy is what counts: `Slot.manifest()` and `Slot.scopes()`.
+How a manager accepts a changed manifest is on the [Slot reference](/reference/slot#modules).
+
+## `IDescribedModule`
+
+Optional. Self-reported metadata for clients — **never** read by the slot.
+
+```solidity
+interface IDescribedModule {
+    function definition() external pure returns (string memory);
+}
+```
+
+`definition()` returns one JSON document, built on-chain by `ModuleSchemaLib`
+from the module's own constants. `MinimumTenureModule` answers:
+
+```json
+{
+  "version": 1,
+  "title": "Minimum tenure",
+  "description": "Protects an occupant from being bought out for a fixed window after they take the slot.",
+  "settings": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Minimum tenure",
+    "type": "object",
+    "x-settings-encoding": "inline",
+    "properties": {
+      "window": {
+        "type": "string",
+        "pattern": "^[0-9]+$",
+        "title": "Minimum tenure",
+        "description": "How long an occupant is protected from being bought out.",
+        "x-unit": "seconds",
+        "x-minimum": "1",
+        "x-maximum": "31536000",
+        "x-semantic": "minimum-tenure"
+      }
+    },
+    "required": ["window"],
+    "additionalProperties": false,
+    "x-abi": [{ "name": "window", "type": "uint256" }]
+  }
+}
+```
+
+`settings` is a JSON Schema 2020-12 document a form library can take as is,
+plus four conventions:
+
+| Key | Meaning |
+|---|---|
+| `x-abi` | The values in ABI-encoding order, as viem `AbiParameter`s |
+| `x-settings-encoding` | `"inline"`: the encoded values are the slot's `settings` word. `"registered"`: register them with the module and use the returned id |
+| `x-optional` | The slot may leave the whole configuration at zero |
+| `x-semantic` | A behaviour a client may recognise, such as `"minimum-tenure"` |
+
+Every value is a string, because JSON numbers lose precision above 2^53; bounds
+travel as `x-minimum` / `x-maximum` strings. They are advice — `checkSettings`
+is the authority. A module that does not implement `definition()`, or answers
+with something that is not JSON, is simply undescribed; fall back to its scopes.
+
+## `SettingsStore`
+
+For configuration larger than one word. A module inheriting it lets anyone
+register bytes, and the slot stores their hash as `settings`.
+
+```solidity
+function registerSettings(bytes calldata settings) external returns (bytes32 id); // id = keccak256(settings)
+function settingsById(bytes32 id) external view returns (bytes memory);
+function areSettingsRegistered(bytes32 id) external view returns (bool);
+
+event SettingsRegistered(bytes32 indexed id, bytes settings);
+```
+
+Content-addressed, so a registered configuration can never change under a slot;
+changing it means registering new bytes and proposing the new id. Registration is
+permissionless and idempotent.
+
+## `MinimumTenureModule`
+
+One deployment per chain; the window a slot enforces is its own `settings`, a
+number of seconds.
+
+```solidity
+function tenureOf(bytes32 settings) external pure returns (uint256);
+function requiredDeposit(uint256 price, uint256 taxRateBps, uint256 window)
+    external pure returns (uint256);
+function reentryAllowedAt(address slot, address account) external view returns (uint256);
+
+uint256 public constant MAX_TENURE = 365 days;
+uint256 public constant BUYOUT_PREMIUM_BPS = 100_000; // 10x
+```
+
+Scopes: `beforeBuy`, `beforeSelfAssess`, `afterRelease`, `afterLiquidate`. No fee.
+
+| | |
+|---|---|
+| **Entry is funded** | every buy must post enough deposit to cover a whole window, at the higher of the old and new price |
+| **No price cut** | inside the window, the occupant cannot lower their price |
+| **Buyouts cost a premium** | inside the window, a buyer must declare at least 10x the occupant's price |
+| **No free renewal** | an occupant who releases or is liquidated cannot retake that slot for one window |
+
+<Callout type="warning">
+The funding check runs at entry only; `withdraw` consults the slot's own
+`minRunwaySeconds`, not the module. A slot that wants the window's escrow to bind
+for the whole term sets `minRunwaySeconds` to at least the window.
+</Callout>
+
+| Error | Meaning |
+|---|---|
+| `TenureNotConfigured` | `settings` is zero — a window was never set |
+| `TenureTooLong(maxTenure)` | above `MAX_TENURE` |
+| `TenureUnderfunded(required)` | the deposit does not cover the window |
+| `PriceCutDuringTenure` | a `selfAssess` lowering the price inside the window |
+| `TenureNotElapsed(allowedAt)` | the leaver's re-entry bar has not expired |
+| `BuyoutBelowPremium(required)` | a mid-window buy declaring less than 10x |
+| `NotTheSlot` | an `after` callback called by something other than the slot |
+
+## AdLand
+
+A sponsorship module: the occupant publishes a creative (`Published`), and it
+is cleared when the slot changes hands (`Cleared`). Its `settings` is the id of a
+registered `AdConfig` — an optional minimum-tenure window, a moderation mode and
+a registry key — and zero configures none of them. It inherits the
+`MinimumTenure` rule, so one module covers both behaviours.
+
+Scopes: `beforeBuy`, `beforeSelfAssess`, `afterBuy`, `afterRelease`,
+`afterLiquidate`. No fee. Its creatives are indexed — see
+[Indexer](/indexer#creatives).
+
+## Slot-bound NFTs
+
+`SlotBoundNFTFactory` deploys `SlotBoundNFT` collections, which mint a token and
+its slot together, and `SlotBoundNFTWrapper`, which puts an existing ERC-721
+under common ownership. In both, the token belongs to whoever occupies its
+slot: ownership moves in `afterBuy`, `afterRelease` and `afterLiquidate`, and
+both declare `strict` so the move cannot be dropped. The wrapper also declares
+`beforeBuy`, to refuse buys on a slot it has retired.

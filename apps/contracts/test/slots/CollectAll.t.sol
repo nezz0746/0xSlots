@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -10,7 +10,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotApp, Scopes, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import "../../src/errors/SlotErrors.sol";
 
@@ -25,7 +25,7 @@ contract Tok is ERC20 {
  *      That is the one way a healthy-looking slot can fail a collection, and
  *      the case the batch has to survive.
  */
-contract StrictBreaker is ISlotApp {
+contract StrictBreaker is ISlotModule {
     function checkSettings(bytes32) external pure {}
     function manifest(bytes32) external pure returns (Manifest memory o) {
         Scopes memory f;
@@ -79,13 +79,13 @@ contract CollectAllTest is Test {
         vm.warp(1_000_000);
     }
 
-    function _slot(address recipient_, address app) internal returns (Slot) {
+    function _slot(address recipient_, address module) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient_, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            appTerms: AppTerms({target: app, settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
         }))));
     }
 
@@ -199,8 +199,8 @@ contract CollectAllTest is Test {
      * @notice A slot that reverts must not cost the others their rent.
      *
      * @dev `strict` is what makes this reachable: without it the slot caps the
-     *      app's gas and swallows the revert, so `collect()` succeeds anyway.
-     *      With it, the app's revert comes all the way out of `collect()`.
+     *      module's gas and swallows the revert, so `collect()` succeeds anyway.
+     *      With it, the module's revert comes all the way out of `collect()`.
      */
     function test_OneRevertingSlotDoesNotSinkTheBatch() public {
         Slot broken = _slot(recipientA, address(new StrictBreaker()));

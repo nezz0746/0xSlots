@@ -7,13 +7,13 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
-import {ISlotApp, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {ISlotModule, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
-import {SettingsStore} from "../../src/apps/base/SettingsStore.sol";
+import {SettingsStore} from "../../src/modules/base/SettingsStore.sol";
 
 /// @dev Refuses buys below a floor carried in a large, registered configuration.
-contract FloorHook is ISlotApp, SettingsStore {
+contract FloorModule is ISlotModule, SettingsStore {
     error BelowFloor(uint256 floor);
 
     struct Config {
@@ -31,7 +31,7 @@ contract FloorHook is ISlotApp, SettingsStore {
     }
 
     function beforeBuy(SlotContext calldata ctx) external view {
-        Config memory c = abi.decode(_settingsById(ctx.appTerms.settings), (Config));
+        Config memory c = abi.decode(_settingsById(ctx.moduleTerms.settings), (Config));
         if (ctx.newPrice < c.floor) revert BelowFloor(c.floor);
     }
 
@@ -48,10 +48,10 @@ contract FloorHook is ISlotApp, SettingsStore {
 
 }
 
-/// @notice An app can take configuration of any size: the slot carries its id.
-contract HookConfigStoreTest is Test {
+/// @notice A module can take configuration of any size: the slot carries its id.
+contract ModuleConfigStoreTest is Test {
     SlotFactory factory;
-    FloorHook app;
+    FloorModule module;
     address alice = makeAddr("alice");
 
     function setUp() public {
@@ -59,7 +59,7 @@ contract HookConfigStoreTest is Test {
             address(new SlotFactory()),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
         )));
-        app = new FloorHook();
+        module = new FloorModule();
         vm.deal(alice, 100 ether);
     }
 
@@ -68,16 +68,16 @@ contract HookConfigStoreTest is Test {
         allow[0] = address(1);
         allow[1] = address(2);
         allow[2] = address(3);
-        return abi.encode(FloorHook.Config({floor: floor, label: "a label well past thirty-two bytes", allowlist: allow}));
+        return abi.encode(FloorModule.Config({floor: floor, label: "a label well past thirty-two bytes", allowlist: allow}));
     }
 
     function _slot(bytes32 id) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            appTerms: AppTerms({target: address(app), settings: id})
+            moduleTerms: ModuleTerms({target: address(module), settings: id})
         }))));
     }
 
@@ -85,10 +85,10 @@ contract HookConfigStoreTest is Test {
         bytes memory settings = _config(1 ether);
         assertGt(settings.length, 32);
 
-        bytes32 id = app.registerSettings(settings);
+        bytes32 id = module.registerSettings(settings);
         assertEq(id, keccak256(settings));
-        assertEq(app.settingsById(id), settings);
-        assertEq(app.registerSettings(settings), id, "the same bytes, the same id");
+        assertEq(module.settingsById(id), settings);
+        assertEq(module.registerSettings(settings), id, "the same bytes, the same id");
     }
 
     function test_ASlotCannotAttachAnUnregisteredId() public {
@@ -97,14 +97,14 @@ contract HookConfigStoreTest is Test {
         _slot(id);
     }
 
-    function test_TheAppReadsTheFullConfigurationOnCallbacks() public {
-        bytes32 id = app.registerSettings(_config(1 ether));
+    function test_TheModuleReadsTheFullConfigurationOnCallbacks() public {
+        bytes32 id = module.registerSettings(_config(1 ether));
         Slot s = _slot(id);
         uint256 dep = s.minDepositForBuy(1 ether);
 
         uint256 low = s.minDepositForBuy(0.5 ether);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(FloorHook.BelowFloor.selector, 1 ether));
+        vm.expectRevert(abi.encodeWithSelector(FloorModule.BelowFloor.selector, 1 ether));
         s.buy{value: low}(alice, 0.5 ether, low, 0);
 
         vm.prank(alice);
@@ -114,6 +114,6 @@ contract HookConfigStoreTest is Test {
 
     function test_EmptyConfigurationIsRefused() public {
         vm.expectRevert(SettingsStore.EmptySettings.selector);
-        app.registerSettings("");
+        module.registerSettings("");
     }
 }

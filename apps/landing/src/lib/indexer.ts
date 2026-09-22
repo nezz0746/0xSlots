@@ -31,8 +31,8 @@ import {
  * about DATA — development is rebuilt whenever a testnet is redeployed — and it
  * ignored the schema.
  *
- * The production instance still serves the RETIRED protocol: no `app`, no
- * `hookRef`, no `tenureId`. So a developer running the app with nothing set got
+ * The production instance still serves the RETIRED protocol: no `module`, no
+ * `moduleRef`, no `tenureId`. So a developer running the app with nothing set got
  * an explorer whose every query failed GraphQL validation, retried three times
  * behind a spinner, and looked like a slow network rather than the wrong
  * database. An explicit `NEXT_PUBLIC_SLOTS_ENV` still wins in both directions.

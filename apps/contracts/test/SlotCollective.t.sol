@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -22,14 +22,14 @@ contract MockSlot {
     address public manager;
 
     uint256 public taxPct;
-    address public hookAddr;
-    bytes32 public hookData;
+    address public moduleAddr;
+    bytes32 public settings;
 
     bool public hasTax;
-    bool public hasHook;
+    bool public hasModule;
 
     uint256 public taxCancels;
-    uint256 public hookCancels;
+    uint256 public moduleCancels;
 
     error NotManager();
     error NoPendingTerms();
@@ -51,7 +51,7 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, AppTerms calldata app, uint8 mask)
+    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint8 mask)
         external
         onlyManager
     {
@@ -61,9 +61,9 @@ contract MockSlot {
             hasTax = true;
         }
         if (mask & 8 != 0) {
-            hookData = app.settings;
-            hookAddr = app.target;
-            hasHook = true;
+            settings = module.settings;
+            moduleAddr = module.target;
+            hasModule = true;
         }
     }
 
@@ -71,17 +71,17 @@ contract MockSlot {
     ///      was, as the real slot does.
     function cancelTerms(uint8 mask) external onlyManager {
         bool cancelTax = mask & 1 != 0 && hasTax;
-        bool cancelHook = mask & 8 != 0 && hasHook;
-        if (!cancelTax && !cancelHook) revert NoPendingTerms();
+        bool cancelModule = mask & 8 != 0 && hasModule;
+        if (!cancelTax && !cancelModule) revert NoPendingTerms();
         if (cancelTax) {
             hasTax = false;
             taxPct = 0;
             taxCancels++;
         }
-        if (cancelHook) {
-            hasHook = false;
-            hookAddr = address(0);
-            hookCancels++;
+        if (cancelModule) {
+            hasModule = false;
+            moduleAddr = address(0);
+            moduleCancels++;
         }
     }
 
@@ -99,7 +99,7 @@ contract SlotCollectiveTest is Test {
     address internal admin = makeAddr("admin");
     address internal factoryAdmin = makeAddr("factoryAdmin");
     address internal taxMgr = makeAddr("taxMgr");
-    address internal hookMgr = makeAddr("hookMgr");
+    address internal policyMgr = makeAddr("policyMgr");
     address internal splitMgr = makeAddr("splitMgr");
     address internal stranger = makeAddr("stranger");
 
@@ -150,7 +150,7 @@ contract SlotCollectiveTest is Test {
     function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         r.admin = admin;
         r.taxManagers = _one(taxMgr);
-        r.appManagers = _one(hookMgr);
+        r.policyManagers = _one(policyMgr);
         r.splitManagers = _one(splitMgr);
     }
 
@@ -178,7 +178,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = Wallet.Call({
             to: address(slot),
             value: 0,
-            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1)))
+            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1)))
         });
 
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -203,24 +203,24 @@ contract SlotCollectiveTest is Test {
     function test_adminCanRelayBoth() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 250);
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
         vm.stopPrank();
 
         assertEq(slot.taxPct(), 250);
-        assertEq(slot.hookAddr(), address(0xCAFE));
+        assertEq(slot.moduleAddr(), address(0xCAFE));
     }
 
     /// @dev Detaching is a real choice, not a missing argument — so the relay
     ///      has to be able to express it.
-    function test_theHookManagerCanDetachTheApp() public {
-        vm.prank(hookMgr);
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xCAFE), settings: bytes32(0)}));
-        assertTrue(slot.hasHook());
+    function test_thePolicyManagerCanDetachTheModule() public {
+        vm.prank(policyMgr);
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        assertTrue(slot.hasModule());
 
-        vm.prank(hookMgr);
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0), settings: bytes32(0)}));
-        assertTrue(slot.hasHook(), "still queued, now queued as a detach");
-        assertEq(slot.hookAddr(), address(0));
+        vm.prank(policyMgr);
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: bytes32(0)}));
+        assertTrue(slot.hasModule(), "still queued, now queued as a detach");
+        assertEq(slot.moduleAddr(), address(0));
     }
 
     /// @dev Role reads are hoisted out of `expectRevert`'s arguments on purpose:
@@ -230,30 +230,30 @@ contract SlotCollectiveTest is Test {
         bytes32 taxRole = mgr.TAX_MANAGER_ROLE();
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
 
-        vm.prank(hookMgr);
-        vm.expectRevert(_unauthorized(hookMgr, taxRole));
+        vm.prank(policyMgr);
+        vm.expectRevert(_unauthorized(policyMgr, taxRole));
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(1), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(1), settings: bytes32(0)}));
     }
 
     /// @dev The gap the per-dimension cancel closed, and the reason the new
-    ///      slot had to grow the same two flags on cancel that it has on
+    ///      slot had to grow the same two scopes on cancel that it has on
     ///      propose: retracting your own work must not destroy anybody else's.
     function test_eachRoleCancelsItsOwnDimensionAndLeavesTheOtherStanding()
         public
     {
         vm.prank(taxMgr);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
-        vm.prank(hookMgr);
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        vm.prank(policyMgr);
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
 
-        vm.prank(hookMgr);
-        mgr.cancelAppProposal(IManagedSlot(address(slot)));
+        vm.prank(policyMgr);
+        mgr.cancelModuleProposal(IManagedSlot(address(slot)));
 
-        assertEq(slot.hookCancels(), 1);
+        assertEq(slot.moduleCancels(), 1);
         assertEq(slot.taxCancels(), 0);
         assertTrue(slot.hasTax(), "the tax manager's proposal survived");
         assertEq(slot.taxPct(), 500);
@@ -270,28 +270,28 @@ contract SlotCollectiveTest is Test {
         bytes32 taxRole = mgr.TAX_MANAGER_ROLE();
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
 
-        vm.prank(hookMgr);
-        vm.expectRevert(_unauthorized(hookMgr, taxRole));
+        vm.prank(policyMgr);
+        vm.expectRevert(_unauthorized(policyMgr, taxRole));
         mgr.cancelTaxProposal(IManagedSlot(address(slot)));
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.cancelAppProposal(IManagedSlot(address(slot)));
+        mgr.cancelModuleProposal(IManagedSlot(address(slot)));
 
         assertEq(slot.taxCancels(), 0);
-        assertEq(slot.hookCancels(), 0);
+        assertEq(slot.moduleCancels(), 0);
     }
 
     function test_adminCanCancelEitherDimension() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
         mgr.cancelTaxProposal(IManagedSlot(address(slot)));
-        mgr.cancelAppProposal(IManagedSlot(address(slot)));
+        mgr.cancelModuleProposal(IManagedSlot(address(slot)));
         vm.stopPrank();
 
         assertEq(slot.taxCancels(), 1);
-        assertEq(slot.hookCancels(), 1);
+        assertEq(slot.moduleCancels(), 1);
     }
 
     /// @dev The blanket cancel stays admin-only. It is no longer the ONLY way
@@ -302,7 +302,7 @@ contract SlotCollectiveTest is Test {
 
         address[] memory managers = new address[](2);
         managers[0] = taxMgr;
-        managers[1] = hookMgr;
+        managers[1] = policyMgr;
 
         for (uint256 i; i < managers.length; ++i) {
             vm.prank(managers[i]);
@@ -313,11 +313,11 @@ contract SlotCollectiveTest is Test {
         vm.prank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(admin);
-        mgr.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
         vm.prank(admin);
         mgr.cancelAllProposals(IManagedSlot(address(slot)));
         assertEq(slot.taxCancels(), 1);
-        assertEq(slot.hookCancels(), 1);
+        assertEq(slot.moduleCancels(), 1);
     }
 
     /// @dev The blanket cancel must survive a slot with only one dimension
@@ -331,7 +331,7 @@ contract SlotCollectiveTest is Test {
         mgr.cancelAllProposals(IManagedSlot(address(slot)));
 
         assertEq(slot.taxCancels(), 1);
-        assertEq(slot.hookCancels(), 0, "nothing was queued to cancel");
+        assertEq(slot.moduleCancels(), 0, "nothing was queued to cancel");
         assertFalse(slot.hasTax());
     }
 
@@ -395,16 +395,16 @@ contract SlotCollectiveTest is Test {
         mgr.setSplit(wrong, wrong, tokens);
     }
 
-    function test_hookManagerRelaysAppOfferAcceptance() public {
-        Manifest memory offer = Manifest({scopes: 4, feeBps: 100, feeRecipient: payeeA});
+    function test_policyManagerRelaysTheGrant() public {
+        Manifest memory declared = Manifest({scopes: 4, feeBps: 100, feeRecipient: payeeA});
 
-        bytes32 hookRole = mgr.POLICY_MANAGER_ROLE();
+        bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
         vm.prank(taxMgr);
-        vm.expectRevert(_unauthorized(taxMgr, hookRole));
-        mgr.grant(IManagedSlot(address(slot)), offer);
+        vm.expectRevert(_unauthorized(taxMgr, policyRole));
+        mgr.grant(IManagedSlot(address(slot)), declared);
 
-        vm.prank(hookMgr);
-        mgr.grant(IManagedSlot(address(slot)), offer);
+        vm.prank(policyMgr);
+        mgr.grant(IManagedSlot(address(slot)), declared);
         assertEq(slot.acceptedFeeBps(), 100);
     }
 
@@ -413,13 +413,13 @@ contract SlotCollectiveTest is Test {
         bytes[] memory calls = new bytes[](2);
         calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
         calls[1] = abi.encodeCall(
-            mgr.proposeApp,
-            (IManagedSlot(address(slot)), AppTerms({target: address(0), settings: bytes32(0)}))
+            mgr.proposeModule,
+            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: bytes32(0)}))
         );
         vm.prank(admin);
         mgr.multicall(calls);
         assertTrue(slot.hasTax());
-        assertTrue(slot.hasHook());
+        assertTrue(slot.hasModule());
     }
 
     /// @notice Each call in a batch still passes its own role check.
@@ -427,12 +427,12 @@ contract SlotCollectiveTest is Test {
         bytes[] memory calls = new bytes[](2);
         calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
         calls[1] = abi.encodeCall(
-            mgr.proposeApp,
-            (IManagedSlot(address(slot)), AppTerms({target: address(0), settings: bytes32(0)}))
+            mgr.proposeModule,
+            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: bytes32(0)}))
         );
-        bytes32 hookRole = mgr.POLICY_MANAGER_ROLE();
+        bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
         vm.prank(taxMgr);
-        vm.expectRevert(_unauthorized(taxMgr, hookRole));
+        vm.expectRevert(_unauthorized(taxMgr, policyRole));
         mgr.multicall(calls);
         assertFalse(slot.hasTax(), "the batch reverted as a whole");
     }

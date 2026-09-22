@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -19,14 +19,14 @@ contract MockSlot {
     address public manager;
 
     uint256 public taxPct;
-    address public hookAddr;
-    bytes32 public hookData;
+    address public moduleAddr;
+    bytes32 public settings;
 
     bool public hasTax;
-    bool public hasHook;
+    bool public hasModule;
 
     uint256 public taxCancels;
-    uint256 public hookCancels;
+    uint256 public moduleCancels;
 
     error NotManager();
     error NoPendingTerms();
@@ -42,7 +42,7 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, AppTerms calldata app, uint8 mask)
+    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint8 mask)
         external
         onlyManager
     {
@@ -52,9 +52,9 @@ contract MockSlot {
             hasTax = true;
         }
         if (mask & 8 != 0) {
-            hookData = app.settings;
-            hookAddr = app.target;
-            hasHook = true;
+            settings = module.settings;
+            moduleAddr = module.target;
+            hasModule = true;
         }
     }
 
@@ -62,17 +62,17 @@ contract MockSlot {
     ///      was, as the real slot does.
     function cancelTerms(uint8 mask) external onlyManager {
         bool cancelTax = mask & 1 != 0 && hasTax;
-        bool cancelHook = mask & 8 != 0 && hasHook;
-        if (!cancelTax && !cancelHook) revert NoPendingTerms();
+        bool cancelModule = mask & 8 != 0 && hasModule;
+        if (!cancelTax && !cancelModule) revert NoPendingTerms();
         if (cancelTax) {
             hasTax = false;
             taxPct = 0;
             taxCancels++;
         }
-        if (cancelHook) {
-            hasHook = false;
-            hookAddr = address(0);
-            hookCancels++;
+        if (cancelModule) {
+            hasModule = false;
+            moduleAddr = address(0);
+            moduleCancels++;
         }
     }
 
@@ -177,7 +177,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: admin,
             taxManagers: taxManagers,
-            appManagers: new address[](0),
+            policyManagers: new address[](0),
             poolManagers: poolManagers
         });
 
@@ -417,19 +417,19 @@ contract SlotStreamCollectiveTest is Test {
         // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xBEEF), settings: bytes32(0)}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: bytes32(0)}));
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposeApp(IManagedSlot(address(slot)), AppTerms({target: address(0xBEEF), settings: bytes32(0)}));
-        assertEq(slot.hookAddr(), address(0xBEEF));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: bytes32(0)}));
+        assertEq(slot.moduleAddr(), address(0xBEEF));
 
         // Retracting one dimension leaves the other standing, on this engine
         // too — the governance half is shared, so this is the same code path.
         vm.prank(admin);
-        collective.cancelAppProposal(IManagedSlot(address(slot)));
+        collective.cancelModuleProposal(IManagedSlot(address(slot)));
         assertTrue(slot.hasTax(), "the tax proposal survived");
-        assertFalse(slot.hasHook());
+        assertFalse(slot.hasModule());
     }
 
     function test_Fork_RejectsEmptyPool() public {
@@ -447,7 +447,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            appManagers: new address[](0),
+            policyManagers: new address[](0),
             poolManagers: new address[](0)
         });
 
@@ -476,7 +476,7 @@ contract SlotStreamCollectiveTest is Test {
             .InitialRoles({
             admin: address(0),
             taxManagers: new address[](0),
-            appManagers: new address[](0),
+            policyManagers: new address[](0),
             poolManagers: new address[](0)
         });
 

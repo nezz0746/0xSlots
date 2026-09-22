@@ -14,7 +14,7 @@ import {
 } from "./abis";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// THE APP-BASED SLOTS PROTOCOL
+// THE V1 SLOTS PROTOCOL
 //
 // ── One creation function, one source ──────────────────────────────────────
 //
@@ -155,7 +155,7 @@ function anvilNftFactory(): Deployment {
 // The records were NOT trusted before, and the reason was real: the old
 // `DeployLocal` wrote the RETIRED factory's address into the same filenames,
 // so reading them would have indexed the old event set against the new schema
-// and written nothing but errors. `DeployProtocol` writes the app-based
+// and written nothing but errors. `DeployProtocol` writes the v1
 // addresses now, so the file is the truth and the env var is the escape hatch
 // rather than the other way round.
 //
@@ -253,7 +253,7 @@ const ANVIL_START_BLOCK = Number(
       : ANVIL_SLOT_FACTORY_RECORD.startBlock),
 );
 
-// AdLand on anvil. `DeployProtocol.s.sol` deploys the app on every chain it
+// AdLand on anvil. `DeployProtocol.s.sol` deploys the module on every chain it
 // touches, 31337 included, and stamps `version` into the record — so the same
 // reader the testnets use resolves it here, and the env override is the same
 // escape hatch.
@@ -356,12 +356,12 @@ const SEPOLIA_NFT_FACTORY = remoteFactory(
 // ──────────────────────────────────────────
 // AdLand
 //
-// A APP, and the first one this indexer watches. It is not discovered through
+// A MODULE, and the first one this indexer watches. It is not discovered through
 // `factory()` like the sources above: there is one deployment per chain at a
 // known address, and the slots pointing at it are the slots that chose it.
 //
-// Watching an app at all is a departure worth stating. Everything else here is
-// the core protocol, which every slot shares; an app is one behaviour among
+// Watching a module at all is a departure worth stating. Everything else here is
+// the core protocol, which every slot shares; a module is one behaviour among
 // however many people write, and indexing one is a product decision rather than
 // a protocol one. AdLand earns it because the creative it stores is the whole
 // content of an ad space and lives nowhere else — no other event says what a
@@ -397,7 +397,7 @@ const SEPOLIA_ADLAND = remoteFactory(
 // ──────────────────────────────────────────
 
 const SLOT_CREATED_EVENT = parseAbiItem(
-  "event SlotCreated(address indexed slot, address indexed recipient, address indexed creator, address currency, address app)",
+  "event SlotCreated(address indexed slot, address indexed recipient, address indexed creator, address currency, address module)",
 );
 
 const COLLECTIVE_DEPLOYED_EVENT = parseAbiItem(
@@ -865,7 +865,7 @@ const remoteConfig = createConfig({
   },
 });
 
-/** The anvil equivalent: the same two sources, one chain, the apps deploy. */
+/** The anvil equivalent: the same two sources, one chain, the modules deploy. */
 function buildLocalConfig() {
   const at = {
     address: ANVIL_SLOT_FACTORY,

@@ -23,7 +23,7 @@ import { CollectivesClient } from "./collectives";
 
 export interface UseSlotsClientConfig {
   /**
-   * The app-protocol `SlotFactory`.
+   * The v1 `SlotFactory`.
    *
    * Passed in rather than looked up: there is no address registry for this
    * factory yet, and an app that silently resolved the PREVIOUS protocol's
@@ -114,7 +114,7 @@ function extractErrorMessage(error: unknown): string {
   if (decoded) return NAMED_REVERTS[decoded] ?? decoded;
 
   // viem ContractFunctionExecutionError: prefer the shortMessage or reason.
-  // An app's veto arrives here — `_before` bubbles the app's own revert reason
+  // A module's veto arrives here — `_before` bubbles the module's own revert reason
   // rather than "call failed", and this is where that pays off.
   const err = error as Record<string, unknown> | undefined;
   if (err && typeof err === "object") {
@@ -312,7 +312,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
    * Every slot in one signature, through the factory.
    *
    * Not wrapped with a simulate-first: `simulateCollectAll` is a READ and this
-   * app is the write path, so pairing them here would make a button that shows
+   * hook is the write path, so pairing them here would make a button that shows
    * an amount also send a transaction to learn it. Read it yourself to label the
    * button, then call this when it is pressed.
    */
@@ -365,7 +365,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
 
   const grant = useCallback(
     (slot: Address, expected: Manifest) =>
-      exec("Accept app offer", () => client.grant(slot, expected)),
+      exec("Accept module update", () => client.grant(slot, expected)),
     [exec, client],
   );
 
@@ -379,7 +379,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
    *
    * Labelled by dimension rather than one "Cancel proposal" for all three
    * shapes, because the label is what a per-row spinner keys off: a tax row and
-   * an app row cancelling under one shared label spin together, and the reader
+   * a module row cancelling under one shared label spin together, and the reader
    * cannot tell which retraction is actually in flight.
    */
   const cancelTerms = useCallback(
@@ -448,10 +448,10 @@ export function cancelLabel(mask: number): string {
       return "Cancel recipient update";
     case TERMS.MIN_RUNWAY:
       return "Cancel minimum deposit update";
-    case TERMS.APP:
-      return "Cancel app update";
+    case TERMS.MODULE:
+      return "Cancel module update";
     case TERMS.SCOPES:
-      return "Cancel app scopes update";
+      return "Cancel module scopes update";
     default:
       return "Cancel proposal";
   }

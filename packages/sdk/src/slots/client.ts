@@ -1,5 +1,5 @@
 import {
-  minimumTenureAppAbi,
+  minimumTenureModuleAbi,
   offerBookAbi,
   offerBookAddress,
   slotAbi,
@@ -46,20 +46,20 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
  */
 export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
 
-/** "This app configured nothing" — 32 zero bytes. */
+/** "This module configured nothing" — 32 zero bytes. */
 export const ZERO_SETTINGS =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
 
 /**
  * Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
- * `APP` always covers the whole {@link AppTerms}. `SCOPES` is never
+ * `MODULE` always covers the whole {@link ModuleTerms}. `SCOPES` is never
  * proposed: it is queued by {@link SlotsClient.grant}.
  */
 export const TERMS = {
   TAX_RATE: 1,
   RECIPIENT: 2,
   MIN_RUNWAY: 4,
-  APP: 8,
+  MODULE: 8,
   SCOPES: 16,
 } as const;
 export const ALL_TERMS = 31;
@@ -68,7 +68,7 @@ export const ALL_TERMS = 31;
 
 /** What the slot charges and who receives it. Mirrors `TaxTerms`. */
 export interface TaxTerms {
-  /** Receives the rent, less any app fee. Never zero. */
+  /** Receives the rent, less any module fee. Never zero. */
   recipient: Address;
   /** Basis points of the declared price per 30 days. 1..10000. */
   rateBps: number;
@@ -76,17 +76,17 @@ export interface TaxTerms {
   minRunwaySeconds: number;
 }
 
-/** The slot's app and its configuration. Mirrors `AppTerms`. */
-export interface AppTerms {
-  /** The app contract. {@link zeroAddress} for none, with `config` zero too. */
+/** The slot's module and its configuration. Mirrors `ModuleTerms`. */
+export interface ModuleTerms {
+  /** The module contract. {@link zeroAddress} for none, with `settings` zero too. */
   target: Address;
-  /** This slot's settings for the app. Opaque to the slot. */
+  /** This slot's settings for the module. Opaque to the slot. */
   settings: Hex;
 }
 
 /**
- * What an app asks of a slot: its callbacks and a share of rent. Declared by the
- * app; the slot keeps a copy from when it attached or its manager last
+ * What a module asks of a slot: its callbacks and a share of rent. Declared by the
+ * module; the slot keeps a copy from when it attached or its manager last
  * accepted. Mirrors `Manifest`.
  */
 export interface Manifest {
@@ -110,7 +110,7 @@ export const SCOPE_BITS = {
   onUninstall: 256,
 } as const;
 
-export const NO_APP: AppTerms = { target: zeroAddress, settings: ZERO_SETTINGS };
+export const NO_MODULE: ModuleTerms = { target: zeroAddress, settings: ZERO_SETTINGS };
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
@@ -127,16 +127,16 @@ export interface SlotInit {
   /** Tax rate and minimum runway can change. */
   mutableTax: boolean;
   mutableRecipient: boolean;
-  mutableApp: boolean;
+  mutableModule: boolean;
   taxTerms: TaxTerms;
-  /** Omit for no app. */
-  appTerms?: Partial<AppTerms> & { target: Address };
+  /** Omit for no module. */
+  moduleTerms?: Partial<ModuleTerms> & { target: Address };
 }
 
-function fullHook(app?: Partial<AppTerms> & { target: Address }): AppTerms {
+function fullModuleTerms(module?: Partial<ModuleTerms> & { target: Address }): ModuleTerms {
   return {
-    target: app?.target ?? zeroAddress,
-    settings: app?.settings ?? ZERO_SETTINGS,
+    target: module?.target ?? zeroAddress,
+    settings: module?.settings ?? ZERO_SETTINGS,
   };
 }
 
@@ -147,13 +147,13 @@ function encodeSlotInit(init: SlotInit) {
     manager: init.manager,
     mutableTax: init.mutableTax,
     mutableRecipient: init.mutableRecipient,
-    mutableApp: init.mutableApp,
+    mutableModule: init.mutableModule,
     taxTerms: {
       recipient: init.taxTerms.recipient,
       rateBps: init.taxTerms.rateBps,
       minRunwaySeconds: init.taxTerms.minRunwaySeconds,
     },
-    appTerms: fullHook(init.appTerms),
+    moduleTerms: fullModuleTerms(init.moduleTerms),
   } as const;
 }
 
@@ -172,14 +172,14 @@ function assertTaxTerms(taxTerms: Partial<TaxTerms>, mask: number, where: string
   }
 }
 
-function assertApp(app: AppTerms, where: string) {
-  if (app.target === zeroAddress && app.settings !== ZERO_SETTINGS)
-    throw new SlotsError(where, "app config needs an app — pass a target, or drop the config");
+function assertModule(module: ModuleTerms, where: string) {
+  if (module.target === zeroAddress && module.settings !== ZERO_SETTINGS)
+    throw new SlotsError(where, "module settings need a module — pass a target, or drop the settings");
 }
 
 /** Throw on the initialisations `Slot.initialize` refuses, before spending gas. */
 export function assertSlotInit(init: SlotInit): void {
-  const anyMutable = init.mutableTax || init.mutableRecipient || init.mutableApp;
+  const anyMutable = init.mutableTax || init.mutableRecipient || init.mutableModule;
   if (anyMutable && init.manager === zeroAddress)
     throw new SlotsError("createSlot", "a slot with anything mutable needs a manager");
   if (!anyMutable && init.manager !== zeroAddress)
@@ -188,18 +188,18 @@ export function assertSlotInit(init: SlotInit): void {
       "a fully immutable slot must have no manager — the zero address is what makes it immutable",
     );
   assertTaxTerms(init.taxTerms, ALL_TERMS, "createSlot");
-  assertApp(fullHook(init.appTerms), "createSlot");
+  assertModule(fullModuleTerms(init.moduleTerms), "createSlot");
 }
 
-// ─── Apps ────────────────────────────────────────────────────────────────────
+// ─── Modules ────────────────────────────────────────────────────────────────────
 
 /**
- * An app's scopes, as the slot accepted them when it was
- * attached — not as the app reports them today.
+ * A module's scopes, as the slot accepted them when it was
+ * attached — not as the module reports them today.
  *
  * `before` decides and may refuse; `after` records and cannot. That is the whole
  * interface. A flag being false means the callback is skipped entirely, so an
- * `afterBuy` that never fires is usually an app that forgot to declare it.
+ * `afterBuy` that never fires is usually a module that forgot to declare it.
  */
 export interface Scopes {
   beforeBuy: boolean;
@@ -209,10 +209,10 @@ export interface Scopes {
   afterLiquidate: boolean;
   afterSettle: boolean;
   /**
-   * Not a callback — a mode. The app's `after` calls run uncapped and their
+   * Not a callback — a mode. The module's `after` calls run uncapped and their
    * revert propagates, so its writes cannot be silently dropped.
    *
-   * A slot whose app declares this is only as evictable as that app: a
+   * A slot whose module declares this is only as evictable as that module: a
    * failing `afterLiquidate` blocks the eviction rather than being swallowed.
    * Surface it wherever a user commits funds to a slot.
    */
@@ -237,17 +237,17 @@ export function unpackScopes(scopes: number): Scopes {
 export interface PendingTerms {
   /** Only the fields named by `mask` are meaningful. */
   taxTerms: TaxTerms;
-  /** Meaningful when `hasHook`. */
-  appTerms: AppTerms;
-  /** Meaningful when `hasHookPermissions`: scopes accepted from the attached app. */
+  /** Meaningful when `hasModule`. */
+  moduleTerms: ModuleTerms;
+  /** Meaningful when `hasScopes`: scopes accepted from the attached module. */
   scopes: number;
   /** Which terms are queued. See {@link TERMS}. */
   mask: number;
   hasTaxRate: boolean;
   hasRecipient: boolean;
   hasMinRunway: boolean;
-  hasHook: boolean;
-  hasHookPermissions: boolean;
+  hasModule: boolean;
+  hasScopes: boolean;
   proposedAt: bigint;
   /**
    * The instant this becomes ripe — `proposedAt + TERMS_DELAY`. Zero when
@@ -265,34 +265,34 @@ export interface PendingTerms {
 
 /**
  * A change of terms to queue. Presence is the signal, not truthiness:
- * `{ appTerms: NO_APP }` means "detach the app".
+ * `{ moduleTerms: NO_MODULE }` means "detach the module".
  */
 export interface ProposeTermsParams {
   /** Basis points per 30 days. */
   taxRateBps?: number;
   recipient?: Address;
   minRunwaySeconds?: number;
-  /** The whole app terms. The offer is the app's own, read when it attaches. */
-  appTerms?: Partial<AppTerms> & { target: Address };
+  /** The whole module terms. The manifest is the module's own, read when it attaches. */
+  moduleTerms?: Partial<ModuleTerms> & { target: Address };
 }
 
 /** Every term in force. Mirrors `Terms`. */
 export interface SlotTerms {
   taxTerms: TaxTerms;
-  appTerms: AppTerms;
+  moduleTerms: ModuleTerms;
   manifest: Manifest;
 }
 
 /**
- * The two reads any app may answer, declared here rather than taken from a
+ * The two reads any module may answer, declared here rather than taken from a
  * generated ABI.
  *
- * Both are optional surface that any app may implement, so borrowing one
- * app's ABI to call them on another would tie this to whichever app happened
- * to be generated. `settingsById` exists on every app that registers its
+ * Both are optional surface that any module may implement, so borrowing one
+ * module's ABI to call them on another would tie this to whichever module happened
+ * to be generated. `settingsById` exists on every module that registers its
  * configuration rather than inlining it.
  */
-const describedAppAbi = [
+const describedModuleAbi = [
   {
     type: "function",
     name: "definition",
@@ -310,45 +310,45 @@ const describedAppAbi = [
 ] as const;
 
 /** One `x-abi` entry: viem's own `AbiParameter`, in encoding order. */
-export interface AppSettingsParam {
+export interface ModuleSettingsParam {
   name: string;
   type: string;
 }
 
 /**
- * The configuration half of an app's definition: a JSON Schema 2020-12
+ * The configuration half of a module's definition: a JSON Schema 2020-12
  * document, passable to `react-jsonschema-form` or AJV untouched, plus the
  * `x-` conventions the protocol adds.
  *
  * Every value is a string — a `uint64` bound does not survive `JSON.parse` as a
  * number — so ranges travel as `x-minimum` / `x-maximum` strings and the
- * app's own `checkSettings` remains the authority on what is accepted.
+ * module's own `checkSettings` remains the authority on what is accepted.
  */
-export interface AppSettingsSchema {
+export interface ModuleSettingsSchema {
   $schema: string;
   title: string;
   type: "object";
   properties: Record<string, Record<string, unknown>>;
   required: string[];
   /** `registered`: encode, `registerSettings`, attach the returned id. */
-  "x-config-encoding": "inline" | "registered";
+  "x-settings-encoding": "inline" | "registered";
   /** Whether a slot may carry no configuration at all. */
   "x-optional"?: boolean;
-  "x-abi": AppSettingsParam[];
+  "x-abi": ModuleSettingsParam[];
 }
 
-/** What an app says it is. `IDescribedApp.definition`, parsed. */
-export interface AppDefinition {
+/** What a module says it is. `IDescribedModule.definition`, parsed. */
+export interface ModuleDefinition {
   version: number;
   title: string;
   description: string;
   docs?: string;
-  /** Absent for an app that takes no configuration. */
-  config?: AppSettingsSchema;
+  /** Absent for a module that takes no settings. */
+  settings?: ModuleSettingsSchema;
 }
 
-/** Whether an app accepts a configuration, and why not. */
-export type HookConfigCheck = { ok: true } | { ok: false; reason: string };
+/** Whether a module accepts a configuration, and why not. */
+export type SettingsCheck = { ok: true } | { ok: false; reason: string };
 
 /** One entry on the OfferBook. `id` is what `acceptOffer` and `cancelOffer` take. */
 export interface BookOffer {
@@ -381,15 +381,15 @@ export interface PostOfferParams {
   expiry: bigint;
 }
 
-/** The slot's accepted app offer beside what the app offers today. */
-export interface HookOfferStatus {
+/** The slot's accepted manifest beside what the module declares today. */
+export interface GrantStatus {
   accepted: Manifest;
-  offered: Manifest;
+  declared: Manifest;
   /** Accepting would change the fee, at once. */
   feeDiffers: boolean;
   /**
    * Accepting would queue new scopes for the next buy. Always false when
-   * the slot's app is immutable, or those scopes are already queued.
+   * the slot's module is immutable, or those scopes are already queued.
    */
   scopesDiffer: boolean;
 }
@@ -399,7 +399,7 @@ export interface HookOfferStatus {
 // There is no `SellOrder` any more. The core carried `sell` — an occupant
 // submitting a buyer's EIP-712 order — and it was a SECOND seating path: it
 // reset the tenure like `buy` but ran `beforeSell` instead of `beforeBuy`, so a
-// app author had two doors to police.
+// module author had two doors to police.
 //
 // A consensual sale is now `selfAssess` then `buy`, performed by the OfferBook
 // inside the occupant's own transaction. The occupant makes the book their
@@ -454,11 +454,11 @@ export interface SlotState {
   manager: Address;
   mutableTax: boolean;
   mutableRecipient: boolean;
-  mutableApp: boolean;
-  app: Address;
-  /** The app's configuration: 32 bytes only the app can interpret. */
+  mutableModule: boolean;
+  module: Address;
+  /** The module's configuration: 32 bytes only the module can interpret. */
   settings: Hex;
-  /** What the app asks — callbacks and fee — as this slot accepted it. */
+  /** What the module asks — callbacks and fee — as this slot accepted it. */
   manifest: Manifest;
   scopes: Scopes;
   pending: PendingTerms;
@@ -495,7 +495,7 @@ export interface SlotState {
 }
 
 export interface SlotsClientConfig {
-  /** The app-protocol `SlotFactory`. Only `createSlot` needs it. */
+  /** The v1 `SlotFactory`. Only `createSlot` needs it. */
   factoryAddress?: Address;
   /**
    * The `OfferBook`. Only {@link SlotsClient.acceptOffer} needs it, and it
@@ -509,15 +509,15 @@ export interface SlotsClientConfig {
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 /**
- * `slotAbi` plus every app error this package can name.
+ * `slotAbi` plus every module error this package can name.
  *
- * An app's veto reverts with the APP'S error, and viem decodes an error only
+ * A module's veto reverts with the MODULE'S error, and viem decodes an error only
  * if it is in the ABI it was handed — so simulating against `slotAbi` alone
  * yields a bare four-byte selector, which is a hex string nobody can act on.
  * Extra error entries cost nothing: the function being called is still resolved
  * by name out of `slotAbi`.
  *
- * An app this package has never heard of still degrades to the selector. That
+ * A module this package has never heard of still degrades to the selector. That
  * is the honest floor for an open extension point, and it is strictly more than
  * a mined revert with no reason at all.
  */
@@ -526,11 +526,11 @@ type RawOffer = Omit<BookOffer, "id">;
 
 const SIMULATION_ABI = [
   ...slotAbi,
-  ...minimumTenureAppAbi.filter((entry) => entry.type === "error"),
+  ...minimumTenureModuleAbi.filter((entry) => entry.type === "error"),
 ] as const;
 
 /**
- * Client for the app-based Slots protocol.
+ * Client for the v1 Slots protocol.
  *
  * Reads go straight to the chain. There is no indexer namespace here on purpose:
  * the ponder deployment indexes the previous protocol, and a read method that
@@ -737,15 +737,15 @@ export class SlotsClient {
   }
 
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
-  app(slot: Address): Promise<Address> {
-    return this.read<Address>(slot, "app");
+  module(slot: Address): Promise<Address> {
+    return this.read<Address>(slot, "module");
   }
 
   /**
-   * The app's scopes AS ACCEPTED by this slot.
+   * The module's scopes AS ACCEPTED by this slot.
    *
-   * Not what the app's own `apps()` says today: the snapshot is deliberate, so
-   * an app cannot widen its reach mid-tenure and start spending an occupant's
+   * Not what the module's own `modules()` says today: the snapshot is deliberate, so
+   * a module cannot widen its reach mid-tenure and start spending an occupant's
    * gas on callbacks they never agreed to.
    */
   scopes(slot: Address): Promise<Scopes> {
@@ -810,12 +810,12 @@ export class SlotsClient {
     return this.read<bigint>(slot, "tenureId");
   }
 
-  /** Every term in force: tax terms, app terms and the accepted app offer. */
+  /** Every term in force: tax terms, module terms and the accepted manifest. */
   terms(slot: Address): Promise<SlotTerms> {
     return this.read<SlotTerms>(slot, "terms");
   }
 
-  /** The app's offer as this slot accepted it. */
+  /** The module's manifest as this slot accepted it. */
   manifest(slot: Address): Promise<Manifest> {
     return this.read<Manifest>(slot, "manifest");
   }
@@ -853,33 +853,33 @@ export class SlotsClient {
     return this.read<bigint>(slot, "minRunwaySeconds");
   }
 
-  // ─── Apps ──────────────────────────────────────────────────────────────────
+  // ─── Modules ──────────────────────────────────────────────────────────────────
 
   /**
-   * What `app` asks of a slot configured with `config`, as it declares it
+   * What `module` asks of a slot configured with `settings`, as it declares it
    * today. Not what any slot has accepted: that is {@link manifest}.
    */
-  readManifest(app: Address, config: Hex = ZERO_SETTINGS): Promise<Manifest> {
+  readManifest(module: Address, settings: Hex = ZERO_SETTINGS): Promise<Manifest> {
     return this.publicClient.readContract({
-      address: app,
-      abi: minimumTenureAppAbi,
+      address: module,
+      abi: minimumTenureModuleAbi,
       functionName: "manifest",
-      args: [config],
+      args: [settings],
     }) as Promise<Manifest>;
   }
 
   /**
-   * Ask `app` whether it accepts `config`, the same check a slot runs when the
-   * app is proposed or attached. Resolves with the app's reason instead of
+   * Ask `module` whether it accepts `settings`, the same check a slot runs when the
+   * module is proposed or attached. Resolves with the module's reason instead of
    * throwing, so a form can show it.
    */
-  async checkSettings(app: Address, config: Hex): Promise<HookConfigCheck> {
+  async checkSettings(module: Address, settings: Hex): Promise<SettingsCheck> {
     try {
       await this.publicClient.readContract({
-        address: app,
-        abi: minimumTenureAppAbi,
+        address: module,
+        abi: minimumTenureModuleAbi,
         functionName: "checkSettings",
-        args: [config],
+        args: [settings],
       });
       return { ok: true };
     } catch (error) {
@@ -894,52 +894,52 @@ export class SlotsClient {
   }
 
   /**
-   * What an app says it is (`IDescribedApp.definition`), parsed.
+   * What a module says it is (`IDescribedModule.definition`), parsed.
    *
-   * `null` for an app that does not describe itself, that reverts, or that
+   * `null` for a module that does not describe itself, that reverts, or that
    * answers with something that is not JSON — all of which are legal. The
-   * caller falls back to the scopes, which still say whether the app may
+   * caller falls back to the scopes, which still say whether the module may
    * refuse a buy.
    *
-   * The answer is fixed by the app's code, so it can be cached by address
+   * The answer is fixed by the module's code, so it can be cached by address
    * indefinitely.
    */
-  async appDefinition(app: Address): Promise<AppDefinition | null> {
+  async moduleDefinition(module: Address): Promise<ModuleDefinition | null> {
     try {
       const raw = await this.publicClient.readContract({
-        address: app,
-        abi: describedAppAbi,
+        address: module,
+        abi: describedModuleAbi,
         functionName: "definition",
       });
-      return JSON.parse(raw) as AppDefinition;
+      return JSON.parse(raw) as ModuleDefinition;
     } catch {
       return null;
     }
   }
 
   /**
-   * The bytes a slot's app configuration stands for.
+   * The bytes a slot's module settings stand for.
    *
-   * When a schema says `x-config-encoding: "registered"`, the slot's word is an
-   * id and the values live in the app's own store. This resolves the word and
+   * When a schema says `x-settings-encoding: "registered"`, the slot's word is an
+   * id and the values live in the module's own store. This resolves the word and
    * decodes it against `x-abi`, which is how a client reads back a
-   * configuration it did not write — generically, for any app.
+   * configuration it did not write — generically, for any module.
    *
    * `null` when the word is unregistered or does not decode.
    */
-  async appSettings(
-    app: Address,
-    schema: AppSettingsSchema,
-    config: Hex,
+  async moduleSettings(
+    module: Address,
+    schema: ModuleSettingsSchema,
+    settings: Hex,
   ): Promise<Record<string, string> | null> {
     try {
-      let encoded = config;
-      if (schema["x-config-encoding"] === "registered") {
+      let encoded = settings;
+      if (schema["x-settings-encoding"] === "registered") {
         encoded = await this.publicClient.readContract({
-          address: app,
-          abi: describedAppAbi,
+          address: module,
+          abi: describedModuleAbi,
           functionName: "settingsById",
-          args: [config],
+          args: [settings],
         });
       }
       const values = decodeAbiParameters(
@@ -972,9 +972,9 @@ export class SlotsClient {
       manager: i.manager,
       mutableTax: i.mutableTax,
       mutableRecipient: i.mutableRecipient,
-      mutableApp: i.mutableApp,
-      app: i.terms.appTerms.target,
-      settings: i.terms.appTerms.settings,
+      mutableModule: i.mutableModule,
+      module: i.terms.moduleTerms.target,
+      settings: i.terms.moduleTerms.settings,
       manifest: i.terms.manifest,
       scopes: i.scopes,
       pending: toPendingTerms(i.pending),
@@ -1074,7 +1074,7 @@ export class SlotsClient {
    * this is a gas convenience and not an authority.
    *
    * Each collection is isolated on chain. A slot that reverts —
-   * `NothingToCollect` on one already flushed, or a `strict` app that reverts
+   * `NothingToCollect` on one already flushed, or a `strict` module that reverts
    * in `afterSettle` — leaves a zero in the result rather than failing the batch
    * for every other recipient. Addresses the factory did not create are skipped.
    *
@@ -1082,7 +1082,7 @@ export class SlotsClient {
    *
    * There is no cap here, and that is deliberate: the real limit is the block
    * gas limit, which differs per chain and per slot — a slot with a `strict`
-   * app costs far more to settle than a bare one. Call
+   * module costs far more to settle than a bare one. Call
    * {@link simulateCollectAll} first; it fails the same way the transaction
    * would, for free.
    */
@@ -1213,7 +1213,7 @@ export class SlotsClient {
   /**
    * Ask the chain what {@link buy} would do, WITHOUT sending it.
    *
-   * An app's veto is a `view` revert carrying the app's own error —
+   * A module's veto is a `view` revert carrying the module's own error —
    * `TenureNotElapsed(availableAt)`, not "execution reverted" — and that reason
    * is readable only from a simulation. Sent blind, the same veto arrives as a
    * MINED, reverted transaction whose receipt carries no reason at all, and the
@@ -1561,19 +1561,19 @@ export class SlotsClient {
    * the terms an occupant bought into hold for their whole tenure.
    *
    * Both dimensions travel in one call because they share one deferral and one
-   * apply. Omit a field to leave it alone; pass `app: zeroAddress` to detach the
-   * app, which is why presence rather than truthiness decides.
+   * apply. Omit a field to leave it alone; pass `module: zeroAddress` to detach the
+   * module, which is why presence rather than truthiness decides.
    */
   async proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
     const mask =
       (params.taxRateBps !== undefined ? TERMS.TAX_RATE : 0) |
       (params.recipient !== undefined ? TERMS.RECIPIENT : 0) |
       (params.minRunwaySeconds !== undefined ? TERMS.MIN_RUNWAY : 0) |
-      (params.appTerms !== undefined ? TERMS.APP : 0);
+      (params.moduleTerms !== undefined ? TERMS.MODULE : 0);
     if (mask === 0)
       throw new SlotsError(
         "proposeTerms",
-        "nothing to propose — pass taxRateBps, recipient, minRunwaySeconds or appTerms",
+        "nothing to propose — pass taxRateBps, recipient, minRunwaySeconds or moduleTerms",
       );
     const taxTerms: TaxTerms = {
       recipient: params.recipient ?? zeroAddress,
@@ -1581,25 +1581,25 @@ export class SlotsClient {
       minRunwaySeconds: params.minRunwaySeconds ?? 0,
     };
     assertTaxTerms(taxTerms, mask, "proposeTerms");
-    const appTerms = fullHook(params.appTerms);
-    if (mask & TERMS.APP) assertApp(appTerms, "proposeTerms");
-    return this.write(slot, "proposeTerms", [taxTerms, appTerms, mask]);
+    const moduleTerms = fullModuleTerms(params.moduleTerms);
+    if (mask & TERMS.MODULE) assertModule(moduleTerms, "proposeTerms");
+    return this.write(slot, "proposeTerms", [taxTerms, moduleTerms, mask]);
   }
 
-  /** The slot's accepted app offer beside what the app offers today. */
-  async grantStatus(slot: Address): Promise<HookOfferStatus> {
-    const [accepted, offered, feeDiffers, scopesDiffer] = await this.read<
+  /** The slot's accepted manifest beside what the module declares today. */
+  async grantStatus(slot: Address): Promise<GrantStatus> {
+    const [accepted, declared, feeDiffers, scopesDiffer] = await this.read<
       readonly [Manifest, Manifest, boolean, boolean]
     >(slot, "grantStatus");
-    return { accepted, offered, feeDiffers, scopesDiffer };
+    return { accepted, declared, feeDiffers, scopesDiffer };
   }
 
   /**
-   * Accept the app's current offer. Manager only.
+   * Accept the module's current manifest. Manager only.
    *
    * A new fee applies at once. New scopes queue for the next occupancy
-   * transition, and only when the slot's app is mutable. `expected` is the
-   * offer the manager reviewed; the call reverts `ManifestChanged` if the app
+   * transition, and only when the slot's module is mutable. `expected` is the
+   * manifest the manager reviewed; the call reverts `ManifestChanged` if the module
    * declares anything else by the time it lands, and `NothingToAccept` if it
    * would change nothing.
    */
@@ -1808,7 +1808,7 @@ export class SlotsClient {
      * transaction looks like it will work.
      *
      * The poll above proves the approve is visible on `publicClient` — the
-     * app's own RPC. The buy that follows is submitted through the WALLET,
+     * module's own RPC. The buy that follows is submitted through the WALLET,
      * and a wallet estimates gas against its own provider: MetaMask's Infura,
      * not ours. Two nodes, two views, and the approve reaches them at
      * different moments.
@@ -1886,7 +1886,7 @@ export function createSlotsClient(config: SlotsClientConfig): SlotsClient {
 /** `pendingTerms()` as viem decodes it. */
 interface PendingTermsResult {
   taxTerms: TaxTerms;
-  appTerms: AppTerms;
+  moduleTerms: ModuleTerms;
   scopes: number;
   mask: number;
   proposedAt: bigint;
@@ -1899,8 +1899,8 @@ interface SlotInfoResult {
   manager: Address;
   mutableTax: boolean;
   mutableRecipient: boolean;
-  mutableApp: boolean;
-  terms: { taxTerms: TaxTerms; appTerms: AppTerms; manifest: Manifest };
+  mutableModule: boolean;
+  terms: { taxTerms: TaxTerms; moduleTerms: ModuleTerms; manifest: Manifest };
   scopes: Scopes;
   occupant: Address;
   price: bigint;
@@ -1920,14 +1920,14 @@ function toPendingTerms(p: PendingTermsResult): PendingTerms {
   const isEmpty = p.mask === 0;
   return {
     taxTerms: p.taxTerms,
-    appTerms: p.appTerms,
+    moduleTerms: p.moduleTerms,
     scopes: p.scopes,
     mask: p.mask,
     hasTaxRate: (p.mask & TERMS.TAX_RATE) !== 0,
     hasRecipient: (p.mask & TERMS.RECIPIENT) !== 0,
     hasMinRunway: (p.mask & TERMS.MIN_RUNWAY) !== 0,
-    hasHook: (p.mask & TERMS.APP) !== 0,
-    hasHookPermissions: (p.mask & TERMS.SCOPES) !== 0,
+    hasModule: (p.mask & TERMS.MODULE) !== 0,
+    hasScopes: (p.mask & TERMS.SCOPES) !== 0,
     proposedAt: p.proposedAt,
     appliesAt: isEmpty ? 0n : p.proposedAt + TERMS_DELAY_SECONDS,
     applies: p.ripe,

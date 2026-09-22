@@ -7,8 +7,8 @@ import {
   claimedEvent,
   creditedEvent,
   depositedEvent,
-  app,
-  hookCallFailedEvent,
+  module,
+  moduleCallFailedEvent,
   liquidatedEvent,
   operatorSetEvent,
   priceSetEvent,
@@ -23,17 +23,17 @@ import {
   termsCancelledEvent,
   termsProposedEvent,
   debtRepaidEvent,
-  hookFeePaidEvent,
+  moduleFeePaidEvent,
   withdrawnEvent,
 } from "ponder:schema";
 import type { Hex } from "viem";
 import {
   bumpAccountChain,
-  bumpAppSlotCount,
+  bumpModuleSlotCount,
   evtId,
   getOrCreateAccount,
   getOrCreateAccountSlot,
-  hookPermissionColumns,
+  scopeColumns,
   lower,
   unpackScopes,
   ZERO_ADDR,
@@ -726,8 +726,8 @@ ponder.on("Slot:OperatorSet", async ({ event, context }) => {
 const TERM_TAX = 1;
 const TERM_RECIPIENT = 2;
 const TERM_MIN_DEPOSIT = 4;
-const TERM_APP = 8;
-const TERM_HOOK_FLAGS = 16;
+const TERM_MODULE = 8;
+const TERM_SCOPES = 16;
 
 /**
  * Terms queued by the manager. Only the masked fields are written; anything
@@ -736,11 +736,11 @@ const TERM_HOOK_FLAGS = 16;
 ponder.on("Slot:TermsProposed", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { taxTerms, appTerms: h, mask } = event.args;
+  const { taxTerms, moduleTerms: h, mask } = event.args;
   const tax = (mask & TERM_TAX) !== 0;
   const rec = (mask & TERM_RECIPIENT) !== 0;
   const min = (mask & TERM_MIN_DEPOSIT) !== 0;
-  const hk = (mask & TERM_APP) !== 0;
+  const hk = (mask & TERM_MODULE) !== 0;
 
   await context.db
     .update(slot, { id: slotAddr, chainId: context.chain.id })
@@ -754,9 +754,9 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
       pendingMinRunwaySeconds: min
         ? BigInt(taxTerms.minRunwaySeconds)
         : row.pendingMinRunwaySeconds,
-      pendingHasHook: hk || row.pendingHasHook,
-      pendingHook: hk ? lower(h.target) : row.pendingHook,
-      pendingHookConfig: hk ? lower(h.settings) : row.pendingHookConfig,
+      pendingHasModule: hk || row.pendingHasModule,
+      pendingModule: hk ? lower(h.target) : row.pendingModule,
+      pendingModuleSettings: hk ? lower(h.settings) : row.pendingModuleSettings,
       pendingProposedAt: event.block.timestamp,
       updatedAt: event.block.timestamp,
     }));
@@ -770,11 +770,11 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     changeTax: tax,
     changeRecipient: rec,
     changeMinDeposit: min,
-    changeHook: hk,
+    changeModule: hk,
     taxRateBps: BigInt(taxTerms.rateBps),
     recipient: lower(taxTerms.recipient),
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    app: lower(h.target),
+    module: lower(h.target),
     settings: lower(h.settings),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
@@ -784,32 +784,32 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
 
 /**
  * Queued terms landed, at a buy or at `applyTerms`. The event carries the
- * terms now in force, app offer included.
+ * terms now in force, manifest included.
  */
 ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { taxTerms, appTerms: h, manifest: offer, mask } = event.args;
+  const { taxTerms, moduleTerms: h, manifest: offer, mask } = event.args;
 
-  const nextHook = lower(h.target);
-  const nextHookConfig = lower(h.settings);
+  const nextModule = lower(h.target);
+  const nextModuleSettings = lower(h.settings);
   const nextRecipient = lower(taxTerms.recipient);
-  const prevHook = s.app;
-  const prevHookConfig = s.settings ?? ZERO_DATA;
-  const hookChanged = (prevHook ?? ZERO_ADDR) !== nextHook;
-  const hookDataChanged = prevHookConfig !== nextHookConfig;
+  const prevModule = s.module;
+  const prevModuleSettings = s.settings ?? ZERO_DATA;
+  const moduleChanged = (prevModule ?? ZERO_ADDR) !== nextModule;
+  const settingsChanged = prevModuleSettings !== nextModuleSettings;
   const taxChanged = s.taxRateBps !== BigInt(taxTerms.rateBps);
   const recipientChanged = s.recipient !== nextRecipient;
 
   const scopes = unpackScopes(offer.scopes);
 
-  if (hookChanged) {
-    if (prevHook) {
-      await bumpAppSlotCount(context, prevHook, event.block.timestamp, -1);
+  if (moduleChanged) {
+    if (prevModule) {
+      await bumpModuleSlotCount(context, prevModule, event.block.timestamp, -1);
     }
-    if (nextHook !== ZERO_ADDR) {
-      await bumpAppSlotCount(context, nextHook, event.block.timestamp, 1);
+    if (nextModule !== ZERO_ADDR) {
+      await bumpModuleSlotCount(context, nextModule, event.block.timestamp, 1);
     }
   }
 
@@ -835,17 +835,17 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     });
   }
 
-  const noHook = nextHook === ZERO_ADDR;
+  const noModule = nextModule === ZERO_ADDR;
   await context.db.update(slot, { id: slotAddr, chainId }).set({
     taxRateBps: BigInt(taxTerms.rateBps),
     recipient: nextRecipient,
     recipientAccount,
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    app: noHook ? null : nextHook,
-    settings: noHook ? null : nextHookConfig,
-    hookFeeBps: offer.feeBps,
-    hookFeeRecipient: offer.feeBps === 0 ? null : lower(offer.feeRecipient),
-    ...hookPermissionColumns(scopes),
+    module: noModule ? null : nextModule,
+    settings: noModule ? null : nextModuleSettings,
+    moduleFeeBps: offer.feeBps,
+    moduleFeeRecipient: offer.feeBps === 0 ? null : lower(offer.feeRecipient),
+    ...scopeColumns(scopes),
     pendingMask: 0,
     pendingHasTaxRate: false,
     pendingTaxRateBps: null,
@@ -853,9 +853,9 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     pendingRecipient: null,
     pendingHasMinRunway: false,
     pendingMinRunwaySeconds: null,
-    pendingHasHook: false,
-    pendingHook: null,
-    pendingHookConfig: null,
+    pendingHasModule: false,
+    pendingModule: null,
+    pendingModuleSettings: null,
     pendingHasScopes: false,
     pendingScopes: null,
     pendingProposedAt: null,
@@ -870,19 +870,19 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     taxRateBps: BigInt(taxTerms.rateBps),
     recipient: nextRecipient,
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    app: nextHook,
-    settings: nextHookConfig,
+    module: nextModule,
+    settings: nextModuleSettings,
     scopes: offer.scopes,
-    hookFeeBps: offer.feeBps,
-    hookFeeRecipient: lower(offer.feeRecipient),
+    moduleFeeBps: offer.feeBps,
+    moduleFeeRecipient: lower(offer.feeRecipient),
     previousTaxPercentage: s.taxRateBps,
     previousRecipient: s.recipient,
-    previousHook: prevHook ?? ZERO_ADDR,
-    previousHookConfig: prevHookConfig,
+    previousModule: prevModule ?? ZERO_ADDR,
+    previousModuleSettings: prevModuleSettings,
     taxChanged,
     recipientChanged,
-    hookChanged,
-    hookDataChanged,
+    moduleChanged,
+    settingsChanged,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
@@ -900,8 +900,8 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
   const tax = (mask & TERM_TAX) !== 0;
   const rec = (mask & TERM_RECIPIENT) !== 0;
   const min = (mask & TERM_MIN_DEPOSIT) !== 0;
-  const hk = (mask & TERM_APP) !== 0;
-  const hf = (mask & TERM_HOOK_FLAGS) !== 0;
+  const hk = (mask & TERM_MODULE) !== 0;
+  const hf = (mask & TERM_SCOPES) !== 0;
   const left = s.pendingMask & ~mask;
 
   await context.db
@@ -914,9 +914,9 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
       pendingRecipient: rec ? null : s.pendingRecipient,
       pendingHasMinRunway: min ? false : s.pendingHasMinRunway,
       pendingMinRunwaySeconds: min ? null : s.pendingMinRunwaySeconds,
-      pendingHasHook: hk ? false : s.pendingHasHook,
-      pendingHook: hk ? null : s.pendingHook,
-      pendingHookConfig: hk ? null : s.pendingHookConfig,
+      pendingHasModule: hk ? false : s.pendingHasModule,
+      pendingModule: hk ? null : s.pendingModule,
+      pendingModuleSettings: hk ? null : s.pendingModuleSettings,
       pendingHasScopes: hf ? false : s.pendingHasScopes,
       pendingScopes: hf ? null : s.pendingScopes,
       pendingProposedAt: left === 0 ? null : s.pendingProposedAt,
@@ -932,35 +932,35 @@ ponder.on("Slot:TermsCancelled", async ({ event, context }) => {
     cancelTax: tax,
     cancelRecipient: rec,
     cancelMinDeposit: min,
-    cancelHook: hk,
+    cancelModule: hk,
     cancelledTaxPercentage: tax ? s.pendingTaxRateBps : null,
     cancelledRecipient: rec ? s.pendingRecipient : null,
-    cancelledHook: hk ? s.pendingHook : null,
+    cancelledModule: hk ? s.pendingModule : null,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
     tx: event.transaction.hash,
   });
 });
 
-/** The app's share of a payout. Emitted just before `TaxCollected`. */
-ponder.on("Slot:AppFeePaid", async ({ event, context }) => {
+/** The module's share of a payout. Emitted just before `TaxCollected`. */
+ponder.on("Slot:ModuleFeePaid", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
 
   await context.db
     .update(slot, { id: slotAddr, chainId: context.chain.id })
     .set((row) => ({
-      hookFeesTotal: row.hookFeesTotal + event.args.amount,
+      moduleFeesTotal: row.moduleFeesTotal + event.args.amount,
       updatedAt: event.block.timestamp,
     }));
 
   await getOrCreateAccount(context, event.args.recipient);
 
-  await context.db.insert(hookFeePaidEvent).values({
+  await context.db.insert(moduleFeePaidEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId: context.chain.id,
     slot: slotAddr,
-    app: lower(event.args.app),
+    module: lower(event.args.module),
     recipient: lower(event.args.recipient),
     currency: s.currency,
     amount: event.args.amount,
@@ -1005,34 +1005,34 @@ ponder.on("Slot:DebtRepaid", async ({ event, context }) => {
  * is `OfferBook.cancel`, which the book emits `Cancelled` for.
  */
 
-// ─── apps ─────────────────────────────────────────────────────────────────
+// ─── modules ─────────────────────────────────────────────────────────────────
 
 /**
  * An `after` callback reverted and was swallowed.
  *
- * The protocol's only observability into a broken app: nothing reverts,
- * nothing retries, and the action the app was watching succeeded anyway. If
- * this is not indexed, an app that has stopped working is completely silent.
+ * The protocol's only observability into a broken module: nothing reverts,
+ * nothing retries, and the action the module was watching succeeded anyway. If
+ * this is not indexed, a module that has stopped working is completely silent.
  *
  * Never emitted for the `before` side — a failing `before` reverts the whole
  * transaction and never reaches here.
  */
-ponder.on("Slot:AppCallFailed", async ({ event, context }) => {
+ponder.on("Slot:ModuleCallFailed", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
-  const appAddr = lower(event.args.app);
+  const moduleAddr = lower(event.args.module);
 
-  await bumpAppSlotCount(context, appAddr, event.block.timestamp, 0);
-  await context.db.update(app, { id: appAddr, chainId }).set((row) => ({
+  await bumpModuleSlotCount(context, moduleAddr, event.block.timestamp, 0);
+  await context.db.update(module, { id: moduleAddr, chainId }).set((row) => ({
     failedCallCount: row.failedCallCount + 1,
     updatedAt: event.block.timestamp,
   }));
 
-  await context.db.insert(hookCallFailedEvent).values({
+  await context.db.insert(moduleCallFailedEvent).values({
     id: evtId(event.transaction.hash, event.log.logIndex),
     chainId,
     slot: slotAddr,
-    app: appAddr,
+    module: moduleAddr,
     selector: event.args.selector,
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
@@ -1048,26 +1048,26 @@ ponder.on("Slot:ManagerSet", async ({ event, context }) => {
 });
 
 /**
- * The manager accepted the app's current offer. A new fee applies now; new
+ * The manager granted the module's current manifest. A new fee applies now; new
  * scopes queue for the next buy, restarting the queue's clock.
  */
 ponder.on("Slot:ScopesGranted", async ({ event, context }) => {
-  const { offer, feeApplied, scopesQueued } = event.args;
+  const { manifest, feeApplied, scopesQueued } = event.args;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
   await context.db.update(slot, { id: slotAddr, chainId: context.chain.id }).set({
     ...(feeApplied
       ? {
-          hookFeeBps: offer.feeBps,
-          hookFeeRecipient:
-            offer.feeBps === 0 ? null : lower(offer.feeRecipient),
+          moduleFeeBps: manifest.feeBps,
+          moduleFeeRecipient:
+            manifest.feeBps === 0 ? null : lower(manifest.feeRecipient),
         }
       : {}),
     ...(scopesQueued
       ? {
-          pendingMask: s.pendingMask | TERM_HOOK_FLAGS,
+          pendingMask: s.pendingMask | TERM_SCOPES,
           pendingHasScopes: true,
-          pendingScopes: offer.scopes,
+          pendingScopes: manifest.scopes,
           pendingProposedAt: event.block.timestamp,
         }
       : {}),

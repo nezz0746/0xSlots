@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -10,7 +10,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotApp, Scopes, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {SlotMath} from "../../src/libraries/SlotMath.sol";
 import "../../src/errors/SlotErrors.sol";
@@ -41,7 +41,7 @@ contract Deaf {
 
 /// @dev Subscribes to `afterBuy` and always reverts there. The slot must
 ///      swallow it and say so.
-contract BrokenAfter is ISlotApp {
+contract BrokenAfter is ISlotModule {
     function checkSettings(bytes32) external pure {}
     function manifest(bytes32) external pure returns (Manifest memory o) {
         Scopes memory f;
@@ -67,7 +67,7 @@ contract BrokenAfter is ISlotApp {
  *
  * @dev Written because an audit found `withdraw` and `claim` were never called
  *      by ANY test — `SlotEscrow` sat at 8.33% branch coverage — while
- *      `withdraw`'s deposit floor is the thing a minimum-tenure app explicitly
+ *      `withdraw`'s deposit floor is the thing a minimum-tenure module explicitly
  *      leans on to bound how far an occupant can drain their own escrow. The
  *      debt carry-forward had no test either, and it is what stops running a
  *      deposit dry being the cheapest way to hold a slot.
@@ -100,9 +100,9 @@ contract CoreEscrowTest is Test {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(currency),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
     }
 
@@ -112,9 +112,9 @@ contract CoreEscrowTest is Test {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(currency),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
     }
 
@@ -125,7 +125,7 @@ contract CoreEscrowTest is Test {
         vm.stopPrank();
     }
 
-    // ─── withdraw: the floor an app leans on ────────────────────────────────
+    // ─── withdraw: the floor a module leans on ────────────────────────────────
 
     /// @notice You may take escrow back, but never below `minRunwaySeconds`.
     function test_WithdrawKeepsTheMinimumFunded() public {
@@ -314,15 +314,15 @@ contract CoreEscrowTest is Test {
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(this),
-            mutableTax: false, mutableRecipient: true, mutableApp: false,
+            mutableTax: false, mutableRecipient: true, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
         _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
 
         TaxTerms memory t;
         t.recipient = next;
-        s.proposeTerms(t, AppTerms({target: address(0), settings: bytes32(0)}), 2);
+        s.proposeTerms(t, ModuleTerms({target: address(0), settings: bytes32(0)}), 2);
         vm.warp(block.timestamp + 10 days);
 
         uint256 owed = s.taxOwed();
@@ -605,16 +605,16 @@ contract CoreEscrowTest is Test {
         i.manager = address(0);
         Slot s = Slot(payable(factory.createSlot(i)));
         vm.expectRevert(NotManager.selector);
-        s.proposeTerms(i.taxTerms, i.appTerms, 1);
+        s.proposeTerms(i.taxTerms, i.moduleTerms, 1);
     }
 
-    // ─── a broken app is swallowed, and reported ───────────────────────────
+    // ─── a broken module is swallowed, and reported ───────────────────────────
 
-    /// @notice An `after` app that reverts cannot change the outcome, and the
+    /// @notice An `after` module that reverts cannot change the outcome, and the
     ///         slot logs it rather than failing silently.
-    function test_AFailingAfterAppIsSwallowedAndLogged() public {
+    function test_AFailingAfterModuleIsSwallowedAndLogged() public {
         SlotInit memory i = _init();
-        i.appTerms.target = address(new BrokenAfter());
+        i.moduleTerms.target = address(new BrokenAfter());
         Slot s = Slot(payable(factory.createSlot(i)));
 
         uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
@@ -626,7 +626,7 @@ contract CoreEscrowTest is Test {
 
         assertEq(s.occupant(), alice, "the buy stood");
         bool logged;
-        bytes32 sig = keccak256("AppCallFailed(address,bytes4)");
+        bytes32 sig = keccak256("ModuleCallFailed(address,bytes4)");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 k; k < logs.length; ++k) {
             if (logs[k].topics[0] == sig) logged = true;

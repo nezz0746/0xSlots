@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -13,10 +13,10 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
-import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/apps/nft/ISlotBoundNFTWrapper.sol";
-import {ISlotBoundNFT} from "../../src/apps/nft/ISlotBoundNFT.sol";
-import {SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
+import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/modules/nft/ISlotBoundNFTWrapper.sol";
+import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
+import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 contract MockNFT is ERC721 {
@@ -114,10 +114,10 @@ contract SlotBoundNFTWrapperTest is Test {
         assertEq(slot.taxRateBps(), TAX_RATE, "at the rate they chose");
     }
 
-    /// @notice The app cannot be detached; detaching it would strand the token.
-    function test_TheAppIsThisContractAndPermanent() public view {
-        assertEq(slot.app(), address(wrapper));
-        assertFalse(slot.mutableApp(), "and permanently so");
+    /// @notice The module cannot be detached; detaching it would strand the token.
+    function test_TheModuleIsThisContractAndPermanent() public view {
+        assertEq(slot.module(), address(wrapper));
+        assertFalse(slot.mutableModule(), "and permanently so");
         assertEq(slot.manager(), alice, "but the rate can still move");
     }
 
@@ -261,7 +261,7 @@ contract SlotBoundNFTWrapperTest is Test {
         slot.buy{value: VALUATION + _deposit(2 ether)}(bob, 2 ether, _deposit(2 ether), 0);
     }
 
-    /// @dev Someone stands up their own slot pointing at this app and fires
+    /// @dev Someone stands up their own slot pointing at this module and fires
     ///      the callback. `tokenOf` is zero for it, so nothing happens — and
     ///      it must not revert either: never revert on a stranger.
     function test_AStrangerCannotClaimATokenWithTheirOwnSlot() public {
@@ -269,9 +269,9 @@ contract SlotBoundNFTWrapperTest is Test {
         address rogue = factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: bob,
-            mutableTax: true, mutableRecipient: true, mutableApp: false,
+            mutableTax: true, mutableRecipient: true, mutableModule: false,
             taxTerms: TaxTerms({recipient: bob, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(wrapper), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(wrapper), settings: bytes32(0)})
         }));
         assertEq(wrapper.tokenOf(rogue), 0, "not ours");
         assertEq(wrapper.ownerOf(tokenId), alice, "and alice keeps her token");
@@ -287,7 +287,7 @@ contract SlotBoundNFTWrapperTest is Test {
         slot.buy{value: VALUATION + _deposit(2 ether)}(bob, 2 ether, _deposit(2 ether), 0);
 
         vm.prank(alice);
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
 
         vm.warp(block.timestamp + 2 days); // well past TERMS_DELAY
         assertEq(slot.taxRateBps(), TAX_RATE, "still the rate bob bought under");
@@ -308,7 +308,7 @@ contract SlotBoundNFTWrapperTest is Test {
         assertTrue(slot.scopes().beforeBuy, "and the slot cached it at creation");
     }
 
-    function test_TheAppIsStrict() public view {
+    function test_TheModuleIsStrict() public view {
         assertTrue(ScopesLib.unpack(wrapper.manifest(0).scopes).strict, "so the move cannot be starved");
         assertTrue(ScopesLib.unpack(wrapper.manifest(0).scopes).afterBuy);
         assertTrue(ScopesLib.unpack(wrapper.manifest(0).scopes).afterRelease);

@@ -1,6 +1,6 @@
 "use client";
 
-import { findKnownApp } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { type SlotState, TERMS, unpackScopes } from "@0xslots/sdk/slots";
 import { Info, Loader2 } from "lucide-react";
 import { type Address, zeroAddress } from "viem";
@@ -9,7 +9,7 @@ import { useChain } from "@/context/chain";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { cn } from "@/lib/utils";
-import { describePermissions } from "@/lib/app-scopes";
+import { describeScopes } from "@/lib/module-scopes";
 import { formatBps, formatDuration, truncateAddress } from "@/utils";
 
 type Actions = ReturnType<typeof useSlotsAction>;
@@ -22,7 +22,7 @@ export type PendingDimension =
   | "tax"
   | "recipient"
   | "minDeposit"
-  | "app"
+  | "module"
   | "scopes";
 
 /**
@@ -49,9 +49,9 @@ export function eligibleIn(appliesAt: bigint, nowSeconds: number): string {
   return `${Math.ceil(left / 86400)}d`;
 }
 
-function hookLabel(chainId: number, app: Address): string {
-  if (app === zeroAddress) return "none";
-  return findKnownApp(chainId, app)?.name ?? truncateAddress(app);
+function moduleLabel(chainId: number, module: Address): string {
+  if (module === zeroAddress) return "none";
+  return findKnownModule(chainId, module)?.name ?? truncateAddress(module);
 }
 
 export type PendingRow = {
@@ -72,7 +72,7 @@ export type PendingRow = {
  * The queued changes, resolved into before/after strings.
  *
  * Reads the `has*` flags rather than testing values for emptiness: the zero
- * address is a REAL proposed value for the app dimension — "detach the app"
+ * address is a REAL proposed value for the module dimension — "detach the module"
  * is something someone deliberately queued, and treating it as "nothing
  * pending" would hide the more consequential of the two.
  */
@@ -108,20 +108,20 @@ export function pendingChanges(
       next: formatDuration(pending.taxTerms.minRunwaySeconds),
     });
   }
-  if (pending.hasHook) {
+  if (pending.hasModule) {
     rows.push({
-      dimension: "app",
-      label: "App",
-      current: hookLabel(chainId, state.app),
-      next: hookLabel(chainId, pending.appTerms.target),
+      dimension: "module",
+      label: "Module",
+      current: moduleLabel(chainId, state.module),
+      next: moduleLabel(chainId, pending.moduleTerms.target),
     });
   }
-  if (pending.hasHookPermissions) {
+  if (pending.hasScopes) {
     const callbacks = (scopes: number) =>
-      describePermissions(unpackScopes(scopes)).granted.join(", ") || "none";
+      describeScopes(unpackScopes(scopes)).granted.join(", ") || "none";
     rows.push({
       dimension: "scopes",
-      label: "App scopes",
+      label: "Module scopes",
       current: callbacks(state.manifest.scopes),
       next: callbacks(pending.scopes),
     });
@@ -137,15 +137,15 @@ const CANCEL_LABEL: Record<PendingDimension, string> = {
   tax: "Cancel tax update",
   recipient: "Cancel recipient update",
   minDeposit: "Cancel minimum deposit update",
-  app: "Cancel app update",
-  scopes: "Cancel app scopes update",
+  module: "Cancel module update",
+  scopes: "Cancel module scopes update",
 };
 
 const MASK: Record<PendingDimension, number> = {
   tax: TERMS.TAX_RATE,
   recipient: TERMS.RECIPIENT,
   minDeposit: TERMS.MIN_RUNWAY,
-  app: TERMS.APP,
+  module: TERMS.MODULE,
   scopes: TERMS.SCOPES,
 };
 
@@ -153,7 +153,7 @@ const CANCEL_TEXT: Record<PendingDimension, string> = {
   tax: "Cancel tax change",
   recipient: "Cancel recipient change",
   minDeposit: "Cancel runway change",
-  app: "Cancel app change",
+  module: "Cancel module change",
   scopes: "Cancel scopes change",
 };
 
@@ -209,7 +209,7 @@ export function PendingTermsBanner({
    * chain's clock. `appliesAt` is derived from a `block.timestamp`, and on a
    * warped local chain the browser's own clock reads days out. Measured from a
    * block header rather than assumed — see `useChainTimeSkew`. Read before the
-   * early return below, because it is an app and the return is conditional.
+   * early return below, because it is a hook and the return is conditional.
    */
   const skew = useChainTimeSkew();
 

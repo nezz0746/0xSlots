@@ -22,10 +22,10 @@ export interface ExplorerSection {
 export const EXPLORER_SECTIONS: ExplorerSection[] = [
   // The module gallery used to be a third section, and it is gone for good:
   // modules do not exist in this protocol — a slot has ONE extension point,
-  // chosen at creation — so there is no gallery to browse. The app a slot
+  // chosen at creation — so there is no gallery to browse. The module a slot
   // points at is a column and a filter on the slots table instead.
   //
-  // `/app/apps` is not that gallery coming back. It lists what can be
+  // `/app/modules` is not that gallery coming back. It lists what can be
   // ATTACHED and what each one asks for — a question asked before a slot
   // exists — where a section here would be one more way to look at slots that
   // already do.

@@ -129,11 +129,11 @@ export function AppSidebar() {
                   attach, not a view of anything you own. */}
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={pathname.startsWith("/app/apps")}
-                  onClick={() => push("/app/apps")}
+                  isActive={pathname.startsWith("/app/modules")}
+                  onClick={() => push("/app/modules")}
                 >
                   <Plug className="size-4" />
-                  <span>Apps</span>
+                  <span>Modules</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

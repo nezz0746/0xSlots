@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
-import {AdLand} from "../../src/apps/adland/AdLand.sol";
-import {AdConfig, IAdLand, ModerationMode} from "../../src/apps/adland/IAdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {AdConfig, IAdLand, ModerationMode} from "../../src/modules/adland/IAdLand.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 
@@ -73,9 +73,9 @@ contract AdLandModerationTest is Test {
                     SlotInit({
                         currency: IERC20(address(0)),
                         manager: manager,
-                        mutableTax: mutable_, mutableRecipient: mutable_, mutableApp: mutable_,
+                        mutableTax: mutable_, mutableRecipient: mutable_, mutableModule: mutable_,
                         taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-                        appTerms: AppTerms({target: address(adland), settings: settings})
+                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
                     })
                 ))
         );
@@ -285,14 +285,14 @@ contract AdLandModerationTest is Test {
     // ─── mode changes ───────────────────────────────────────────────────────
 
     /// @notice An occupant keeps the mode they bought under: changing it is a
-    ///         app term, so it lands at the next buy.
-    function test_AModeChangeIsAAppTermAndWaitsForTheNextOccupant() public {
+    ///         module term, so it lands at the next buy.
+    function test_AModeChangeIsAModuleTermAndWaitsForTheNextOccupant() public {
         _seat(alice, 1 ether);
 
         TaxTerms memory none;
         slot.proposeTerms(
             none,
-            AppTerms({target: address(adland), settings: _config(ModerationMode.Every)}),
+            ModuleTerms({target: address(adland), settings: _config(ModerationMode.Every)}),
             8
         );
 
@@ -358,9 +358,9 @@ contract AdLandModerationTest is Test {
         Slot keyed = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(adland), settings: settings})
+            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
         }))));
 
         // Anyone may press it; what it trusts is the slot.
@@ -373,9 +373,9 @@ contract AdLandModerationTest is Test {
         Slot other = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(adland), settings: settings})
+            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
         }))));
         vm.expectRevert(abi.encodeWithSelector(IAdLand.KeyTaken.selector, bytes32("spot")));
         adland.claimKey(address(other));

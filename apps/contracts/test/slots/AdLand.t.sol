@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -10,9 +10,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {AdLand} from "../../src/apps/adland/AdLand.sol";
-import {AdView} from "../../src/apps/adland/IAdLand.sol";
-import {ISlotApp, Scopes, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {AdView} from "../../src/modules/adland/IAdLand.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 
 contract AdTok is ERC20 {
     constructor() ERC20("A", "A") {}
@@ -52,9 +52,9 @@ contract AdLandTest is Test {
         slot = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(adland), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(adland), settings: bytes32(0)})
         }))));
 
         vm.deal(alice, 100 ether);
@@ -102,8 +102,8 @@ contract AdLandTest is Test {
         vm.prank(alice);
         adland.publish(address(slot), "alice's ad");
 
-        // Detach the app, so no `afterBuy` can possibly run, then reseat.
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(8));
+        // Detach the module, so no `afterBuy` can possibly run, then reseat.
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(8));
         vm.warp(block.timestamp + 8 days);
         _seat(bob, 1 ether);
 
@@ -242,7 +242,7 @@ contract AdLandTest is Test {
     ///
     /// @dev The trade the new keying makes. Two ways a row outlives its tenure:
     ///      the wipe is gas-capped and swallowed so it CAN be missed, and a slot
-    ///      may use AdLand as a plain registry with some other app — in which
+    ///      may use AdLand as a plain registry with some other module — in which
     ///      case no callback ever arrives at all. This is that second case.
     ///
     ///      Landing it late changes no answer, because the stamp retired the row
@@ -257,7 +257,7 @@ contract AdLandTest is Test {
         vm.prank(alice);
         un.release();
 
-        // No app, so nothing was called and the row is still sitting there —
+        // No module, so nothing was called and the row is still sitting there —
         // already invisible to the lens, and still costing storage.
         (string memory raw, ) = adland.rawCreativeOf(address(un));
         assertEq(raw, "alice's ad", "fixture: no callback can have run");
@@ -276,15 +276,15 @@ contract AdLandTest is Test {
     }
 
 
-    /// @dev AdLand as a plain registry: the slot's app is nobody, so no
+    /// @dev AdLand as a plain registry: the slot's module is nobody, so no
     ///      callback ever arrives and the stamp does all the work.
     function _unmanagedSlot() internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
     }
 
@@ -304,9 +304,9 @@ contract AdLandTest is Test {
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(tok)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(adland), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(adland), settings: bytes32(0)})
         }))));
         uint256 dep = SlotMath.depositFor(1 ether, 500, 7 days);
 

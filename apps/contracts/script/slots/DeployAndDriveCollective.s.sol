@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
 
 import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -26,7 +26,7 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
  *   forge script script/slots/DeployAndDriveCollective.s.sol:DeployAndDriveCollective \
  *     --rpc-url http://127.0.0.1:8545 --broadcast \
  *     --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
- *     --sig "run(address,address)" $SLOT_FACTORY $MIN_TENURE_HOOK
+ *     --sig "run(address,address)" $SLOT_FACTORY $MIN_TENURE_MODULE
  *
  * @dev ── Why this is a script and not a test ────────────────────────────────
  *
@@ -52,9 +52,9 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
  *        2. mint a collective with TWO payees          → split membership
  *        3. create a slot naming it manager AND recipient
  *        4. proposeTax(750)          [tax manager]     → TermsRelayed(Tax)
- *        5. proposeApp(minTenure)   [app manager]    → TermsRelayed(App)
- *        6. cancelAppProposal       [app manager]    → the port's whole point:
- *           the tax manager's queued 750 must SURVIVE a app cancel
+ *        5. proposeModule(minTenure) [policy manager]  → TermsRelayed(Module)
+ *        6. cancelModuleProposal     [policy manager]  → the port's whole point:
+ *           the tax manager's queued 750 must SURVIVE a module cancel
  *        7. a real buy                                 → TermsApplied lands 750
  *        8. proposeTax(900)          [tax manager]
  *        9. cancelAllProposals       [admin]           → AllTermsCancelled
@@ -75,7 +75,7 @@ contract DeployAndDriveCollective is Script {
         0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
     uint256 constant PK_TAX_MGR =
         0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
-    uint256 constant PK_HOOK_MGR =
+    uint256 constant PK_POLICY_MGR =
         0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
     uint256 constant PK_SPLIT_MGR =
         0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6;
@@ -92,7 +92,7 @@ contract DeployAndDriveCollective is Script {
 
     address admin = vm.addr(PK_ADMIN);
     address taxMgr = vm.addr(PK_TAX_MGR);
-    address hookMgr = vm.addr(PK_HOOK_MGR);
+    address policyMgr = vm.addr(PK_POLICY_MGR);
     address splitMgr = vm.addr(PK_SPLIT_MGR);
     address buyer = vm.addr(PK_BUYER);
 
@@ -102,11 +102,11 @@ contract DeployAndDriveCollective is Script {
     /**
      * @param slotFactoryAddr The already-deployed `SlotFactory` — printed by
      *        `DeployProtocol`, and in `deployments/31337/SlotFactory.json`.
-     * @param hookAddr A app that answers `manifest`. The slot validates it at
+     * @param moduleAddr A module that answers `manifest`. The slot validates it at
      *        propose time, so a contract that cannot answer is refused there
      *        rather than here.
      */
-    function run(address slotFactoryAddr, address hookAddr) external {
+    function run(address slotFactoryAddr, address moduleAddr) external {
         uint256 startBlock = block.number;
 
         // ── 1. the collective's own plumbing ───────────────────────────────
@@ -143,9 +143,9 @@ contract DeployAndDriveCollective is Script {
                         manager: address(collective),
                         mutableTax: true,
                         mutableRecipient: true,
-                        mutableApp: true,
+                        mutableModule: true,
                         taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(TAX_AT_BIRTH), minRunwaySeconds: uint32(1 days)}),
-                        appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+                        moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
                     })
                 )
             )
@@ -157,14 +157,14 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_TAX_MGR);
         collective.proposeTax(IManagedSlot(address(slot)), TAX_PROPOSED);
 
-        vm.broadcast(PK_HOOK_MGR);
-        collective.proposeApp(
+        vm.broadcast(PK_POLICY_MGR);
+        collective.proposeModule(
             IManagedSlot(address(slot)),
-            AppTerms({target: hookAddr, settings: bytes32(uint256(7 days))})
+            ModuleTerms({target: moduleAddr, settings: bytes32(uint256(7 days))})
         );
 
-        vm.broadcast(PK_HOOK_MGR);
-        collective.cancelAppProposal(IManagedSlot(address(slot)));
+        vm.broadcast(PK_POLICY_MGR);
+        collective.cancelModuleProposal(IManagedSlot(address(slot)));
 
         // The assertion the port turns on, checked against the live chain
         // rather than against a fixture. If this trips, nothing downstream is
@@ -174,7 +174,7 @@ contract DeployAndDriveCollective is Script {
         uint8 mask = __p1.mask;
         require(mask & slot.TERM_TAX_RATE() != 0, "the tax manager's proposal did not survive");
         require(pendingTaxTerms.rateBps == TAX_PROPOSED, "wrong tax survived");
-        require(mask & slot.TERM_APP() == 0, "the app proposal was not cancelled");
+        require(mask & slot.TERM_MODULE() == 0, "the module proposal was not cancelled");
 
         // ── 7. a real buy, so the surviving proposal lands ──────────────────
         // Both reads are hoisted above the broadcast on purpose: forge refuses a
@@ -232,7 +232,7 @@ contract DeployAndDriveCollective is Script {
         console2.log("WAREHOUSE          ", address(warehouse));
         console2.log("ADMIN              ", admin);
         console2.log("TAX_MANAGER        ", taxMgr);
-        console2.log("HOOK_MANAGER       ", hookMgr);
+        console2.log("POLICY_MANAGER       ", policyMgr);
         console2.log("SPLIT_MANAGER      ", splitMgr);
         console2.log("BUYER              ", buyer);
         console2.log("PAYEE_A            ", PAYEE_A);
@@ -275,16 +275,16 @@ contract DeployAndDriveCollective is Script {
     {
         address[] memory tax = new address[](1);
         tax[0] = taxMgr;
-        // `appManagers`, which the initializer grants POLICY_MANAGER_ROLE.
+        // `policyManagers`, which the initializer grants POLICY_MANAGER_ROLE.
         // The parameter renamed and the role did not — see SlotGovernance.
-        address[] memory apps = new address[](1);
-        apps[0] = hookMgr;
+        address[] memory modules = new address[](1);
+        modules[0] = policyMgr;
         address[] memory splits = new address[](1);
         splits[0] = splitMgr;
         r = SlotCollective.InitialRoles({
             admin: admin,
             taxManagers: tax,
-            appManagers: apps,
+            policyManagers: modules,
             splitManagers: splits
         });
     }

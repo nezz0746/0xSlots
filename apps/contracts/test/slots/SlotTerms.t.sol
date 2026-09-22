@@ -6,14 +6,14 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, AppTerms, Manifest, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../../src/types/SlotTypes.sol";
 import {ISlotEvents} from "../../src/interfaces/ISlotEvents.sol";
-import {ISlotApp, Scopes, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import "../../src/errors/SlotErrors.sol";
 
 /// @dev Takes no fee, subscribes to one harmless callback.
-contract AnyApp is ISlotApp {
+contract AnyModule is ISlotModule {
     function manifest(bytes32) external view virtual returns (Manifest memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
@@ -33,8 +33,8 @@ contract AnyApp is ISlotApp {
 
 }
 
-/// @dev An offer its owner can change at any time, and a count of the buys it hears about.
-contract OfferApp is AnyApp {
+/// @dev A manifest its owner can change at any time, and a count of the buys it hears about.
+contract ManifestModule is AnyModule {
     uint16 public scopes = ScopesLib.AFTER_SETTLE;
     uint16 public bps;
     address public to;
@@ -63,15 +63,15 @@ contract OfferApp is AnyApp {
     }
 }
 
-/// @notice Terms queue per mutable term and land at transitions; apps declare
-///         an offer the slot keeps a copy of until its manager accepts another.
+/// @notice Terms queue per mutable term and land at transitions; modules declare
+///         a manifest the slot keeps a copy of until its manager accepts another.
 contract SlotTermsTest is Test {
-    event ScopesDropped(address indexed app, uint16 scopes);
+    event ScopesDropped(address indexed module, uint16 scopes);
 
     uint8 constant TAX_RATE = 1;
     uint8 constant RECIPIENT = 2;
     uint8 constant MIN_RUNWAY = 4;
-    uint8 constant APP = 8;
+    uint8 constant MODULE = 8;
     uint8 constant SCOPES = 16;
     uint16 constant SETTLE = ScopesLib.AFTER_SETTLE;
     uint16 constant SETTLE_AND_BUY = ScopesLib.AFTER_SETTLE | ScopesLib.AFTER_BUY;
@@ -93,38 +93,38 @@ contract SlotTermsTest is Test {
                 )
             )
         );
-        slot = _slot(true, true, true, _noHook());
+        slot = _slot(true, true, true, _noModule());
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
 
-    function _noHook() internal pure returns (AppTerms memory) {
-        return AppTerms({target: address(0), settings: bytes32(0)});
+    function _noModule() internal pure returns (ModuleTerms memory) {
+        return ModuleTerms({target: address(0), settings: bytes32(0)});
     }
 
     function _taxTerms() internal view returns (TaxTerms memory) {
         return TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 hours});
     }
 
-    function _init(bool tax, bool rec, bool app, AppTerms memory h) internal view returns (SlotInit memory) {
+    function _init(bool tax, bool rec, bool module, ModuleTerms memory h) internal view returns (SlotInit memory) {
         return SlotInit({
             currency: IERC20(address(0)),
-            manager: (tax || rec || app) ? manager : address(0),
+            manager: (tax || rec || module) ? manager : address(0),
             mutableTax: tax,
             mutableRecipient: rec,
-            mutableApp: app,
+            mutableModule: module,
             taxTerms: _taxTerms(),
-            appTerms: h
+            moduleTerms: h
         });
     }
 
-    function _slot(bool tax, bool rec, bool app, AppTerms memory h) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(_init(tax, rec, app, h))));
+    function _slot(bool tax, bool rec, bool module, ModuleTerms memory h) internal returns (Slot) {
+        return Slot(payable(factory.createSlot(_init(tax, rec, module, h))));
     }
 
-    function _propose(Slot s, TaxTerms memory taxTerms, AppTerms memory app, uint8 mask) internal {
+    function _propose(Slot s, TaxTerms memory taxTerms, ModuleTerms memory module, uint8 mask) internal {
         vm.prank(manager);
-        s.proposeTerms(taxTerms, app, mask);
+        s.proposeTerms(taxTerms, module, mask);
     }
 
     function _buy(Slot s) internal {
@@ -148,33 +148,33 @@ contract SlotTermsTest is Test {
     // ── mutability ──────────────────────────────────────────────────────────
 
     function test_EachTermMovesOnlyIfMutable() public {
-        Slot taxOnly = _slot(true, false, false, _noHook());
+        Slot taxOnly = _slot(true, false, false, _noModule());
         TaxTerms memory taxTerms = TaxTerms({recipient: next, rateBps: 700, minRunwaySeconds: 2 hours});
 
-        _propose(taxOnly, taxTerms, _noHook(), TAX_RATE | MIN_RUNWAY);
+        _propose(taxOnly, taxTerms, _noModule(), TAX_RATE | MIN_RUNWAY);
 
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        taxOnly.proposeTerms(taxTerms, _noHook(), RECIPIENT);
+        taxOnly.proposeTerms(taxTerms, _noModule(), RECIPIENT);
 
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        taxOnly.proposeTerms(taxTerms, _noHook(), APP);
+        taxOnly.proposeTerms(taxTerms, _noModule(), MODULE);
 
-        Slot recipientOnly = _slot(false, true, false, _noHook());
-        _propose(recipientOnly, taxTerms, _noHook(), RECIPIENT);
+        Slot recipientOnly = _slot(false, true, false, _noModule());
+        _propose(recipientOnly, taxTerms, _noModule(), RECIPIENT);
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        recipientOnly.proposeTerms(taxTerms, _noHook(), TAX_RATE);
+        recipientOnly.proposeTerms(taxTerms, _noModule(), TAX_RATE);
     }
 
     function test_AManagerIsRequiredExactlyWhenSomethingIsMutable() public {
-        SlotInit memory i = _init(true, false, false, _noHook());
+        SlotInit memory i = _init(true, false, false, _noModule());
         i.manager = address(0);
         vm.expectRevert(InvalidManager.selector);
         factory.createSlot(i);
 
-        SlotInit memory j = _init(false, false, false, _noHook());
+        SlotInit memory j = _init(false, false, false, _noModule());
         j.manager = manager;
         vm.expectRevert(InvalidManager.selector);
         factory.createSlot(j);
@@ -184,7 +184,7 @@ contract SlotTermsTest is Test {
 
     function test_ProposalQueuesOnlyTheMaskedFields() public {
         TaxTerms memory taxTerms = TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 2 days});
-        _propose(slot, taxTerms, _noHook(), RECIPIENT);
+        _propose(slot, taxTerms, _noModule(), RECIPIENT);
 
         assertEq(slot.recipient(), recipient, "nothing moves on proposal");
         PendingTerms memory __p1 = slot.pendingTerms();
@@ -196,8 +196,8 @@ contract SlotTermsTest is Test {
     }
 
     function test_ProposalsAccumulateAcrossTerms() public {
-        _propose(slot, TaxTerms({recipient: address(0), rateBps: 900, minRunwaySeconds: 0}), _noHook(), TAX_RATE);
-        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noHook(), RECIPIENT);
+        _propose(slot, TaxTerms({recipient: address(0), rateBps: 900, minRunwaySeconds: 0}), _noModule(), TAX_RATE);
+        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
 
         PendingTerms memory __p2 = slot.pendingTerms();
         TaxTerms memory queued = __p2.taxTerms;
@@ -210,38 +210,38 @@ contract SlotTermsTest is Test {
     function test_EmptyAndUnknownMasksAreRefused() public {
         vm.startPrank(manager);
         vm.expectRevert(NothingProposed.selector);
-        slot.proposeTerms(_taxTerms(), _noHook(), 0);
+        slot.proposeTerms(_taxTerms(), _noModule(), 0);
         vm.expectRevert(UnknownTerms.selector);
-        slot.proposeTerms(_taxTerms(), _noHook(), 32);
+        slot.proposeTerms(_taxTerms(), _noModule(), 32);
         vm.expectRevert(UnknownTerms.selector);
-        slot.proposeTerms(_taxTerms(), _noHook(), SCOPES);
+        slot.proposeTerms(_taxTerms(), _noModule(), SCOPES);
         vm.stopPrank();
     }
 
     function test_OnlyTheMaskedFieldsAreValidated() public {
         TaxTerms memory taxTerms = TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0});
-        _propose(slot, taxTerms, _noHook(), MIN_RUNWAY);
+        _propose(slot, taxTerms, _noModule(), MIN_RUNWAY);
 
         vm.prank(manager);
         vm.expectRevert(InvalidRecipient.selector);
-        slot.proposeTerms(taxTerms, _noHook(), RECIPIENT);
+        slot.proposeTerms(taxTerms, _noModule(), RECIPIENT);
 
         vm.prank(manager);
         vm.expectRevert(InvalidTax.selector);
-        slot.proposeTerms(taxTerms, _noHook(), TAX_RATE);
+        slot.proposeTerms(taxTerms, _noModule(), TAX_RATE);
     }
 
     function test_OnlyTheManagerProposes() public {
         vm.prank(recipient);
         vm.expectRevert(NotManager.selector);
-        slot.proposeTerms(_taxTerms(), _noHook(), TAX_RATE);
+        slot.proposeTerms(_taxTerms(), _noModule(), TAX_RATE);
     }
 
     function test_CancelClearsOnlyWhatIsQueued() public {
-        _propose(slot, TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 0}), _noHook(), TAX_RATE | RECIPIENT);
+        _propose(slot, TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 0}), _noModule(), TAX_RATE | RECIPIENT);
 
         vm.prank(manager);
-        slot.cancelTerms(RECIPIENT | APP);
+        slot.cancelTerms(RECIPIENT | MODULE);
         PendingTerms memory __p3 = slot.pendingTerms();
         TaxTerms memory queued = __p3.taxTerms;
         uint8 mask = __p3.mask;
@@ -271,7 +271,7 @@ contract SlotTermsTest is Test {
         _propose(
             slot,
             TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 2 hours}),
-            _noHook(),
+            _noModule(),
             TAX_RATE | RECIPIENT | MIN_RUNWAY
         );
 
@@ -290,7 +290,7 @@ contract SlotTermsTest is Test {
 
     function test_UnripeTermsWaitThroughATransition() public {
         _buy(slot);
-        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noHook(), RECIPIENT);
+        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
 
         _release(slot);
 
@@ -302,7 +302,7 @@ contract SlotTermsTest is Test {
 
     function test_RentEarnedBeforeTheChangeGoesToTheOutgoingRecipient() public {
         _buy(slot);
-        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noHook(), RECIPIENT);
+        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
         skip(10 days);
 
         _release(slot);
@@ -322,10 +322,10 @@ contract SlotTermsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(NotManager.selector);
-        slot.proposeTerms(_taxTerms(), _noHook(), TAX_RATE);
+        slot.proposeTerms(_taxTerms(), _noModule(), TAX_RATE);
 
         vm.prank(next);
-        slot.proposeTerms(_taxTerms(), _noHook(), TAX_RATE);
+        slot.proposeTerms(_taxTerms(), _noModule(), TAX_RATE);
     }
 
     function test_ZeroManagerRefused() public {
@@ -334,53 +334,53 @@ contract SlotTermsTest is Test {
         slot.setManager(address(0));
     }
 
-    // ── app offer ──────────────────────────────────────────────────────────
+    // ── module manifest ──────────────────────────────────────────────────────────
 
-    function _offerSlot(bool mutableApp, uint16 bps, address to) internal returns (Slot s, OfferApp h) {
-        h = new OfferApp(bps, to);
-        s = _slot(true, true, mutableApp, AppTerms({target: address(h), settings: 0}));
+    function _manifestSlot(bool mutableModule, uint16 bps, address to) internal returns (Slot s, ManifestModule h) {
+        h = new ManifestModule(bps, to);
+        s = _slot(true, true, mutableModule, ModuleTerms({target: address(h), settings: 0}));
     }
 
-    function test_TheOfferIsWhatTheAppDeclares() public {
-        (Slot s, ) = _offerSlot(true, 2_500, author);
+    function test_TheManifestIsWhatTheModuleDeclares() public {
+        (Slot s, ) = _manifestSlot(true, 2_500, author);
 
-        Manifest memory offer = s.manifest();
-        assertEq(offer.scopes, SETTLE);
-        assertEq(offer.feeBps, 2_500);
-        assertEq(offer.feeRecipient, author);
+        Manifest memory declared = s.manifest();
+        assertEq(declared.scopes, SETTLE);
+        assertEq(declared.feeBps, 2_500);
+        assertEq(declared.feeRecipient, author);
         assertTrue(s.scopes().afterSettle);
     }
 
-    function test_AAppWithABadOfferIsRefused() public {
-        OfferApp noRecipient = new OfferApp(100, address(0));
-        vm.expectRevert(InvalidAppFee.selector);
-        factory.createSlot(_init(true, true, true, AppTerms({target: address(noRecipient), settings: 0})));
+    function test_AModuleWithABadManifestIsRefused() public {
+        ManifestModule noRecipient = new ManifestModule(100, address(0));
+        vm.expectRevert(InvalidModuleFee.selector);
+        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noRecipient), settings: 0})));
 
-        OfferApp tooMuch = new OfferApp(10_001, author);
-        vm.expectRevert(InvalidAppFee.selector);
-        factory.createSlot(_init(true, true, true, AppTerms({target: address(tooMuch), settings: 0})));
+        ManifestModule tooMuch = new ManifestModule(10_001, author);
+        vm.expectRevert(InvalidModuleFee.selector);
+        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(tooMuch), settings: 0})));
 
-        OfferApp noFlags = new OfferApp(0, address(0));
-        noFlags.setScopes(0);
-        vm.expectRevert(InvalidApp.selector);
-        factory.createSlot(_init(true, true, true, AppTerms({target: address(noFlags), settings: 0})));
+        ManifestModule noScopes = new ManifestModule(0, address(0));
+        noScopes.setScopes(0);
+        vm.expectRevert(InvalidModule.selector);
+        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noScopes), settings: 0})));
 
     }
 
     function test_TheFeeIsSplitFromCollectedRent() public {
-        (Slot s, ) = _offerSlot(true, 2_500, author);
+        (Slot s, ) = _manifestSlot(true, 2_500, author);
         _buy(s);
         skip(10 days);
 
         uint256 owed = s.taxOwed();
         s.collect();
 
-        assertEq(author.balance, owed / 4, "a quarter to the app's fee recipient");
+        assertEq(author.balance, owed / 4, "a quarter to the module's fee recipient");
         assertEq(recipient.balance, owed - owed / 4, "the rest to the recipient");
     }
 
-    function test_AnOfferIsVisibleUntilAccepted() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
+    function test_ANewManifestIsVisibleUntilAccepted() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
 
         (, , bool feeDiffers, bool scopesDiffer) = s.grantStatus();
         assertFalse(feeDiffers);
@@ -398,8 +398,8 @@ contract SlotTermsTest is Test {
         assertEq(offered.scopes, SETTLE_AND_BUY);
     }
 
-    function test_ANewFeeAppliesAtOnceEvenOnALockedApp() public {
-        (Slot s, OfferApp h) = _offerSlot(false, 1_000, author);
+    function test_ANewFeeAppliesAtOnceEvenOnALockedModule() public {
+        (Slot s, ManifestModule h) = _manifestSlot(false, 1_000, author);
         h.set(2_000, author);
 
         vm.expectEmit(address(s));
@@ -412,8 +412,8 @@ contract SlotTermsTest is Test {
         assertFalse(feeDiffers);
     }
 
-    function test_ALockedAppKeepsItsFlags() public {
-        (Slot s, OfferApp h) = _offerSlot(false, 0, address(0));
+    function test_ALockedModuleKeepsItsScopes() public {
+        (Slot s, ManifestModule h) = _manifestSlot(false, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
 
         (, , , bool scopesDiffer) = s.grantStatus();
@@ -423,7 +423,7 @@ contract SlotTermsTest is Test {
         vm.expectRevert(NothingToAccept.selector);
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
-        // A fee change alongside is still taken, and the flags are not.
+        // A fee change alongside is still taken, and the scopes are not.
         h.set(500, author);
         vm.prank(manager);
         s.grant(Manifest(SETTLE_AND_BUY, 500, author));
@@ -432,8 +432,8 @@ contract SlotTermsTest is Test {
         assertEq(s.pendingTerms().mask, 0);
     }
 
-    function test_NewFlagsWaitForTheNextTransitionAfterTheDelay() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+    function test_NewScopesWaitForTheNextTransitionAfterTheDelay() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
 
         vm.expectEmit(address(s));
@@ -447,7 +447,7 @@ contract SlotTermsTest is Test {
         assertEq(s.manifest().scopes, SETTLE, "not yet");
 
         _buy(s);
-        assertEq(h.buys(), 0, "the sitting occupant bought under the old flags");
+        assertEq(h.buys(), 0, "the sitting occupant bought under the old scopes");
 
         skip(s.TERMS_DELAY());
         _releaseAndApply(s);
@@ -458,8 +458,8 @@ contract SlotTermsTest is Test {
         assertEq(h.buys(), 1);
     }
 
-    function test_FlagsTheAppNoLongerDeclaresAreDropped() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+    function test_ScopesTheModuleNoLongerDeclaresAreDropped() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
@@ -476,8 +476,8 @@ contract SlotTermsTest is Test {
         assertEq(h.buys(), 0);
     }
 
-    function test_AcceptingQueuedFlagsAgainIsNothing() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+    function test_AcceptingQueuedScopesAgainIsNothing() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
@@ -489,8 +489,8 @@ contract SlotTermsTest is Test {
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
     }
 
-    function test_AcceptedFlagsCanBeCancelled() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+    function test_AcceptedScopesCanBeCancelled() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
@@ -502,26 +502,26 @@ contract SlotTermsTest is Test {
         assertEq(p.scopes, 0);
     }
 
-    function test_AQueuedAppSupersedesAcceptedFlags() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+    function test_AQueuedModuleSupersedesAcceptedScopes() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
-        AnyApp other = new AnyApp();
-        _propose(s, _taxTerms(), AppTerms({target: address(other), settings: 0}), APP);
+        AnyModule other = new AnyModule();
+        _propose(s, _taxTerms(), ModuleTerms({target: address(other), settings: 0}), MODULE);
         skip(s.TERMS_DELAY());
         _buy(s);
 
-        assertEq(s.app(), address(other));
-        assertEq(s.manifest().scopes, SETTLE, "the new app's own offer");
+        assertEq(s.module(), address(other));
+        assertEq(s.manifest().scopes, SETTLE, "the new module's own manifest");
         assertEq(s.pendingTerms().mask, 0);
     }
 
-    function test_AcceptingPinsTheReviewedOffer() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
+    function test_AcceptingPinsTheReviewedManifest() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
         h.set(2_000, author);
-        // The app raises again after the manager reviewed 2_000.
+        // The module raises again after the manager reviewed 2_000.
         h.set(9_000, author);
 
         vm.prank(manager);
@@ -535,19 +535,19 @@ contract SlotTermsTest is Test {
         s.grant(Manifest(SETTLE, 9_000, author));
     }
 
-    function test_OnlyTheManagerAcceptsAndOnlyWithAApp() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
+    function test_OnlyTheManagerAcceptsAndOnlyWithAModule() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
         h.set(2_000, author);
         vm.expectRevert(NotManager.selector);
         s.grant(Manifest(SETTLE, 2_000, author));
 
         vm.prank(manager);
-        vm.expectRevert(InvalidApp.selector);
+        vm.expectRevert(InvalidModule.selector);
         slot.grant(Manifest(SETTLE, 2_000, author));
     }
 
     function test_AcceptingPaysEarnedRentUnderTheOldFee() public {
-        (Slot s, OfferApp h) = _offerSlot(false, 0, address(0));
+        (Slot s, ManifestModule h) = _manifestSlot(false, 0, address(0));
         _buy(s);
         skip(10 days);
 
@@ -559,8 +559,8 @@ contract SlotTermsTest is Test {
         assertGt(recipient.balance, 0);
     }
 
-    function test_AAppRaisingItsFeeDoesNotReachAttachedSlotsUntilAccepted() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 1_000, author);
+    function test_AModuleRaisingItsFeeDoesNotReachAttachedSlotsUntilAccepted() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
 
         h.set(9_000, author);
         _buy(s);
@@ -572,12 +572,12 @@ contract SlotTermsTest is Test {
         assertEq(author.balance, owed / 10);
     }
 
-    function test_ReattachingPicksUpTheNewOfferAndNeverReachesEarnedRent() public {
-        (Slot s, OfferApp h) = _offerSlot(true, 0, address(0));
+    function test_ReattachingPicksUpTheNewManifestAndNeverReachesEarnedRent() public {
+        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
         _buy(s);
 
         h.set(10_000, author);
-        _propose(s, _taxTerms(), AppTerms({target: address(h), settings: 0}), APP);
+        _propose(s, _taxTerms(), ModuleTerms({target: address(h), settings: 0}), MODULE);
         skip(10 days);
         _releaseAndApply(s);
 
@@ -586,24 +586,24 @@ contract SlotTermsTest is Test {
         assertEq(s.manifest().feeBps, 10_000, "and the new fee is in force");
     }
 
-    function test_DetachingClearsTheAppAndItsOffer() public {
-        (Slot s, ) = _offerSlot(true, 2_500, author);
+    function test_DetachingClearsTheModuleAndItsManifest() public {
+        (Slot s, ) = _manifestSlot(true, 2_500, author);
         _buy(s);
-        _propose(s, _taxTerms(), _noHook(), APP);
+        _propose(s, _taxTerms(), _noModule(), MODULE);
         skip(s.TERMS_DELAY());
         _releaseAndApply(s);
 
-        Manifest memory offer = s.manifest();
-        assertEq(s.app(), address(0));
-        assertEq(offer.scopes, 0);
-        assertEq(offer.feeBps, 0);
-        assertEq(offer.feeRecipient, address(0));
+        Manifest memory declared = s.manifest();
+        assertEq(s.module(), address(0));
+        assertEq(declared.scopes, 0);
+        assertEq(declared.feeBps, 0);
+        assertEq(declared.feeRecipient, address(0));
     }
 
-    function test_AnImmutableAppCannotBeProposed() public {
-        Slot fixedHook = _slot(true, true, false, _noHook());
+    function test_AnImmutableModuleCannotBeProposed() public {
+        Slot fixedModule = _slot(true, true, false, _noModule());
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        fixedHook.proposeTerms(_taxTerms(), _noHook(), APP);
+        fixedModule.proposeTerms(_taxTerms(), _noModule(), MODULE);
     }
 }

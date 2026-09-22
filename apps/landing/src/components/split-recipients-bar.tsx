@@ -80,7 +80,7 @@ export function SplitRecipientsBar({
   chainId: number;
   splitAddress: string;
 }) {
-  // Same reason as SplitsClientSync: the app throws rather than returning
+  // Same reason as SplitsClientSync: the hook throws rather than returning
   // empty on a chain splits does not know.
   if (!splitsSupported(chainId)) return null;
   return <Bar chainId={chainId} splitAddress={splitAddress} />;

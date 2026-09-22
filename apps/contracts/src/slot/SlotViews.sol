@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import {SlotMath} from "../libraries/SlotMath.sol";
 import "../errors/SlotErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Scopes} from "../interfaces/ISlotApp.sol";
+import {Scopes} from "../interfaces/ISlotModule.sol";
 import {SlotAccounting} from "./SlotAccounting.sol";
-import {TaxTerms, AppTerms, Manifest, Terms, PendingTerms} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, Manifest, Terms, PendingTerms} from "../types/SlotTypes.sol";
 import {Settings, Occupancy} from "./SlotStorage.sol";
 import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
 
@@ -20,7 +20,7 @@ struct SlotInfo {
     address manager;
     bool mutableTax;
     bool mutableRecipient;
-    bool mutableApp;
+    bool mutableModule;
     Terms terms;
     Scopes scopes;
     // occupancy
@@ -51,7 +51,7 @@ struct SlotConstantsInfo {
     uint256 maxTaxBps;
     uint256 basisPoints;
     uint256 month;
-    uint256 appGas;
+    uint256 moduleGas;
     uint256 payoutGas;
     uint64 termsDelay;
 }
@@ -75,7 +75,7 @@ abstract contract SlotViews is SlotAccounting {
         info.manager = st.manager;
         info.mutableTax = st.mutableTax;
         info.mutableRecipient = st.mutableRecipient;
-        info.mutableApp = st.mutableApp;
+        info.mutableModule = st.mutableModule;
 
         info.terms = terms();
         info.scopes = scopes();
@@ -107,7 +107,7 @@ abstract contract SlotViews is SlotAccounting {
         c.maxTaxBps = MAX_TAX_BPS;
         c.basisPoints = BASIS_POINTS;
         c.month = MONTH;
-        c.appGas = APP_GAS;
+        c.moduleGas = MODULE_GAS;
         c.payoutGas = PAYOUT_GAS;
         c.termsDelay = TERMS_DELAY;
     }
@@ -130,29 +130,29 @@ abstract contract SlotViews is SlotAccounting {
         return _settings().mutableRecipient;
     }
 
-    function mutableApp() external view returns (bool) {
-        return _settings().mutableApp;
+    function mutableModule() external view returns (bool) {
+        return _settings().mutableModule;
     }
 
     // ─── terms ──────────────────────────────────────────────────────────────
 
     /// @notice Every term in force.
     function terms() public view returns (Terms memory) {
-        return Terms(_taxTerms(), _appTerms(), _manifest());
+        return Terms(_taxTerms(), _moduleTerms(), _manifest());
     }
 
     function taxTerms() external view returns (TaxTerms memory) {
         return _taxTerms();
     }
 
-    function appTerms() external view returns (AppTerms memory) {
-        return _appTerms();
+    function moduleTerms() external view returns (ModuleTerms memory) {
+        return _moduleTerms();
     }
 
     /// @notice What is queued. Only the fields named by `mask` are meaningful.
     function pendingTerms() public view returns (PendingTerms memory) {
         TermsQueue storage q = _queue();
-        return PendingTerms(_nextTaxTerms(), _nextAppTerms(), q.scopes, q.mask, q.proposedAt, hasRipeTerms());
+        return PendingTerms(_nextTaxTerms(), _nextModuleTerms(), q.scopes, q.mask, q.proposedAt, hasRipeTerms());
     }
 
     function recipient() external view returns (address) {
@@ -167,40 +167,40 @@ abstract contract SlotViews is SlotAccounting {
         return _taxTerms().minRunwaySeconds;
     }
 
-    function app() external view returns (address) {
-        return _appTerms().target;
+    function module() external view returns (address) {
+        return _moduleTerms().target;
     }
 
-    /// @notice The app's offer as this slot accepted it. What payouts and
+    /// @notice The module's manifest as this slot accepted it. What payouts and
     ///         callbacks use.
     function manifest() external view returns (Manifest memory) {
         return _manifest();
     }
 
     /**
-     * @notice The slot's accepted offer beside what the app offers today.
+     * @notice The slot's accepted manifest beside what the module declares today.
      *
      * @return accepted The slot's copy.
-     * @return offered The app's current answer.
+     * @return declared The module's current answer.
      * @return feeDiffers Accepting would change the fee now.
      * @return scopesDiffer Accepting would queue new scopes. Always false on a
-     *         slot whose app is immutable, and when those scopes are queued.
+     *         slot whose module is immutable, and when those scopes are queued.
      *
-     * @dev Pending by comparison rather than by storage: the app publishes,
-     *      and a difference is an offer waiting for the manager. Never reverts;
-     *      an app that will not answer, or answers out of range, reads as
-     *      offering exactly what is accepted.
+     * @dev Pending by comparison rather than by storage: the module publishes,
+     *      and a difference is a manifest waiting for the manager. Never reverts;
+     *      a module that will not answer, or answers out of range, reads as
+     *      declaring exactly what is accepted.
      */
     function grantStatus()
         external
         view
-        returns (Manifest memory accepted, Manifest memory offered, bool feeDiffers, bool scopesDiffer)
+        returns (Manifest memory accepted, Manifest memory declared, bool feeDiffers, bool scopesDiffer)
     {
         accepted = _manifest();
-        offered = accepted;
-        (bool ok, Manifest memory o) = _tryReadManifest(_appTerms());
-        if (!ok) return (accepted, offered, false, false);
-        offered = o;
+        declared = accepted;
+        (bool ok, Manifest memory o) = _tryReadManifest(_moduleTerms());
+        if (!ok) return (accepted, declared, false, false);
+        declared = o;
         (feeDiffers, scopesDiffer) = _manifestChanges(o);
     }
 

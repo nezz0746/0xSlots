@@ -55,11 +55,11 @@ const ROLE_FIELDS = [
   {
     // One role, because the protocol merged the two things it used to split. A
     // "policy" decided who could hold the slot and a "utility" decided what
-    // holding it granted; both are an app now, and a collective that granted
+    // holding it granted; both are a module now, and a collective that granted
     // them separately would describe a distinction the chain no longer makes.
-    key: "appManagers",
-    label: "App",
-    hint: "May attach, replace or detach the slot's app.",
+    key: "policyManagers",
+    label: "Module",
+    hint: "The slot's module.",
   },
   {
     key: "splitManagers",
@@ -83,7 +83,7 @@ export default function CreateCollectivePage() {
   const [admin, setAdmin] = useState("");
   const [roles, setRoles] = useState<Record<RoleKey, string>>({
     taxManagers: "",
-    appManagers: "",
+    policyManagers: "",
     splitManagers: "",
   });
 
@@ -191,7 +191,7 @@ export default function CreateCollectivePage() {
           {
             admin: adminAddress as Address,
             taxManagers: parseRole(roles.taxManagers),
-            appManagers: parseRole(roles.appManagers),
+            policyManagers: parseRole(roles.policyManagers),
             splitManagers: parseRole(roles.splitManagers),
           },
         ],

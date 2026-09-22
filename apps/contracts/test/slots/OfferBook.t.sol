@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -48,9 +48,9 @@ contract OfferBookSlotsTest is Test {
         slot = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableApp: true,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
 
         address[3] memory who = [alice, bob, carol];
@@ -184,7 +184,7 @@ contract OfferBookSlotsTest is Test {
 
         TaxTerms memory t;
         t.rateBps = 10_000;
-        slot.proposeTerms(t, AppTerms({target: address(0), settings: bytes32(0)}), 1);
+        slot.proposeTerms(t, ModuleTerms({target: address(0), settings: bytes32(0)}), 1);
         vm.warp(block.timestamp + 1 days + 1);
         assertGt(slot.minDepositForBuy(90e18), slot.deposit(), "under the queued rate alice would be short");
 
@@ -319,9 +319,9 @@ contract OfferBookSlotsTest is Test {
         Slot native_ = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         }))));
         vm.deal(alice, 100 ether);
         uint256 dep = native_.minDepositForBuy(1 ether);

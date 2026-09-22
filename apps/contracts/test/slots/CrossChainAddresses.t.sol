@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -12,14 +12,14 @@ import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {Slot} from "../../src/Slot.sol";
-import {SlotBoundNFTWrapper} from "../../src/apps/nft/SlotBoundNFTWrapper.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 import {
     SlotBoundNFTFactory,
     CollectionInit
-} from "../../src/apps/nft/SlotBoundNFTFactory.sol";
+} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -103,9 +103,9 @@ contract CrossChainAddressesTest is Test {
         return SlotInit({
             currency: IERC20(address(token)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)}),
-            appTerms: AppTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
         });
     }
 

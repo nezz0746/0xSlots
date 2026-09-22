@@ -1,6 +1,6 @@
 "use client";
 
-import { findKnownApp } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
 import { formatDistanceToNow } from "date-fns";
 import { TriangleAlert } from "lucide-react";
@@ -23,7 +23,7 @@ import { formatPrice, truncateAddress } from "@/utils";
 /**
  * One row of the slots table.
  *
- * Its own component because apps cannot be called inside the parent's `.map()`
+ * Its own component because hooks cannot be called inside the parent's `.map()`
  * — and this row calls two: the indexed row it is handed, plus a LIVE chain
  * read of the same slot.
  *
@@ -85,7 +85,7 @@ export function SlotRow({
       : null);
 
   const decimals = slot.currencyRef?.decimals ?? 18;
-  const knownHook = findKnownApp(chainId, slot.app as Address | undefined);
+  const knownModule = findKnownModule(chainId, slot.module as Address | undefined);
   const pending = slot.pendingMask !== 0;
 
   return (
@@ -135,12 +135,12 @@ export function SlotRow({
         </span>
       </TableCell>
 
-      {/* Was "Utility", and listed the slot's module. There is exactly one app
-          per slot now, so this names it rather than counting a gallery. No app
-          is a perfectly ordinary configuration — the plain Harberger slot — so
+      {/* Was "Utility", and listed the slot's module. There is exactly one module
+          per slot now, so this names it rather than counting a gallery. No module
+          is a perfectly ordinary configuration — the plain common-ownership slot — so
           it reads as a dash, not as a gap. */}
       <TableCell className="text-xs text-muted-foreground">
-        {slot.app ? (
+        {slot.module ? (
           <span className="inline-flex items-center gap-1 text-foreground">
             {/* A filled dot, not a word: the column is scanned down, and
                 "attached" repeated forty times is noise where a mark is a
@@ -150,17 +150,17 @@ export function SlotRow({
               aria-hidden
               className="size-1.5 shrink-0 rounded-full bg-foreground/60"
             />
-            {knownHook?.name ?? truncateAddress(slot.app)}
+            {knownModule?.name ?? truncateAddress(slot.module)}
             {/* `after` callbacks that reverted and were swallowed. Nothing on
-                chain will ever tell this app's users that it is broken. */}
-            {(slot.hookRef?.failedCallCount ?? 0) > 0 && (
+                chain will ever tell this module's users that it is broken. */}
+            {(slot.moduleRef?.failedCallCount ?? 0) > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <TriangleAlert className="size-3 text-red-600" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  {slot.hookRef?.failedCallCount} swallowed app failure
-                  {slot.hookRef?.failedCallCount === 1 ? "" : "s"}
+                  {slot.moduleRef?.failedCallCount} swallowed module failure
+                  {slot.moduleRef?.failedCallCount === 1 ? "" : "s"}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -181,8 +181,8 @@ export function SlotRow({
             <MutabilityChip mutable={slot.mutableTax} what="tax rate" />
           </span>
           <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-            App
-            <MutabilityChip mutable={slot.mutableApp} what="app" />
+            Module
+            <MutabilityChip mutable={slot.mutableModule} what="module" />
           </span>
           {/* A queued change, already proposed and waiting out its delay. The
               loudest flag here, because it is the one with a deadline. */}

@@ -3,13 +3,13 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {TaxTerms, AppTerms, Manifest} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 
 
 /// @notice The subset of `Slot` a collective drives.
 interface IManagedSlot {
-    function proposeTerms(TaxTerms calldata taxTerms, AppTerms calldata app, uint8 mask) external;
+    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint8 mask) external;
 
     function cancelTerms(uint8 mask) external;
 
@@ -24,7 +24,7 @@ interface IManagedSlot {
 ///         never passed to a slot — see the note on `IManagedSlot`.
 enum Dimension {
     Tax,
-    App
+    Module
 }
 
 abstract contract SlotGovernance is AccessControl, Initializable {
@@ -35,10 +35,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     /// @notice May change the tax rate — what the slot costs to hold.
     bytes32 public constant TAX_MANAGER_ROLE = keccak256("TAX_MANAGER_ROLE");
 
-    /// @notice May change the app — both what holding the slot grants and who
+    /// @notice May change the module — both what holding the slot grants and who
     ///         is allowed to hold it.
     ///
-    /// @dev One role, because one app governs both halves: an app decides who
+    /// @dev One role, because one module governs both halves: a module decides who
     ///      may hold a slot AND what holding it does, and nobody can be granted
     ///      one of those without the other.
     bytes32 public constant POLICY_MANAGER_ROLE = keccak256("POLICY_MANAGER_ROLE");
@@ -75,7 +75,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // ── One shape for both dimensions ────────────────────────────
     //
     // `value` is the proposed value widened to 32 bytes: raw basis points for
-    // `Tax`, the left-padded address for `App`.
+    // `Tax`, the left-padded address for `Module`.
 
     /// @notice A role holder relayed a pending-update proposal to `slot`.
     event TermsRelayed(
@@ -92,11 +92,11 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         Dimension indexed kind
     );
 
-    /// @notice An app manager accepted the attached app's current offer on `slot`.
+    /// @notice A policy manager accepted the attached module's current manifest on `slot`.
     event ScopesGrantRelayed(
         address indexed slot,
         address indexed by,
-        Manifest offer
+        Manifest manifest
     );
 
     /// @notice An admin dropped every pending proposal on `slot` at once.
@@ -136,17 +136,17 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///
     ///      Deliberately NOT an `initializer` itself — the engine's entry point
     ///      carries that modifier, and nesting them would revert.
-    /// @dev `appManagers` receive `POLICY_MANAGER_ROLE`.
+    /// @dev `policyManagers` receive `POLICY_MANAGER_ROLE`.
     function _initGovernance(
         address admin,
         address[] memory taxManagers,
-        address[] memory appManagers
+        address[] memory policyManagers
     ) internal {
         if (admin == address(0)) revert AdminRequired();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRoleBatch(TAX_MANAGER_ROLE, taxManagers);
-        _grantRoleBatch(POLICY_MANAGER_ROLE, appManagers);
+        _grantRoleBatch(POLICY_MANAGER_ROLE, policyManagers);
     }
 
     function _grantRoleBatch(bytes32 role, address[] memory accounts) internal {
@@ -196,52 +196,52 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     function _proposeTax(IManagedSlot slot, uint16 newTaxRateBps) internal {
         TaxTerms memory taxTerms;
         taxTerms.rateBps = newTaxRateBps;
-        AppTerms memory none;
+        ModuleTerms memory none;
         slot.proposeTerms(taxTerms, none, TermsLib.TAX_RATE);
         emit TermsRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(uint256(newTaxRateBps)));
     }
 
-    /// @notice Propose a new app on `slot`: its address, configuration and
+    /// @notice Propose a new module on `slot`: its address, configuration and
     ///         fee, as one decision.
     ///
-    /// @dev A zero `app.target` detaches. The slot validates the terms with the
-    ///      app now, so this relay does not re-check. One validation, one
+    /// @dev A zero `module.target` detaches. The slot validates the terms with the
+    ///      module now, so this relay does not re-check. One validation, one
     ///      authority.
-    function proposeApp(
+    function proposeModule(
         IManagedSlot slot,
-        AppTerms calldata app
+        ModuleTerms calldata module
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
-        _proposeApp(slot, app);
+        _proposeModule(slot, module);
     }
 
-    /// @notice The same app terms across many slots.
+    /// @notice The same module terms across many slots.
     /// @dev All-or-nothing, for the reason given on {proposeTaxBatch}.
-    function proposeAppBatch(
+    function proposeModuleBatch(
         IManagedSlot[] calldata slots,
-        AppTerms calldata app
+        ModuleTerms calldata module
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
-            _proposeApp(slots[i], app);
+            _proposeModule(slots[i], module);
         }
     }
 
-    function _proposeApp(IManagedSlot slot, AppTerms calldata app) internal {
+    function _proposeModule(IManagedSlot slot, ModuleTerms calldata module) internal {
         TaxTerms memory none;
-        slot.proposeTerms(none, app, TermsLib.APP);
+        slot.proposeTerms(none, module, TermsLib.MODULE);
         emit TermsRelayed(
             address(slot),
             msg.sender,
-            Dimension.App,
-            _asValue(app.target)
+            Dimension.Module,
+            _asValue(module.target)
         );
     }
 
-    /// @notice Accept the attached app's current offer on `slot`: a new fee at
+    /// @notice Accept the attached module's current manifest on `slot`: a new fee at
     ///         once, new scopes at the next buy.
     ///
-    /// @dev The app manager's decision, like proposing an app. `expected` is
-    ///      the offer they reviewed; the slot reverts if the app now offers
+    /// @dev The policy manager's decision, like proposing a module. `expected` is
+    ///      the manifest they reviewed; the slot reverts if the module now declares
     ///      anything else.
     function grant(IManagedSlot slot, Manifest calldata expected)
         external
@@ -254,7 +254,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     /// @notice Retract this role's own queued tax proposal on `slot`.
     /// @dev Single-dimension, and that is load-bearing rather than tidy. The
     ///      slot's cancel takes a mask like its propose, so a tax
-    ///      manager retracting their own work cannot destroy the app
+    ///      manager retracting their own work cannot destroy the module
     ///      manager's queued change as a side effect.
     function cancelTaxProposal(IManagedSlot slot)
         external
@@ -282,26 +282,26 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         }
     }
 
-    /// @notice Retract this role's own queued app proposal on `slot`.
-    function cancelAppProposal(IManagedSlot slot)
+    /// @notice Retract this role's own queued module proposal on `slot`.
+    function cancelModuleProposal(IManagedSlot slot)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
-        slot.cancelTerms(TermsLib.APP);
-        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.App);
+        slot.cancelTerms(TermsLib.MODULE);
+        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Module);
     }
 
-    /// @notice Retract this role's queued app proposals across many slots.
+    /// @notice Retract this role's queued module proposals across many slots.
     /// @dev Tolerant, for the reason given on {cancelTaxProposalBatch}.
-    function cancelAppProposalBatch(IManagedSlot[] calldata slots)
+    function cancelModuleProposalBatch(IManagedSlot[] calldata slots)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].cancelTerms(TermsLib.APP) {
-                emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.App);
+            try slots[i].cancelTerms(TermsLib.MODULE) {
+                emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.Module);
             } catch {}
         }
     }

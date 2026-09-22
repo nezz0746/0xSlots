@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Scopes} from "../interfaces/ISlotApp.sol";
+import {Scopes} from "../interfaces/ISlotModule.sol";
 
 /// @notice `Scopes` as the bits of `Manifest.scopes`.
 ///
@@ -10,8 +10,8 @@ import {Scopes} from "../interfaces/ISlotApp.sol";
 ///      `Manifest` keeps its shape.
 ///
 ///      A `uint16` with seven bits spare: {ALL} is the mask of bits that MEAN
-///      something, not the type's maximum, because an app declaring a bit this
-///      version does not know is an app answering something the slot cannot
+///      something, not the type's maximum, because a module declaring a bit this
+///      version does not know is a module answering something the slot cannot
 ///      honour — refused rather than silently narrowed.
 library ScopesLib {
     uint16 internal constant BEFORE_BUY = 1 << 0;

@@ -35,7 +35,7 @@ export const splitRecipientSchema = z.object({
 export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
 
 /**
- * How the app field is being filled.
+ * How the module field is being filled.
  *
  * The old form had this same trio for *modules*, and the shape survives the
  * protocol change unchanged because the question is the same one: none, one we
@@ -44,13 +44,13 @@ export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
  * rather than a way of opting out of a list.
  *
  * `tenure` is the successor to the old occupancy-policy picker. The creator
- * names a duration, which becomes the slot's `settings` — the app itself is
+ * names a duration, which becomes the slot's `settings` — the module itself is
  * one fixed address per chain serving every window. It is its own mode rather
  * than an entry in the known list because it asks a QUESTION: the known list is
  * addresses you attach as they are, and this one needs a number first.
  */
-export const hookModes = ["none", "known", "custom"] as const;
-export type HookMode = (typeof hookModes)[number];
+export const moduleModes = ["none", "known", "custom"] as const;
+export type ModuleMode = (typeof moduleModes)[number];
 
 export const createSlotSchema = z
   .object({
@@ -93,37 +93,37 @@ export const createSlotSchema = z
         "Must be a non-negative number",
       ),
     minDepositUnit: z.enum(timeUnits),
-    hookMode: z.enum(hookModes),
-    app: z.string().refine(isValidAddressOrEns, {
+    moduleMode: z.enum(moduleModes),
+    module: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
     /**
-     * A CUSTOM app's configuration, already encoded to its word.
+     * A CUSTOM module's configuration, already encoded to its word.
      *
-     * Written by the form the app itself described, not typed. Empty when the
-     * app publishes no schema or takes no configuration — which is most of
+     * Written by the form the module itself described, not typed. Empty when the
+     * module publishes no schema or takes no configuration — which is most of
      * them, and is why this is not required.
      */
     customSettings: z.string(),
     /**
-     * Whether the app has ACCEPTED the word above.
+     * Whether the module has ACCEPTED the word above.
      *
      * Written by the configuration form from `checkSettings` on chain —
      * the same function the slot runs at attach — and true when there is
      * nothing to configure. A boolean rather than a rule, because the rule
-     * belongs to the app and this schema cannot know it: what counts as a
-     * valid word is different for every app, and for some of them an empty
+     * belongs to the module and this schema cannot know it: what counts as a
+     * valid word is different for every module, and for some of them an empty
      * one is fine.
      *
      * It exists so a refusal reaches the SUBMIT BUTTON. Without it the form
-     * showed the app's error beside the field and armed anyway, and the
+     * showed the module's error beside the field and armed anyway, and the
      * refusal arrived as a reverted transaction.
      */
     settingsOk: z.boolean(),
     /** Tax rate and minimum runway. */
     mutableTax: z.boolean(),
     mutableRecipient: z.boolean(),
-    mutableApp: z.boolean(),
+    mutableModule: z.boolean(),
     manager: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
@@ -132,7 +132,7 @@ export const createSlotSchema = z
   // when nothing is, holds by construction: the form sends the zero address.
   .refine(
     (d) =>
-      !(d.mutableTax || d.mutableRecipient || d.mutableApp) ||
+      !(d.mutableTax || d.mutableRecipient || d.mutableModule) ||
       d.manager.trim().length > 0,
     {
       message: "A manager is required when something is mutable",
@@ -147,23 +147,23 @@ export const createSlotSchema = z
     },
     { message: "Currency is required", path: ["presetCurrency"] },
   )
-  // An app chosen by address must actually be one. The factory rejects an
-  // address with no code, and an app subscribing to no callbacks at all is
+  // A module chosen by address must actually be one. The factory rejects an
+  // address with no code, and a module subscribing to no callbacks at all is
   // rejected outright — but neither is knowable from a string, so all this
   // layer can insist on is that something was entered.
   .refine(
     (d) => {
-      if (d.hookMode === "none") return true;
-      return d.app.trim().length > 0;
+      if (d.moduleMode === "none") return true;
+      return d.module.trim().length > 0;
     },
-    { message: "Choose an app or switch to none", path: ["app"] },
+    { message: "Choose a module or switch to none", path: ["module"] },
   )
-  // And an app that was chosen must also be CONFIGURED — by its own rules,
+  // And a module that was chosen must also be CONFIGURED — by its own rules,
   // which only it can apply. `settingsOk` carries its answer; the message is
   // deliberately vague because the specific one is already on the field,
   // straight from the revert.
   .refine((d) => d.settingsOk, {
-    message: "This app has not accepted its configuration",
+    message: "This module has not accepted its settings",
     path: ["customSettings"],
   })
   .refine(
@@ -239,17 +239,17 @@ export const defaultValues: CreateSlotFormValues = {
   taxRateBps: "1",
   minDepositValue: "1",
   minDepositUnit: "days",
-  // No app — a plain instant-buy slot. An untouched form produces the
+  // No module — a plain instant-buy slot. An untouched form produces the
   // simplest thing the protocol can make, which is also the one whose rules a
   // reader can hold in their head.
-  hookMode: "none",
+  moduleMode: "none",
   customSettings: "",
   // Nothing to configure is not a failure to configure.
   settingsOk: true,
-  app: "",
+  module: "",
   mutableTax: false,
   mutableRecipient: false,
-  mutableApp: false,
+  mutableModule: false,
   manager: "",
 };
 

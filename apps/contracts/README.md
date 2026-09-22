@@ -4,6 +4,9 @@ Foundry smart contracts for the 0xSlots protocol: partial common ownership
 slots, where the occupant declares a price, pays continuous tax on it from a
 deposit, and anyone may buy at that price.
 
+The full model and API are in the docs site (`apps/docs`): *How a slot works*,
+*Modules*, and the contract reference.
+
 ## Setup
 
 ```bash
@@ -13,104 +16,68 @@ forge build
 forge test
 ```
 
-## Architecture
+## Layout
+
+```
+src/
+├── Slot.sol, slot/        # one position: occupancy, escrow, tax, terms, module calls
+├── SlotFactory.sol        # UUPS factory; deploys slots behind one beacon
+├── types/SlotTypes.sol    # SlotInit, TaxTerms, ModuleTerms, Manifest, Terms, PendingTerms
+├── interfaces/            # ISlotModule, IDescribedModule, ISlotEvents
+├── libraries/             # ScopesLib, TermsLib, SlotMath, ModuleSchemaLib
+├── modules/               # MinimumTenureModule, AdLand, slot-bound NFTs, SettingsStore
+├── periphery/book/        # OfferBook — standing bids and the fill
+└── collectives/           # SlotCollective(Factory) — split recipient + role-gated manager
+```
 
 ### Core
 
-- **`Slot.sol`** — one slot, one contract, deployed as a BeaconProxy. Holds the
-  occupant, the declared price, the deposit and the tax accounting. Tax accrues
-  per second at `taxPercentage` basis points per 30 days and is charged against
-  the deposit at the start of every mutating call — nothing runs on a timer, and
-  a charge is capped by the remaining deposit.
-- **`SlotFactory.sol`** — UUPS-upgradeable factory. Deploys slots behind one
-  shared beacon, so `upgradeBeacon` moves every slot at once and storage is
-  strictly append-only. Also holds the informational verified-utility and
-  verified-policy registries.
-- **`SlotCollective.sol`** — a 0xSplits PushSplit wearing a role-gated control
-  panel. Fills both of a slot's named addresses: `recipient` (tax flows to it)
-  and `manager` (it may propose changes). Ownership is bound to the contract
-  itself and cannot move — that is what makes the inherited `execCalls`
-  unreachable and the roles meaningful.
-- **`SlotCollectiveFactory.sol`** — mints collectives from one implementation
-  behind an upgradeable beacon, mirroring `SlotFactory`.
+- **`Slot`** — one position, deployed as a beacon proxy. Tax accrues per second
+  at `rateBps` basis points of the declared price per 30 days, and is settled at
+  the start of every mutating call. Liquidation is unconditional unless the
+  slot's module declares `strict`. Terms a manager queues wait `TERMS_DELAY`
+  and land at the next buy — never under a sitting occupant who did not ask.
+- **`SlotFactory`** — `createSlot(SlotInit)` and batch `collectAll`. Its admin
+  can upgrade the beacon, which moves every slot at once, so slot storage is
+  ERC-7201-namespaced and append-only.
 
-### The two pluggable contracts
+### Modules
 
-A slot can plug in exactly two things, and they are deliberately asymmetric.
+A slot installs at most one module, `ISlotModule`. `before` callbacks are views
+that may revert to refuse a buy or a reprice; `after` callbacks are gas-capped
+and swallowed unless the module declares `strict`. A module's `manifest`
+declares the scopes it needs and an optional fee on collected tax; the slot keeps
+its own copy, and the manager accepts changes with `grant`. Per-slot
+configuration is the slot's `settings` word, checked by the module's
+`checkSettings`.
 
-| | Answers | On failure |
-| --- | --- | --- |
-| **Utility** (`IUtility`) | what holding the slot *grants* | fails **open** — hooks are gas-capped and reverts are swallowed |
-| **Occupancy policy** (`IOccupancyPolicy`) | *who* may hold it, and when | fails **closed** — a revert blocks the action |
+Shipped modules:
 
-A broken utility degrades to a slot that grants nothing; it can never block a
-buy, a release or a liquidation. A policy answers yes or no and nothing else —
-it can never move funds, change the price or redirect the buyer.
+- **`MinimumTenureModule`** — a protection window read from `settings`; buyouts
+  inside it cost 10x.
+- **`AdLand`** — sponsor creatives with optional moderation and a minimum
+  tenure; configured through `SettingsStore`.
+- **`SlotBoundNFT`** / **`SlotBoundNFTWrapper`** — an ERC-721 owned by whoever
+  occupies its slot; created by `SlotBoundNFTFactory`.
 
-Both describe themselves through **`IModuleMetadata`** (`name`, `version`,
-`metadataURI`). That inheritance narrows each child's ERC-165 id to its own
-behaviour, so `SlotFactory.setUtilityVerified` and `setPolicyVerified` assert
-*both* ids — checking one alone would verify a contract that cannot describe
-itself.
-
-`ISlotsModule` is the former name for `IUtility`, kept as an ABI-identical alias
-so existing utilities keep compiling.
-
-### Utility hooks
-
-```solidity
-function onTransfer(uint256 slotId, address from, address to) external;
-function onPriceUpdate(uint256 slotId, uint256 oldPrice, uint256 newPrice) external;
-function onRelease(uint256 slotId, address from) external;
-function onSettle(uint256 slotId, address occupant, uint256 owed, uint256 paid) external;
-```
-
-`slotId` is always `0` — one slot is one contract, so the caller is `msg.sender`.
-
-`onSettle` is the economic hook and the only one that reports money moving.
-`paid` is capped by the remaining deposit and is the sound basis for accounting;
-`owed - paid` is non-zero exactly when the occupant has run dry. It fires
-mid-transaction, from inside the settle that begins every mutating call, so
-treat anything read there as in flux.
-
-Because utility calls are swallowed on failure, a utility must never be the
-source of truth for anything financial. Reduce over the `TaxPaid` event, which
-always fires.
-
-### Shipped utilities and policies
-
-- **`MetadataModule`** — a URI and structured metadata per slot, set by the
-  occupant, cleared on release.
-- **`FeedPostModule`**, **`FeedRouter`**, **`FeedSocialGroup`** — posting rights
-  into a feed.
-- **`MinimumTenurePolicy`** — requires the whole window's tax up front and
-  blocks buy-outs before it elapses; also blocks price cuts while protected.
-- **`MinimumPricePolicy`** — a price floor, bound to a currency because the
-  floor is a bare integer whose meaning depends on the token's decimals.
-
-Policies are immutable and deployed per set of terms at a CREATE2 address
-derived from those terms, by a factory implementing `IPolicyFactory` — so a
-client can ask any factory "did you make this?" without per-kind knowledge.
-
-### Peripherals
-
-- **`BatchCollector.sol`** — collect tax from many slots in one transaction.
-- **`ERC721Slots.sol`** / **`ERC721SlotsFactory.sol`** — ERC-721 wrapper.
+`collectives/draft/` holds work in progress that is not deployed.
 
 ## Deploying
 
 ```bash
-forge script script/DeployLocal.s.sol   # local anvil, pinned addresses
-forge script script/SeedLocal.s.sol     # test token + sample slots
+pnpm dev:local                 # from the repo root: anvil + deploy + indexer
+pnpm protocol deploy --chain <name|id>
 ```
 
-`LocalBootstrap.sol` explains why the local addresses survive edits to the
-Solidity, which a plain CREATE2 would not — CREATE2 hashes the init code and so
-moves whenever the contract changes.
-
-From the repo root, `pnpm dev:local` runs a chain, deploys and indexes in one go.
+`script/protocol/DeployProtocol.s.sol` deploys everything with CREATE2 and
+writes one record per contract to `deployments/<chainId>/`. Chain settings live
+in [`deployments/config/`](deployments/config/README.md).
+`script/slots/SeedSlots.s.sol` seeds a local chain with a test token and sample
+slots.
 
 ## Security
+
+Audit reports for earlier versions of the protocol:
 
 - [K Security audit, Feb 2026](./Audit/2026-02-08-k-security-audit.md)
 - [v2 security audit, Feb 2026](./Audit/2026-02-17-v2-security-audit.md)

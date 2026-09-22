@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -9,7 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {MinimumTenureApp} from "../../src/apps/MinimumTenureApp.sol";
+import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 
 contract TT is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -23,10 +23,10 @@ contract TT is ERC20 {
 ///      address in one transaction. No block existed in which anyone could buy.
 ///
 ///      The fix is that the window bounds a buy rather than forbidding it: see
-///      {MinimumTenureApp-BUYOUT_PREMIUM_BPS}. Protection now scales with the
+///      {MinimumTenureModule-BUYOUT_PREMIUM_BPS}. Protection now scales with the
 ///      price the occupant declared, so a dust price buys dust protection.
 contract C01Test is Test {
-    SlotFactory factory; TT token; MinimumTenureApp app; Slot s;
+    SlotFactory factory; TT token; MinimumTenureModule module; Slot s;
     uint256 constant TENURE = 7 days;
     uint256 constant TAX_RATE = 1000;
     address a = makeAddr("a");   // both controlled by
@@ -39,16 +39,16 @@ contract C01Test is Test {
         factory = SlotFactory(address(new ERC1967Proxy(address(fi),
             abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
         token = new TT();
-        app = new MinimumTenureApp();
+        module = new MinimumTenureModule();
         for (uint256 i; i < 3; ++i) {}
         token.mint(a, 1e24); token.mint(b, 1e24); token.mint(victim, 1e24);
         vm.warp(1_000_000);
         s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableApp: false,
+            mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            appTerms: AppTerms({target: address(app), settings: bytes32(TENURE)})
+            moduleTerms: ModuleTerms({target: address(module), settings: bytes32(TENURE)})
         }))));
     }
 
@@ -60,7 +60,7 @@ contract C01Test is Test {
     }
 
     function test_ADustPricedOccupantCannotLockOutTheMarket() public {
-        uint256 dep = app.requiredDeposit(1, TAX_RATE, TENURE);
+        uint256 dep = module.requiredDeposit(1, TAX_RATE, TENURE);
         emit log_named_uint("required deposit at price=1 (wei)", dep);
 
         _take(a, dep, 1);

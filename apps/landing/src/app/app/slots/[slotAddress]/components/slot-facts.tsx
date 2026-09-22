@@ -1,12 +1,12 @@
 "use client";
 
-import { findKnownApp } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import type { Scopes, SlotState } from "@0xslots/sdk/slots";
 import { AlertTriangle, Clock, ShieldCheck } from "lucide-react";
 import { zeroAddress } from "viem";
 import { MutabilityChip } from "@/components/detail-group";
 import { EnsIdentity } from "@/components/ens-identity";
-import { AppScopeRow } from "@/components/app-scopes";
+import { ModuleScopeRow } from "@/components/module-scopes";
 import { TenureMeter } from "@/components/occupancy-timeline";
 import { Badge } from "@/components/ui/badge";
 import { useChain } from "@/context/chain";
@@ -82,13 +82,13 @@ const _RECORDS: [keyof Scopes, string][] = [
 ];
 
 /**
- * An app's declared scopes, struck through where it was not granted one.
+ * A module's declared scopes, struck through where it was not granted one.
  *
  * Both halves are always drawn, present and absent alike. A list of only what a
- * app DOES leaves the reader unable to tell "this app cannot refuse a buy"
+ * module DOES leaves the reader unable to tell "this module cannot refuse a buy"
  * from "this app did not check" — and the first is a guarantee worth having.
  */
-function _PermissionList({
+function _ScopeList({
   scopes,
   entries,
 }: {
@@ -123,7 +123,7 @@ function _PermissionList({
  * form once can find any value here without hunting.
  *
  * Hierarchy is carried by `weight` rather than by position alone. The terms
- * decide whether to buy, so they lead at body size; the app is consequential
+ * decide whether to buy, so they lead at body size; the module is consequential
  * but conditional — absent from most slots and meaningless to most readers —
  * so it sits last and quiet rather than competing with the rate.
  *
@@ -136,7 +136,7 @@ function _PermissionList({
  * Everything the slot IS, cut by who can change it.
  *
  * This was six sections — Terms, Currency, Recipient, Occupancy, Scopes,
- * App — each an icon tile over a list of rows, every one looking identical. The
+ * Module — each an icon tile over a list of rows, every one looking identical. The
  * shape of the page carried no information, and the one distinction that decides
  * whether to buy was a padlock chip on two rows.
  *
@@ -174,10 +174,10 @@ export function SlotDetails({
   banner?: React.ReactNode;
 }) {
   const { chainId } = useChain();
-  const attached = state.app !== zeroAddress;
-  const known = findKnownApp(chainId, attached ? state.app : undefined);
+  const attached = state.module !== zeroAddress;
+  const known = findKnownModule(chainId, attached ? state.module : undefined);
   const tenureSeconds = useTenureWindow(
-    attached ? state.app : undefined,
+    attached ? state.module : undefined,
     attached ? state.settings : undefined,
   );
   const now = useNow(!!tenureSeconds && !state.isVacant, 1000);
@@ -298,13 +298,13 @@ export function SlotDetails({
           check". */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-y px-3 py-2.5 sm:px-4">
         <Term
-          label="App"
-          lock={<MutabilityChip mutable={state.mutableApp} what="app" />}
+          label="Module"
+          lock={<MutabilityChip mutable={state.mutableModule} what="module" />}
         >
           {attached ? (
             <span className="inline-flex items-center gap-1.5">
               {known?.name ?? "unrecognised"}
-              <AddressText address={state.app} />
+              <AddressText address={state.module} />
             </span>
           ) : (
             <span className="text-muted-foreground">none</span>
@@ -336,17 +336,17 @@ export function SlotDetails({
           )}
         </Term>
 
-        {/* What the app may DO, in the same words the create form uses when
-            you attach one. Naming it was never enough: "MinimumTenureApp" does
+        {/* What the module may DO, in the same words the create form uses when
+            you attach one. Naming it was never enough: "MinimumTenureModule" does
             not say whether it can refuse your buy, and that is the only
             question a buyer has. Read from the slot's snapshot, so it describes
-            what this slot obeys rather than what the app currently claims. */}
+            what this slot obeys rather than what the module currently claims. */}
         {attached && (
           <div className="w-full space-y-1">
-            <AppScopeRow scopes={state.scopes} fee={state.manifest} />
+            <ModuleScopeRow scopes={state.scopes} fee={state.manifest} />
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-                Unrecognised app — read its code before buying.
+                Unrecognised module — read its code before buying.
               </p>
             )}
           </div>

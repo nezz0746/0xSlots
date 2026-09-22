@@ -4,7 +4,7 @@ import {
   accountChain,
   accountSlot,
   currency,
-  app,
+  module,
 } from "ponder:schema";
 import {
   type Abi,
@@ -13,7 +13,7 @@ import {
   type Hex,
   toFunctionSelector,
 } from "viem";
-import { ERC20Abi, SlotAbi, SlotHookAbi } from "../abis";
+import { ERC20Abi, SlotAbi, SlotModuleAbi } from "../abis";
 
 // Function selector for splitHash() — used to detect 0xSplits contracts
 // by scanning bytecode (avoids noisy failed eth_calls on non-Splits contracts).
@@ -263,11 +263,11 @@ export async function getOrCreateCurrency(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HOOKS, AND THE STATE `SlotCreated` DOES NOT CARRY
+// MODULES, AND THE STATE `SlotCreated` DOES NOT CARRY
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** The scopes an app may declare. */
-export type HookPermissionSet = {
+/** The scopes a module may declare. */
+export type ScopeSet = {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
@@ -277,8 +277,8 @@ export type HookPermissionSet = {
   strict: boolean;
 };
 
-/** What a slot with no app obeys: nothing. */
-export const NO_SCOPES: HookPermissionSet = {
+/** What a slot with no module obeys: nothing. */
+export const NO_SCOPES: ScopeSet = {
   beforeBuy: false,
   beforeSelfAssess: false,
   afterBuy: false,
@@ -289,7 +289,7 @@ export const NO_SCOPES: HookPermissionSet = {
 };
 
 /** `Manifest.scopes` as a set. Bits follow `ScopesLib`. */
-export function unpackScopes(scopes: number): HookPermissionSet {
+export function unpackScopes(scopes: number): ScopeSet {
   const has = (bit: number) => (scopes & bit) !== 0;
   return {
     beforeBuy: has(1),
@@ -358,21 +358,21 @@ async function readMany(
 }
 
 /**
- * An app's own declaration of its scopes, for an empty config.
+ * A module's own declaration of its scopes, for empty settings.
  *
- * `null` when `manifest` does not answer. An app whose offer reverts is
- * REFUSED at attach time, so seeing null here means either an app that was
+ * `null` when `manifest` does not answer. A module whose manifest reverts is
+ * REFUSED at attach time, so seeing null here means either a module that was
  * seen but never attached, or one that has since been upgraded into
  * something that no longer answers.
  */
-export async function readHookPermissions(
+export async function readScopes(
   ctx: Context,
-  appAddr: Hex,
-): Promise<HookPermissionSet | null> {
+  moduleAddr: Hex,
+): Promise<ScopeSet | null> {
   try {
     const offer = (await ctx.client.readContract({
-      address: getAddress(lower(appAddr)),
-      abi: SlotHookAbi,
+      address: getAddress(lower(moduleAddr)),
+      abi: SlotModuleAbi,
       functionName: "manifest",
       args: [ZERO_DATA],
     })) as { scopes: number };
@@ -384,25 +384,25 @@ export async function readHookPermissions(
 
 /**
  * The terms `SlotCreated` leaves out, read back from the slot at the event's
- * block: rent, app terms, manager, lock and the app-flag snapshot.
+ * block: rent, module terms, manager, lock and the scopes snapshot.
  */
 export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
-  const [taxTerms, appTerms, manager, mutTax, mutRecipient, mutHook, offer] =
+  const [taxTerms, moduleTerms, manager, mutTax, mutRecipient, mutModule, offer] =
     await readMany(ctx, address, SlotAbi as unknown as Abi, [
       "taxTerms",
-      "appTerms",
+      "moduleTerms",
       "manager",
       "mutableTax",
       "mutableRecipient",
-      "mutableApp",
+      "mutableModule",
       "manifest",
     ]);
 
   const r = taxTerms as
     | { recipient: Hex; rateBps: number; minRunwaySeconds: number }
     | undefined;
-  const h = appTerms as { target: Hex; settings: Hex } | undefined;
+  const h = moduleTerms as { target: Hex; settings: Hex } | undefined;
   const o = offer as
     | { scopes: number; feeBps: number; feeRecipient: Hex }
     | undefined;
@@ -418,10 +418,10 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
     manager: managerAddr,
     mutableTax: mutTax === true,
     mutableRecipient: mutRecipient === true,
-    mutableApp: mutHook === true,
-    /// The app's fee, as the slot accepted it.
-    hookFeeBps: o?.feeBps ?? 0,
-    hookFeeRecipient:
+    mutableModule: mutModule === true,
+    /// The module's fee, as the slot accepted it.
+    moduleFeeBps: o?.feeBps ?? 0,
+    moduleFeeRecipient:
       o && lower(o.feeRecipient) !== ZERO_ADDR ? lower(o.feeRecipient) : null,
     /// The scopes THIS SLOT obeys, as it accepted them.
     scopes: o ? unpackScopes(o.scopes) : NO_SCOPES,
@@ -430,25 +430,25 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
 }
 
 /**
- * The `app` row, created on first sight with its declared scopes read once.
+ * The `module` row, created on first sight with its declared scopes read once.
  *
- * Keyed by (address, chainId): an app is code, not an identity, and the same
+ * Keyed by (address, chainId): a module is code, not an identity, and the same
  * address on two chains is two deployments whose immutables may differ.
  */
-export async function getOrCreateHook(
+export async function getOrCreateModule(
   ctx: Context,
-  hookAddrRaw: Hex,
+  moduleAddrRaw: Hex,
   timestamp: bigint,
 ) {
-  const id = lower(hookAddrRaw);
+  const id = lower(moduleAddrRaw);
   const chainId = ctx.chain.id;
-  const existing = await ctx.db.find(app, { id, chainId });
+  const existing = await ctx.db.find(module, { id, chainId });
   if (existing) return existing;
 
-  const declared = await readHookPermissions(ctx, id);
+  const declared = await readScopes(ctx, id);
   const f = declared ?? NO_SCOPES;
 
-  return ctx.db.insert(app).values({
+  return ctx.db.insert(module).values({
     id,
     chainId,
     declaredKnown: declared !== null,
@@ -466,24 +466,24 @@ export async function getOrCreateHook(
   });
 }
 
-/** Move an app's slot count, creating the row if this is its first slot. */
-export async function bumpAppSlotCount(
+/** Move a module's slot count, creating the row if this is its first slot. */
+export async function bumpModuleSlotCount(
   ctx: Context,
-  hookAddrRaw: Hex,
+  moduleAddrRaw: Hex,
   timestamp: bigint,
   delta: number,
 ) {
-  const id = lower(hookAddrRaw);
+  const id = lower(moduleAddrRaw);
   if (id === ZERO_ADDR) return;
-  await getOrCreateHook(ctx, id, timestamp);
-  await ctx.db.update(app, { id, chainId: ctx.chain.id }).set((row) => ({
+  await getOrCreateModule(ctx, id, timestamp);
+  await ctx.db.update(module, { id, chainId: ctx.chain.id }).set((row) => ({
     slotCount: Math.max(0, row.slotCount + delta),
     updatedAt: timestamp,
   }));
 }
 
 /** Columns for `slot`, from the accepted scopes. */
-export const hookPermissionColumns = (f: HookPermissionSet) => ({
+export const scopeColumns = (f: ScopeSet) => ({
   scopeBeforeBuy: f.beforeBuy,
   scopeBeforeSelfAssess: f.beforeSelfAssess,
   scopeAfterBuy: f.afterBuy,

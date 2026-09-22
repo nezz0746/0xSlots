@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, AppTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -10,7 +10,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotApp, Scopes, SlotContext} from "../../src/interfaces/ISlotApp.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import "../../src/errors/SlotErrors.sol";
 
@@ -19,8 +19,8 @@ contract Tok is ERC20 {
     function mint(address to, uint256 a) external { _mint(to, a); }
 }
 
-/// @dev An app that records everything and refuses nothing.
-contract Recorder is ISlotApp {
+/// @dev A module that records everything and refuses nothing.
+contract Recorder is ISlotModule {
     uint256 public buys;
     uint256 public releases;
     uint256 public liquidations;
@@ -55,8 +55,8 @@ contract Recorder is ISlotApp {
 
 }
 
-/// @dev Refuses every buy. The canonical `before` app.
-contract DenyBuys is ISlotApp {
+/// @dev Refuses every buy. The canonical `before` module.
+contract DenyBuys is ISlotModule {
     error Denied();
     function checkSettings(bytes32) external pure {}
 
@@ -80,7 +80,7 @@ contract DenyBuys is ISlotApp {
 }
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
-contract Hostile is ISlotApp {
+contract Hostile is ISlotModule {
     function checkSettings(bytes32) external pure {}
 
     function manifest(bytes32) external pure returns (Manifest memory o) {
@@ -107,7 +107,7 @@ contract Hostile is ISlotApp {
 }
 
 /// @dev Burns every unit of gas it is handed.
-contract GasBurner is ISlotApp {
+contract GasBurner is ISlotModule {
     uint256 public sink;
     function checkSettings(bytes32) external pure {}
 
@@ -172,7 +172,7 @@ contract SlotsTest is Test {
         vm.warp(1_000_000);
     }
 
-    function _init(address app, uint256 minDep)
+    function _init(address module, uint256 minDep)
         internal
         view
         returns (SlotInit memory)
@@ -181,14 +181,14 @@ contract SlotsTest is Test {
             SlotInit({
                 currency: IERC20(address(token)),
                 manager: manager,
-                mutableTax: true, mutableRecipient: true, mutableApp: true,
+                mutableTax: true, mutableRecipient: true, mutableModule: true,
                 taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(minDep)}),
-                appTerms: AppTerms({target: app, settings: bytes32(0)})
+                moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
             });
     }
 
-    function _slot(address app) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(_init(app, 0))));
+    function _slot(address module) internal returns (Slot) {
+        return Slot(payable(factory.createSlot(_init(module, 0))));
     }
 
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
@@ -203,9 +203,9 @@ contract SlotsTest is Test {
     // ═══════════════════════════════════════════════════════════════════════
 
     /// @notice GUARANTEE 1: liquidation is unconditional.
-    /// @dev An app that reverts in every `after` cannot stop an eviction. This
+    /// @dev A module that reverts in every `after` cannot stop an eviction. This
     ///      is the sentence every capped call and swallowed revert exists for.
-    function test_AHostileAppCannotBlockLiquidation() public {
+    function test_AHostileModuleCannotBlockLiquidation() public {
         Hostile h = new Hostile();
         Slot s = _slot(address(h));
         _take(s, alice, 1 ether, 100 ether);
@@ -220,7 +220,7 @@ contract SlotsTest is Test {
     }
 
     /// @notice ...and cannot do it by burning gas either.
-    function test_AGasBurningAppCannotBlockLiquidation() public {
+    function test_AGasBurningModuleCannotBlockLiquidation() public {
         GasBurner h = new GasBurner();
         Slot s = _slot(address(h));
         _take(s, alice, 1 ether, 100 ether);
@@ -240,7 +240,7 @@ contract SlotsTest is Test {
         _take(s, alice, 100 ether, 100 ether);
 
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), AppTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
 
         vm.warp(block.timestamp + 10 days);
         assertEq(s.taxRateBps(), 1000, "alice's rate is untouched mid-tenure");
@@ -253,20 +253,20 @@ contract SlotsTest is Test {
     // before decides, after records
     // ═══════════════════════════════════════════════════════════════════════
 
-    function test_ABeforeAppCanVetoAndSaysWhy() public {
+    function test_ABeforeModuleCanVetoAndSaysWhy() public {
         DenyBuys h = new DenyBuys();
         Slot s = _slot(address(h));
 
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
-        // The app's own error surfaces, not a generic "call failed" — a vetoed
+        // The module's own error surfaces, not a generic "call failed" — a vetoed
         // buy should say which rule refused it.
         vm.expectRevert(DenyBuys.Denied.selector);
         s.buy(alice, 100 ether, 1 ether, 0);
         vm.stopPrank();
     }
 
-    function test_AnAfterAppSeesEveryTransition() public {
+    function test_AnAfterModuleSeesEveryTransition() public {
         Recorder h = new Recorder();
         Slot s = _slot(address(h));
 
@@ -281,7 +281,7 @@ contract SlotsTest is Test {
         assertGt(h.lastPaid(), 0);
     }
 
-    /// @notice An app is skipped entirely for callbacks it did not declare.
+    /// @notice A module is skipped entirely for callbacks it did not declare.
     function test_UndeclaredCallbacksAreNeverCalled() public {
         // Recorder declares no `before*` at all.
         Recorder h = new Recorder();
@@ -295,11 +295,11 @@ contract SlotsTest is Test {
         assertTrue(f.afterBuy, "declared");
     }
 
-    /// @notice An app that answers `manifest` with nothing is refused outright.
-    /// @dev The one place a bad app is NOT tolerated. It happens once, while
-    ///      attaching, in a call the manager sent on purpose — attaching an app
+    /// @notice A module that answers `manifest` with nothing is refused outright.
+    /// @dev The one place a bad module is NOT tolerated. It happens once, while
+    ///      attaching, in a call the manager sent on purpose — attaching a module
     ///      that can never fire is a silent, permanent mistake.
-    function test_AAppSubscribingToNothingIsRefused() public {
+    function test_AModuleSubscribingToNothingIsRefused() public {
         Slot s = _slot(address(0));
         // Deployed BEFORE the prank: a CREATE consumes `vm.prank` just like a
         // call would, so inlining it would send `proposeTerms` from the test
@@ -307,8 +307,8 @@ contract SlotsTest is Test {
         address useless = address(new Nothing());
 
         vm.prank(manager);
-        vm.expectRevert(InvalidApp.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), AppTerms({target: useless, settings: bytes32(0)}), uint8(8));
+        vm.expectRevert(InvalidModule.selector);
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: useless, settings: bytes32(0)}), uint8(8));
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -346,7 +346,7 @@ contract SlotsTest is Test {
 }
 
 /// @dev Declares no subscriptions at all.
-contract Nothing is ISlotApp {
+contract Nothing is ISlotModule {
     function checkSettings(bytes32) external pure {}
 
     function manifest(bytes32) external pure returns (Manifest memory o) { Scopes memory f; o.scopes = ScopesLib.pack(f); }

@@ -1,5 +1,5 @@
 /**
- * The app-based Slots protocol.
+ * The v1 Slots protocol.
  *
  * A separate entry point from the package root, not more names on it. Both
  * protocols have a `SlotsClient`, a `SlotInit`-shaped creation type and a
@@ -20,15 +20,15 @@ export {
   type BuyParams,
   createSlotsClient,
   SCOPE_BITS,
-  type HookConfigCheck,
-  type AppSettingsParam,
-  type AppSettingsSchema,
-  type AppDefinition,
+  type SettingsCheck,
+  type ModuleSettingsParam,
+  type ModuleSettingsSchema,
+  type ModuleDefinition,
   type Manifest,
-  type HookOfferStatus,
+  type GrantStatus,
   type Scopes,
-  type AppTerms,
-  NO_APP,
+  type ModuleTerms,
+  NO_MODULE,
   type OfferBoard,
   MAX_PRICE,
   MAX_TAX_BPS,

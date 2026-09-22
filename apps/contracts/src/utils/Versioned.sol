@@ -28,7 +28,7 @@ pragma solidity ^0.8.24;
  *      ── The rule ────────────────────────────────────────────────────────
  *
  *      Bump it in the same commit as the change. Nothing enforces this — there
- *      is no CI for the contracts, by choice, and no app. It is a rule kept by
+ *      is no CI for the contracts, by choice, and no module. It is a rule kept by
  *      review, and the cost of missing it is discovering the drift at upgrade
  *      time. `pnpm protocol upgrade --dry` is where you would notice.
  */

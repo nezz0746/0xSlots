@@ -127,7 +127,7 @@ export function SlotList({
             <TableHead>Recipient</TableHead>
             <TableHead>Occupant</TableHead>
             <TableHead className="text-right">Price / Tax</TableHead>
-            <TableHead>App</TableHead>
+            <TableHead>Module</TableHead>
             <TableHead>Config</TableHead>
             <TableHead className="text-right">Created</TableHead>
           </TableRow>

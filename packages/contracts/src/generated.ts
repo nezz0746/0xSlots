@@ -67,7 +67,7 @@ export const adLandAbi = [
               { name: 'manager', internalType: 'address', type: 'address' },
               { name: 'mutableTax', internalType: 'bool', type: 'bool' },
               { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-              { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+              { name: 'mutableModule', internalType: 'bool', type: 'bool' },
               {
                 name: 'terms',
                 internalType: 'struct Terms',
@@ -96,8 +96,8 @@ export const adLandAbi = [
                     ],
                   },
                   {
-                    name: 'appTerms',
-                    internalType: 'struct AppTerms',
+                    name: 'moduleTerms',
+                    internalType: 'struct ModuleTerms',
                     type: 'tuple',
                     components: [
                       {
@@ -207,8 +207,8 @@ export const adLandAbi = [
                     ],
                   },
                   {
-                    name: 'appTerms',
-                    internalType: 'struct AppTerms',
+                    name: 'moduleTerms',
+                    internalType: 'struct ModuleTerms',
                     type: 'tuple',
                     components: [
                       {
@@ -266,7 +266,7 @@ export const adLandAbi = [
               { name: 'manager', internalType: 'address', type: 'address' },
               { name: 'mutableTax', internalType: 'bool', type: 'bool' },
               { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-              { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+              { name: 'mutableModule', internalType: 'bool', type: 'bool' },
               {
                 name: 'terms',
                 internalType: 'struct Terms',
@@ -295,8 +295,8 @@ export const adLandAbi = [
                     ],
                   },
                   {
-                    name: 'appTerms',
-                    internalType: 'struct AppTerms',
+                    name: 'moduleTerms',
+                    internalType: 'struct ModuleTerms',
                     type: 'tuple',
                     components: [
                       {
@@ -406,8 +406,8 @@ export const adLandAbi = [
                     ],
                   },
                   {
-                    name: 'appTerms',
-                    internalType: 'struct AppTerms',
+                    name: 'moduleTerms',
+                    internalType: 'struct ModuleTerms',
                     type: 'tuple',
                     components: [
                       {
@@ -503,8 +503,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -538,8 +538,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -573,8 +573,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -608,8 +608,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -660,8 +660,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -695,8 +695,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -866,8 +866,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -901,8 +901,8 @@ export const adLandAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1340,7 +1340,7 @@ export const adLandAbi = [
  *
  */
 export const adLandAddress = {
-  31337: '0xa9855F98c0A5346BA266472532a9830B40230Cc0',
+  31337: '0x67f471BbC345da0AA9a2CbeE59571480689b2F36',
 } as const
 
 /**
@@ -1349,13 +1349,13 @@ export const adLandAddress = {
 export const adLandConfig = { address: adLandAddress, abi: adLandAbi } as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// MinimumTenureApp
+// MinimumTenureModule
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
  *
  */
-export const minimumTenureAppAbi = [
+export const minimumTenureModuleAbi = [
   {
     type: 'function',
     inputs: [],
@@ -1390,8 +1390,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1425,8 +1425,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1460,8 +1460,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1495,8 +1495,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1530,8 +1530,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1565,8 +1565,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1632,8 +1632,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1667,8 +1667,8 @@ export const minimumTenureAppAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -1738,16 +1738,16 @@ export const minimumTenureAppAbi = [
 /**
  *
  */
-export const minimumTenureAppAddress = {
-  31337: '0x933BBE9b00C5323a827B8A0d5B70C7E237b50a83',
+export const minimumTenureModuleAddress = {
+  31337: '0xbdc847136FF99f9D2a354BaCC76540179E7675D6',
 } as const
 
 /**
  *
  */
-export const minimumTenureAppConfig = {
-  address: minimumTenureAppAddress,
-  abi: minimumTenureAppAbi,
+export const minimumTenureModuleConfig = {
+  address: minimumTenureModuleAddress,
+  abi: minimumTenureModuleAbi,
 } as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2087,13 +2087,6 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'APP_GAS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'BASIS_POINTS',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -2109,6 +2102,13 @@ export const slotAbi = [
     type: 'function',
     inputs: [],
     name: 'MAX_TAX_BPS',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MODULE_GAS',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -2136,14 +2136,14 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'TERM_APP',
+    name: 'TERM_MIN_RUNWAY',
     outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     inputs: [],
-    name: 'TERM_MIN_RUNWAY',
+    name: 'TERM_MODULE',
     outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
     stateMutability: 'view',
   },
@@ -2166,30 +2166,6 @@ export const slotAbi = [
     inputs: [],
     name: 'TERM_TAX_RATE',
     outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'app',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'appTerms',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AppTerms',
-        type: 'tuple',
-        components: [
-          { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
     stateMutability: 'view',
   },
   {
@@ -2274,7 +2250,7 @@ export const slotAbi = [
           { name: 'maxTaxBps', internalType: 'uint256', type: 'uint256' },
           { name: 'basisPoints', internalType: 'uint256', type: 'uint256' },
           { name: 'month', internalType: 'uint256', type: 'uint256' },
-          { name: 'appGas', internalType: 'uint256', type: 'uint256' },
+          { name: 'moduleGas', internalType: 'uint256', type: 'uint256' },
           { name: 'payoutGas', internalType: 'uint256', type: 'uint256' },
           { name: 'termsDelay', internalType: 'uint64', type: 'uint64' },
         ],
@@ -2300,7 +2276,7 @@ export const slotAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
           { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-          { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
           {
             name: 'terms',
             internalType: 'struct Terms',
@@ -2325,8 +2301,8 @@ export const slotAbi = [
                 ],
               },
               {
-                name: 'appTerms',
-                internalType: 'struct AppTerms',
+                name: 'moduleTerms',
+                internalType: 'struct ModuleTerms',
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
@@ -2408,8 +2384,8 @@ export const slotAbi = [
                 ],
               },
               {
-                name: 'appTerms',
-                internalType: 'struct AppTerms',
+                name: 'moduleTerms',
+                internalType: 'struct ModuleTerms',
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
@@ -2465,7 +2441,7 @@ export const slotAbi = [
         ],
       },
       {
-        name: 'offered',
+        name: 'declared',
         internalType: 'struct Manifest',
         type: 'tuple',
         components: [
@@ -2502,7 +2478,7 @@ export const slotAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
           { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-          { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
           {
             name: 'taxTerms',
             internalType: 'struct TaxTerms',
@@ -2518,8 +2494,8 @@ export const slotAbi = [
             ],
           },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -2616,6 +2592,30 @@ export const slotAbi = [
   },
   {
     type: 'function',
+    inputs: [],
+    name: 'module',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'moduleTerms',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'target', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'data', internalType: 'bytes[]', type: 'bytes[]' }],
     name: 'multicall',
     outputs: [{ name: 'results', internalType: 'bytes[]', type: 'bytes[]' }],
@@ -2624,7 +2624,7 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'mutableApp',
+    name: 'mutableModule',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
@@ -2681,8 +2681,8 @@ export const slotAbi = [
             ],
           },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -2719,8 +2719,8 @@ export const slotAbi = [
         ],
       },
       {
-        name: 'appTerms',
-        internalType: 'struct AppTerms',
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
@@ -2876,8 +2876,8 @@ export const slotAbi = [
             ],
           },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -2930,48 +2930,6 @@ export const slotAbi = [
     name: 'withdrawableOf',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'app', internalType: 'address', type: 'address', indexed: true },
-      {
-        name: 'selector',
-        internalType: 'bytes4',
-        type: 'bytes4',
-        indexed: false,
-      },
-    ],
-    name: 'AppCallFailed',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'app', internalType: 'address', type: 'address', indexed: true },
-    ],
-    name: 'AppDropped',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'app', internalType: 'address', type: 'address', indexed: true },
-      {
-        name: 'recipient',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'amount',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'AppFeePaid',
   },
   {
     type: 'event',
@@ -3124,7 +3082,7 @@ export const slotAbi = [
         indexed: false,
       },
       {
-        name: 'mutableApp',
+        name: 'mutableModule',
         internalType: 'bool',
         type: 'bool',
         indexed: false,
@@ -3141,8 +3099,8 @@ export const slotAbi = [
         indexed: false,
       },
       {
-        name: 'appTerms',
-        internalType: 'struct AppTerms',
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
@@ -3180,6 +3138,63 @@ export const slotAbi = [
       { name: 'next', internalType: 'address', type: 'address', indexed: true },
     ],
     name: 'ManagerSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'selector',
+        internalType: 'bytes4',
+        type: 'bytes4',
+        indexed: false,
+      },
+    ],
+    name: 'ModuleCallFailed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'ModuleDropped',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'ModuleFeePaid',
   },
   {
     type: 'event',
@@ -3244,7 +3259,12 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'app', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
       {
         name: 'scopes',
         internalType: 'uint16',
@@ -3259,7 +3279,7 @@ export const slotAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'offer',
+        name: 'manifest',
         internalType: 'struct Manifest',
         type: 'tuple',
         components: [
@@ -3369,8 +3389,8 @@ export const slotAbi = [
         indexed: false,
       },
       {
-        name: 'appTerms',
-        internalType: 'struct AppTerms',
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
@@ -3417,8 +3437,8 @@ export const slotAbi = [
         indexed: false,
       },
       {
-        name: 'appTerms',
-        internalType: 'struct AppTerms',
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
@@ -3470,12 +3490,12 @@ export const slotAbi = [
     name: 'CurrencyTakesACut',
   },
   { type: 'error', inputs: [], name: 'FailedCall' },
-  { type: 'error', inputs: [], name: 'InvalidApp' },
-  { type: 'error', inputs: [], name: 'InvalidAppFee' },
   { type: 'error', inputs: [], name: 'InvalidCurrency' },
   { type: 'error', inputs: [], name: 'InvalidDeposit' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'InvalidManager' },
+  { type: 'error', inputs: [], name: 'InvalidModule' },
+  { type: 'error', inputs: [], name: 'InvalidModuleFee' },
   { type: 'error', inputs: [], name: 'InvalidPrice' },
   { type: 'error', inputs: [], name: 'InvalidRecipient' },
   { type: 'error', inputs: [], name: 'InvalidTax' },
@@ -3510,7 +3530,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x4cfbe67dC971ee80c9d00280E9ecF8097dAA524d',
+  31337: '0x8D1B9d5A50F2C510D514D1F7Db4A96F4BF15cf39',
 } as const
 
 /**
@@ -3579,8 +3599,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -3614,8 +3634,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -3649,8 +3669,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -3684,8 +3704,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -3743,8 +3763,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -3778,8 +3798,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -3832,7 +3852,7 @@ export const slotBoundNftAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
           { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-          { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
           {
             name: 'terms',
             internalType: 'struct Terms',
@@ -3857,8 +3877,8 @@ export const slotBoundNftAbi = [
                 ],
               },
               {
-                name: 'appTerms',
-                internalType: 'struct AppTerms',
+                name: 'moduleTerms',
+                internalType: 'struct ModuleTerms',
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
@@ -3940,8 +3960,8 @@ export const slotBoundNftAbi = [
                 ],
               },
               {
-                name: 'appTerms',
-                internalType: 'struct AppTerms',
+                name: 'moduleTerms',
+                internalType: 'struct ModuleTerms',
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
@@ -4028,8 +4048,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4063,8 +4083,8 @@ export const slotBoundNftAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4189,7 +4209,7 @@ export const slotBoundNftAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
           { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-          { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
           {
             name: 'taxTerms',
             internalType: 'struct TaxTerms',
@@ -4205,8 +4225,8 @@ export const slotBoundNftAbi = [
             ],
           },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4794,7 +4814,7 @@ export const slotBoundNftFactoryAbi = [
  *
  */
 export const slotBoundNftFactoryAddress = {
-  31337: '0xC49DBEcD0072Ebd7a1808Aa61761D47C0F178414',
+  31337: '0x9f5cF49AB60208298F8a7f877180147c316b96A5',
 } as const
 
 /**
@@ -4841,8 +4861,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4876,8 +4896,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4911,8 +4931,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4946,8 +4966,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -4998,8 +5018,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -5033,8 +5053,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -5146,8 +5166,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -5181,8 +5201,8 @@ export const slotBoundNftWrapperAbi = [
           { name: 'owed', internalType: 'uint256', type: 'uint256' },
           { name: 'paid', internalType: 'uint256', type: 'uint256' },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -5755,7 +5775,7 @@ export const slotCollectiveAbi = [
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
     ],
-    name: 'cancelAppProposal',
+    name: 'cancelModuleProposal',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -5768,7 +5788,7 @@ export const slotCollectiveAbi = [
         type: 'address[]',
       },
     ],
-    name: 'cancelAppProposalBatch',
+    name: 'cancelModuleProposalBatch',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -5987,7 +6007,11 @@ export const slotCollectiveAbi = [
         components: [
           { name: 'admin', internalType: 'address', type: 'address' },
           { name: 'taxManagers', internalType: 'address[]', type: 'address[]' },
-          { name: 'appManagers', internalType: 'address[]', type: 'address[]' },
+          {
+            name: 'policyManagers',
+            internalType: 'address[]',
+            type: 'address[]',
+          },
           {
             name: 'splitManagers',
             internalType: 'address[]',
@@ -6074,8 +6098,8 @@ export const slotCollectiveAbi = [
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
       {
-        name: 'app',
-        internalType: 'struct AppTerms',
+        name: 'module',
+        internalType: 'struct ModuleTerms',
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
@@ -6083,7 +6107,7 @@ export const slotCollectiveAbi = [
         ],
       },
     ],
-    name: 'proposeApp',
+    name: 'proposeModule',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -6096,8 +6120,8 @@ export const slotCollectiveAbi = [
         type: 'address[]',
       },
       {
-        name: 'app',
-        internalType: 'struct AppTerms',
+        name: 'module',
+        internalType: 'struct ModuleTerms',
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
@@ -6105,7 +6129,7 @@ export const slotCollectiveAbi = [
         ],
       },
     ],
-    name: 'proposeAppBatch',
+    name: 'proposeModuleBatch',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -6411,7 +6435,7 @@ export const slotCollectiveAbi = [
       { name: 'slot', internalType: 'address', type: 'address', indexed: true },
       { name: 'by', internalType: 'address', type: 'address', indexed: true },
       {
-        name: 'offer',
+        name: 'manifest',
         internalType: 'struct Manifest',
         type: 'tuple',
         components: [
@@ -6575,7 +6599,7 @@ export const slotCollectiveAbi = [
  *
  */
 export const slotCollectiveAddress = {
-  31337: '0x8680067792a5B785762A1C6430e992f2Cb4e3bd9',
+  31337: '0x28d716D33636Bba9C671bd92bbB6e68FcA46cBEB',
 } as const
 
 /**
@@ -6656,7 +6680,11 @@ export const slotCollectiveFactoryAbi = [
         components: [
           { name: 'admin', internalType: 'address', type: 'address' },
           { name: 'taxManagers', internalType: 'address[]', type: 'address[]' },
-          { name: 'appManagers', internalType: 'address[]', type: 'address[]' },
+          {
+            name: 'policyManagers',
+            internalType: 'address[]',
+            type: 'address[]',
+          },
           {
             name: 'splitManagers',
             internalType: 'address[]',
@@ -6851,7 +6879,7 @@ export const slotCollectiveFactoryAbi = [
  *
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0x84eF6De6EbefE8c4892A01e2ee644771C423CC23',
+  31337: '0xc6D8715684Dcf77b5DA5a8Fc04e91436e7935D26',
 } as const
 
 /**
@@ -6925,7 +6953,7 @@ export const slotFactoryAbi = [
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
           { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
-          { name: 'mutableApp', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
           {
             name: 'taxTerms',
             internalType: 'struct TaxTerms',
@@ -6941,8 +6969,8 @@ export const slotFactoryAbi = [
             ],
           },
           {
-            name: 'appTerms',
-            internalType: 'struct AppTerms',
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
@@ -7092,7 +7120,12 @@ export const slotFactoryAbi = [
         type: 'address',
         indexed: false,
       },
-      { name: 'app', internalType: 'address', type: 'address', indexed: false },
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: false,
+      },
     ],
     name: 'SlotCreated',
   },
@@ -7140,7 +7173,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0x1B777E539F5fe5E2D7d3FBb167D5bCA615Be487F',
+  31337: '0x450b66AAE382CA7B8DCf64fd2bdd9A9EA6aD9Db9',
 } as const
 
 /**
@@ -7355,7 +7388,7 @@ export const deployBlocks = {
   AdLand: {
     '31337': 4,
   },
-  MinimumTenureApp: {
+  MinimumTenureModule: {
     '31337': 4,
   },
   OfferBook: {

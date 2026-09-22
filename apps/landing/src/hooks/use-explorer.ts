@@ -26,7 +26,7 @@ import { indexerUrlFor } from "@/lib/indexer";
  * The raw-fetch style is deliberate and matches `apps/use-collectives.ts`: one
  * endpoint per chain from `indexerUrlFor`, hand-written documents, row types
  * declared here. Move this into the SDK once codegen has run against the
- * app-based indexer.
+ * v1 indexer.
  */
 
 /**
@@ -37,7 +37,7 @@ import { indexerUrlFor } from "@/lib/indexer";
  * database. Retrying it three times behind a spinner turned "this instance runs
  * the old schema" into "the network is slow" — and it was not hypothetical.
  * With `NEXT_PUBLIC_SLOTS_ENV` unset, the app read the production instance,
- * which still serves the retired protocol: no `app`, no `hookRef`, no
+ * which still serves the retired protocol: no `module`, no `moduleRef`, no
  * `tenureId`. Every explorer query failed validation and took about seven
  * seconds of exponential backoff to say so.
  */
@@ -101,14 +101,14 @@ interface CurrencyRef {
 }
 
 /**
- * The app a slot points at, as the indexer sees it TODAY.
+ * The module a slot points at, as the indexer sees it TODAY.
  *
- * `declared*` here and `app*` on the slot are two different facts and the
+ * `declared*` here and `module*` on the slot are two different facts and the
  * schema stores both on purpose: the slot obeys the snapshot it took when the
- * app was attached, and an app behind a proxy can change its declaration
+ * module was attached, and a module behind a proxy can change its declaration
  * afterwards. A row where they disagree is the interesting one.
  */
-export interface HookRow {
+export interface ModuleRow {
   id: Address;
   declaredKnown: boolean;
   slotCount: number;
@@ -129,11 +129,11 @@ export interface ExplorerSlot {
   deposit: string;
   taxRateBps: string;
   minRunwaySeconds: string;
-  /** Null is an ordinary configuration — the plain Harberger slot. */
-  app: Address | null;
-  hookRef: HookRow | null;
+  /** Null is an ordinary configuration — the plain common-ownership slot. */
+  module: Address | null;
+  moduleRef: ModuleRow | null;
   mutableTax: boolean;
-  mutableApp: boolean;
+  mutableModule: boolean;
   /** Which terms are queued. Non-zero means a change is waiting. */
   pendingMask: number;
   createdAt: string;
@@ -174,15 +174,15 @@ const SLOT_FIELDS = /* GraphQL */ `
   deposit
   taxRateBps
   minRunwaySeconds
-  app
-  hookRef {
+  module
+  moduleRef {
     id
     declaredKnown
     slotCount
     failedCallCount
   }
   mutableTax
-  mutableApp
+  mutableModule
   pendingMask
   createdAt
   lastSettled
@@ -286,12 +286,12 @@ export function useAccounts() {
 }
 
 // ──────────────────────────────────────────
-// Apps (the protocol's one extension point)
+// Modules (the protocol's one extension point)
 // ──────────────────────────────────────────
 
-const HOOKS_QUERY = /* GraphQL */ `
-  query Apps($chainId: Int!) {
-    apps(
+const MODULES_QUERY = /* GraphQL */ `
+  query Modules($chainId: Int!) {
+    modules(
       where: { chainId: $chainId }
       orderBy: "slotCount"
       orderDirection: "desc"
@@ -308,25 +308,25 @@ const HOOKS_QUERY = /* GraphQL */ `
 `;
 
 /**
- * Every app any slot on this chain points at.
+ * Every module any slot on this chain points at.
  *
  * The successor to `useModules`, and not a rename: a slot had a gallery of
- * modules and now has exactly ONE app, so this is a filter dimension with one
+ * modules and now has exactly ONE module, so this is a filter dimension with one
  * value per slot rather than many.
  */
-export function useApps() {
+export function useModules() {
   const { chainId } = useChain();
 
   return useQuery({
-    queryKey: ["explorer", "apps", chainId],
+    queryKey: ["explorer", "modules", chainId],
     queryFn: async ({ signal }) => {
-      const data = await indexerFetch<{ apps: { items: HookRow[] } }>(
+      const data = await indexerFetch<{ modules: { items: ModuleRow[] } }>(
         chainId,
-        HOOKS_QUERY,
+        MODULES_QUERY,
         { chainId },
         signal,
       );
-      return data.apps?.items ?? [];
+      return data.modules?.items ?? [];
     },
   });
 }
@@ -336,8 +336,8 @@ export function useApps() {
 // ──────────────────────────────────────────
 
 export interface SlotFilters {
-  /** App addresses to include. Empty or absent means every app. */
-  apps?: string[];
+  /** Module addresses to include. Empty or absent means every module. */
+  modules?: string[];
   recipient?: string;
   occupant?: string;
   /**
@@ -379,9 +379,9 @@ export interface PageInfo {
  */
 function buildSlotWhere(chainId: number, filters?: SlotFilters): string {
   const parts = [`chainId: ${chainId}`];
-  if (filters?.apps && filters.apps.length > 0) {
-    const list = filters.apps.map((h) => `"${h.toLowerCase()}"`).join(", ");
-    parts.push(`hook_in: [${list}]`);
+  if (filters?.modules && filters.modules.length > 0) {
+    const list = filters.modules.map((h) => `"${h.toLowerCase()}"`).join(", ");
+    parts.push(`module_in: [${list}]`);
   }
   if (filters?.recipient)
     parts.push(`recipient: "${filters.recipient.toLowerCase()}"`);
@@ -443,9 +443,9 @@ function slotsQuery(
  * `endCursor`. The caller keeps the cursor for each page it has visited so
  * Prev still works — see `SlotsTable`.
  *
- * `apps` filters with `hook_in`. A slot with no app has `app: null` and is
+ * `modules` filters with `module_in`. A slot with no module has `module: null` and is
  * excluded by that filter, which is correct: "show me slots running the minimum
- * tenure app" should not return the plain Harberger ones.
+ * tenure module" should not return the plain common-ownership ones.
  */
 export function useExplorerSlots(
   filters: SlotFilters | undefined,
@@ -459,7 +459,7 @@ export function useExplorerSlots(
       "explorer",
       "slots",
       chainId,
-      filters?.apps?.join(",") ?? "",
+      filters?.modules?.join(",") ?? "",
       filters?.recipient ?? "",
       filters?.occupant ?? "",
       filters?.creator ?? "",
@@ -496,7 +496,7 @@ export function useExplorerSlots(
  * their own, and rendering a deposit at the wrong scale is off by orders of
  * magnitude while looking perfectly plausible.
  *
- * `hookAttestedEvent`, `adminTransferredEvent` and `beaconUpgradedEvent` are
+ * `adminTransferredEvent` and `beaconUpgradedEvent` are
  * deliberately absent: they are FACTORY events with no slot, and every row in
  * this feed links to a slot. They belong on a factory/admin screen.
  */
@@ -514,7 +514,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         recipient
         creator
         deployer
-        app
+        module
         timestamp
         tx
       }
@@ -760,9 +760,9 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         slot
         manager
         changeTax
-        changeHook
+        changeModule
         taxRateBps
-        app
+        module
         timestamp
         tx
       }
@@ -777,11 +777,11 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         id
         slot
         taxRateBps
-        app
+        module
         previousTaxPercentage
-        previousHook
+        previousModule
         taxChanged
-        hookChanged
+        moduleChanged
         timestamp
         tx
       }
@@ -797,12 +797,12 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         slot
         manager
         cancelTax
-        cancelHook
+        cancelModule
         timestamp
         tx
       }
     }
-    hookCallFailedEvents(
+    moduleCallFailedEvents(
       where: { chainId: $chainId }
       orderBy: "timestamp"
       orderDirection: "desc"
@@ -811,7 +811,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
       items {
         id
         slot
-        app
+        module
         selector
         timestamp
         tx

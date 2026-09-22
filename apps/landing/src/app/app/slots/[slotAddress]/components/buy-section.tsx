@@ -282,8 +282,8 @@ export function BuySection({
   /**
    * Simulate, then send.
    *
-   * The simulation is not belt-and-braces: an app's veto is a `view` revert
-   * carrying the app's own error, and that reason survives only in a
+   * The simulation is not belt-and-braces: a module's veto is a `view` revert
+   * carrying the module's own error, and that reason survives only in a
    * simulation. Sent blind, the same veto comes back as a mined, reverted
    * transaction whose receipt says nothing — so "Minimum tenure has not
    * elapsed" would degrade to "it failed", which is useless to the person who

@@ -2,63 +2,94 @@ import { Callout } from 'vocs'
 
 # SlotFactory
 
-Deploys slots as BeaconProxies sharing one implementation. A slot's address is
-assigned at deploy time, not derived from its config, so a slot is identified by
-its address.
+Deploys slots as beacon proxies sharing one implementation. The factory itself
+is UUPS-upgradeable. A slot's address comes from CREATE2 over the chain id and
+the factory's slot count — not from its terms — so a slot is identified by its
+address.
 
 ```solidity
 function createSlot(SlotInit calldata init) external returns (address slot);
+
+event SlotCreated(address indexed slot, address indexed recipient, address indexed creator,
+                  address currency, address module);
 ```
 
-One call, one struct. There is no batch variant and no separate
-`recipient` / `currency` / `config` argument list — everything a slot needs is
-in `SlotInit`.
+One call, one struct. A new slot parameter goes into `SlotInit`, never into a
+second creation function.
 
 ## SlotInit
 
 ```solidity
 struct SlotInit {
-    address recipient;         // where tax goes; never zero
-    IERC20  currency;          // token for tax and price; address(0) = native ETH
-    address manager;           // may change what is mutable; zero on an immutable slot
-    address hook;              // the single extension point; zero for none
-    bytes32 hookData;          // that hook's configuration; must be 0 when hook is
-    uint256 taxBps;            // basis points per 30 days (100 = 1%), 1..10000
-    uint256 minDepositSeconds; // deposit a buy must fund; zero = no minimum
-    bool    mutableTax;
-    bool    mutableHook;
+    IERC20  currency;          // address(0) = native ETH
+    address manager;           // required exactly when something is mutable; zero otherwise
+    bool    mutableTax;        // rate and minimum runway
+    bool    mutableRecipient;
+    bool    mutableModule;
+    TaxTerms taxTerms;
+    ModuleTerms moduleTerms;
+}
+
+struct TaxTerms {
+    address recipient;         // receives the tax, less any module fee; never zero
+    uint16  rateBps;           // basis points of the price per 30 days, 1..10_000
+    uint32  minRunwaySeconds;  // tax a buy must fund, in seconds; zero = no minimum
+}
+
+struct ModuleTerms {
+    address target;            // the module; zero for none
+    bytes32 settings;          // its configuration; must be zero when target is
 }
 ```
 
-`hookData` is 32 bytes the slot stores and hands its hook on every callback — a
-minimum-tenure window, say. It is what lets one hook deployment serve every
-configuration, and it is refused unless there is a hook to interpret it. The hook
-validates it at creation, so a configuration it will reject fails there rather
-than vetoing every buy afterwards.
+`initialize` refuses, before anything is stored:
 
-Two mutability flags, not three. A slot has one hook, so it has one promise
-about that hook — separate from the promise about its tax rate. A slot can offer
-a swappable hook on a tax rate that never changes, or the reverse.
+- a `currency` that is neither zero nor a contract (`InvalidCurrency`);
+- a manager on a fully immutable slot, or none on a mutable one (`InvalidManager`);
+- a `rateBps` outside 1..10,000 (`InvalidTax`) or a zero recipient (`InvalidRecipient`);
+- `settings` without a module, or a module that rejects its settings, declares
+  an invalid manifest, or cannot answer within its gas allowance
+  (`InvalidModule`, `InvalidModuleFee`, `ManifestTooExpensive`, or the module's
+  own error from `checkSettings`).
 
-`minDepositSeconds` guards against a buyer declaring a huge price with no means
+If the module declares `onInstall`, it is called at creation.
+
+`minRunwaySeconds` guards against a buyer declaring a huge price with no means
 to pay: the deposit must cover that many seconds of tax at the declared price. It
 rounds **up** — a truncating client-side copy lands one unit short and reverts.
 
 <Callout type="info">
-`SlotInit` is encoded **by component name**, and a field the encoder does not
-recognise is written as a silent **zero** rather than an error — a stray or
-misspelled key lands a zero address on-chain. The `@0xslots/sdk` `createSlot`
-takes a typed `SlotInit`, so a missing or misnamed field is a compile error
-before it can become a zero.
+viem encodes `SlotInit` **by component name**, and a key it does not recognise
+is written as a silent **zero** rather than an error. The `@0xslots/sdk`
+`createSlot` takes a typed `SlotInit` and checks it with `assertSlotInit` before
+sending.
 </Callout>
+
+## Collecting in bulk
+
+```solidity
+function collectAll(address[] calldata slots) external returns (uint256[] memory collected);
+function collectFrom(address slot) external returns (uint256 amount);
+function isSlot(address) external view returns (bool);
+```
+
+`collectAll` calls `collect()` on each slot this factory created, isolating
+failures: a slot with nothing to collect, a reverting `strict` module or an
+address the factory did not create leaves a zero rather than failing the batch.
+Nothing about it is privileged — `collect()` is permissionless and pays each
+slot's own recipient. Simulate it to learn the amounts.
 
 ## Admin
 
 ```solidity
-function transferAdmin(address next) external;               // hand over the role
-function upgradeBeacon(address implementation) external;     // move every slot at once
+function transferAdmin(address next) external;              // hand over the role
+function upgradeBeacon(address implementation) external;    // move every slot at once
 function implementation() external view returns (address);
+
+event AdminTransferred(address indexed from, address indexed to);
+event BeaconUpgraded(address indexed implementation);
 ```
 
 `upgradeBeacon` moves every slot to a new implementation in one call — they all
-share one beacon. Storage is strictly append-only for that reason.
+share one beacon. Slot storage is ERC-7201-namespaced and append-only for that
+reason.

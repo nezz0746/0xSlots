@@ -4,10 +4,10 @@ pragma solidity ^0.8.24;
 import {console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolConfig} from "./ProtocolConfig.sol";
-import {AdLand} from "../../src/apps/adland/AdLand.sol";
-import {AdConfig, ModerationMode} from "../../src/apps/adland/IAdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {AdConfig, ModerationMode} from "../../src/modules/adland/IAdLand.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, AppTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 /**
  * @title CreatePrimaryAdSlot
@@ -90,8 +90,8 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         t.currency = address(uint160(_word(slot, "currency()")));
         t.taxRateBps = _word(slot, "taxRateBps()");
         t.minRunwaySeconds = _word(slot, "minRunwaySeconds()");
-        // The app stores the window as its 32 bytes of settings; see
-        // `AdLandCreate.createAdSlot`, which encodes seconds into it.
+        // Only the RETIRED protocol answers this: its hook kept the window as
+        // its 32 bytes of config. A v1 slot misses, and the window stays zero.
         t.tenureWindow = _word(slot, "hookData()");
     }
 
@@ -123,7 +123,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
 
         // Checked before anything is sent. Both writes below are `onlyOwner`,
         // and a broadcast that reverts on the second one has already spent the
-        // first — which for `setSlotFactory` means a half-migrated app.
+        // first — which for `setSlotFactory` means a half-migrated module.
         address owner = adLand.owner();
         address caller = msg.sender;
         if (owner != caller) revert NotOwner(owner, caller);
@@ -176,20 +176,20 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
             )
         );
 
-        // An ordinary slot from the ordinary factory, with AdLand as its app.
+        // An ordinary slot from the ordinary factory, with AdLand as its module.
         address slot = SlotFactory(factory).createSlot(
             SlotInit({
                 currency: IERC20(currency),
                 manager: slotOwner,
                 mutableTax: true,
                 mutableRecipient: true,
-                mutableApp: false,
+                mutableModule: false,
                 taxTerms: TaxTerms({
                     recipient: slotOwner,
                     rateBps: uint16(taxRateBps),
                     minRunwaySeconds: uint32(minDeposit)
                 }),
-                appTerms: AppTerms({target: adLandAddress, settings: settings})
+                moduleTerms: ModuleTerms({target: adLandAddress, settings: settings})
             })
         );
 

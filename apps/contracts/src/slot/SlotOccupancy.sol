@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ISlotApp} from "../interfaces/ISlotApp.sol";
+import {ISlotModule} from "../interfaces/ISlotModule.sol";
 import "../errors/SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
@@ -12,7 +12,7 @@ import {Occupancy, Ledger} from "./SlotStorage.sol";
  *
  * @dev `buy`, `release`, `liquidate` — the three transitions, and the only
  *      places the occupant moves. They share one shape: settle, apply queued
- *      terms, ask the app, take the money, seat, notify.
+ *      terms, ask the module, take the money, seat, notify.
  */
 abstract contract SlotOccupancy is SlotViews {
     // ─── occupancy ──────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ abstract contract SlotOccupancy is SlotViews {
 
         // Terms land only now: debt repaid above was owed under the outgoing
         // terms, and applying pays collected tax out under those terms first.
-        // They still land BEFORE the app is asked, so the app judges the
+        // They still land BEFORE the module is asked, so the module judges the
         // terms the buyer is actually seated under.
         bool attached = _applyPending();
         _requireFunded(depositAmount, selfAssessedPrice);
@@ -95,7 +95,7 @@ abstract contract SlotOccupancy is SlotViews {
         _before(
             F_BEFORE_BUY,
             abi.encodeCall(
-                ISlotApp.beforeBuy,
+                ISlotModule.beforeBuy,
                 (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
             )
         );
@@ -111,14 +111,14 @@ abstract contract SlotOccupancy is SlotViews {
 
         emit Bought(account, prev, selfAssessedPrice, depositAmount, owedToPrev);
 
-        // An app that landed above meets the seat it inherited before it hears
+        // A module that landed above meets the seat it inherited before it hears
         // about the buy that filled it.
         if (attached) _onInstall(account, selfAssessedPrice, depositAmount);
 
         _after(
             F_AFTER_BUY,
             abi.encodeCall(
-                ISlotApp.afterBuy,
+                ISlotModule.afterBuy,
                 (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
             )
         );
@@ -140,7 +140,7 @@ abstract contract SlotOccupancy is SlotViews {
         emit Released(prev, refund);
         _after(
             F_AFTER_RELEASE,
-            abi.encodeCall(ISlotApp.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
+            abi.encodeCall(ISlotModule.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 
@@ -169,7 +169,7 @@ abstract contract SlotOccupancy is SlotViews {
         emit Liquidated(msg.sender, prev);
         _after(
             F_AFTER_LIQUIDATE,
-            abi.encodeCall(ISlotApp.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
+            abi.encodeCall(ISlotModule.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 }

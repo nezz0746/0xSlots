@@ -52,7 +52,7 @@ contract SlotFactory is VersionedUUPS {
         address indexed recipient,
         address indexed creator,
         address currency,
-        address app
+        address module
     );
     event AdminTransferred(address indexed from, address indexed to);
     event BeaconUpgraded(address indexed implementation);
@@ -86,7 +86,7 @@ contract SlotFactory is VersionedUUPS {
      *      This was plain `new BeaconProxy(...)` — CREATE — whose address is
      *      `keccak(rlp(deployer, nonce))` and NOTHING else. Constructor
      *      arguments do not enter a CREATE address, so two slots with
-     *      different recipients, currencies, apps and tax rates still landed
+     *      different recipients, currencies, modules and tax rates still landed
      *      on the same address whenever the factory's nonce matched.
      *
      *      This factory is deployed at the same address on every chain. Its
@@ -126,7 +126,7 @@ contract SlotFactory is VersionedUUPS {
             init.taxTerms.recipient,
             msg.sender,
             address(init.currency),
-            init.appTerms.target
+            init.moduleTerms.target
         );
     }
 
@@ -153,7 +153,7 @@ contract SlotFactory is VersionedUUPS {
      *      Each collection is isolated, and the reasons a single one reverts
      *      are ordinary rather than exceptional: `NothingToCollect` for a slot
      *      whose tax is already flushed — which is most of them, most of the
-     *      time — and an app that reverts in `afterSettle` while running
+     *      time — and a module that reverts in `afterSettle` while running
      *      uncapped under `strict`. Neither is a reason to deny nineteen other
      *      recipients their rent, so a failure leaves a zero in `collected` and
      *      the loop carries on.

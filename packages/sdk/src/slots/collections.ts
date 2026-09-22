@@ -1,4 +1,4 @@
-import type { AppTerms, SlotInit } from "./client";
+import type { ModuleTerms, SlotInit } from "./client";
 import {
   slotBoundNftAbi,
   slotBoundNftFactoryAbi,
@@ -26,8 +26,8 @@ import { isNativeCurrency } from "../native";
  * that: creating a collection, minting into one, and the reads a marketplace
  * needs to render one.
  *
- * Kept apart from `SlotsClient` on purpose. The collection is an app, not a
- * protocol surface, and an app that never touches NFTs should not carry it.
+ * Kept apart from `SlotsClient` on purpose. The collection is a module, not a
+ * protocol surface, and a module that never touches NFTs should not carry it.
  */
 
 /** Everything a collection is fixed with. Mirrors `CollectionInit`. */
@@ -49,7 +49,7 @@ export interface CollectionInit {
 }
 
 /** The terms every slot in a collection is created with: its `SlotInit`. */
-export type CollectionTerms = SlotInit & { appTerms: AppTerms };
+export type CollectionTerms = SlotInit & { moduleTerms: ModuleTerms };
 
 /** What a mint costs, and where each half goes. */
 export interface MintQuote {

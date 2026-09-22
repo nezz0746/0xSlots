@@ -15,7 +15,7 @@ import {Versioned} from "../utils/Versioned.sol";
 ///
 /// @notice A slot names two addresses at creation and never lets go of either:
 ///         `recipient`, which money flows to, and `manager`, which may propose
-///         tax and app changes. The protocol deliberately
+///         tax and module changes. The protocol deliberately
 ///         keeps them separate — "receives money" and "has admin powers" are
 ///         different jobs. This contract is for the case where you want them to
 ///         be the same address anyway, without collapsing them into one person:
@@ -44,7 +44,7 @@ import {Versioned} from "../utils/Versioned.sol";
 ///      that function would completely defeat everything below it: the owner
 ///      would simply call
 ///
-///          execCalls([{ to: slot, data: proposeTerms(tax, app, TERM_TAX_RATE) }])
+///          execCalls([{ to: slot, data: proposeTerms(tax, module, TERM_TAX_RATE) }])
 ///
 ///      and bypass `TAX_MANAGER_ROLE` entirely. The roles would be decoration.
 ///
@@ -118,13 +118,13 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     /// @param admin Holder of `DEFAULT_ADMIN_ROLE`. Can call every relay below
     ///        and is the admin of all three manager roles.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
-    /// @param appManagers Initial `POLICY_MANAGER_ROLE` holders — the role
-    ///        that governs the app. May be empty.
+    /// @param policyManagers Initial `POLICY_MANAGER_ROLE` holders — the role
+    ///        that governs the module. May be empty.
     /// @param splitManagers Initial `SPLIT_MANAGER_ROLE` holders. May be empty.
     struct InitialRoles {
         address admin;
         address[] taxManagers;
-        address[] appManagers;
+        address[] policyManagers;
         address[] splitManagers;
     }
 
@@ -187,7 +187,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
         _initGovernance(
             roles.admin,
             roles.taxManagers,
-            roles.appManagers
+            roles.policyManagers
         );
         _grantRoleBatch(SPLIT_MANAGER_ROLE, roles.splitManagers);
     }

@@ -16,9 +16,9 @@ import { formatDuration } from "@/hooks/use-duration";
  * removed in v4 — buys apply immediately — so there is no longer a window to
  * draw.
  *
- * Under the app-based protocol the window comes from a MinimumTenureApp
+ * Under the v1 protocol the window comes from a MinimumTenureModule
  * rather than from an occupancy policy — and from the SLOT rather than from the
- * app: `settings` holds the duration, measured from the slot's own
+ * module: `settings` holds the duration, measured from the slot's own
  * `occupiedSince`. The drawing is unchanged, because the fact being drawn is.
  */
 

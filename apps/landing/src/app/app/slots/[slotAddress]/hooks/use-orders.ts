@@ -14,7 +14,7 @@ import { useChain } from "@/context/chain";
  *
  * The core used to carry `sell`, and the book only published signed orders for
  * an occupant to submit. `sell` is gone — it was a second seating path with its
- * own app callbacks — so a sale is `selfAssess` then `buy`, and the BOOK
+ * own module callbacks — so a sale is `selfAssess` then `buy`, and the BOOK
  * performs both inside the occupant's own transaction.
  *
  * That means the occupant must first make the book their operator
@@ -22,7 +22,7 @@ import { useChain } from "@/context/chain";
  * custodies nothing: it pulls the bidder's payment and spends it in the same
  * call. And it is immutable, precisely because occupants grant it that power.
  *
- * An earlier version of this app kept orders in `localStorage`, on the belief
+ * An earlier version of this hook kept orders in `localStorage`, on the belief
  * that a bid was only ever handed over privately. That was wrong, and the cost
  * of being wrong was the interesting part: a per-browser store cannot show an
  * occupant the offer a stranger just posted, which is the single case the

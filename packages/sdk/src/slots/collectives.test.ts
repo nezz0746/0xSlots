@@ -2,7 +2,7 @@ import { decodeFunctionData, keccak256, toBytes, zeroHash } from "viem";
 import { slotCollectiveAbi } from "@0xslots/contracts/slots";
 import { describe, expect, it, vi } from "vitest";
 
-import { NO_APP } from "./client";
+import { NO_MODULE } from "./client";
 import {
   COLLECTIVE_ROLES,
   type CollectiveSplit,
@@ -53,7 +53,7 @@ describe("createCollective", () => {
       functionName: "createCollective",
       args: [
         { recipients: [ALICE, BOB], allocations: [60n, 40n], totalAllocation: 100n, distributionIncentive: 0 },
-        { admin: ALICE, taxManagers: [], appManagers: [], splitManagers: [] },
+        { admin: ALICE, taxManagers: [], policyManagers: [], splitManagers: [] },
       ],
     });
   });
@@ -83,11 +83,11 @@ describe("governance relays", () => {
     await client.proposeTax(COLLECTIVE, [SLOT_A, SLOT_B], 750);
     expect(last()).toMatchObject({ functionName: "proposeTaxBatch", args: [[SLOT_A, SLOT_B], 750] });
 
-    await client.proposeApp(COLLECTIVE, [SLOT_A, SLOT_B]);
-    expect(last()).toMatchObject({ functionName: "proposeAppBatch", args: [[SLOT_A, SLOT_B], NO_APP] });
+    await client.proposeModule(COLLECTIVE, [SLOT_A, SLOT_B]);
+    expect(last()).toMatchObject({ functionName: "proposeModuleBatch", args: [[SLOT_A, SLOT_B], NO_MODULE] });
 
-    await client.cancelAppProposal(COLLECTIVE, SLOT_B);
-    expect(last()).toMatchObject({ functionName: "cancelAppProposal", args: [SLOT_B] });
+    await client.cancelModuleProposal(COLLECTIVE, SLOT_B);
+    expect(last()).toMatchObject({ functionName: "cancelModuleProposal", args: [SLOT_B] });
 
     await client.cancelAllProposals(COLLECTIVE, [SLOT_A, SLOT_B]);
     expect(last()).toMatchObject({ functionName: "cancelAllProposalsBatch", args: [[SLOT_A, SLOT_B]] });
@@ -115,7 +115,7 @@ describe("money and roles", () => {
   it("role names map to the contract's role ids", async () => {
     expect(COLLECTIVE_ROLES.admin).toBe(zeroHash);
     expect(COLLECTIVE_ROLES.tax).toBe(keccak256(toBytes("TAX_MANAGER_ROLE")));
-    expect(COLLECTIVE_ROLES.app).toBe(keccak256(toBytes("POLICY_MANAGER_ROLE")));
+    expect(COLLECTIVE_ROLES.policy).toBe(keccak256(toBytes("POLICY_MANAGER_ROLE")));
     expect(COLLECTIVE_ROLES.split).toBe(keccak256(toBytes("SPLIT_MANAGER_ROLE")));
 
     const { client, readContract } = harness({ hasRole: true });
@@ -124,7 +124,7 @@ describe("money and roles", () => {
   });
 });
 
-describe("split and app offers", () => {
+describe("split and module offers", () => {
   it("setSplit sends the current split, the next one and native plus listed tokens", async () => {
     const { client, last } = harness();
     const next: CollectiveSplit = { recipients: [ALICE], allocations: [1n] };

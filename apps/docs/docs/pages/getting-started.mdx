@@ -1,3 +1,5 @@
+import { Callout } from 'vocs'
+
 # Getting Started
 
 ## Installation
@@ -5,58 +7,84 @@
 :::code-group
 
 ```bash [pnpm]
-pnpm add @0xslots/sdk
+pnpm add @0xslots/sdk @0xslots/contracts viem
 ```
 
 ```bash [npm]
-npm install @0xslots/sdk
+npm install @0xslots/sdk @0xslots/contracts viem
 ```
 
 :::
 
-## Create a Client
+## Create a client
+
+`SlotsClient` reads and writes slots directly over RPC. Addresses come from
+`@0xslots/contracts`, which only lists chains the protocol is deployed on — see
+[Deployments](/deployments).
 
 ```ts
-import { SlotsClient, SlotsChain } from "@0xslots/sdk";
+import { SlotsClient } from "@0xslots/sdk";
+import { slotFactoryAddress } from "@0xslots/contracts";
 import { createPublicClient, createWalletClient, http } from "viem";
-import { base } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import { anvil } from "viem/chains";
 
-const publicClient = createPublicClient({ chain: base, transport: http() });
-
-// Read-only
-const client = new SlotsClient({ chainId: SlotsChain.BASE, publicClient });
-
-// Read + write
+const publicClient = createPublicClient({ chain: anvil, transport: http() });
 const walletClient = createWalletClient({
   account: privateKeyToAccount("0x..."),
-  chain: base,
+  chain: anvil,
   transport: http(),
 });
-const client = new SlotsClient({ chainId: SlotsChain.BASE, publicClient, walletClient });
+
+const client = new SlotsClient({
+  factoryAddress: slotFactoryAddress[anvil.id], // only createSlot and collectAll need it
+  publicClient,
+  walletClient, // omit for read-only use
+});
 ```
 
-`chainId` is a filter on the query, not a choice of endpoint — one
-[indexer](/indexer) deployment serves every chain. See
-[SlotsClient](/sdk/client) for why that matters.
-
-## Read Slots
+## Read a slot
 
 ```ts
-const { items, totalCount } = (await client.getSlots({ limit: 10 })).slots;
-const { slot } = await client.getSlot({ id: "0x..." });
-const info = await client.getSlotInfo("0x..."); // direct RPC read
+const state = await client.slotState("0x...");
+// occupant, price, deposit, taxOwed, isInsolvent, secondsUntilLiquidation,
+// taxRateBps, recipient, module, settings, scopes, pending terms, …
+
+const cost = await client.quoteBuy("0x...", buyer, depositAmount); // what buy() charges
 ```
 
-Lists return `{ items, totalCount, pageInfo }` rather than a bare array, and
-paginate with `limit` plus `offset` or a `pageInfo` cursor.
+`slotState` is one `getSlotInfo()` call, so every figure is from the same block.
 
-## Write Actions
+## Create a slot
+
+```ts
+import { zeroAddress } from "viem";
+
+await client.createSlot({
+  currency: zeroAddress, // native ETH; or an ERC-20 address
+  manager: zeroAddress,  // nothing is mutable, so there is no manager
+  mutableTax: false,
+  mutableRecipient: false,
+  mutableModule: false,
+  taxTerms: {
+    recipient: "0x...",
+    rateBps: 100,            // 1% of the price per 30 days
+    minRunwaySeconds: 86_400, // a buyer must fund one day of tax
+  },
+  // moduleTerms omitted: no module
+});
+```
+
+To install a module, pass `moduleTerms: { target, settings }` — see
+[Modules](/concepts/modules).
+
+## Write actions
 
 ```ts
 import { parseEther } from "viem";
 
-// Buy a slot (ERC-20 approval handled automatically)
-// `account` is who becomes occupant — it need not be the signer
+// `account` is who gets seated — it need not be the signer.
+// ERC-20 approval is handled, and the quoted total is sent as `maxPayment`.
 await client.buy({
   slot: "0x...",
   account: "0x...",
@@ -64,43 +92,53 @@ await client.buy({
   depositAmount: parseEther("1"),
 });
 
-await client.selfAssess("0xSlot", parseEther("20"));
-await client.topUp("0xSlot", parseEther("0.5"));
-await client.withdraw("0xSlot", parseEther("0.1"));
-await client.release("0xSlot");
-await client.collect("0xSlot");       // permissionless
-await client.liquidate("0xSlot");     // permissionless — no bounty, the slot itself is the reward
+await client.selfAssess(slot, parseEther("20"));
+await client.topUp(slot, parseEther("0.5"));
+await client.withdraw(slot, parseEther("0.1"));
+await client.release(slot);
+await client.collect(slot);   // permissionless
+await client.liquidate(slot); // permissionless — no bounty, the slot itself is the reward
 ```
 
-## React Integration
+<Callout type="info">
+Call `simulateBuy(params)` before `buy` to surface a module's refusal with its
+own error — a mined revert carries no reason.
+</Callout>
+
+## React
 
 ```tsx
 import { useQuery } from "@tanstack/react-query";
-import { useSlotsClient, useSlotAction } from "@0xslots/sdk/react";
+import { useAccount } from "wagmi";
+import { useSlotAction, useSlotsClient } from "@0xslots/sdk/react";
 
-function SlotView({ address }: { address: string }) {
+function SlotView({ address }: { address: `0x${string}` }) {
+  const { address: me } = useAccount();
   const client = useSlotsClient();
   const { data: slot, isLoading } = useQuery({
     queryKey: ["slot", address],
-    queryFn: () => client.slotState(address as `0x${string}`),
+    queryFn: () => client.slotState(address),
   });
   const { buy, busy } = useSlotAction({
     onSuccess: (label, hash) => console.log(`${label}: ${hash}`),
   });
 
-  if (isLoading) return <div>Loading...</div>;
-  if (!slot) return <div>Not found</div>;
+  if (isLoading || !slot || !me) return null;
 
   return (
-    <div>
-      <p>Price: {slot.price.toString()}</p>
-      <p>Occupant: {slot.occupant ?? "Vacant"}</p>
-      <button disabled={busy} onClick={() => buy({
-        slot: address as `0x${string}`,
-        selfAssessedPrice: 5000000n,
-        depositAmount: 1000000n,
-      })}>Buy</button>
-    </div>
+    <button
+      disabled={busy}
+      onClick={() =>
+        buy({
+          slot: address,
+          account: me,
+          selfAssessedPrice: 5_000_000n,
+          depositAmount: 1_000_000n,
+        })
+      }
+    >
+      Buy (current price {slot.price.toString()})
+    </button>
   );
 }
 ```
