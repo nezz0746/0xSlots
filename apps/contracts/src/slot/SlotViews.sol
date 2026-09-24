@@ -8,7 +8,7 @@ import {Scopes} from "../interfaces/ISlotModule.sol";
 import {SlotAccounting} from "./SlotAccounting.sol";
 import {TaxTerms, ModuleTerms, Manifest, Terms, PendingTerms} from "../types/SlotTypes.sol";
 import {Settings, Occupancy} from "./SlotStorage.sol";
-import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
+import {TermsLib} from "../libraries/TermsLib.sol";
 
 /// @notice One slot, whole, as of one block.
 ///
@@ -37,6 +37,8 @@ struct SlotInfo {
     bool isInsolvent;
     uint256 secondsUntilLiquidation;
     PendingTerms pending;
+    /// Whether `pending` lands at the next buy.
+    bool hasRipeTerms;
 }
 
 /// @notice The protocol's fixed numbers, in one call.
@@ -66,7 +68,7 @@ struct SlotConstantsInfo {
  *      file is not `view`, it is in the wrong file.
  */
 abstract contract SlotViews is SlotAccounting {
-    using TermsLib for TermsQueue;
+    using TermsLib for PendingTerms;
 
     /// @notice The whole slot, in one call.
     function getSlotInfo() external view returns (SlotInfo memory info) {
@@ -95,6 +97,7 @@ abstract contract SlotViews is SlotAccounting {
         info.secondsUntilLiquidation = secondsUntilLiquidation();
 
         info.pending = pendingTerms();
+        info.hasRipeTerms = hasRipeTerms();
     }
 
     /// @notice Every protocol constant, in one call.
@@ -151,8 +154,7 @@ abstract contract SlotViews is SlotAccounting {
 
     /// @notice What is queued. Only the fields named by `mask` are meaningful.
     function pendingTerms() public view returns (PendingTerms memory) {
-        TermsQueue storage q = _queue();
-        return PendingTerms(_nextTaxTerms(), _nextModuleTerms(), q.scopes, q.mask, q.proposedAt, hasRipeTerms());
+        return _pending();
     }
 
     function recipient() external view returns (address) {
@@ -286,11 +288,10 @@ abstract contract SlotViews is SlotAccounting {
      */
     function minDepositForBuy(uint256 price_) public view returns (uint256) {
         TaxTerms memory r = _taxTerms();
-        TermsQueue storage q = _queue();
+        PendingTerms storage q = _pending();
         if (q.isRipe(TERMS_DELAY)) {
-            TaxTerms storage next = _nextTaxTerms();
-            if (q.mask & TermsLib.TAX_RATE != 0) r.rateBps = next.rateBps;
-            if (q.mask & TermsLib.MIN_RUNWAY != 0) r.minRunwaySeconds = next.minRunwaySeconds;
+            if (q.mask & TermsLib.TAX_RATE != 0) r.rateBps = q.taxTerms.rateBps;
+            if (q.mask & TermsLib.MIN_RUNWAY != 0) r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;
         }
         return SlotMath.depositFor(price_, r.rateBps, r.minRunwaySeconds);
     }

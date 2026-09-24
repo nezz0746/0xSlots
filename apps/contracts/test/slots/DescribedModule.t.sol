@@ -16,9 +16,9 @@ import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 /// @dev A module that works but describes nothing — the case a client must
 ///      degrade on rather than fail on.
 contract SilentModule is ISlotModule {
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -60,10 +60,10 @@ contract DescribedModuleTest is Test {
     }
 
     function _slot(address module) internal returns (Slot) {
-        return _slot(module, bytes32(0));
+        return _slot(module, "");
     }
 
-    function _slot(address module, bytes32 data) internal returns (Slot) {
+    function _slot(address module, bytes memory data) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
@@ -115,10 +115,11 @@ contract DescribedModuleTest is Test {
         );
     }
 
-    /// @notice The word IS the value here, so a client encodes and attaches.
-    function test_TheWindowIsWrittenStraightIntoTheWord() public view {
+    /// @notice Settings are `abi.encode` of the `x-abi` fields, so a client
+    ///         encodes and attaches, with no flag to consult.
+    function test_SettingsAreTheEncodedFields() public view {
         string memory d = tenure.definition();
-        assertEq(vm.parseJsonString(d, '.settings["x-settings-encoding"]'), "inline");
+        assertFalse(vm.keyExistsJson(d, '.settings["x-settings-encoding"]'));
         assertEq(
             vm.parseJsonString(d, ".settings.properties.window[\'x-semantic\']"),
             "minimum-tenure",
@@ -135,8 +136,8 @@ contract DescribedModuleTest is Test {
 
     /// @notice The window comes from the slot's `settings` and nowhere else.
     function test_TheWindowIsReadOffTheSlotsConfiguration() public view {
-        assertEq(tenure.tenureOf(bytes32(uint256(3 days))), 3 days);
-        assertEq(tenure.tenureOf(bytes32(TENURE)), TENURE);
+        assertEq(tenure.tenureOf(abi.encode(uint256(3 days))), 3 days);
+        assertEq(tenure.tenureOf(abi.encode(TENURE)), TENURE);
     }
 
     // ── the rule that keeps it safe ──────────────────────────────────────────
@@ -190,7 +191,7 @@ contract DescribedModuleTest is Test {
     ///      implementation, including one that reads `definition()` on every
     ///      buy. Mutation-checked: adding such a read to `Slot` fails this.
     function test_TheSlotBytecodeDoesNotContainTheDefinitionSelector() public {
-        _slot(address(tenure), bytes32(TENURE));
+        _slot(address(tenure), abi.encode(TENURE));
         bytes4 sel = IDescribedModule.definition.selector;
         bytes memory code = factory.implementation().code;
         assertGt(code.length, 1000, "must be scanning the logic, not a proxy");

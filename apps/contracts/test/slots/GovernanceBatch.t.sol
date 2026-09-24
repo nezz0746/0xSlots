@@ -41,7 +41,7 @@ contract GovernanceBatchTest is Test {
                 manager: address(gov),
                 mutableTax: true, mutableRecipient: true, mutableModule: true,
                 taxTerms: TaxTerms({recipient: address(gov), rateBps: uint16(1000), minRunwaySeconds: uint32(1 days)}),
-                moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+                moduleTerms: ModuleTerms({target: address(0), settings: ""})
             }))));
         }
         vm.warp(1_000_000);
@@ -81,7 +81,7 @@ contract GovernanceBatchTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(1000), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         })));
 
         vm.expectRevert();
@@ -94,7 +94,7 @@ contract GovernanceBatchTest is Test {
     }
 
     function test_AModuleBatchMovesEverySlot() public {
-        gov.proposeModuleBatch(slots, ModuleTerms({target: address(0), settings: bytes32(0)}));
+        gov.proposeModuleBatch(slots, ModuleTerms({target: address(0), settings: ""}));
         for (uint256 i; i < slots.length; ++i) {
             assertTrue(Slot(payable(address(slots[i]))).getSlotInfo().pending.mask & 8 != 0);
         }
@@ -118,7 +118,7 @@ contract GovernanceBatchTest is Test {
 
     function test_ACancelAllBatchClearsBothDimensions() public {
         gov.proposeTax(slots[0], 2000);
-        gov.proposeModule(slots[0], ModuleTerms({target: address(0), settings: bytes32(0)}));
+        gov.proposeModule(slots[0], ModuleTerms({target: address(0), settings: ""}));
         gov.cancelAllProposalsBatch(slots);
 
         assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pending.mask & 1 != 0);

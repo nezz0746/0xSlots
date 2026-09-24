@@ -31,6 +31,10 @@ interface ISellableSlot {
     ///      enforces it, so raising a price can require a top-up first.
     function minDepositToHold(uint256 price_) external view returns (uint256);
 
+    /// @notice The smallest deposit `buy` accepts at `price_`, ripe queued
+    ///         terms included.
+    function minDepositForBuy(uint256 price_) external view returns (uint256);
+
     /// @dev True while `operator` may reprice on the CURRENT occupant's behalf.
     ///      Keyed by tenure on the far side, so it goes false by itself the
     ///      moment the slot changes hands.

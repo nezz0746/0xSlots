@@ -71,7 +71,7 @@ contract AdLandEventsTest is Test {
                             manager: address(this),
                             mutableTax: true, mutableRecipient: true, mutableModule: true,
                             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-                            moduleTerms: ModuleTerms({target: address(adland), settings: bytes32(0)})
+                            moduleTerms: ModuleTerms({target: address(adland), settings: ""})
                         })
                     )
                 )

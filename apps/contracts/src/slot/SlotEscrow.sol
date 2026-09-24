@@ -42,6 +42,9 @@ abstract contract SlotEscrow is SlotOccupancy {
 
         _requireFunded(o.deposit, newPrice);
 
+        // `_settle` above moved the clock to now and carried any fraction, so
+        // there is no open window for the new price to reach back into: it
+        // applies from this second on, never to the past.
         uint256 old = o.price;
         o.price = newPrice;
         emit PriceSet(msg.sender, old, newPrice);

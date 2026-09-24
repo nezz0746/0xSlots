@@ -50,7 +50,7 @@ contract BeaconUpgradeTest is Test {
             manager: admin,
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(1_000), minRunwaySeconds: uint32(1 hours)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
     }
 

@@ -40,11 +40,14 @@ import { useChain } from "@/context/chain";
  *    what consuming it changed. Rendering a filled offer as acceptable is a
  *    button that lies to the occupant.
  *
- * `board(slot)` gives the list and the contract's own per-entry liveness
- * verdict in ONE call, which is why it is preferred over `offers` plus N
- * `isLive` reads — and why the verdict is never recomputed here from
- * `cancelled` and `expiry` — the book also tracks `filled`, and its own verdict
- * is the only one guaranteed to account for every reason a bid is dead.
+ * `boardPage(slot, start, count)` gives the list and the contract's own
+ * per-entry liveness verdict together, which is why it is preferred over
+ * `offers` plus N `isLive` reads — and why the verdict is never recomputed here
+ * from `cancelled` and `expiry` — the book also tracks `filled`, and its own
+ * verdict is the only one guaranteed to account for every reason a bid is
+ * dead. Paged rather than one `board(slot)` call because the board only grows:
+ * the live count and the best bid are taken from the same verdicts, so rule 1
+ * holds with `offerCount` used only to know where the pages end.
  */
 
 export interface BookOffer {
@@ -74,6 +77,9 @@ export function useOfferBook(): Address | undefined {
   return offerBookAddress[chainId];
 }
 
+/** Board entries read per `boardPage` call. Far under any RPC's gas budget. */
+const BOARD_PAGE = 200n;
+
 export function useOrders(slot: Address | undefined) {
   const { chainId } = useChain();
   const publicClient = usePublicClient({ chainId });
@@ -85,41 +91,53 @@ export function useOrders(slot: Address | undefined) {
     enabled: !!book && !!slot && !!publicClient,
     refetchInterval: 8_000,
     queryFn: async () => {
-      const [board, count, best] = await Promise.all([
-        publicClient!.readContract({
-          address: book!,
-          abi: offerBookAbi,
-          functionName: "board",
-          args: [slot!],
-        }) as Promise<readonly [readonly RawOffer[], readonly boolean[]]>,
-        // The badge's number, straight from the contract. See rule 1.
-        publicClient!.readContract({
-          address: book!,
-          abi: offerBookAbi,
-          functionName: "liveCount",
-          args: [slot!],
-        }) as Promise<bigint>,
-        publicClient!.readContract({
-          address: book!,
-          abi: offerBookAbi,
-          functionName: "best",
-          args: [slot!],
-        }) as Promise<readonly [boolean, bigint, RawOffer]>,
-      ]);
+      // Paged. The board only grows, and every entry costs the book four
+      // foreign reads to judge, so a few thousand dust bids would put a
+      // whole-board read past the RPC's gas budget for good. `best` and the
+      // count come from the same pages, by the contract's own verdict per
+      // entry — see rule 2 — rather than two more whole-board calls.
+      const total = (await publicClient!.readContract({
+        address: book!,
+        abi: offerBookAbi,
+        functionName: "offerCount",
+        args: [slot!],
+      })) as bigint;
 
-      const [list, live] = board;
-      const offers: BookOffer[] = list
-        .map((o, id) => ({ ...o, id }))
-        // The contract's verdict, not ours. See rule 2.
-        .filter((o) => live[o.id] === true)
-        .sort((a, b) => (b.price > a.price ? 1 : b.price < a.price ? -1 : 0));
+      const pages: Promise<readonly [readonly RawOffer[], readonly boolean[]]>[] = [];
+      for (let start = 0n; start < total; start += BOARD_PAGE) {
+        pages.push(
+          publicClient!.readContract({
+            address: book!,
+            abi: offerBookAbi,
+            functionName: "boardPage",
+            args: [slot!, start, BOARD_PAGE],
+          }) as Promise<readonly [readonly RawOffer[], readonly boolean[]]>,
+        );
+      }
+
+      const live: BookOffer[] = [];
+      let id = 0;
+      for (const [list, isLive] of await Promise.all(pages)) {
+        list.forEach((o, i) => {
+          if (isLive[i] === true) live.push({ ...o, id: id + i });
+        });
+        id += list.length;
+      }
+
+      // The book's rule: highest price, lowest id among equals.
+      let best: BookOffer | undefined;
+      for (const o of live) if (!best || o.price > best.price) best = o;
+
+      const offers = [...live].sort((a, b) =>
+        b.price > a.price ? 1 : b.price < a.price ? -1 : 0,
+      );
 
       return {
         offers,
-        count: Number(count),
-        bestFound: best[0],
-        bestId: Number(best[1]),
-        bestOffer: best[2],
+        count: live.length,
+        bestFound: best !== undefined,
+        bestId: best?.id ?? -1,
+        bestOffer: best,
       };
     },
   });

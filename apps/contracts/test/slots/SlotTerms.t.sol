@@ -14,11 +14,11 @@ import "../../src/errors/SlotErrors.sol";
 
 /// @dev Takes no fee, subscribes to one harmless callback.
 contract AnyModule is ISlotModule {
-    function manifest(bytes32) external view virtual returns (Manifest memory o) {
+    function manifest(bytes calldata) external view virtual returns (Manifest memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external virtual {}
@@ -54,7 +54,7 @@ contract ManifestModule is AnyModule {
         scopes = scopes_;
     }
 
-    function manifest(bytes32) external view override returns (Manifest memory) {
+    function manifest(bytes calldata) external view override returns (Manifest memory) {
         return Manifest(scopes, bps, to);
     }
 
@@ -99,7 +99,7 @@ contract SlotTermsTest is Test {
     // ── helpers ─────────────────────────────────────────────────────────────
 
     function _noModule() internal pure returns (ModuleTerms memory) {
-        return ModuleTerms({target: address(0), settings: bytes32(0)});
+        return ModuleTerms({target: address(0), settings: ""});
     }
 
     function _taxTerms() internal view returns (TaxTerms memory) {
@@ -338,7 +338,7 @@ contract SlotTermsTest is Test {
 
     function _manifestSlot(bool mutableModule, uint16 bps, address to) internal returns (Slot s, ManifestModule h) {
         h = new ManifestModule(bps, to);
-        s = _slot(true, true, mutableModule, ModuleTerms({target: address(h), settings: 0}));
+        s = _slot(true, true, mutableModule, ModuleTerms({target: address(h), settings: ""}));
     }
 
     function test_TheManifestIsWhatTheModuleDeclares() public {
@@ -354,16 +354,18 @@ contract SlotTermsTest is Test {
     function test_AModuleWithABadManifestIsRefused() public {
         ManifestModule noRecipient = new ManifestModule(100, address(0));
         vm.expectRevert(InvalidModuleFee.selector);
-        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noRecipient), settings: 0})));
+        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noRecipient), settings: ""})));
 
         ManifestModule tooMuch = new ManifestModule(10_001, author);
         vm.expectRevert(InvalidModuleFee.selector);
-        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(tooMuch), settings: 0})));
+        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(tooMuch), settings: ""})));
+
+
 
         ManifestModule noScopes = new ManifestModule(0, address(0));
         noScopes.setScopes(0);
         vm.expectRevert(InvalidModule.selector);
-        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noScopes), settings: 0})));
+        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noScopes), settings: ""})));
 
     }
 
@@ -375,8 +377,9 @@ contract SlotTermsTest is Test {
         uint256 owed = s.taxOwed();
         s.collect();
 
-        assertEq(author.balance, owed / 4, "a quarter to the module's fee recipient");
-        assertEq(recipient.balance, owed - owed / 4, "the rest to the recipient");
+        uint256 fee = owed / 4;
+        assertEq(author.balance, fee, "a quarter to the module's fee recipient");
+        assertEq(recipient.balance, owed - fee, "the rest to the recipient");
     }
 
     function test_ANewManifestIsVisibleUntilAccepted() public {
@@ -509,7 +512,7 @@ contract SlotTermsTest is Test {
         s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
 
         AnyModule other = new AnyModule();
-        _propose(s, _taxTerms(), ModuleTerms({target: address(other), settings: 0}), MODULE);
+        _propose(s, _taxTerms(), ModuleTerms({target: address(other), settings: ""}), MODULE);
         skip(s.TERMS_DELAY());
         _buy(s);
 
@@ -577,7 +580,7 @@ contract SlotTermsTest is Test {
         _buy(s);
 
         h.set(10_000, author);
-        _propose(s, _taxTerms(), ModuleTerms({target: address(h), settings: 0}), MODULE);
+        _propose(s, _taxTerms(), ModuleTerms({target: address(h), settings: ""}), MODULE);
         skip(10 days);
         _releaseAndApply(s);
 
@@ -606,4 +609,22 @@ contract SlotTermsTest is Test {
         vm.expectRevert(NotMutable.selector);
         fixedModule.proposeTerms(_taxTerms(), _noModule(), MODULE);
     }
+
+    /// @notice A runway past a year is refused, at creation and on proposal.
+    function test_ARunwayPastAYearIsRefused() public {
+        TaxTerms memory t = _taxTerms();
+        t.minRunwaySeconds = uint32(365 days) + 1;
+        vm.prank(manager);
+        vm.expectRevert(InvalidRunway.selector);
+        slot.proposeTerms(t, _noModule(), MIN_RUNWAY);
+
+        SlotInit memory i = _init(true, true, true, _noModule());
+        i.taxTerms.minRunwaySeconds = uint32(365 days) + 1;
+        vm.expectRevert(InvalidRunway.selector);
+        factory.createSlot(i);
+
+        t.minRunwaySeconds = uint32(365 days);
+        _propose(slot, t, _noModule(), MIN_RUNWAY);
+    }
+
 }

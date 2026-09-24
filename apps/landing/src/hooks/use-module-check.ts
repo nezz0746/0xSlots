@@ -1,7 +1,7 @@
 "use client";
 
 import { minimumTenureModuleAbi } from "@0xslots/contracts/slots";
-import { unpackScopes, ZERO_SETTINGS } from "@0xslots/sdk/slots";
+import { unpackScopes, NO_SETTINGS } from "@0xslots/sdk/slots";
 import { type Address, getAddress, isAddress } from "viem";
 import { useBytecode, useReadContracts } from "wagmi";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
@@ -102,7 +102,7 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
               address: checksummed,
               abi: moduleProbeAbi,
               functionName: "manifest",
-              args: [ZERO_SETTINGS],
+              args: [NO_SETTINGS],
               chainId,
             } as const,
           ]

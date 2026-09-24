@@ -17,13 +17,6 @@ const abi = [
     inputs: [],
     outputs: [{ type: "string" }],
   },
-  {
-    type: "function",
-    name: "settingsById",
-    stateMutability: "view",
-    inputs: [{ name: "id", type: "bytes32" }],
-    outputs: [{ type: "bytes" }],
-  },
 ] as const;
 
 /**
@@ -32,7 +25,7 @@ const abi = [
  * The window is the SLOT's, not the module's: one deployment serves every
  * duration and reads the number out of the slot's configuration on each
  * callback, so the only source that can be right for a given slot is that
- * slot's own word.
+ * slot's own settings.
  *
  * What takes a round trip is WHETHER the number means a tenure at all, and
  * where inside the configuration it sits. Both come from the module's own
@@ -41,11 +34,9 @@ const abi = [
  * so somebody else's implementation of the same rule reads correctly without
  * this file learning about it.
  *
- * The word itself may be the value or a receipt for it. When the schema says
- * `registered`, the bytes live in the module's own store and the word is their
- * id — so they are fetched and decoded against `x-abi`. That is the generic
- * path: nothing here knows AdLand packs three values, only that the schema
- * says how to read them back.
+ * The settings are decoded against `x-abi`. That is the generic path: nothing
+ * here knows AdLand packs three values, only that the schema says how to read
+ * them back.
  *
  * A module with no definition, no tagged field, or an unreadable configuration
  * all mean "no window" — an ordinary answer, not an error. Most slots have no
@@ -75,28 +66,18 @@ export function useTenureWindow(
         const index = config.fields.findIndex((f) => f.semantic === TENURE);
         if (index < 0) return null;
 
-        let encoded = settings as Hex;
-        if (config.registered) {
-          encoded = await publicClient!.readContract({
-            address: module!,
-            abi,
-            functionName: "settingsById",
-            args: [settings as Hex],
-          });
-        }
-
         const values = decodeAbiParameters(
           config.fields.map((f) => f.param),
-          encoded,
+          settings as Hex,
         );
         return String(values[index]);
       } catch {
-        // No definition, an unregistered word, or bytes that do not decode.
+        // No definition, empty settings, or bytes that do not decode.
         // All of them mean the same thing to a reader: no window to show.
         return null;
       }
     },
-    // The schema is fixed by the module's code and the word by the slot's terms,
+    // The schema is fixed by the module's code and the settings by the slot's terms,
     // so this only changes when one of them does — and both are in the key.
     staleTime: Number.POSITIVE_INFINITY,
   });

@@ -81,6 +81,7 @@ contract CrossChainAddressesTest is Test {
         )));
 
         SlotsWarehouseHolder holder = new SlotsWarehouseHolder();
+        holder.deploy();
         collectives = SlotCollectiveFactory(address(new ERC1967Proxy(
             address(new SlotCollectiveFactory()),
             abi.encodeCall(
@@ -105,7 +106,7 @@ contract CrossChainAddressesTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         });
     }
 
@@ -261,11 +262,13 @@ contract CrossChainAddressesTest is Test {
 
 /// @dev `SlotCollective`'s constructor takes the splits warehouse, and the
 ///      warehouse has to exist before the implementation does. Wrapping the
-///      pair keeps `setUp` readable.
+///      pair keeps `setUp` readable. Deployed from a function rather than the
+///      constructor: a contract mid-construction has no code yet, and the
+///      implementation refuses a deployer without code.
 contract SlotsWarehouseHolder {
     SlotCollective public implementation;
 
-    constructor() {
+    function deploy() external {
         implementation =
             new SlotCollective(address(new SplitsWarehouse("Ether", "ETH")));
     }

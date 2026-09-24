@@ -65,7 +65,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             manager: address(collective),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
 
         moduleA = address(new MinimumTenureModule());
@@ -160,7 +160,7 @@ contract CollectiveGovernsRealSlotTest is Test {
     ///         validates the module rather than trusting the relay.
     function test_TheModuleRelayReachesARealSlotAndTheSlotValidates() public {
         vm.prank(policyMgr);
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}));
 
         _ripen();
         _seat(buyer);
@@ -174,7 +174,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         // A module that cannot answer `manifest` is refused at the slot, not here.
         vm.prank(policyMgr);
         vm.expectRevert();
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: bytes32(0)}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: ""}));
     }
 
     /// @notice The assertion the whole port turns on, against real contracts:
@@ -184,7 +184,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(taxMgr);
         collective.proposeTax(IManagedSlot(address(slot)), 750);
         vm.prank(policyMgr);
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}));
 
         vm.prank(policyMgr);
         collective.cancelModuleProposal(IManagedSlot(address(slot)));
@@ -209,7 +209,7 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert();
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}));
 
         (, , bool hasTax, bool hasModule) = _pending();
         assertFalse(hasTax);
@@ -224,7 +224,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             manager: address(0xA11CE),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
 
         vm.prank(taxMgr);

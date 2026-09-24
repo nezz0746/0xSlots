@@ -10,7 +10,6 @@ import {
   encodeAbiParameters,
   type Hex,
   isAddress,
-  keccak256,
 } from "viem";
 import { usePublicClient, useReadContract } from "wagmi";
 import { useChain } from "@/context/chain";
@@ -27,9 +26,8 @@ import { useChain } from "@/context/chain";
  * ignores:
  *
  *   - `x-abi` — an ORDERED `AbiParameter[]`, because ABI encoding is positional
- *     and `properties` is a JSON object, which is not.
- *   - `x-settings-encoding` — whether the encoded bytes ARE the slot's word, or
- *     have to be registered with the module and the returned id attached instead.
+ *     and `properties` is a JSON object, which is not. `abi.encode` of those
+ *     values IS the slot's `settings`.
  *   - `x-optional` — whether a slot may attach this module configuring nothing.
  *   - `x-semantic`, `x-unit`, `x-minimum`, `x-maximum`, `x-enum-labels` — what a
  *     value means, what to call it, and what it may be.
@@ -55,22 +53,8 @@ const describedModuleAbi = [
     type: "function",
     name: "checkSettings",
     stateMutability: "view",
-    inputs: [{ name: "settings", type: "bytes32" }],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "areSettingsRegistered",
-    stateMutability: "view",
-    inputs: [{ name: "id", type: "bytes32" }],
-    outputs: [{ type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "registerSettings",
-    stateMutability: "nonpayable",
     inputs: [{ name: "settings", type: "bytes" }],
-    outputs: [{ type: "bytes32" }],
+    outputs: [],
   },
 ] as const satisfies Abi;
 
@@ -96,15 +80,14 @@ const checkAbi: Abi = [
 ];
 
 /**
- * An empty configuration word.
+ * Empty settings.
  *
  * Put to `checkSettings` like any other value, because whether a module can
  * be attached without configuration is the module's answer and not a rule a
  * client can infer: the same tenure rule is REQUIRED on the standalone module and
  * OPTIONAL on AdLand, and each says so in its own schema.
  */
-export const ZERO_WORD =
-  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+export const EMPTY_SETTINGS = "0x" as const;
 
 /** One property of the config schema, paired with its `x-abi` entry. */
 export interface ModuleField {
@@ -127,8 +110,6 @@ export interface ModuleField {
 export interface ModuleSettingsSpec {
   title: string;
   fields: ModuleField[];
-  /** Whether the encoded bytes are registered and the slot's word is their id. */
-  registered: boolean;
   /** Whether a slot may attach this module with no configuration at all. */
   optional: boolean;
   /** The schema as published, for a module that wants to drive its own form. */
@@ -197,7 +178,6 @@ export function parseDefinition(raw: string): ModuleDefinition | null {
 
     out.settings = {
       title: str(c.title) || out.title,
-      registered: c["x-settings-encoding"] === "registered",
       optional: c["x-optional"] === true,
       schema: c as unknown as Record<string, unknown>,
       fields: abi.map((p) => {
@@ -228,21 +208,13 @@ export function parseDefinition(raw: string): ModuleDefinition | null {
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 /**
- * The word a set of form values encodes to.
- *
- * Two steps, because a slot holds 32 bytes and a configuration may be larger.
- * The values are encoded against `x-abi` — one call, in the order that array
- * gives — and then either the encoding IS the word, or the word is its
- * `keccak256` and the bytes have to be registered with the module first.
- *
- * The id is computed here rather than read back from a transaction: it is the
- * hash of the same bytes the module hashes, so a configuration somebody already
- * registered needs no transaction at all.
+ * The settings a set of form values encodes to: `abi.encode` against `x-abi`,
+ * in the order that array gives. The slot stores exactly these bytes.
  */
 export function encodeSettings(
   config: ModuleSettingsSpec,
   values: Record<string, string>,
-): { encoded: Hex; word: Hex } | null {
+): Hex | null {
   if (config.fields.length === 0) return null;
   try {
     const args = config.fields.map((f) => {
@@ -252,51 +224,20 @@ export function encodeSettings(
         ? BigInt(raw)
         : (raw as unknown);
     });
-    const encoded = encodeAbiParameters(
+    return encodeAbiParameters(
       config.fields.map((f) => f.param),
       args,
     );
-    return {
-      encoded,
-      word: config.registered ? keccak256(encoded) : (encoded as Hex),
-    };
   } catch {
     return null;
   }
 }
 
 /**
- * Whether the module already holds the bytes this word stands for.
- *
- * Registration is permissionless and idempotent — the same bytes always hash to
- * the same id — so a configuration somebody else already registered costs
- * nothing, and the form skips straight to attaching it.
- */
-export function useSettingsRegistered(
-  address: string,
-  word: Hex | null,
-  enabled: boolean,
-) {
-  const { chainId } = useChain();
-  const { data, isLoading, refetch } = useReadContract({
-    address: isAddress(address) ? (address as Address) : undefined,
-    abi: describedModuleAbi,
-    functionName: "areSettingsRegistered",
-    args: word ? [word] : undefined,
-    chainId,
-    query: { enabled: enabled && isAddress(address) && !!word, retry: false },
-  });
-  return { registered: data === true, isLoading, refetch };
-}
-
-/** The write a form sends when the bytes are not registered yet. */
-export const settingsStoreAbi = describedModuleAbi;
-
-/**
- * The module's own verdict on a word, before anything is attached.
+ * The module's own verdict on some settings, before anything is attached.
  *
  * `checkSettings` is a `view` that reverts with a named, parameterised
- * error — `TenureTooLong(31536000)`, `UnknownSettings(0x…)`. Reading it is how
+ * error — `TenureTooLong(31536000)`, `MalformedSettings()`. Reading it is how
  * a form shows the real reason rather than a guess, and it is the same function
  * the slot calls at attach, so agreeing with it here means agreeing with it
  * there.
@@ -377,8 +318,8 @@ function readReason(error: unknown): string {
   if (name === "TenureNotConfigured") return "Set a window above zero.";
   if (name === "TenureTooLong")
     return `Too long. The most this module allows is ${describeSeconds(args[0])}.`;
-  if (name === "UnknownSettings")
-    return "This module has not been given these values yet.";
+  if (name === "MalformedSettings")
+    return "These values are not a configuration this module reads.";
   if (name) return `${name}${args.length ? ` (${args.join(", ")})` : ""}`;
 
   // No definition for it, so the selector is the honest answer — the check

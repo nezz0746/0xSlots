@@ -26,8 +26,8 @@ contract Tok is ERC20 {
  *      the case the batch has to survive.
  */
 contract StrictBreaker is ISlotModule {
-    function checkSettings(bytes32) external pure {}
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function checkSettings(bytes calldata) external pure {}
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterSettle = true;
         f.strict = true;
@@ -85,7 +85,7 @@ contract CollectAllTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient_, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: module, settings: ""})
         }))));
     }
 

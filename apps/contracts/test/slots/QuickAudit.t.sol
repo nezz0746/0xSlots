@@ -73,7 +73,7 @@ contract QuickAuditTest is SlotsTest {
         Slot s = _slot(address(0));
         DenyBuys deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(deny), settings: bytes32(0)}), uint8(9));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(deny), settings: ""}), uint8(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms());
 

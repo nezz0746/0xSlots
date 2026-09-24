@@ -197,7 +197,7 @@ starts a fresh tenure that approves nobody.
 
 `proposeTerms(slot, { taxRateBps?, recipient?, minRunwaySeconds?, moduleTerms? })`
 queues a change. It **never applies immediately**: terms ripen for
-`TERMS_DELAY` (1 day) and land at the next buy, or when the occupant lands them
+`TERMS_DELAY` (1 hour) and land at the next buy, or when the occupant lands them
 with `applyTerms`. The terms an occupant bought into hold for their whole tenure.
 
 - A module's `settings` travel inside `moduleTerms`, never separately. Swapping
@@ -334,7 +334,7 @@ descriptions matter, because none of these words means anything on its own.
 | `MONTH_SECONDS` | 2 592 000 | the tax period is 30 days, **not** a year |
 | `MAX_TAX_BPS` | 10 000 | 100% per month |
 | `MAX_PRICE` | `type(uint128).max` | |
-| `TERMS_DELAY_SECONDS` | 86 400 | how long a manager's proposal ripens |
+| `TERMS_DELAY_SECONDS` | 3 600 | how long a manager's proposal ripens |
 | `NATIVE_CURRENCY_ADDRESS` | zero address | test with `isNativeCurrency` |
 
 Reading `taxRateBps` as annual understates the cost of holding by a factor of twelve.

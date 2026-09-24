@@ -192,6 +192,16 @@ contract OfferBook is OfferBookInternals {
         // `buy` charges `msg.sender`, and on a fill that is this book — which
         // is why the allowance `_fundable` checks is to the book, not the slot.
         uint256 owed = ISellableSlot(slot).quoteBuy(bidder, dep);
+
+        // Bounded by the offer the bidder signed up to, because `owed` and
+        // `currency` are both answered by `slot` — an address nothing here has
+        // verified is a slot. Unbounded, a counterfeit slot quotes the bidder's
+        // whole standing allowance to this book and spends it. `_fundable`
+        // already treats price + deposit + debt as the bid's true cost; this is
+        // the same ceiling on the paying side.
+        uint256 ceiling = price + dep + ISellableSlot(slot).debtOf(bidder);
+        if (owed > ceiling) revert QuoteAboveOffer(owed, ceiling);
+
         IERC20(currency).safeTransferFrom(bidder, address(this), owed);
         IERC20(currency).forceApprove(slot, owed);
 
@@ -258,10 +268,27 @@ contract OfferBook is OfferBookInternals {
         view
         returns (bool found, uint256 id, Offer memory o)
     {
+        return bestIn(slot, 0, type(uint256).max);
+    }
+
+    /// @notice `best`, over the entries `[start, start + count)` only.
+    ///
+    /// @dev The board only grows — `cancel` sets a flag and nothing removes an
+    ///      entry — and every entry costs four foreign reads to judge, so a few
+    ///      thousand dust bids from fresh addresses would put the whole-board
+    ///      reads past any `eth_call` budget, permanently, on a contract with no
+    ///      admin to prune it. Every whole-board read therefore has a bounded
+    ///      twin, and a client that pages never meets the limit.
+    function bestIn(address slot, uint256 start, uint256 count)
+        public
+        view
+        returns (bool found, uint256 id, Offer memory o)
+    {
         Offer[] storage list = _offers[slot];
+        (uint256 from, uint256 to) = _window(list.length, start, count);
         address occupant = ISellableSlot(slot).occupant();
         uint256 bestPrice;
-        for (uint256 i; i < list.length; ++i) {
+        for (uint256 i = from; i < to; ++i) {
             Offer storage c = list[i];
             // Price first: `_live` reads three foreign slots, so skipping a
             // loser before asking is worth the extra branch.
@@ -311,9 +338,19 @@ contract OfferBook is OfferBookInternals {
     ///      cancelled, expired and already-filled bids, so counting with it
     ///      overstates the book and never goes back down.
     function liveCount(address slot) external view returns (uint256 n) {
+        return liveCountIn(slot, 0, type(uint256).max);
+    }
+
+    /// @notice `liveCount`, over the entries `[start, start + count)` only.
+    function liveCountIn(address slot, uint256 start, uint256 count)
+        public
+        view
+        returns (uint256 n)
+    {
         Offer[] storage list = _offers[slot];
+        (uint256 from, uint256 to) = _window(list.length, start, count);
         address occupant = ISellableSlot(slot).occupant();
-        for (uint256 i; i < list.length; ++i) {
+        for (uint256 i = from; i < to; ++i) {
             if (_live(slot, list[i], occupant)) ++n;
         }
     }
@@ -341,13 +378,37 @@ contract OfferBook is OfferBookInternals {
         view
         returns (Offer[] memory list, bool[] memory live)
     {
-        list = _offers[slot];
-        live = new bool[](list.length);
-        address occupant = ISellableSlot(slot).occupant();
+        return boardPage(slot, 0, type(uint256).max);
+    }
+
+    /// @notice `board`, over the entries `[start, start + count)` only. Entry
+    ///         `i` of the result is offer id `start + i`.
+    function boardPage(address slot, uint256 start, uint256 count)
+        public
+        view
+        returns (Offer[] memory list, bool[] memory live)
+    {
         Offer[] storage stored = _offers[slot];
-        for (uint256 i; i < list.length; ++i) {
-            live[i] = _live(slot, stored[i], occupant);
+        (uint256 from, uint256 to) = _window(stored.length, start, count);
+        list = new Offer[](to - from);
+        live = new bool[](to - from);
+        address occupant = ISellableSlot(slot).occupant();
+        for (uint256 i = from; i < to; ++i) {
+            list[i - from] = stored[i];
+            live[i - from] = _live(slot, stored[i], occupant);
         }
+    }
+
+    /// @dev `[start, start + count)` clipped to `[0, length)`, without the
+    ///      addition overflowing on the "everything" count.
+    function _window(uint256 length, uint256 start, uint256 count)
+        private
+        pure
+        returns (uint256 from, uint256 to)
+    {
+        if (start >= length) return (length, length);
+        from = start;
+        to = count > length - start ? length : start + count;
     }
 
     /// @dev Can this offer be executed against `slot` right now? Cancelled and

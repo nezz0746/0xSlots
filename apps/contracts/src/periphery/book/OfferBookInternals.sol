@@ -61,6 +61,12 @@ abstract contract OfferBookInternals is OfferBookStorage {
         //
         // The fill also charges any debt the bidder owes on this slot, so a
         // bidder carrying one is only fundable if they can cover it too.
+        // And a deposit the slot will actually seat. `buy` refuses one below
+        // the escrow floor at the offered price, so an offer under it can never
+        // fill — yet funded, it sat at the top of `best` for as long as its
+        // author liked, and every seller who pressed it lost the gas.
+        if (o.deposit < ISellableSlot(slot).minDepositForBuy(o.price)) return false;
+
         uint256 debt = ISellableSlot(slot).debtOf(o.bidder);
         uint256 owed;
         unchecked { owed = o.price + o.deposit; }

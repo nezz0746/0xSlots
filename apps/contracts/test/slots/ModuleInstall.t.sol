@@ -33,14 +33,14 @@ contract InstallSpy is ISlotModule {
         refuse = v;
     }
 
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         uint16 p = ScopesLib.ON_INSTALL |
             ScopesLib.ON_UNINSTALL |
             ScopesLib.AFTER_SETTLE;
         o.scopes = strictMode ? p | ScopesLib.STRICT : p;
     }
 
-    function checkSettings(bytes32) external view {}
+    function checkSettings(bytes calldata) external view {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -49,7 +49,7 @@ contract InstallSpy is ISlotModule {
     function afterSettle(SlotContext calldata) external {}
 
     uint256 public removals;
-    bytes32 public lastRemovedConfig;
+    bytes public lastRemovedConfig;
 
     function onUninstall(SlotContext calldata ctx) external {
         if (refuse) revert RefusedAttachment();
@@ -74,11 +74,11 @@ contract InstallSpy is ISlotModule {
 contract QuietModule is ISlotModule {
     uint256 public attachments;
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
-    function checkSettings(bytes32) external view {}
+    function checkSettings(bytes calldata) external view {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -124,7 +124,7 @@ contract ModuleInstallTest is Test {
             manager: manager,
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: module, settings: ""})
         }))));
     }
 
@@ -156,7 +156,7 @@ contract ModuleInstallTest is Test {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
         assertEq(spy.attachments(), 0, "not while it is only queued");
 
@@ -178,7 +178,7 @@ contract ModuleInstallTest is Test {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         _buy(s, bob);
@@ -194,7 +194,7 @@ contract ModuleInstallTest is Test {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + 365 days);
         s.liquidate();
 
@@ -231,7 +231,7 @@ contract ModuleInstallTest is Test {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         vm.prank(alice);
@@ -246,7 +246,7 @@ contract ModuleInstallTest is Test {
     ///         the terms it is handed are its own.
     function test_TheOutgoingModuleIsToldItIsBeingRemoved() public {
         InstallSpy going = new InstallSpy(false);
-        bytes32 mine = bytes32(uint256(7));
+        bytes memory mine = abi.encode(uint256(7));
 
         Slot s = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
@@ -260,7 +260,7 @@ contract ModuleInstallTest is Test {
         InstallSpy coming = new InstallSpy(false);
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(coming), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(coming), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         _buy(s, alice);
@@ -288,14 +288,14 @@ contract ModuleInstallTest is Test {
             manager: manager,
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(stubborn), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(stubborn), settings: ""})
         }))));
 
         stubborn.setRefuse(true);
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(0), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(0), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         vm.expectEmit(true, false, false, false);
@@ -305,4 +305,39 @@ contract ModuleInstallTest is Test {
         assertEq(s.module(), address(0), "removed anyway");
         assertEq(stubborn.removals(), 0, "it just did not record it");
     }
+
+    /// @notice A module attached through the queue keeps all nine scope bits,
+    ///         so it is told when it is later removed.
+    function test_AQueuedModuleKeepsOnUninstall() public {
+        Slot s = _slot(address(0));
+        InstallSpy spy = new InstallSpy(false);
+
+        vm.prank(manager);
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
+            ModuleTerms({target: address(spy), settings: ""}),
+            8
+        );
+        skip(s.TERMS_DELAY());
+        s.applyTerms();
+
+        assertEq(s.module(), address(spy));
+        assertEq(
+            s.manifest().scopes,
+            ScopesLib.ON_INSTALL | ScopesLib.ON_UNINSTALL | ScopesLib.AFTER_SETTLE,
+            "bit 8 survives the queued attach"
+        );
+        assertTrue(s.scopes().onUninstall);
+
+        vm.prank(manager);
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            8
+        );
+        skip(s.TERMS_DELAY());
+        s.applyTerms();
+        assertEq(spy.removals(), 1, "and it is told when it is removed");
+    }
+
 }

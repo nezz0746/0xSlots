@@ -39,27 +39,5 @@ contract AdLand is
         return 1;
     }
 
-    /**
-     * @notice What this module claims to be, and what it takes.
-     *
-     * @dev Three values travelling together as one {AdConfig}, which is more
-     *      than a `bytes32` holds — so they are registered with
-     *      `registerSettings` and the slot's word is their id. The schema says
-     *      so with `"x-settings-encoding":"registered"`, which is the difference a
-     *      client cannot infer: a module with one field may register it too.
-     *
-     *      Optional as a whole. A slot that leaves the word empty is an
-     *      ordinary advertising slot with no window, no key and `Open`
-     *      moderation — not an unconfigured one.
-     *
-     *      The tenure field is the rule's own, declared by {MinimumTenure} with
-     *      its bounds and its `x-semantic` tag, so an application recognises the
-     *      behaviour here exactly as it does on {MinimumTenureModule} without
-     *      learning that AdLand hosts it.
-     *
-     *      `pure`, so it says what the module CAN enforce. What a given slot is
-     *      configured with is `Slot.moduleTerms().settings` and the bytes registered
-     *      behind it.
-     */
     function _authorizeUpgrade(address) internal override onlyOwner {}
 }

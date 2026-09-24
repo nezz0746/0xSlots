@@ -17,8 +17,7 @@ pragma solidity ^0.8.24;
  *
  *      `pure`, and about the MODULE rather than about a slot. That is what lets a
  *      client cache it by address for ever. What a particular slot is configured
- *      with is that slot's own storage — `Slot.moduleTerms().settings`, and the
- *      registered bytes behind it when the schema says the word is an id.
+ *      with is that slot's own storage: `Slot.moduleTerms().settings`.
  *
  *      ── The rule that keeps this safe ───────────────────────────────────
  *

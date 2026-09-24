@@ -5,7 +5,7 @@ import {
   knownModules,
   minimumTenureModuleAbi,
 } from "@0xslots/contracts/slots";
-import { unpackScopes, ZERO_SETTINGS } from "@0xslots/sdk/slots";
+import { unpackScopes, NO_SETTINGS } from "@0xslots/sdk/slots";
 import { AlertCircle, Loader2, Plug } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
@@ -206,7 +206,7 @@ export function SectionModule() {
                 itself — for a module picked BY NAME as much as for one pasted
                 in. It only rendered under "Custom address" before, so choosing
                 AdLand from the list offered no window at all, and a module that
-                REQUIRES a word would have been created with an empty one and
+                REQUIRES settings would have been created with empty ones and
                 reverted at attach. Keyed on the address so a switch between
                 modules resets the control rather than carrying a half-typed
                 value across. */}
@@ -239,11 +239,11 @@ function ModuleDeclaredSettings({ module }: { module: string }) {
   const { definition } = useModuleDefinition(module);
   const [values, setValues] = useState<Record<string, string>>({});
 
-  // One word, so one configuration: a module that takes none renders nothing.
+  // One configuration per slot: a module that takes none renders nothing.
   const config = definition?.settings?.fields.length ? definition.settings : undefined;
 
   /**
-   * Clear the word when the ADDRESS changes, so one meant for one module is
+   * Clear the settings when the ADDRESS changes, so ones meant for one module are
    * never submitted for another.
    *
    * Guarded by a ref rather than by the dependency array. `useFormContext`
@@ -277,9 +277,9 @@ function ModuleDeclaredSettings({ module }: { module: string }) {
         moduleAddress={module}
         config={config}
         values={values}
-        onChange={(next, word) => {
+        onChange={(next, settings) => {
           setValues(next);
-          setValue("customSettings", word ?? "", { shouldValidate: true });
+          setValue("customSettings", settings ?? "", { shouldValidate: true });
         }}
         onVerdict={(ok) => setValue("settingsOk", ok, { shouldValidate: true })}
       />
@@ -288,7 +288,7 @@ function ModuleDeclaredSettings({ module }: { module: string }) {
 }
 
 /**
- * What the module asks of a slot configured with the form's current word: its
+ * What the module asks of a slot configured with the form's current settings: its
  * scopes and its fee, as the module itself declares them. The slot copies
  * this when the module attaches; nobody creating a slot chooses it.
  */
@@ -300,7 +300,7 @@ function useDeclaredManifest(module: string) {
     address: valid ? (module as Address) : undefined,
     abi: minimumTenureModuleAbi,
     functionName: "manifest",
-    args: [(data || ZERO_SETTINGS) as Hex],
+    args: [(data || NO_SETTINGS) as Hex],
     chainId,
     query: { enabled: valid },
   }).data;

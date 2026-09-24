@@ -43,10 +43,8 @@ library SlotMath {
     /**
      * @notice Tax accrued on `price` over `elapsed` seconds.
      *
-     * @dev Rounds DOWN, and the caller must not treat the shortfall as paid:
-     *      a window too short to price one unit of currency accrues zero, so
-     *      advancing a settlement clock to `now` regardless destroys that
-     *      window's tax. See `secondsPaidFor` for the inverse a settler needs.
+     * @dev Rounds DOWN. A settler must not drop the shortfall — see `accrue`,
+     *      which carries it.
      */
     function taxFor(
         uint256 price,
@@ -94,22 +92,28 @@ library SlotMath {
     }
 
     /**
-     * @notice The seconds a settled `amount` of tax paid for, rounded UP.
+     * @notice Tax accrued on `price` over `elapsed`, plus a remainder carried
+     *         from before: whole units owed now, and the new remainder.
      *
-     * @dev What a settler advances its clock by. `amount` is `taxFor(elapsed)`,
-     *      which floors, so the exact paid time is at most one wei's worth short
-     *      of `elapsed`. Rounding it down left a whole paid second on the clock
-     *      to be charged again, and a settle per block overcharged by that much
-     *      each time. Rounding up can never pass `elapsed`, and forgives less
-     *      than one wei per settle.
+     * @dev What a settler uses instead of `taxFor`. Nothing is rounded away:
+     *      the part of the numerator below one unit is returned to be carried,
+     *      so a settle can always move its clock to now. Converting paid tax
+     *      back into seconds instead — the previous design — forgave up to a
+     *      whole unit per settle, and with `topUp(0)` free and permissionless
+     *      that was repeatable every block: up to half the rent, in the right
+     *      price band, for gas.
+     *
+     *      Plain arithmetic, no `mulDiv`: `MAX_PRICE` and `MAX_TAX_BPS` bound
+     *      `price * taxRateBps * elapsed` far below 2^256.
      */
-    function secondsPaidFor(
-        uint256 amount,
+    function accrue(
         uint256 price,
-        uint256 taxRateBps
-    ) internal pure returns (uint256) {
-        uint256 rate = price * taxRateBps;
-        if (rate == 0) return type(uint256).max;
-        return Math.mulDiv(amount, DEN, rate, Math.Rounding.Ceil);
+        uint256 taxRateBps,
+        uint256 elapsed,
+        uint256 carry
+    ) internal pure returns (uint256 owed, uint256 remainder) {
+        uint256 num = price * taxRateBps * elapsed + carry;
+        owed = num / DEN;
+        remainder = num % DEN;
     }
 }

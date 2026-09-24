@@ -3,7 +3,7 @@
 import {
   assertSlotInit,
   type SlotInit,
-  ZERO_SETTINGS,
+  NO_SETTINGS,
 } from "@0xslots/sdk/slots";
 import { SplitV2Type } from "@0xsplits/splits-sdk/types";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -327,7 +327,7 @@ export default function CreatePage() {
      * answer and stays one: a module that refuses it says so through the form,
      * which is what disarms the button.
      */
-    const settings: Hex = (data.customSettings || ZERO_SETTINGS) as Hex;
+    const settings: Hex = (data.customSettings || NO_SETTINGS) as Hex;
 
     if (
       moduleAddress !== zeroAddress &&
@@ -360,7 +360,7 @@ export default function CreatePage() {
       moduleTerms: {
         target:
           moduleAddress === zeroAddress ? zeroAddress : getAddress(moduleAddress),
-        settings: moduleAddress === zeroAddress ? ZERO_SETTINGS : settings,
+        settings: moduleAddress === zeroAddress ? NO_SETTINGS : settings,
       },
     };
 

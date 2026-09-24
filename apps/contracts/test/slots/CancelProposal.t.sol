@@ -30,7 +30,7 @@ contract CancelProposalTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 hours)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
         moduleA = address(new MinimumTenureModule());
     }
@@ -53,8 +53,8 @@ contract CancelProposalTest is Test {
 
     /// @notice The bug this replaced: one dimension's cancel wiping the other.
     function test_CancellingTheModuleLeavesTheTaxProposalStanding() public {
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}), uint8(8));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}), uint8(8));
 
         slot.cancelTerms(uint8(8));
 
@@ -66,8 +66,8 @@ contract CancelProposalTest is Test {
     }
 
     function test_CancellingTheTaxLeavesTheModuleProposalStanding() public {
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}), uint8(8));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}), uint8(8));
 
         slot.cancelTerms(uint8(1));
 
@@ -79,7 +79,7 @@ contract CancelProposalTest is Test {
     }
 
     function test_CancellingBothClearsEverything() public {
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}), uint8(9));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}), uint8(9));
         slot.cancelTerms(uint8(9));
 
         (, , bool hasTax, bool hasModule) = _pending();
@@ -91,7 +91,7 @@ contract CancelProposalTest is Test {
     ///         reporting, not a silent no-op — it usually means the caller
     ///         believes they queued something they did not.
     function test_CancellingWhatWasNeverProposedReverts() public {
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
 
         vm.expectRevert();
         slot.cancelTerms(uint8(8));
@@ -105,7 +105,7 @@ contract CancelProposalTest is Test {
 
     /// @notice Only the manager may retract.
     function test_AStrangerCannotCancel() public {
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
         vm.prank(address(0xBAD));
         vm.expectRevert();
         slot.cancelTerms(uint8(1));
@@ -113,8 +113,8 @@ contract CancelProposalTest is Test {
 
     /// @notice A surviving proposal must still actually land.
     function test_TheSurvivingProposalStillApplies() public {
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: bytes32(uint256(7 days))}), uint8(8));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}), uint8(8));
         slot.cancelTerms(uint8(8));
 
         // Terms are queued, ripen, then land at a transition.
@@ -141,7 +141,7 @@ contract CancelProposalTest is Test {
         uint256 price = 0.01 ether;
         uint256 atCurrentTax = slot.minDepositForBuy(price);
 
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
         // Not yet: a queued rise the transition will not apply must not be
         // priced in, or the quote asks for money the slot will not take.
         assertEq(slot.minDepositForBuy(price), atCurrentTax, "not ripe yet");

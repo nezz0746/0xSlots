@@ -82,7 +82,7 @@ function setManager(address next) external;   // immediate, one step
 
 Fields outside the mask are ignored. Proposals are validated now — a module is
 asked `checkSettings` and `manifest` at proposal — and then **queue**: they
-ripen after `TERMS_DELAY` (one day) and land at the next `buy`, or earlier
+ripen after `TERMS_DELAY` (one hour) and land at the next `buy`, or earlier
 through `applyTerms`. Proposing again overwrites the named terms, keeps the rest
 queued, and restarts the delay. `cancelTerms` drops whichever of `mask` is
 queued and leaves the rest.
@@ -133,7 +133,8 @@ struct SlotInfo {
     // money, as of this block
     uint256 taxOwed; uint256 collectedTax;
     bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
-    PendingTerms pending; // { taxTerms, moduleTerms, scopes, mask, proposedAt, ripe }
+    PendingTerms pending; // { taxTerms, moduleTerms, scopes, mask, proposedAt, reviewedManifest }
+    bool hasRipeTerms;    // whether `pending` lands at the next buy
 }
 ```
 
@@ -144,7 +145,7 @@ function quoteBuy(address account, uint256 depositAmount) external view returns 
 function minDepositForBuy(uint256 price) external view returns (uint256);  // uses ripe queued terms
 function minDepositToHold(uint256 price) external view returns (uint256);  // terms in force
 function hasRipeTerms() external view returns (bool);
-function pendingTerms() external view returns (PendingTerms memory);
+function pendingTerms() external view returns (PendingTerms memory); // stored as-is
 function isOperator(address operator) external view returns (bool);
 function debtOf(address account) external view returns (uint256);
 function withdrawableOf(address account) external view returns (uint256);

@@ -71,40 +71,40 @@ contract SeedSlots is Script {
         _record("SlotsTestToken", address(token));
 
         // 1. Native, no module, occupied. The plainest slot there is.
-        Slot a = _create(me, address(0), address(0), bytes32(0), 500, 7 days, true, true);
+        Slot a = _create(me, address(0), address(0), "", 500, 7 days, true, true);
         uint256 depA = _minDeposit(0.05 ether, 500, 7 days);
         a.buy{value: depA}(me, 0.05 ether, depA, 0);
 
         // 2. ERC-20, no module, occupied.
-        Slot b = _create(me, address(token), address(0), bytes32(0), 250, 3 days, true, true);
+        Slot b = _create(me, address(token), address(0), "", 250, 3 days, true, true);
         uint256 depB = _minDeposit(1_000e18, 250, 3 days);
         IERC20(address(token)).approve(address(b), depB);
         b.buy(me, 1_000e18, depB, 0);
 
         // 3. Native, tenure module, occupied — inside its protection window, so
         //    the UI has a slot that renders as "not available yet".
-        Slot c = _create(me, address(0), module, bytes32(uint256(7 days)), 500, 7 days, true, true);
+        Slot c = _create(me, address(0), module, abi.encode(uint256(7 days)), 500, 7 days, true, true);
         uint256 depC = _minDeposit(0.1 ether, 500, 7 days);
         c.buy{value: depC}(me, 0.1 ether, depC, 0);
 
         // 4. Native, no module, VACANT. The empty state.
-        Slot d = _create(me, address(0), address(0), bytes32(0), 1_000, 1 days, true, true);
+        Slot d = _create(me, address(0), address(0), "", 1_000, 1 days, true, true);
 
         // 5. Immutable terms — neither tax nor module may ever be proposed.
-        Slot e = _create(me, address(0), address(0), bytes32(0), 300, 1 days, false, false);
+        Slot e = _create(me, address(0), address(0), "", 300, 1 days, false, false);
         uint256 depE = _minDeposit(0.02 ether, 300, 1 days);
         e.buy{value: depE}(me, 0.02 ether, depE, 0);
 
         // 6. A pending term change, parked until the next buy.
-        Slot f = _create(me, address(0), address(0), bytes32(0), 500, 1 days, true, true);
+        Slot f = _create(me, address(0), address(0), "", 500, 1 days, true, true);
         uint256 depF = _minDeposit(0.02 ether, 500, 1 days);
         f.buy{value: depF}(me, 0.02 ether, depF, 0);
-        f.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        f.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
 
         // 7. Funded to the exact minimum. `minRunwaySeconds` is 1 hour, so an
         //    hour of warp — or an hour of anvil — makes this liquidatable by
         //    anyone. This is the slot the liquidation UI is built against.
-        Slot g = _create(me, address(0), address(0), bytes32(0), 2_000, 1 hours, true, true);
+        Slot g = _create(me, address(0), address(0), "", 2_000, 1 hours, true, true);
         uint256 depG = _minDeposit(0.01 ether, 2_000, 1 hours);
         g.buy{value: depG}(me, 0.01 ether, depG, 0);
 
@@ -113,7 +113,7 @@ contract SeedSlots is Script {
         //    deployment — so the explorer has two slots sharing one module and
         //    enforcing different terms, which is the whole point of settings.
         Slot h = _create(
-            me, address(token), module, bytes32(uint256(30 days)), 400, 30 days, true, true
+            me, address(token), module, abi.encode(uint256(30 days)), 400, 30 days, true, true
         );
         uint256 depH = _minDeposit(500e18, 400, 30 days) + 1e18;
         IERC20(address(token)).approve(address(h), depH);
@@ -123,7 +123,7 @@ contract SeedSlots is Script {
         //    The module column has something to show on an empty slot, and the
         //    buy form has to price a window before anyone is inside one.
         Slot i = _create(
-            me, address(0), module, bytes32(uint256(1 days)), 600, 1 days, true, true
+            me, address(0), module, abi.encode(uint256(1 days)), 600, 1 days, true, true
         );
 
         vm.stopBroadcast();
@@ -144,7 +144,7 @@ contract SeedSlots is Script {
         address recipient,
         address currency,
         address module,
-        bytes32 settings,
+        bytes memory settings,
         uint256 tax,
         uint256 minRunwaySeconds,
         bool mutableTax,

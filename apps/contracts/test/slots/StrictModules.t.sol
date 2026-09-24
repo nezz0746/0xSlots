@@ -20,7 +20,7 @@ contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,ui
 abstract contract Modal is ISlotModule {
     bool internal immutable _strict;
     constructor(bool strict_) { _strict = strict_; }
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view virtual {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterSettle(SlotContext calldata) external {}
@@ -36,7 +36,7 @@ abstract contract Modal is ISlotModule {
 contract FailingAfter is Modal {
     error Nope();
     constructor(bool s) Modal(s) {}
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true; f.afterRelease = true; f.afterLiquidate = true;
         f.strict = _strict;
@@ -51,7 +51,7 @@ contract FailingAfter is Modal {
 contract BlocksEviction is Modal {
     error Stuck();
     constructor(bool s) Modal(s) {}
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true; f.afterLiquidate = true; f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
@@ -66,7 +66,7 @@ contract HungryAfter is Modal {
     mapping(uint256 => uint256) public junk;
     uint256 public runs;
     constructor(bool s) Modal(s) {}
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true; f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
@@ -97,7 +97,7 @@ contract StrictModulesTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(1000), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: module, settings: ""})
         }))));
     }
 
@@ -188,7 +188,7 @@ contract StrictModulesTest is Test {
         assertFalse(s.getSlotInfo().scopes.strict, "attached lenient");
 
         h.flip();
-        assertTrue(ScopesLib.unpack(h.manifest(0).scopes).strict, "the module now claims strict");
+        assertTrue(ScopesLib.unpack(h.manifest("").scopes).strict, "the module now claims strict");
 
         // Still swallowed: the slot obeys its snapshot, not the live answer.
         _buy(s, alice, 1 ether, 1 ether);
@@ -201,8 +201,8 @@ contract Flipper is ISlotModule {
     error Nope();
     bool public flipped;
     function flip() external { flipped = true; }
-    function checkSettings(bytes32) external pure {}
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function checkSettings(bytes calldata) external pure {}
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true; f.strict = flipped;
         o.scopes = ScopesLib.pack(f);

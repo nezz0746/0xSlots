@@ -379,7 +379,7 @@ contract SlotBoundNFTTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: carol, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(nft), settings: bytes32(tokenId)})
+            moduleTerms: ModuleTerms({target: address(nft), settings: abi.encode(tokenId)})
         }));
 
         token.approve(rogue, type(uint256).max);
@@ -423,7 +423,7 @@ contract SlotBoundNFTTest is Test {
     function test_TheOwnerHasNoPowerOverTheSlots() public {
         vm.startPrank(owner);
         vm.expectRevert();
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
         vm.expectRevert();
         slot.selfAssess(1 ether);
         vm.stopPrank();
@@ -474,7 +474,7 @@ contract SlotBoundNFTTest is Test {
         assertFalse(t.mutableModule, "never - a detachable module strands the token");
         assertEq(t.manager, manager);
         assertEq(t.moduleTerms.target, address(nft));
-        assertEq(t.moduleTerms.settings, bytes32(0));
+        assertEq(t.moduleTerms.settings, bytes(""));
     }
 
     /// @notice There is no admin on these slots at all.
@@ -528,10 +528,10 @@ contract SlotBoundNFTTest is Test {
         vm.stopPrank();
 
         Slot managed = Slot(payable(s));
-        managed.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        managed.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
         assertEq(managed.taxRateBps(), 1000, "alice keeps what she bought");
 
-        vm.warp(block.timestamp + 1 days + 1);   // TERMS_DELAY
+        vm.warp(block.timestamp + 1 hours + 1); // TERMS_DELAY
         vm.startPrank(bob);
         token.approve(address(managed), type(uint256).max);
         managed.buy(bob, 10 ether, managed.minDepositForBuy(10 ether), 0);
@@ -548,7 +548,7 @@ contract SlotBoundNFTTest is Test {
 
         vm.prank(carol);
         vm.expectRevert();
-        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
     }
 
     /// @notice The collection holds no privileged role of its own.
@@ -561,7 +561,7 @@ contract SlotBoundNFTTest is Test {
 
         vm.prank(address(m));
         vm.expectRevert();
-        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
     }
 
     /// @notice One relay, and it is the slot's own answer.

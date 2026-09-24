@@ -2,21 +2,16 @@
 
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { Address, Hex } from "viem";
-import { useQueryClient } from "@tanstack/react-query";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { Button } from "@/components/ui/button";
+import type { Hex } from "viem";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   describeSeconds,
+  EMPTY_SETTINGS,
   encodeSettings,
   type ModuleSettingsSpec,
   type ModuleField,
-  settingsStoreAbi,
-  useSettingsRegistered,
   useSettingsCheck,
-  ZERO_WORD,
 } from "@/hooks/use-module-schema";
 import { TIME_MULTIPLIERS, type TimeUnit, timeUnits } from "../sections";
 
@@ -47,42 +42,24 @@ export function ModuleSettings({
   config: ModuleSettingsSpec;
   /** Raw strings by field name, each in that field's own unit. */
   values: Record<string, string>;
-  onChange: (next: Record<string, string>, word: Hex | null) => void;
+  onChange: (next: Record<string, string>, settings: Hex | null) => void;
   /** The chain's answer, for whoever owns the submit button. */
   onVerdict?: (ok: boolean) => void;
 }) {
   const filled = config.fields.every((f) => (values[f.name] ?? "").trim());
   const encoded = filled ? encodeSettings(config, values) : null;
-  const word = encoded?.word ?? null;
-
-  const queryClient = useQueryClient();
-  const check = useSettingsCheck(moduleAddress, word);
+  const check = useSettingsCheck(moduleAddress, encoded);
 
   /**
    * Whether leaving this empty is allowed — asked, not assumed.
    *
    * The schema says so in `x-optional`, but the module is asked anyway, because
-   * the empty word is judged by the same function that judges every other
+   * empty settings are judged by the same function that judges every other
    * value and its answer is the one the slot will act on. AdLand carries the
-   * tenure rule and skips it when the word is zero; the standalone module
+   * tenure rule and skips it when the settings are empty; the standalone module
    * refuses.
    */
-  const zeroCheck = useSettingsCheck(moduleAddress, ZERO_WORD, 0);
-
-  /**
-   * Whether the module already holds these bytes.
-   *
-   * Only asked when the word is an id. Registration is permissionless and
-   * idempotent, so a configuration somebody already registered — the same
-   * three values, from anyone — needs no transaction at all, and the form says
-   * so rather than sending one.
-   */
-  const { registered, refetch } = useSettingsRegistered(
-    moduleAddress,
-    word,
-    config.registered,
-  );
-  const needsRegistering = config.registered && !!word && !registered;
+  const zeroCheck = useSettingsCheck(moduleAddress, EMPTY_SETTINGS, 0);
 
   /**
    * The verdict, reported up.
@@ -92,12 +69,9 @@ export function ModuleSettings({
    * there would arm the button for the moment between a keystroke and the
    * chain's reply.
    *
-   * An empty form is judged by whether the ZERO word is accepted — the
+   * An empty form is judged by whether EMPTY settings are accepted — the
    * difference between a module that takes an optional configuration and one that
    * requires it.
-   *
-   * A word whose bytes are not registered yet is NOT accepted: the module would
-   * refuse it at attach, which is exactly what `checkSettings` says.
    *
    * Through a ref, and guarded on the value: the caller passes an inline
    * closure, so depending on its identity would run this on every render, and
@@ -119,7 +93,7 @@ export function ModuleSettings({
   const set = (name: string, next: string) => {
     const merged = { ...values, [name]: next };
     const all = config.fields.every((f) => (merged[f.name] ?? "").trim());
-    onChange(merged, all ? (encodeSettings(config, merged)?.word ?? null) : null);
+    onChange(merged, all ? encodeSettings(config, merged) : null);
   };
 
   return (
@@ -133,21 +107,6 @@ export function ModuleSettings({
           invalid={!!check.reason}
         />
       ))}
-
-      {needsRegistering && encoded && (
-        <RegisterConfig
-          moduleAddress={moduleAddress as Address}
-          encoded={encoded.encoded}
-          word={word}
-          onRegistered={() => {
-            refetch();
-            // The verdict for this word is a cached REJECTION — the module
-            // refused an id it did not hold. Now it holds it, so the question
-            // has to be asked again rather than answered from that cache.
-            queryClient.invalidateQueries({ queryKey: ["app-data-check"] });
-          }}
-        />
-      )}
 
       <Verdict
         {...check}
@@ -226,74 +185,6 @@ function FieldControl({
           {field.description}
         </p>
       )}
-    </div>
-  );
-}
-
-/**
- * Give the module the bytes its id stands for.
- *
- * A configuration larger than a word lives in the module's own store, and the
- * slot holds its `keccak256`. So the values are handed over once, and after
- * that any slot can point at them by id.
- *
- * Permissionless and idempotent, which is what makes this cheap: the id is the
- * hash of the bytes, so somebody else registering the same three values
- * registers them for everyone, and this step disappears — the caller only
- * renders it when the chain says the id is unknown.
- */
-function RegisterConfig({
-  moduleAddress,
-  encoded,
-  word,
-  onRegistered,
-}: {
-  moduleAddress: Address;
-  encoded: Hex;
-  word: Hex | null;
-  onRegistered: () => void;
-}) {
-  const { writeContract, data: hash, isPending } = useWriteContract();
-  const { isLoading: confirming, isSuccess } = useWaitForTransactionReceipt({
-    hash,
-  });
-  const busy = isPending || confirming;
-
-  const done = useRef(onRegistered);
-  done.current = onRegistered;
-  useEffect(() => {
-    if (isSuccess) done.current();
-  }, [isSuccess]);
-
-  return (
-    <div className="space-y-1.5 border-l-2 border-amber-500/40 pl-3">
-      <p className="text-[10px] leading-snug text-muted-foreground">
-        These values have to be given to the module once before a slot can point at
-        them. They are{" "}
-        <span className="font-mono">{word?.slice(0, 10)}…</span>
-      </p>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={busy}
-        onClick={() =>
-          writeContract({
-            address: moduleAddress,
-            abi: settingsStoreAbi,
-            functionName: "registerSettings",
-            args: [encoded],
-          })
-        }
-      >
-        {busy ? (
-          <>
-            <Loader2 className="size-3 animate-spin" /> Registering…
-          </>
-        ) : (
-          "Register with the module"
-        )}
-      </Button>
     </div>
   );
 }

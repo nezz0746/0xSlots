@@ -415,7 +415,7 @@ export const slot = onchainTable(
     /// NULL when the slot has no module at all — which is the plain common-ownership
     /// slot, and a perfectly ordinary configuration rather than a gap.
     module: t.hex(),
-    /// This slot's settings FOR THAT MODULE, 32 bytes, handed back on every
+    /// This slot's settings FOR THAT MODULE, any length, handed back on every
     /// callback. Opaque here — only the module knows what it means. A
     /// minimum-tenure window lives here, which is why one module deployment can
     /// serve every duration. NULL when there is no module.

@@ -25,15 +25,14 @@ abstract contract AdLandRegistry is AdLandModule {
     ///      does not choose which — an owner who picks whether their own change
     ///      is delayed provides no assurance at all. Nothing depends on a key
     ///      that has no value yet, so creating one needs no wait.
-    /// @dev The owner, or whoever claimed this key at creation. A holder may
-    ///      move their own name and nothing else; the owner may move anyone's,
-    ///      which is what makes a squatted key cost two days rather than being
-    ///      gone. A key nobody has claimed has no holder, so it stays
-    ///      owner-only here — claiming happens in {claimKey}.
+    /// @dev The owner, or the key's holder ({keyOwner}). A holder may move
+    ///      their own name and nothing else; the owner may move anyone's, and a
+    ///      proposal the owner made cannot be displaced by the holder — which
+    ///      is what makes a squatted key cost two days rather than being gone.
+    ///      A key nobody has claimed has no holder, so it stays owner-only here.
     function setSlot(bytes32 key, address slot) external {
-        if (msg.sender != owner() && msg.sender != keyOwner[key]) {
-            revert NotKeyOwner(key);
-        }
+        bool byOwner = msg.sender == owner();
+        if (!byOwner && msg.sender != keyOwner(key)) revert NotKeyOwner(key);
         if (slot == address(0)) revert ZeroSlot();
 
         if (slotOf[key] == address(0)) {
@@ -42,9 +41,31 @@ abstract contract AdLandRegistry is AdLandModule {
             return;
         }
 
+        if (!byOwner && pendingOf[key].byOwner) revert OwnerProposalPending(key);
+
         uint64 readyAt = uint64(block.timestamp + CHANGE_DELAY);
-        pendingOf[key] = Pending({slot: slot, readyAt: readyAt});
+        pendingOf[key] = Pending({slot: slot, readyAt: readyAt, byOwner: byOwner});
         emit SlotProposed(key, slot, readyAt);
+    }
+
+    /**
+     * @notice Who may repoint `key` besides the owner: the manager of the slot
+     *         it resolves to today, if it was claimed.
+     *
+     * @dev Read live, so it follows `Slot.setManager` — a name belongs to
+     *      whoever runs the slot behind it, not to whoever ran it on the day it
+     *      was claimed. Zero for a key the owner set (including `primary`), and
+     *      for a slot that will not say who manages it.
+     */
+    function keyOwner(bytes32 key) public view returns (address) {
+        if (_claimedFor[key] == address(0)) return address(0);
+        address slot = slotOf[key];
+        if (slot == address(0)) return address(0);
+        try ISlotAd(slot).manager() returns (address m) {
+            return m;
+        } catch {
+            return address(0);
+        }
     }
 
     /**
@@ -58,11 +79,15 @@ abstract contract AdLandRegistry is AdLandModule {
     function claimKey(address slot) external {
         AdConfig memory c = adConfig(slot);
         if (c.key == bytes32(0)) revert ZeroSlot();
+        // The default render target is not a first-come name. Claimable, it
+        // went to whoever created a slot asking for it before the deploy
+        // script ran, and every embed that named no slot rendered theirs.
+        if (c.key == PRIMARY) revert ReservedKey(c.key);
         if (ISlotAd(slot).module() != address(this)) revert ZeroSlot();
         if (slotOf[c.key] != address(0)) revert KeyTaken(c.key);
 
         slotOf[c.key] = slot;
-        keyOwner[c.key] = ISlotAd(slot).manager();
+        _claimedFor[c.key] = slot;
         emit SlotSet(c.key, address(0), slot);
     }
 
@@ -82,9 +107,15 @@ abstract contract AdLandRegistry is AdLandModule {
     }
 
     /// @notice Withdraw a proposed change.
-    function cancelSlot(bytes32 key) external onlyOwner {
+    /// @dev The owner may withdraw any; the holder only one the owner did not
+    ///      make, for the same reason they cannot overwrite it.
+    function cancelSlot(bytes32 key) external {
         Pending memory p = pendingOf[key];
         if (p.readyAt == 0) revert NothingPending();
+        if (msg.sender != owner()) {
+            if (msg.sender != keyOwner(key)) revert NotKeyOwner(key);
+            if (p.byOwner) revert OwnerProposalPending(key);
+        }
         delete pendingOf[key];
         emit SlotProposalCancelled(key, p.slot);
     }

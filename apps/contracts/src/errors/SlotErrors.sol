@@ -11,6 +11,10 @@ error NotOccupantOrOperator();
 error InvalidPrice();
 error InvalidTax();
 error InvalidRecipient();
+/// @dev A minimum runway past `MAX_MIN_RUNWAY`. The escrow floor scales with
+///      it, and unbounded it priced every entrant — and every sale through the
+///      offer book — out of a slot at up to ~1,657x its price.
+error InvalidRunway();
 error InvalidManager();
 error InvalidCurrency();
 error InvalidDeposit();

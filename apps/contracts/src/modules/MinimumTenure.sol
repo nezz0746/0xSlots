@@ -105,8 +105,13 @@ abstract contract MinimumTenure {
      *      have no minimum tenure attaches no module; one that attached a module
      *      carrying this rule and left the data empty has made a mistake.
      */
-    function tenureOf(bytes32 data) public pure returns (uint256) {
-        uint256 seconds_ = uint256(data);
+    function tenureOf(bytes memory data) public pure returns (uint256) {
+        if (data.length != 32) revert TenureNotConfigured();
+        return _checkedWindow(abi.decode(data, (uint256)));
+    }
+
+    /// @dev {tenureOf}'s bounds, for a host that decodes the window itself.
+    function _checkedWindow(uint256 seconds_) internal pure returns (uint256) {
         if (seconds_ == 0) revert TenureNotConfigured();
         if (seconds_ > MAX_TENURE) revert TenureTooLong(MAX_TENURE);
         return seconds_;
@@ -151,9 +156,9 @@ abstract contract MinimumTenure {
     // ─── the rule ───────────────────────────────────────────────────────────
 
     /// @dev How this host reads a slot's window out of its configuration.
-    ///      The word IS the window here; a host whose configuration holds more
-    ///      overrides this.
-    function _windowOf(bytes32 settings) internal view virtual returns (uint256) {
+    ///      The settings ARE the window here, `abi.encode(uint256)`; a host whose
+    ///      configuration holds more overrides this.
+    function _windowOf(bytes memory settings) internal view virtual returns (uint256) {
         return tenureOf(settings);
     }
 
@@ -169,6 +174,16 @@ abstract contract MinimumTenure {
         // floors to zero so liquidation never armed either.
         uint256 barred = reentryAllowedAt(ctx.slot, ctx.account);
         if (block.timestamp < barred) revert TenureNotElapsed(barred);
+
+        // And the party paying, not only the seat they named. `buy(account, …)`
+        // lets the payer seat any address, so a bar keyed on the seat alone is
+        // re-armed by rotating it: `multicall([release(), buy(fresh, …)])` cost
+        // nothing and renewed the window for ever. `release` is the occupant's
+        // own call, so on the path that writes the bar the caller IS the barred
+        // party. A helper that buys for somebody else is never an occupant and
+        // so is never barred.
+        uint256 barredCaller = reentryAllowedAt(ctx.slot, ctx.caller);
+        if (block.timestamp < barredCaller) revert TenureNotElapsed(barredCaller);
 
         // Vacant slots are otherwise always claimable — no tenure to protect.
         if (ctx.occupant == address(0)) return;

@@ -32,6 +32,7 @@ export {
   type OfferBoard,
   MAX_PRICE,
   MAX_TAX_BPS,
+  MAX_MIN_RUNWAY_SECONDS,
   MONTH_SECONDS,
   type PendingTerms,
   type PostOfferParams,
@@ -45,7 +46,7 @@ export {
   TERMS,
   TERMS_DELAY_SECONDS,
   unpackScopes,
-  ZERO_SETTINGS,
+  NO_SETTINGS,
 } from "./client";
 
 export {

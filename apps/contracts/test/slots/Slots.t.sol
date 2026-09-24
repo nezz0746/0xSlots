@@ -27,9 +27,9 @@ contract Recorder is ISlotModule {
     uint256 public settles;
     uint256 public lastPaid;
 
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true;
         f.afterRelease = true;
@@ -58,9 +58,9 @@ contract Recorder is ISlotModule {
 /// @dev Refuses every buy. The canonical `before` module.
 contract DenyBuys is ISlotModule {
     error Denied();
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -81,9 +81,9 @@ contract DenyBuys is ISlotModule {
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
 contract Hostile is ISlotModule {
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true;
         f.afterRelease = true;
@@ -109,9 +109,9 @@ contract Hostile is ISlotModule {
 /// @dev Burns every unit of gas it is handed.
 contract GasBurner is ISlotModule {
     uint256 public sink;
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterLiquidate = true;
         f.afterSettle = true;
@@ -183,7 +183,7 @@ contract SlotsTest is Test {
                 manager: manager,
                 mutableTax: true, mutableRecipient: true, mutableModule: true,
                 taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(minDep)}),
-                moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
+                moduleTerms: ModuleTerms({target: module, settings: ""})
             });
     }
 
@@ -240,7 +240,7 @@ contract SlotsTest is Test {
         _take(s, alice, 100 ether, 100 ether);
 
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
 
         vm.warp(block.timestamp + 10 days);
         assertEq(s.taxRateBps(), 1000, "alice's rate is untouched mid-tenure");
@@ -308,7 +308,7 @@ contract SlotsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(InvalidModule.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: useless, settings: bytes32(0)}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: useless, settings: ""}), uint8(8));
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -347,9 +347,9 @@ contract SlotsTest is Test {
 
 /// @dev Declares no subscriptions at all.
 contract Nothing is ISlotModule {
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) { Scopes memory f; o.scopes = ScopesLib.pack(f); }
+    function manifest(bytes calldata) external pure returns (Manifest memory o) { Scopes memory f; o.scopes = ScopesLib.pack(f); }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}

@@ -15,13 +15,13 @@ import "../../src/errors/SlotErrors.sol";
 
 /// @dev Records the configuration it is handed, on every side.
 contract Spy is ISlotModule {
-    bytes32 public lastBefore;
-    bytes32 public lastAfter;
+    bytes public lastBefore;
+    bytes public lastAfter;
     uint256 public afterCalls;
 
-    function checkSettings(bytes32) external pure virtual {}
+    function checkSettings(bytes calldata) external pure virtual {}
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         f.afterBuy = true;
@@ -62,7 +62,7 @@ contract Spy is ISlotModule {
 /// @dev Reports what the DECISION side was handed. `before` is a staticcall
 ///      and cannot write, so the only way out is the revert reason.
 contract Loud is Spy {
-    error SawConfiguration(bytes32 data);
+    error SawConfiguration(bytes data);
 
     function beforeBuy(SlotContext calldata c) external view override {
         revert SawConfiguration(c.moduleTerms.settings);
@@ -71,12 +71,12 @@ contract Loud is Spy {
 
 /// @dev Accepts one configuration and no other.
 contract Picky is Spy {
-    bytes32 public constant ONLY = bytes32("only-this");
+    bytes public constant ONLY = "only-this";
 
     error WrongConfiguration();
 
-    function checkSettings(bytes32 data) external pure override {
-        if (data != ONLY) revert WrongConfiguration();
+    function checkSettings(bytes calldata data) external pure override {
+        if (keccak256(data) != keccak256(ONLY)) revert WrongConfiguration();
     }
 }
 
@@ -88,8 +88,8 @@ contract ModuleDataTest is Test {
     SlotFactory factory;
     Spy spy;
 
-    bytes32 constant CONFIG = bytes32("seven-days");
-    bytes32 constant OTHER = bytes32("thirty-days");
+    bytes constant CONFIG = "seven-days";
+    bytes constant OTHER = "thirty-days";
 
     address alice = makeAddr("alice");
 
@@ -102,7 +102,7 @@ contract ModuleDataTest is Test {
         vm.deal(alice, 100 ether);
     }
 
-    function _slot(address module, bytes32 data) internal returns (Slot) {
+    function _slot(address module, bytes memory data) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
@@ -165,7 +165,7 @@ contract ModuleDataTest is Test {
     }
 
     function test_ConfigurationWithoutAModuleIsRefusedAtProposal() public {
-        Slot s = _slot(address(0), bytes32(0));
+        Slot s = _slot(address(0), "");
         vm.expectRevert(InvalidModule.selector);
         s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: CONFIG}), uint8(8));
     }
@@ -174,12 +174,12 @@ contract ModuleDataTest is Test {
     ///         become live again the day a module is attached without its own.
     function test_DetachingTheModuleClearsTheConfiguration() public {
         Slot s = _slot(address(spy), CONFIG);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(8));
         vm.warp(block.timestamp + 1 days + 1);
 
         _take(s, alice); // a transition, which is where terms land
         assertEq(s.module(), address(0));
-        assertEq(s.moduleTerms().settings, bytes32(0));
+        assertEq(s.moduleTerms().settings, bytes(""));
     }
 
     // ─── a module judges its own configuration ────────────────────────────────
@@ -194,7 +194,7 @@ contract ModuleDataTest is Test {
     }
 
     function test_TheSameJudgementAppliesToAProposal() public {
-        Slot s = _slot(address(0), bytes32(0));
+        Slot s = _slot(address(0), "");
         Picky picky = new Picky();
 
         vm.expectRevert(Picky.WrongConfiguration.selector);
@@ -206,13 +206,13 @@ contract ModuleDataTest is Test {
         ModuleTerms memory __h1 = __p1.moduleTerms;
         uint8 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
-        bytes32 pendingData = __h1.settings;
+        bytes memory pendingData = __h1.settings;
         assertEq(pendingData, picky.ONLY());
     }
 
     /// @notice Cancelling clears the queued configuration along with the module.
     function test_CancellingClearsTheQueuedConfiguration() public {
-        Slot s = _slot(address(0), bytes32(0));
+        Slot s = _slot(address(0), "");
         s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(spy), settings: CONFIG}), uint8(8));
         s.cancelTerms(uint8(8));
 
@@ -222,9 +222,9 @@ contract ModuleDataTest is Test {
         uint8 __m2 = __p2.mask;
         uint64 __at2 = __p2.proposedAt;
         address module = __h2.target;
-        bytes32 pendingData = __h2.settings;
+        bytes memory pendingData = __h2.settings;
         assertEq(module, address(0));
-        assertEq(pendingData, bytes32(0));
+        assertEq(pendingData, bytes(""));
     }
 
     // ─── a swap does not rewrite history ────────────────────────────────────

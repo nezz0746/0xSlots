@@ -36,7 +36,7 @@ contract SlotInfoTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(new MinimumTenureModule()), settings: bytes32(uint256(7 days))})
+            moduleTerms: ModuleTerms({target: address(new MinimumTenureModule()), settings: abi.encode(uint256(7 days))})
         }))));
         token.mint(occ, 1e24);
     }
@@ -67,7 +67,7 @@ contract SlotInfoTest is Test {
         assertEq(i.isVacant, slot.isVacant());
         assertEq(i.isInsolvent, slot.isInsolvent());
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
-        assertEq(i.pending.ripe, slot.hasRipeTerms());
+        assertEq(i.hasRipeTerms, slot.hasRipeTerms());
         PendingTerms memory __p1 = slot.pendingTerms();
         TaxTerms memory taxTerms = __p1.taxTerms;
         ModuleTerms memory module = __p1.moduleTerms;
@@ -100,13 +100,13 @@ contract SlotInfoTest is Test {
         slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
 
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
         _assertAgrees();                     // queued, not ripe
-        assertFalse(slot.getSlotInfo().pending.ripe);
+        assertFalse(slot.getSlotInfo().hasRipeTerms);
 
         vm.warp(block.timestamp + 1 days + 1);
         _assertAgrees();                     // ripe
-        assertTrue(slot.getSlotInfo().pending.ripe);
+        assertTrue(slot.getSlotInfo().hasRipeTerms);
     }
 
     function test_AgreesWhenInsolvent() public {
@@ -144,6 +144,6 @@ contract SlotInfoTest is Test {
         vm.stopPrank();
 
         vm.expectRevert();                       // tax above MAX_TAX_BPS
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
     }
 }

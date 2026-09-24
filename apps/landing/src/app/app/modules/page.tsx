@@ -17,7 +17,7 @@ import {
   type ModuleSettingsSpec,
   useSettingsCheck,
   useModuleDefinition,
-  ZERO_WORD,
+  EMPTY_SETTINGS,
 } from "@/hooks/use-module-schema";
 
 /**
@@ -269,7 +269,7 @@ function ModuleCard({
  * What a module takes, as it describes itself.
  *
  * `x-abi` gives the type, the schema gives the label, the unit and the range,
- * and `checkSettings` on the empty word gives the one thing neither can
+ * and `checkSettings` on empty settings gives the one thing neither can
  * express: whether a slot may attach this module without configuring it.
  */
 function ConfigRow({
@@ -279,7 +279,7 @@ function ConfigRow({
   address: Address;
   config: ModuleSettingsSpec;
 }) {
-  const zero = useSettingsCheck(address, ZERO_WORD, 0);
+  const zero = useSettingsCheck(address, EMPTY_SETTINGS, 0);
 
   return (
     <div className="border-l-2 border-muted pl-3 text-xs">
@@ -299,11 +299,6 @@ function ConfigRow({
           )}
         </div>
       ))}
-      {config.registered && (
-        <p className="mt-0.5 text-[10px] text-muted-foreground">
-          Registered with the module, and the slot holds the id.
-        </p>
-      )}
       <p className="mt-0.5 text-[10px] text-muted-foreground">
         {zero.checking
           ? "Asking the module…"

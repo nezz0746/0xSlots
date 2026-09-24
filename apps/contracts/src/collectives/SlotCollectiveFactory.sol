@@ -45,10 +45,12 @@ import {VersionedUUPS} from "../utils/VersionedUUPS.sol";
 ///      `SplitWalletV2` keeps `SPLITS_WAREHOUSE`, `NATIVE_TOKEN` and `FACTORY`
 ///      in `immutable`s, which live in the implementation's runtime bytecode and
 ///      are therefore read correctly through a delegatecall. The first two are
-///      chain-wide constants and want to be shared. The third would have been a
-///      problem — it gates the inherited `initialize` on `msg.sender == FACTORY`
-///      — except `SlotCollective.initializeCollective` does that work itself and never
-///      touches it. See the constructor note over there.
+///      chain-wide constants and want to be shared. The third is a hazard: it
+///      gates the inherited `initialize` on `msg.sender == FACTORY`, that
+///      function cannot be removed, and on a proxy `FACTORY` is whoever deployed
+///      the implementation. Adopt only an implementation deployed by something
+///      that can never call — the deterministic CREATE2 deployer, as
+///      `DeployProtocol` does. See the constructor note in `SlotCollective`.
 contract SlotCollectiveFactory is VersionedUUPS {
 
     /// @inheritdoc Versioned

@@ -47,10 +47,10 @@ contract MinimumTenureModuleTest is Test {
     }
 
     function _slot() internal returns (Slot) {
-        return _slot(bytes32(TENURE));
+        return _slot(abi.encode(TENURE));
     }
 
-    function _slot(bytes32 settings) internal returns (Slot) {
+    function _slot(bytes memory settings) internal returns (Slot) {
         return Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(token)),
             manager: address(0),
@@ -232,7 +232,7 @@ contract MinimumTenureModuleTest is Test {
         SlotContext memory forged;
         forged.slot = address(s);
         forged.account = bob;
-        forged.moduleTerms = ModuleTerms({target: address(module), settings: bytes32(uint256(365 days))});
+        forged.moduleTerms = ModuleTerms({target: address(module), settings: abi.encode(uint256(365 days))});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         module.afterRelease(forged);
@@ -268,8 +268,8 @@ contract MinimumTenureModuleTest is Test {
     ///      Under the old design these two slots needed two deployments, since
     ///      the window was an immutable and therefore part of the address.
     function test_OneModuleServesTwoDifferentWindows() public {
-        Slot short_ = _slot(bytes32(uint256(1 days)));
-        Slot long_ = _slot(bytes32(uint256(30 days)));
+        Slot short_ = _slot(abi.encode(uint256(1 days)));
+        Slot long_ = _slot(abi.encode(uint256(30 days)));
         assertEq(short_.module(), long_.module(), "the same contract governs both");
 
         _take(short_, alice, module.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether, 100 ether);
@@ -299,7 +299,7 @@ contract MinimumTenureModuleTest is Test {
     /// @notice The funding requirement is sized from the SLOT's window, so a
     ///         longer window costs more to enter at the same price.
     function test_TheWindowSetsWhatEntryCosts() public {
-        Slot short_ = _slot(bytes32(uint256(1 days)));
+        Slot short_ = _slot(abi.encode(uint256(1 days)));
         uint256 cheap = module.requiredDeposit(100 ether, TAX_RATE, 1 days);
         uint256 dear = module.requiredDeposit(100 ether, TAX_RATE, 30 days);
         assertGt(dear, cheap);
@@ -327,7 +327,7 @@ contract MinimumTenureModuleTest is Test {
     ///      repaired.
     function test_ASlotCannotAttachThisModuleWithNoWindow() public {
         vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
-        _slot(bytes32(0));
+        _slot("");
     }
 
     /// @notice A word that was never a number is refused at the other end, and
@@ -344,21 +344,21 @@ contract MinimumTenureModuleTest is Test {
                 module.MAX_TENURE()
             )
         );
-        _slot(bytes32("7 days"));
+        _slot(abi.encode(bytes32("7 days")));
 
         // And the boundary itself is legal.
-        Slot ok = _slot(bytes32(module.MAX_TENURE()));
-        assertEq(uint256(ok.moduleTerms().settings), module.MAX_TENURE());
+        Slot ok = _slot(abi.encode(module.MAX_TENURE()));
+        assertEq(abi.decode(ok.moduleTerms().settings, (uint256)), module.MAX_TENURE());
     }
 
     /// @notice And the module says so itself, for anyone asking before they
     ///         commit.
     function test_TheModuleRejectsTheEmptyConfigurationDirectly() public {
         vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
-        module.checkSettings(bytes32(0));
+        module.checkSettings("");
 
-        module.checkSettings(bytes32(TENURE)); // no revert
-        assertEq(module.tenureOf(bytes32(TENURE)), TENURE);
+        module.checkSettings(abi.encode(TENURE)); // no revert
+        assertEq(module.tenureOf(abi.encode(TENURE)), TENURE);
     }
 
 
@@ -371,7 +371,48 @@ contract MinimumTenureModuleTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: h, settings: bytes32(TENURE)})
+            moduleTerms: ModuleTerms({target: h, settings: abi.encode(TENURE)})
         }))));
     }
+
+    // ─── a queued detach cannot strip a funded window ───────────────────────
+
+    /// @notice The module that governs a tenure judges the buy that ends it,
+    ///         even when a detach has been queued to land at that buy.
+    function test_AQueuedDetachCannotStripAFundedWindow() public {
+        address mgr = makeAddr("mgr");
+        Slot s = Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(token)),
+            manager: mgr,
+            mutableTax: false, mutableRecipient: false, mutableModule: true,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
+            moduleTerms: ModuleTerms({target: address(module), settings: abi.encode(TENURE)})
+        }))));
+        uint256 dep = module.requiredDeposit(100 ether, TAX_RATE, TENURE);
+        _take(s, alice, dep, 100 ether);
+
+        vm.prank(mgr);
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            8 // TERM_MODULE: detach
+        );
+        skip(1 days);
+
+        // Inside alice's window, at her price: the premium still applies.
+        vm.startPrank(bob);
+        token.approve(address(s), type(uint256).max);
+        vm.expectRevert(
+            abi.encodeWithSelector(MinimumTenure.BuyoutBelowPremium.selector, 1000 ether)
+        );
+        s.buy(bob, 100 ether, dep, 0);
+        vm.stopPrank();
+
+        // Once the window has run, the buy goes through and the detach with it.
+        skip(TENURE);
+        _take(s, bob, dep, 100 ether);
+        assertEq(s.occupant(), bob);
+        assertEq(s.module(), address(0), "the detach landed once the window ran");
+    }
+
 }

@@ -5,6 +5,8 @@ import {ISlotModule} from "../interfaces/ISlotModule.sol";
 import "../errors/SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
+import {TermsLib} from "../libraries/TermsLib.sol";
+import {PendingTerms} from "../types/SlotTypes.sol";
 
 /**
  * @title SlotOccupancy
@@ -15,6 +17,7 @@ import {Occupancy, Ledger} from "./SlotStorage.sol";
  *      terms, ask the module, take the money, seat, notify.
  */
 abstract contract SlotOccupancy is SlotViews {
+    using TermsLib for PendingTerms;
     // ─── occupancy ──────────────────────────────────────────────────────────
 
     /**
@@ -85,10 +88,32 @@ abstract contract SlotOccupancy is SlotViews {
         // take the whole price and leave the recipient's tax behind.
         refund -= _repayDebt(prev, refund);
 
+        // A module change landing at this buy is judged TWICE. First by the
+        // module that governs the sitting occupant, under its own settings:
+        // this buy ends that tenure, and whatever the occupant paid that module
+        // to protect — a minimum tenure, say — must be able to refuse it.
+        // Judged only by the incoming module, a manager could strip a paid-for
+        // window with one day's notice by queueing a detach. Only when somebody
+        // is being displaced; a vacant slot has nobody to protect.
+        PendingTerms storage q = _pending();
+        if (
+            prev != address(0) &&
+            q.mask & TermsLib.MODULE != 0 &&
+            q.isRipe(TERMS_DELAY)
+        ) {
+            _before(
+                F_BEFORE_BUY,
+                abi.encodeCall(
+                    ISlotModule.beforeBuy,
+                    (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
+                )
+            );
+        }
+
         // Terms land only now: debt repaid above was owed under the outgoing
         // terms, and applying pays collected tax out under those terms first.
-        // They still land BEFORE the module is asked, so the module judges the
-        // terms the buyer is actually seated under.
+        // They land BEFORE the second question, so the module the buyer will
+        // live under judges the terms they are actually seated under.
         bool attached = _applyPending();
         _requireFunded(depositAmount, selfAssessedPrice);
 
@@ -106,6 +131,8 @@ abstract contract SlotOccupancy is SlotViews {
         o.deposit = depositAmount;
         o.since = uint64(block.timestamp);
         o.lastSettled = uint64(block.timestamp);
+        // The outgoing tenure's fraction of a unit ends with it.
+        o.taxCarry = 0;
 
         if (prev != address(0)) _payOrCredit(prev, refund);
 

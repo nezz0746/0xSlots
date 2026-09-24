@@ -78,7 +78,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         nft.approve(address(wrapper), id);
         address s;
         (tokenId, s) = wrapper.wrap{value: _dep(VALUATION)}(
-            IERC721(address(nft)), id, TAX_RATE, VALUATION, mode
+            IERC721(address(nft)), id, TAX_RATE, VALUATION, mode, type(uint256).max
         );
         vm.stopPrank();
         slot = Slot(payable(s));
@@ -314,7 +314,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         vm.startPrank(alice);
         nft.approve(address(wrapper), 1);
         (, address s) = wrapper.wrap{value: _dep(VALUATION) * 3}(
-            IERC721(address(nft)), 1, TAX_RATE, VALUATION, Mode.Permanent
+            IERC721(address(nft)), 1, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max
         );
         vm.stopPrank();
 
@@ -341,7 +341,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
         vm.startPrank(alice);
         bad.approve(address(wrapper), 1);
         (uint256 id, ) = wrapper.wrap{value: _dep(VALUATION)}(
-            IERC721(address(bad)), 1, TAX_RATE, VALUATION, Mode.Reclaimable
+            IERC721(address(bad)), 1, TAX_RATE, VALUATION, Mode.Reclaimable, type(uint256).max
         );
         vm.stopPrank();
 

@@ -110,10 +110,27 @@ function offerOf(address slot, address bidder) external view
     returns (bool has, uint256 id, Offer memory offer);
 function offerAt(address slot, uint256 id) external view returns (Offer memory);
 function offers(address slot) external view returns (Offer[] memory);
+
+// The same reads over offer ids [start, start + count), clipped to the board.
+function boardPage(address slot, uint256 start, uint256 count) external view
+    returns (Offer[] memory offers, bool[] memory live);
+function bestIn(address slot, uint256 start, uint256 count) external view
+    returns (bool found, uint256 id, Offer memory offer);
+function liveCountIn(address slot, uint256 start, uint256 count) external view
+    returns (uint256);
 ```
 
 `board` returns the list **and** the contract's own per-entry liveness verdict in
-one call, which is why it is preferred over `offers` plus N `isLive` reads.
+one call, which is why it is preferred over `offers` plus N `isLive` reads. The
+board only grows — cancelling sets a flag, nothing removes an entry — so a
+client should read it with `boardPage` in chunks (the SDK uses 200) and take the
+live count and the best bid from the same pages; a whole-board read can be
+pushed past an RPC's gas budget by enough dust bids.
+
+An offer is live only if its deposit meets the slot's entry floor at its price
+(`minDepositForBuy`) — a bid the slot would refuse to seat is never shown as
+fillable. `acceptOffer` never pulls more than the offer's `price + deposit` plus
+the bidder's debt; a quote above that reverts `QuoteAboveOffer`.
 
 <Callout type="warning">
 Count `liveCount`, never `offerCount` — the latter counts every row ever posted,

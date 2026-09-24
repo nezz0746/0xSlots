@@ -20,7 +20,7 @@ contract MockSlot {
 
     uint256 public taxPct;
     address public moduleAddr;
-    bytes32 public settings;
+    bytes public settings;
 
     bool public hasTax;
     bool public hasModule;
@@ -417,11 +417,11 @@ contract SlotStreamCollectiveTest is Test {
         // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: bytes32(0)}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""}));
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: bytes32(0)}));
+        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""}));
         assertEq(slot.moduleAddr(), address(0xBEEF));
 
         // Retracting one dimension leaves the other standing, on this engine

@@ -12,7 +12,7 @@ import {
   type SlotInit,
   SlotsClient,
   unpackScopes,
-  ZERO_SETTINGS,
+  NO_SETTINGS,
 } from "./client";
 
 const TAX_TERMS_NONE = {
@@ -551,7 +551,7 @@ describe("manager terms", () => {
     });
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       { recipient: MANAGER, rateBps: 100, minRunwaySeconds: 0 },
-      { target: MODULE, settings: ZERO_SETTINGS },
+      { target: MODULE, settings: NO_SETTINGS },
       TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.MODULE,
     ]);
   });
@@ -595,7 +595,7 @@ describe("creation", () => {
       ...base,
       // Filled by `encodeSlotInit`: viem encodes a struct BY NAME, so a missing
       // key would silently encode a zero.
-      moduleTerms: { target: MODULE, settings: ZERO_SETTINGS },
+      moduleTerms: { target: MODULE, settings: NO_SETTINGS },
     });
   });
 
@@ -624,7 +624,8 @@ describe("creation", () => {
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: NO_MODULE, scopes: 0, mask: 0, proposedAt: 0n, ripe: false },
+      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: NO_MODULE, scopes: 0, mask: 0, proposedAt: 0n, reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
     expect(pending.isEmpty).toBe(true);
@@ -637,7 +638,8 @@ describe("reads", () => {
   it("pending unpacks a queued module change", async () => {
     const module = { ...NO_MODULE, target: MODULE };
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: module, scopes: 0, mask: TERMS.MODULE, proposedAt: 1234n, ripe: false },
+      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: module, scopes: 0, mask: TERMS.MODULE, proposedAt: 1234n, reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
     expect(pending).toEqual({
@@ -651,8 +653,8 @@ describe("reads", () => {
       hasModule: true,
       hasScopes: false,
       proposedAt: 1234n,
-      // proposedAt + TERMS_DELAY (1 day).
-      appliesAt: 1234n + 86_400n,
+      // proposedAt + TERMS_DELAY (1 hour).
+      appliesAt: 1234n + 3_600n,
       applies: false,
       isEmpty: false,
     });
@@ -666,15 +668,16 @@ describe("reads", () => {
         scopes: 0,
         mask: TERMS.TAX_RATE,
         proposedAt: 1234n,
-        ripe: true,
+        reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000",
       },
+      hasRipeTerms: true,
     });
 
     const pending = await client.pending(SLOT);
     expect(pending.applies).toBe(true);
     expect(
       readContract.mock.calls.map((c: any[]) => c[0].functionName),
-    ).toContain("pendingTerms");
+    ).toEqual(expect.arrayContaining(["pendingTerms", "hasRipeTerms"]));
   });
 
   it("debtOf is asked per account", async () => {
@@ -888,8 +891,9 @@ describe("operator approvals belong to a tenure, not to an address", () => {
           scopes: 0,
           mask: 0,
           proposedAt: 0n,
-          ripe: false,
+          reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000",
         },
+        hasRipeTerms: false,
       },
     });
 
@@ -1102,9 +1106,8 @@ describe("offer book", () => {
 
   it("offerBoard keeps the book's live verdict and sorts by price", async () => {
     const { client, readContract } = harness({
-      board: [[raw(ACCOUNT, 50n), raw(MANAGER, 90n), raw(TAKER, 70n)], [true, true, false]],
-      liveCount: 2n,
-      best: [true, 1n, raw(MANAGER, 90n)],
+      offerCount: 3n,
+      boardPage: [[raw(ACCOUNT, 50n), raw(MANAGER, 90n), raw(TAKER, 70n)], [true, true, false]],
     });
     const board = await client.offerBoard(SLOT);
     expect(board.offers.map((o) => o.id)).toEqual([1n, 0n]);
@@ -1114,8 +1117,34 @@ describe("offer book", () => {
   });
 
   it("offerBoard has no best when the book found none", async () => {
-    const { client } = harness({ board: [[], []], liveCount: 0n, best: [false, 0n, raw(ZERO, 0n)] });
+    const { client } = harness({ offerCount: 0n });
     expect((await client.offerBoard(SLOT)).best).toBeUndefined();
+  });
+
+  it("offerBoard pages a long board and keeps ids across pages", async () => {
+    const { client, readContract } = harness({});
+    // 450 entries: pages of 200, 200 and 50. Only two are live — one on the
+    // first page, the best on the last — so a board read in one call would
+    // be the only way to find it if the SDK did not page.
+    readContract.mockImplementation(async ({ functionName, args }: any) => {
+      if (functionName === "offerCount") return 450n;
+      if (functionName !== "boardPage") throw new Error(`unexpected read: ${functionName}`);
+      const [, start, count] = args as [unknown, bigint, bigint];
+      const n = Math.min(Number(count), 450 - Number(start));
+      const list = Array.from({ length: n }, (_, i) => raw(ACCOUNT, BigInt(Number(start) + i + 1)));
+      const live = list.map((_, i) => {
+        const id = Number(start) + i;
+        return id === 7 || id === 440;
+      });
+      return [list, live];
+    });
+
+    const board = await client.offerBoard(SLOT);
+    expect(board.liveCount).toBe(2n);
+    expect(board.offers.map((o) => o.id)).toEqual([440n, 7n]);
+    expect(board.best).toMatchObject({ id: 440n, price: 441n });
+    const pages = readContract.mock.calls.filter((c: any[]) => c[0].functionName === "boardPage");
+    expect(pages.map((c: any[]) => c[0].args[1])).toEqual([0n, 200n, 400n]);
   });
 
   it("postOffer sends to the book and refuses a past expiry", async () => {
@@ -1154,12 +1183,12 @@ describe("offer book", () => {
 describe("module reads", () => {
   it("checkSettings resolves ok when the module accepts", async () => {
     const { client } = harness({ checkSettings: undefined });
-    expect(await client.checkSettings(MODULE, ZERO_SETTINGS)).toEqual({ ok: true });
+    expect(await client.checkSettings(MODULE, NO_SETTINGS)).toEqual({ ok: true });
   });
 
   it("checkSettings resolves with the reason when the module refuses", async () => {
     const { client } = harness({});
-    const check = await client.checkSettings(MODULE, ZERO_SETTINGS);
+    const check = await client.checkSettings(MODULE, NO_SETTINGS);
     expect(check.ok).toBe(false);
   });
 
@@ -1177,7 +1206,6 @@ describe("module reads", () => {
         $schema: "https://json-schema.org/draft/2020-12/schema",
         title: "Minimum tenure",
         type: "object",
-        "x-settings-encoding": "inline",
         properties: { window: { type: "string", "x-maximum": "31536000" } },
         required: ["window"],
         "x-abi": [{ name: "window", type: "uint256" }],
@@ -1192,39 +1220,27 @@ describe("module reads", () => {
     expect(await client.moduleDefinition(MODULE)).toBeNull();
   });
 
-  it("moduleSettings decodes an inline word against x-abi", async () => {
+  it("moduleSettings decodes the slot's settings against x-abi", () => {
     const { client } = harness({});
-    const schema = {
-      "x-settings-encoding": "inline",
-      "x-abi": [{ name: "window", type: "uint256" }],
-    } as never;
+    const schema = { "x-abi": [{ name: "window", type: "uint256" }] } as never;
     expect(
-      await client.moduleSettings(MODULE, schema, `0x${(604800).toString(16).padStart(64, "0")}`),
+      client.moduleSettings(schema, `0x${(604800).toString(16).padStart(64, "0")}`),
     ).toEqual({ window: "604800" });
   });
 
-  it("moduleSettings resolves a registered id through the module's own store", async () => {
-    const encoded = `0x${(604800).toString(16).padStart(64, "0")}` as const;
-    const { client, readContract } = harness({ settingsById: encoded });
-    const schema = {
-      "x-settings-encoding": "registered",
-      "x-abi": [{ name: "window", type: "uint256" }],
-    } as never;
-    expect(await client.moduleSettings(MODULE, schema, ID)).toEqual({ window: "604800" });
-    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
-      address: MODULE,
-      functionName: "settingsById",
-      args: [ID],
-    });
+  it("moduleSettings is null for empty settings", () => {
+    const { client } = harness({});
+    const schema = { "x-abi": [{ name: "window", type: "uint256" }] } as never;
+    expect(client.moduleSettings(schema, NO_SETTINGS)).toBeNull();
   });
 
   it("readManifest asks the module about its settings", async () => {
     const offer = { scopes: 4, feeBps: 0, feeRecipient: ZERO };
     const { client, readContract } = harness({ manifest: offer });
-    expect(await client.readManifest(MODULE, ZERO_SETTINGS)).toEqual(offer);
+    expect(await client.readManifest(MODULE, NO_SETTINGS)).toEqual(offer);
     const call = readContract.mock.calls.at(-1)![0];
     expect(call.address).toBe(MODULE);
-    expect(call.args).toEqual([ZERO_SETTINGS]);
+    expect(call.args).toEqual([NO_SETTINGS]);
   });
 });
 

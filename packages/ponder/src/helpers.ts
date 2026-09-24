@@ -22,9 +22,8 @@ const SPLIT_HASH_SELECTOR = toFunctionSelector("splitHash()").slice(2);
 export const ZERO_ADDR =
   "0x0000000000000000000000000000000000000000" as const satisfies Hex;
 
-/// "This slot configured nothing" — the `settings` counterpart to ZERO_ADDR.
-export const ZERO_DATA =
-  "0x0000000000000000000000000000000000000000000000000000000000000000" as const satisfies Hex;
+/// "This slot configured nothing": empty `settings`.
+export const NO_SETTINGS = "0x" as const satisfies Hex;
 
 export const evtId = (txHash: Hex, logIndex: number | bigint): string =>
   `${txHash}-${logIndex.toString()}`;
@@ -374,7 +373,7 @@ export async function readScopes(
       address: getAddress(lower(moduleAddr)),
       abi: SlotModuleAbi,
       functionName: "manifest",
-      args: [ZERO_DATA],
+      args: [NO_SETTINGS],
     })) as { scopes: number };
     return unpackScopes(offer.scopes);
   } catch {
@@ -425,7 +424,7 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
       o && lower(o.feeRecipient) !== ZERO_ADDR ? lower(o.feeRecipient) : null,
     /// The scopes THIS SLOT obeys, as it accepted them.
     scopes: o ? unpackScopes(o.scopes) : NO_SCOPES,
-    settings: h ? lower(h.settings) : ZERO_DATA,
+    settings: h ? lower(h.settings) : NO_SETTINGS,
   };
 }
 

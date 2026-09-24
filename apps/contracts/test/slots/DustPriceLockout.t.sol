@@ -48,7 +48,7 @@ contract C01Test is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(module), settings: bytes32(TENURE)})
+            moduleTerms: ModuleTerms({target: address(module), settings: abi.encode(TENURE)})
         }))));
     }
 

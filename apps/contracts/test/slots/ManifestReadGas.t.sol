@@ -38,12 +38,12 @@ contract GasHog is ERC20 {
 /// @dev A healthy module whose configuration check is expensive but well inside
 ///      its stipend.
 contract HeavyModule is ISlotModule {
-    function checkSettings(bytes32) external pure {
+    function checkSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 700; ++i) x = uint256(keccak256(abi.encode(x, i)));
     }
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
@@ -83,7 +83,7 @@ contract ModuleReadGasTest is Test {
             manager: address(this),
             mutableTax: false, mutableRecipient: false, mutableModule: true,
             taxTerms: TaxTerms({recipient: sink, rateBps: 1000, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
 
         token.mint(alice, 1_000 ether);
@@ -93,7 +93,7 @@ contract ModuleReadGasTest is Test {
         vm.stopPrank();
 
         TaxTerms memory none;
-        s.proposeTerms(none, ModuleTerms({target: address(heavy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(heavy), settings: ""}), 8);
         vm.warp(block.timestamp + 30 days);
         assertTrue(s.isInsolvent());
 
@@ -138,12 +138,12 @@ contract BuyGasStarvationTest is Test {
             manager: manager,
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(veto), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(veto), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
@@ -171,11 +171,11 @@ contract BuyGasStarvationTest is Test {
 contract VetoModule is ISlotModule {
     error Vetoed();
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         o.scopes = ScopesLib.BEFORE_BUY;
     }
 
-    function checkSettings(bytes32) external view {}
+    function checkSettings(bytes calldata) external view {}
     function beforeBuy(SlotContext calldata) external view {
         revert Vetoed();
     }
@@ -193,12 +193,12 @@ contract VetoModule is ISlotModule {
 /// @dev Healthy, and expensive to read: the costlier the read, the wider the
 ///      window a caller tuning gas would have to aim at.
 contract PricyModule is ISlotModule {
-    function checkSettings(bytes32) external pure {
+    function checkSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
     }
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         uint256 x;
         for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
         o.scopes = ScopesLib.BEFORE_BUY;
@@ -241,12 +241,12 @@ contract QueuedModuleStarvationTest is Test {
             manager: manager,
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(pricy), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(pricy), settings: ""}), 8);
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
@@ -273,12 +273,12 @@ contract QueuedModuleStarvationTest is Test {
 /// @dev Answers honestly, but costs more than the stipend the slot reads it
 ///      under.
 contract GluttonModule is ISlotModule {
-    function checkSettings(bytes32) external pure {
+    function checkSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
     }
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         uint256 x;
         for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
         o.scopes = ScopesLib.BEFORE_BUY;
@@ -320,7 +320,7 @@ contract ModuleStipendTest is Test {
             manager: manager,
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: module, settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: module, settings: ""})
         });
     }
 
@@ -337,7 +337,7 @@ contract ModuleStipendTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         vm.expectRevert(ManifestTooExpensive.selector);
-        s.proposeTerms(none, ModuleTerms({target: address(glutton), settings: bytes32(0)}), 8);
+        s.proposeTerms(none, ModuleTerms({target: address(glutton), settings: ""}), 8);
     }
 
     /// @notice A module that fits is not caught by the same check.

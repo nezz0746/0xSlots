@@ -38,7 +38,7 @@ struct TaxTerms {
 
 struct ModuleTerms {
     address target;            // the module; zero for none
-    bytes32 settings;          // its configuration; must be zero when target is
+    bytes   settings;          // its configuration; must be empty when target is
 }
 ```
 
@@ -57,6 +57,8 @@ If the module declares `onInstall`, it is called at creation.
 `minRunwaySeconds` guards against a buyer declaring a huge price with no means
 to pay: the deposit must cover that many seconds of tax at the declared price. It
 rounds **up** — a truncating client-side copy lands one unit short and reverts.
+It is capped at one year (`MAX_MIN_RUNWAY`; `InvalidRunway` above it), here and
+on every later proposal.
 
 <Callout type="info">
 viem encodes `SlotInit` **by component name**, and a key it does not recognise

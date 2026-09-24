@@ -40,12 +40,17 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
     mapping(bytes32 key => Pending) public pendingOf;
 
     /**
-     * @notice Who may repoint each key, besides the owner.
-     * @dev Set once, when a key is claimed through {AdLandRegistry-claimKey},
-     *      and never cleared. It grants one power, over one key, and does not
-     *      outrank `owner()`.
+     * @dev The slot a key was CLAIMED for through {AdLandRegistry-claimKey};
+     *      zero for a key the owner set. Only its being non-zero is read: it
+     *      marks a key as having a holder at all.
+     *
+     *      This slot used to hold the holder itself — the claiming slot's
+     *      manager, snapshotted once and never cleared, so it did not follow
+     *      `Slot.setManager` and a former manager kept the key for ever. The
+     *      holder is now read live; see {AdLandRegistry-keyOwner}. Same
+     *      position, so nothing below it moves.
      */
-    mapping(bytes32 key => address) public keyOwner;
+    mapping(bytes32 key => address) internal _claimedFor;
 
     // creatives
 

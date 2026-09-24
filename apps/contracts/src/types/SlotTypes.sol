@@ -23,10 +23,11 @@ struct TaxTerms {
  */
 struct ModuleTerms {
     /// The module contract. Zero for a slot with no module, in which case `settings`
-    /// is zero too.
+    /// is empty too.
     address target;
-    /// This slot's configuration for the module. Opaque to the slot.
-    bytes32 settings;
+    /// This slot's configuration for the module, as the module's `definition()`
+    /// says to encode it. Opaque to the slot, handed to every callback.
+    bytes settings;
 }
 
 /**
@@ -72,7 +73,11 @@ struct Terms {
     Manifest manifest;
 }
 
-/// @notice The terms queued for the next buy.
+/**
+ * @notice The terms queued for the next buy: what is proposed, and since when.
+ * @dev Stored exactly as `pendingTerms()` returns it. Whether it will land at
+ *      the next buy is `hasRipeTerms()`.
+ */
 struct PendingTerms {
     /// Only the fields named by `mask` are meaningful.
     TaxTerms taxTerms;
@@ -81,8 +86,12 @@ struct PendingTerms {
     /// Meaningful when `mask` includes `TERM_SCOPES`: scopes the
     /// manager accepted from the attached module.
     uint16 scopes;
+    /// Which terms are queued: `TERM_*` bits.
     uint8 mask;
+    /// When the delay started. Every proposal restarts it.
     uint64 proposedAt;
-    /// Whether the next transition will apply them.
-    bool ripe;
+    /// Hash of the manifest the manager reviewed when proposing a module. The
+    /// module is read again when it lands and dropped unless it still
+    /// declares this, so the delay cannot be used to change what was agreed.
+    bytes32 reviewedManifest;
 }

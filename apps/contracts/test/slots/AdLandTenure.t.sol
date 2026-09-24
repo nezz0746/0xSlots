@@ -12,7 +12,8 @@ import {AdLand} from "../../src/modules/adland/AdLand.sol";
 import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 import {MinimumTenure} from "../../src/modules/MinimumTenure.sol";
 import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
-import {AdConfig, ModerationMode} from "../../src/modules/adland/IAdLand.sol";
+import {AdConfig, ModerationMode, IAdLand} from "../../src/modules/adland/IAdLand.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 /**
  * AdLand enforcing a minimum tenure, on the one module a slot is allowed.
@@ -60,18 +61,16 @@ contract AdLandTenureTest is Test {
         vm.warp(1_000_000);
     }
 
-    /// @dev The window is a field of AdLand's registered configuration now, so
-    ///      a slot's word is the hash that names it.
-    function _config(uint256 window) internal returns (bytes32) {
-        if (window == 0) return bytes32(0);
-        return adland.registerSettings(
-            abi.encode(
-                AdConfig({
-                    tenureWindow: uint64(window),
-                    moderation: ModerationMode.Open,
-                    key: bytes32(0)
-                })
-            )
+    /// @dev The window is a field of AdLand's configuration, encoded as the
+    ///      slot's settings.
+    function _config(uint256 window) internal pure returns (bytes memory) {
+        if (window == 0) return "";
+        return abi.encode(
+            AdConfig({
+                tenureWindow: uint64(window),
+                moderation: ModerationMode.Open,
+                key: bytes32(0)
+            })
         );
     }
 
@@ -79,7 +78,7 @@ contract AdLandTenureTest is Test {
         return _slotWithSettings(_config(window));
     }
 
-    function _slotWithSettings(bytes32 settings) internal returns (Slot s) {
+    function _slotWithSettings(bytes memory settings) internal returns (Slot s) {
         return
             Slot(
                 payable(
@@ -254,17 +253,59 @@ contract AdLandTenureTest is Test {
         assertEq(s.occupant(), bob);
     }
 
+    uint16 constant VETO = ScopesLib.BEFORE_BUY | ScopesLib.BEFORE_SELF_ASSESS;
+    uint16 constant EXITS = ScopesLib.AFTER_BUY | ScopesLib.AFTER_RELEASE | ScopesLib.AFTER_LIQUIDATE;
+
+    /// @notice The manifest reads the configuration: a veto is asked for only
+    ///         where a window gives it something to veto.
+    function test_OnlyAWindowAsksForAVeto() public {
+        assertEq(_slot(0).manifest().scopes & VETO, 0, "nothing configured, no veto");
+        assertEq(_slot(WINDOW).manifest().scopes & VETO, VETO, "a window, a veto");
+
+        // A registered configuration without a window is no different from zero.
+        bytes memory moderatedOnly =
+            abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Every, key: bytes32(0)}));
+        assertEq(_slotWithSettings(moderatedOnly).manifest().scopes & VETO, 0, "moderation alone, no veto");
+
+        // Every configuration still hears a tenure end: that is what clears the creative.
+        assertEq(_slot(0).manifest().scopes & EXITS, EXITS, "exits, without a window");
+        assertEq(_slot(WINDOW).manifest().scopes & EXITS, EXITS, "exits, with one");
+    }
+
+    /// @notice A window added later brings its veto with it: the new
+    ///         configuration is read when proposed, and lands with it.
+    function test_AWindowAddedLaterBringsItsVeto() public {
+        Slot s = _slot(0);
+        TaxTerms memory none;
+        s.proposeTerms(
+            none,
+            ModuleTerms({target: address(adland), settings: _config(WINDOW)}),
+            s.TERM_MODULE()
+        );
+        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        s.applyTerms();
+        assertEq(s.manifest().scopes & VETO, VETO, "the veto landed with the window");
+
+        _take(s, alice, 1 ether);
+        vm.warp(block.timestamp + 1 days);
+        uint256 dep = adland.requiredDeposit(2 ether, s.taxRateBps(), WINDOW);
+        uint256 owed = s.quoteBuy(bob, dep);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(MinimumTenure.BuyoutBelowPremium.selector, 10 ether));
+        s.buy{value: owed}(bob, 2 ether, dep, type(uint256).max);
+    }
+
     /// @notice A window is optional, but a malformed one is still refused.
     function test_AnImpossibleWindowIsRefusedAtAttach() public {
-        bytes32 tooLong = _config(400 days);
+        bytes memory tooLong = _config(400 days);
         vm.expectRevert();
         _slotWithSettings(tooLong);
     }
 
-    /// @notice An id nobody registered is not a configuration.
-    function test_AnUnregisteredConfigurationIsRefusedAtAttach() public {
-        vm.expectRevert();
-        _slotWithSettings(keccak256("never registered"));
+    /// @notice Bytes that are not one encoded `AdConfig` are not a configuration.
+    function test_MalformedSettingsAreRefusedAtAttach() public {
+        vm.expectRevert(IAdLand.MalformedSettings.selector);
+        _slotWithSettings(abi.encode(uint256(7 days)));
     }
 
     /**
@@ -275,14 +316,13 @@ contract AdLandTenureTest is Test {
         string memory d = adland.definition();
 
         assertEq(vm.parseJsonString(d, ".settings.title"), "AdLand");
-        assertEq(
-            vm.parseJsonString(d, '.settings["x-settings-encoding"]'),
-            "registered",
-            "three values do not fit a word, so the slot holds their id"
+        assertFalse(
+            vm.keyExistsJson(d, '.settings["x-settings-encoding"]'),
+            "three values or one, the slot holds the encoded bytes"
         );
         assertTrue(vm.parseJsonBool(d, '.settings["x-optional"]'), "a slot may configure nothing");
 
-        // In ENCODING order: what `abi.encode` and `registerSettings` expect.
+        // In ENCODING order: what `abi.encode` expects.
         assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].name"), "tenureWindow");
         assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].type"), "uint64");
         assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][1].name"), "moderation");
@@ -326,11 +366,7 @@ contract AdLandTenureTest is Test {
             vm.parseJsonString(standalone.definition(), ".settings.properties.window[\'x-semantic\']"),
             "minimum-tenure"
         );
-        assertEq(
-            vm.parseJsonString(standalone.definition(), '.settings["x-settings-encoding"]'),
-            "inline",
-            "one field fills the word, so there is nothing to register"
-        );
+        assertFalse(vm.keyExistsJson(standalone.definition(), '.settings["x-settings-encoding"]'));
     }
 
     /**
@@ -350,7 +386,7 @@ contract AdLandTenureTest is Test {
         adland.checkSettings(_config(max));
 
         // One past it is not, and the revert names the same number.
-        bytes32 tooLong = _config(max + 1);
+        bytes memory tooLong = _config(max + 1);
         vm.expectRevert(
             abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, max)
         );

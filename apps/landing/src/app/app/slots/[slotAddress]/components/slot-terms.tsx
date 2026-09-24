@@ -3,7 +3,7 @@
 import {
   type SlotState,
   unpackScopes,
-  ZERO_SETTINGS,
+  NO_SETTINGS,
 } from "@0xslots/sdk/slots";
 import { useQuery } from "@tanstack/react-query";
 import { Settings2, UserCog } from "lucide-react";
@@ -76,11 +76,11 @@ export function ManageTermsPanel({
   const moduleAddress = (
     moduleTrimmed === "" ? zeroAddress : moduleTrimmed
   ) as Address;
-  const data = (settings.trim() || ZERO_SETTINGS) as Hex;
+  const data = (settings.trim() || NO_SETTINGS) as Hex;
   const moduleValid =
     !changeModule ||
     moduleAddress === zeroAddress ||
-    (isAddress(moduleAddress) && isHex(data) && data.length === 66 && settingsOk);
+    (isAddress(moduleAddress) && isHex(data) && data.length % 2 === 0 && settingsOk);
 
   const ready =
     (changeTax || changeRecipient || changeRunway || changeModule) &&
@@ -198,7 +198,7 @@ export function ManageTermsPanel({
                     moduleTerms: {
                       target: moduleAddress,
                       settings:
-                        moduleAddress === zeroAddress ? ZERO_SETTINGS : data,
+                        moduleAddress === zeroAddress ? NO_SETTINGS : data,
                     },
                   }
                 : {}),
@@ -306,9 +306,9 @@ function ModuleEditor({
             moduleAddress={module}
             config={config}
             values={values}
-            onChange={(next, word) => {
+            onChange={(next, settings) => {
               setValues(next);
-              onConfig(word ?? "");
+              onConfig(settings ?? "");
             }}
             onVerdict={onVerdict}
           />

@@ -34,17 +34,13 @@ import {LibString} from "solady/utils/LibString.sol";
  *      the chain is the authority. A form shows the hint; the module gives the
  *      verdict.
  *
- *      ── The conventions, and there are only four ────────────────────────
+ *      ── The conventions, and there are only three ───────────────────────
  *
  *      `x-abi` is an ORDERED list of `{name, type}` — viem's own
  *      `AbiParameter[]`, so a client encodes with one call. Ordered because
  *      ABI encoding is positional and `properties` is a JSON object, which is
- *      not.
- *
- *      `x-settings-encoding` is `"inline"` when the encoded word IS the slot's
- *      `bytes32`, and `"registered"` when it has to be handed to
- *      `registerSettings` first and the returned id attached instead. Not
- *      derivable: a module with one field may still register it.
+ *      not. `abi.encode` of those values, in that order, IS the slot's
+ *      `settings`.
  *
  *      `x-optional` says the whole configuration may be left out, which is a
  *      real slot and not an unconfigured one.
@@ -237,9 +233,6 @@ library ModuleSchemaLib {
      * @param docs Where the human documentation lives. May be empty.
      * @param fields The configuration, in encoding order. Empty for a module that
      *        takes none, which publishes no schema at all.
-     * @param registered Whether the encoded bytes are registered with the module
-     *        and the slot's word is their id, rather than the bytes themselves.
-     *        Not derivable: a module with one field may still register it.
      * @param optional Whether a slot may attach this module configuring nothing.
      */
     function describe(
@@ -247,7 +240,6 @@ library ModuleSchemaLib {
         string memory description,
         string memory docs,
         Field[] memory fields,
-        bool registered,
         bool optional
     ) internal pure returns (string memory) {
         return
@@ -260,7 +252,7 @@ library ModuleSchemaLib {
                     ? ""
                     : string.concat(
                         ',"settings":',
-                        _configSchema(title, fields, registered, optional)
+                        _configSchema(title, fields, optional)
                     ),
                 "}"
             );
@@ -272,7 +264,7 @@ library ModuleSchemaLib {
         string memory description,
         string memory docs
     ) internal pure returns (string memory) {
-        return describe(title, description, docs, new Field[](0), false, false);
+        return describe(title, description, docs, new Field[](0), false);
     }
 
     // ─── internals ──────────────────────────────────────────────────────────
@@ -286,14 +278,12 @@ library ModuleSchemaLib {
     function _configSchema(
         string memory title,
         Field[] memory fields,
-        bool registered,
         bool optional
     ) private pure returns (string memory out) {
         out = string.concat(
             '{"$schema":"https://json-schema.org/draft/2020-12/schema"',
             ',"title":', title.escapeJSON(true),
-            ',"type":"object"',
-            ',"x-settings-encoding":"', registered ? "registered" : "inline", '"'
+            ',"type":"object"'
         );
         if (optional) out = string.concat(out, ',"x-optional":true');
 

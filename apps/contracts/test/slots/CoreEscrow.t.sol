@@ -42,8 +42,8 @@ contract Deaf {
 /// @dev Subscribes to `afterBuy` and always reverts there. The slot must
 ///      swallow it and say so.
 contract BrokenAfter is ISlotModule {
-    function checkSettings(bytes32) external pure {}
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function checkSettings(bytes calldata) external pure {}
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -102,7 +102,7 @@ contract CoreEscrowTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
     }
 
@@ -114,7 +114,7 @@ contract CoreEscrowTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
     }
 
@@ -316,13 +316,13 @@ contract CoreEscrowTest is Test {
             manager: address(this),
             mutableTax: false, mutableRecipient: true, mutableModule: false,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
         _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
 
         TaxTerms memory t;
         t.recipient = next;
-        s.proposeTerms(t, ModuleTerms({target: address(0), settings: bytes32(0)}), 2);
+        s.proposeTerms(t, ModuleTerms({target: address(0), settings: ""}), 2);
         vm.warp(block.timestamp + 10 days);
 
         uint256 owed = s.taxOwed();

@@ -118,7 +118,7 @@ await client.setManager(slot, next);
 ```
 
 Presence, not truthiness, decides what `proposeTerms` queues. Terms land at the
-next buy after the one-day delay — see [How a slot works](/concepts/slots#terms-do-not-move-under-an-occupant).
+next buy after the one-hour delay — see [How a slot works](/concepts/slots#terms-do-not-move-under-an-occupant).
 
 ## Modules
 
@@ -138,7 +138,7 @@ await client.moduleDefinition(target);         // parsed definition() JSON, or n
 the module's own reason rather than throwing, so a form can show it.
 
 Constants: `TERMS`, `ALL_TERMS`, `SCOPE_BITS`, `unpackScopes`, `NO_MODULE`,
-`ZERO_SETTINGS`, `MAX_PRICE`, `MAX_TAX_BPS`, `BASIS_POINTS`, `MONTH_SECONDS`,
+`NO_SETTINGS`, `MAX_PRICE`, `MAX_TAX_BPS`, `BASIS_POINTS`, `MONTH_SECONDS`,
 `TERMS_DELAY_SECONDS`.
 
 ## Selling through the OfferBook

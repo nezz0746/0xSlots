@@ -68,4 +68,11 @@ interface ISlotBoundNFTWrapper {
     error NotOwner();
     /// @dev `msg.value` did not cover the wrap fee.
     error FeeUnpaid(uint256 required);
+    /// @notice The wrap fee is above what the caller agreed to pay.
+    error FeeAboveMax(uint256 fee, uint256 maxFee);
+    /// @notice The underlying did not arrive: `transferFrom` returned without
+    ///         making this contract its owner.
+    error NotReceived();
+    /// @notice That token is already escrowed under a live wrap.
+    error AlreadyWrapped();
 }

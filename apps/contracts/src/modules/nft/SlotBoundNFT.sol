@@ -83,7 +83,7 @@ contract SlotBoundNFT is
                 rateBps: taxRateBps_,
                 minRunwaySeconds: minRunwaySeconds_
             }),
-            moduleTerms: ModuleTerms({target: address(this), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(this), settings: ""})
         });
 
         if (minRunwaySeconds_ == 0) revert TermsCannotBeMinted();
@@ -192,7 +192,7 @@ contract SlotBoundNFT is
         return _uri;
     }
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true;
         f.afterRelease = true;
@@ -201,7 +201,7 @@ contract SlotBoundNFT is
         o.scopes = ScopesLib.pack(f);
     }
 
-    function checkSettings(bytes32) external view {}
+    function checkSettings(bytes calldata) external view {}
 
 
     function beforeBuy(SlotContext calldata) external view {}

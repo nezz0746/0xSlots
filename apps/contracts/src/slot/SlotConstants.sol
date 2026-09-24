@@ -33,6 +33,12 @@ abstract contract SlotConstants {
     // same product.
     uint256 public constant MAX_TAX_BPS = 10_000;
 
+    // Ceiling on `minRunwaySeconds`: a year, the same bound a minimum tenure
+    // has. The escrow floor is `price * rate * runway`, so at the top rate this
+    // caps it near twelve times the price; left at `uint32` it reached ~1,657x,
+    // which a manager could queue to price out every buyer and every sale.
+    uint32 public constant MAX_MIN_RUNWAY = 365 days;
+
     uint256 public constant BASIS_POINTS = SlotMath.BASIS_POINTS;
     uint256 public constant MONTH = SlotMath.MONTH;
 
@@ -52,7 +58,7 @@ abstract contract SlotConstants {
     // Without this, `proposeTerms` in block N binds a buyer in block N: the
     // manager watches the mempool, raises the tax, and the incoming occupant is
     // seated on terms they never saw.
-    uint64 public constant TERMS_DELAY = 1 days;
+    uint64 public constant TERMS_DELAY = 1 hours;
 
     // Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
     // `TERM_SCOPES` is queued by `grant`, never proposed.

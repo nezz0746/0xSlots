@@ -81,6 +81,12 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
         return 1;
     }
 
+    /// @dev The split manager: whoever decides who is paid decides whether a
+    ///      module may take a share first.
+    function _payoutRole() internal pure override returns (bytes32) {
+        return SPLIT_MANAGER_ROLE;
+    }
+
     using SplitV2Lib for SplitV2Lib.Split;
 
     // ═══════════════════════════════════════════════════════════
@@ -111,6 +117,11 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     ///      recipient. Rejected here at construction instead.
     error EmptySplit();
 
+    /// @dev The implementation was deployed by an account with no code. That
+    ///      account would be `FACTORY`, able to call the inherited `initialize`
+    ///      on every collective behind the beacon. See the constructor.
+    error DeployedByAnAccount();
+
     // ═══════════════════════════════════════════════════════════
     // CONSTRUCTOR
     // ═══════════════════════════════════════════════════════════
@@ -140,16 +151,27 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     ///
     ///      `SplitWalletV2.FACTORY` is immutable and set to `msg.sender` here,
     ///      so on a proxy it resolves to whoever deployed the IMPLEMENTATION,
-    ///      not the collective's own factory. That would matter if this contract
-    ///      used the inherited `initialize(split, owner)`, which is gated on
-    ///      `msg.sender == FACTORY`. It does not — `initializeCollective` below
-    ///      does the same work itself, so nothing depends on `FACTORY` and
-    ///      nothing breaks when the beacon
-    ///      points at an implementation someone else deployed.
+    ///      not the collective's own factory. This contract never uses the
+    ///      inherited `initialize(split, owner)` — `initializeCollective` does
+    ///      that work itself — but it cannot remove it either: upstream it is
+    ///      not `virtual`, has no initialized latch, and is gated ONLY on
+    ///      `msg.sender == FACTORY`. Whoever deployed the implementation can
+    ///      therefore call it on EVERY collective behind the beacon, at any
+    ///      time, making themselves `owner` — which re-arms `execCalls` and
+    ///      undoes everything the note above describes.
+    ///
+    ///      So the deployer must be something that can never make that call.
+    ///      The canonical one is the deterministic CREATE2 deployer, whose
+    ///      code has no `CALL` at all; `DeployProtocol` uses it. An account
+    ///      with no code is refused outright, because `forge create` from a
+    ///      wallet is the realistic way to get this wrong. A contract deployer
+    ///      is allowed (tests, and the deploy script's own version probe), and
+    ///      is on whoever adopts its implementation into the beacon to vet.
     ///
     /// @param splitsWarehouse The canonical `SplitsWarehouse` for this chain.
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(address splitsWarehouse) PushSplit(splitsWarehouse) {
+        if (msg.sender.code.length == 0) revert DeployedByAnAccount();
         // The implementation must never hold a split or roles of its own. It is
         // reachable directly at its own address, and a live, owned, role-granted
         // implementation behind a beacon is a standing invitation.

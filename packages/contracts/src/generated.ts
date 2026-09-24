@@ -107,8 +107,8 @@ export const adLandAbi = [
                       },
                       {
                         name: 'settings',
-                        internalType: 'bytes32',
-                        type: 'bytes32',
+                        internalType: 'bytes',
+                        type: 'bytes',
                       },
                     ],
                   },
@@ -218,8 +218,8 @@ export const adLandAbi = [
                       },
                       {
                         name: 'settings',
-                        internalType: 'bytes32',
-                        type: 'bytes32',
+                        internalType: 'bytes',
+                        type: 'bytes',
                       },
                     ],
                   },
@@ -230,9 +230,14 @@ export const adLandAbi = [
                     internalType: 'uint64',
                     type: 'uint64',
                   },
-                  { name: 'ripe', internalType: 'bool', type: 'bool' },
+                  {
+                    name: 'reviewedManifest',
+                    internalType: 'bytes32',
+                    type: 'bytes32',
+                  },
                 ],
               },
+              { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
             ],
           },
         ],
@@ -306,8 +311,8 @@ export const adLandAbi = [
                       },
                       {
                         name: 'settings',
-                        internalType: 'bytes32',
-                        type: 'bytes32',
+                        internalType: 'bytes',
+                        type: 'bytes',
                       },
                     ],
                   },
@@ -417,8 +422,8 @@ export const adLandAbi = [
                       },
                       {
                         name: 'settings',
-                        internalType: 'bytes32',
-                        type: 'bytes32',
+                        internalType: 'bytes',
+                        type: 'bytes',
                       },
                     ],
                   },
@@ -429,9 +434,14 @@ export const adLandAbi = [
                     internalType: 'uint64',
                     type: 'uint64',
                   },
-                  { name: 'ripe', internalType: 'bool', type: 'bool' },
+                  {
+                    name: 'reviewedManifest',
+                    internalType: 'bytes32',
+                    type: 'bytes32',
+                  },
                 ],
               },
+              { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
             ],
           },
         ],
@@ -463,11 +473,11 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
     name: 'adConfigOf',
     outputs: [
       {
-        name: '',
+        name: 'c',
         internalType: 'struct AdConfig',
         type: 'tuple',
         components: [
@@ -481,7 +491,7 @@ export const adLandAbi = [
         ],
       },
     ],
-    stateMutability: 'view',
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -508,7 +518,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -543,7 +553,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -578,7 +588,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -613,7 +623,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -632,13 +642,6 @@ export const adLandAbi = [
     name: 'approveCreative',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'areSettingsRegistered',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
-    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -665,7 +668,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -700,7 +703,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -750,10 +753,10 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
     name: 'checkSettings',
     outputs: [],
-    stateMutability: 'view',
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -808,7 +811,7 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
     name: 'manifest',
     outputs: [
       {
@@ -871,7 +874,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -906,7 +909,7 @@ export const adLandAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -930,6 +933,7 @@ export const adLandAbi = [
     outputs: [
       { name: 'slot', internalType: 'address', type: 'address' },
       { name: 'readyAt', internalType: 'uint64', type: 'uint64' },
+      { name: 'byOwner', internalType: 'bool', type: 'bool' },
     ],
     stateMutability: 'view',
   },
@@ -979,13 +983,6 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
-    name: 'registerSettings',
-    outputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: 'slot', internalType: 'address', type: 'address' },
       { name: 'uriHash', internalType: 'bytes32', type: 'bytes32' },
@@ -1024,13 +1021,6 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'settingsById',
-    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
     name: 'slotOf',
     outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
@@ -1038,7 +1028,7 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
     name: 'tenureOf',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'pure',
@@ -1168,20 +1158,6 @@ export const adLandAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'id', internalType: 'bytes32', type: 'bytes32', indexed: true },
-      {
-        name: 'settings',
-        internalType: 'bytes',
-        type: 'bytes',
-        indexed: false,
-      },
-    ],
-    name: 'SettingsRegistered',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
       { name: 'key', internalType: 'bytes32', type: 'bytes32', indexed: true },
       { name: 'slot', internalType: 'address', type: 'address', indexed: true },
     ],
@@ -1263,7 +1239,6 @@ export const adLandAbi = [
     name: 'ERC1967InvalidImplementation',
   },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
-  { type: 'error', inputs: [], name: 'EmptySettings' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   {
@@ -1271,6 +1246,7 @@ export const adLandAbi = [
     inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
     name: 'KeyTaken',
   },
+  { type: 'error', inputs: [], name: 'MalformedSettings' },
   { type: 'error', inputs: [], name: 'NativeSlotHasNoPermit' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   {
@@ -1293,7 +1269,17 @@ export const adLandAbi = [
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
     name: 'OwnableUnauthorizedAccount',
   },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'OwnerProposalPending',
+  },
   { type: 'error', inputs: [], name: 'PriceCutDuringTenure' },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ReservedKey',
+  },
   {
     type: 'error',
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
@@ -1328,11 +1314,6 @@ export const adLandAbi = [
     name: 'UUPSUnsupportedProxiableUUID',
   },
   { type: 'error', inputs: [], name: 'UnexpectedValue' },
-  {
-    type: 'error',
-    inputs: [{ name: 'id', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'UnknownSettings',
-  },
   { type: 'error', inputs: [], name: 'ZeroSlot' },
 ] as const
 
@@ -1340,7 +1321,7 @@ export const adLandAbi = [
  *
  */
 export const adLandAddress = {
-  31337: '0x67f471BbC345da0AA9a2CbeE59571480689b2F36',
+  31337: '0x91051A68a93F74341cd31EC10353F51b03Fd2795',
 } as const
 
 /**
@@ -1395,7 +1376,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1430,7 +1411,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1465,7 +1446,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1500,7 +1481,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1535,7 +1516,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1570,7 +1551,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1582,7 +1563,7 @@ export const minimumTenureModuleAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
     name: 'checkSettings',
     outputs: [],
     stateMutability: 'pure',
@@ -1596,7 +1577,7 @@ export const minimumTenureModuleAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     name: 'manifest',
     outputs: [
       {
@@ -1637,7 +1618,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1672,7 +1653,7 @@ export const minimumTenureModuleAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -1705,7 +1686,7 @@ export const minimumTenureModuleAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
     name: 'tenureOf',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'pure',
@@ -1739,7 +1720,7 @@ export const minimumTenureModuleAbi = [
  *
  */
 export const minimumTenureModuleAddress = {
-  31337: '0xbdc847136FF99f9D2a354BaCC76540179E7675D6',
+  31337: '0x60Fd2b3aD36ECcd69A91ddb8DAb8105a974C382B',
 } as const
 
 /**
@@ -1794,8 +1775,61 @@ export const offerBookAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'bestIn',
+    outputs: [
+      { name: 'found', internalType: 'bool', type: 'bool' },
+      { name: 'id', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'o',
+        internalType: 'struct OfferBookStorage.Offer',
+        type: 'tuple',
+        components: [
+          { name: 'bidder', internalType: 'address', type: 'address' },
+          { name: 'price', internalType: 'uint256', type: 'uint256' },
+          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+          { name: 'expiry', internalType: 'uint64', type: 'uint64' },
+          { name: 'cancelled', internalType: 'bool', type: 'bool' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'board',
+    outputs: [
+      {
+        name: 'list',
+        internalType: 'struct OfferBookStorage.Offer[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'bidder', internalType: 'address', type: 'address' },
+          { name: 'price', internalType: 'uint256', type: 'uint256' },
+          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+          { name: 'expiry', internalType: 'uint64', type: 'uint64' },
+          { name: 'cancelled', internalType: 'bool', type: 'bool' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
+        ],
+      },
+      { name: 'live', internalType: 'bool[]', type: 'bool[]' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'boardPage',
     outputs: [
       {
         name: 'list',
@@ -1848,6 +1882,17 @@ export const offerBookAbi = [
     type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'liveCount',
+    outputs: [{ name: 'n', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'liveCountIn',
     outputs: [{ name: 'n', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -2048,6 +2093,14 @@ export const offerBookAbi = [
   },
   {
     type: 'error',
+    inputs: [
+      { name: 'owed', internalType: 'uint256', type: 'uint256' },
+      { name: 'ceiling', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'QuoteAboveOffer',
+  },
+  {
+    type: 'error',
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
   },
@@ -2063,7 +2116,7 @@ export const offerBookAbi = [
  *
  */
 export const offerBookAddress = {
-  31337: '0x36AefC818746f1b761912F4e1d347d9E7F11800F',
+  31337: '0xa1AaceF14fe29Fd6f30496a80383A1DD87429f95',
 } as const
 
 /**
@@ -2089,6 +2142,13 @@ export const slotAbi = [
     inputs: [],
     name: 'BASIS_POINTS',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'MAX_MIN_RUNWAY',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
     stateMutability: 'view',
   },
   {
@@ -2306,11 +2366,7 @@ export const slotAbi = [
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
-                  {
-                    name: 'settings',
-                    internalType: 'bytes32',
-                    type: 'bytes32',
-                  },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
               {
@@ -2389,19 +2445,20 @@ export const slotAbi = [
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
-                  {
-                    name: 'settings',
-                    internalType: 'bytes32',
-                    type: 'bytes32',
-                  },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
               { name: 'scopes', internalType: 'uint16', type: 'uint16' },
               { name: 'mask', internalType: 'uint8', type: 'uint8' },
               { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-              { name: 'ripe', internalType: 'bool', type: 'bool' },
+              {
+                name: 'reviewedManifest',
+                internalType: 'bytes32',
+                type: 'bytes32',
+              },
             ],
           },
+          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
@@ -2499,7 +2556,7 @@ export const slotAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -2608,7 +2665,7 @@ export const slotAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
       },
     ],
@@ -2686,13 +2743,17 @@ export const slotAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
           { name: 'scopes', internalType: 'uint16', type: 'uint16' },
           { name: 'mask', internalType: 'uint8', type: 'uint8' },
           { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-          { name: 'ripe', internalType: 'bool', type: 'bool' },
+          {
+            name: 'reviewedManifest',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
         ],
       },
     ],
@@ -2724,7 +2785,7 @@ export const slotAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
       },
       { name: 'mask', internalType: 'uint8', type: 'uint8' },
@@ -2881,7 +2942,7 @@ export const slotAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
           {
@@ -3104,7 +3165,7 @@ export const slotAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
         indexed: false,
       },
@@ -3394,7 +3455,7 @@ export const slotAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
         indexed: false,
       },
@@ -3442,7 +3503,7 @@ export const slotAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
         indexed: false,
       },
@@ -3498,6 +3559,7 @@ export const slotAbi = [
   { type: 'error', inputs: [], name: 'InvalidModuleFee' },
   { type: 'error', inputs: [], name: 'InvalidPrice' },
   { type: 'error', inputs: [], name: 'InvalidRecipient' },
+  { type: 'error', inputs: [], name: 'InvalidRunway' },
   { type: 'error', inputs: [], name: 'InvalidTax' },
   { type: 'error', inputs: [], name: 'InvalidValue' },
   { type: 'error', inputs: [], name: 'ManifestChanged' },
@@ -3530,7 +3592,7 @@ export const slotAbi = [
  *
  */
 export const slotAddress = {
-  31337: '0x8D1B9d5A50F2C510D514D1F7Db4A96F4BF15cf39',
+  31337: '0x0cB318972310cac9bC58007aCfc7ad8A096716F4',
 } as const
 
 /**
@@ -3604,7 +3666,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -3639,7 +3701,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -3674,7 +3736,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -3709,7 +3771,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -3768,7 +3830,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -3803,7 +3865,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -3815,7 +3877,7 @@ export const slotBoundNftAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     name: 'checkSettings',
     outputs: [],
     stateMutability: 'view',
@@ -3882,11 +3944,7 @@ export const slotBoundNftAbi = [
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
-                  {
-                    name: 'settings',
-                    internalType: 'bytes32',
-                    type: 'bytes32',
-                  },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
               {
@@ -3965,19 +4023,20 @@ export const slotBoundNftAbi = [
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
-                  {
-                    name: 'settings',
-                    internalType: 'bytes32',
-                    type: 'bytes32',
-                  },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
               { name: 'scopes', internalType: 'uint16', type: 'uint16' },
               { name: 'mask', internalType: 'uint8', type: 'uint8' },
               { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-              { name: 'ripe', internalType: 'bool', type: 'bool' },
+              {
+                name: 'reviewedManifest',
+                internalType: 'bytes32',
+                type: 'bytes32',
+              },
             ],
           },
+          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
@@ -3995,7 +4054,7 @@ export const slotBoundNftAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     name: 'manifest',
     outputs: [
       {
@@ -4053,7 +4112,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -4088,7 +4147,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -4230,7 +4289,7 @@ export const slotBoundNftAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -4814,7 +4873,7 @@ export const slotBoundNftFactoryAbi = [
  *
  */
 export const slotBoundNftFactoryAddress = {
-  31337: '0x9f5cF49AB60208298F8a7f877180147c316b96A5',
+  31337: '0xaDe8a4b2d8e93A05Ac8f19c43229858aedf85dD4',
 } as const
 
 /**
@@ -4866,7 +4925,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -4901,7 +4960,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -4936,7 +4995,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -4971,7 +5030,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -5023,7 +5082,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -5058,7 +5117,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -5070,7 +5129,7 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     name: 'checkSettings',
     outputs: [],
     stateMutability: 'view',
@@ -5111,7 +5170,7 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
     name: 'manifest',
     outputs: [
       {
@@ -5171,7 +5230,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -5206,7 +5265,7 @@ export const slotBoundNftWrapperAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -5385,6 +5444,7 @@ export const slotBoundNftWrapperAbi = [
       { name: 'taxRateBps', internalType: 'uint16', type: 'uint16' },
       { name: 'valuation', internalType: 'uint256', type: 'uint256' },
       { name: 'mode', internalType: 'enum Mode', type: 'uint8' },
+      { name: 'maxFee', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'wrap',
     outputs: [
@@ -5587,6 +5647,7 @@ export const slotBoundNftWrapperAbi = [
     ],
     name: 'Wrapped',
   },
+  { type: 'error', inputs: [], name: 'AlreadyWrapped' },
   {
     type: 'error',
     inputs: [
@@ -5637,6 +5698,14 @@ export const slotBoundNftWrapperAbi = [
   { type: 'error', inputs: [], name: 'FailedCall' },
   {
     type: 'error',
+    inputs: [
+      { name: 'fee', internalType: 'uint256', type: 'uint256' },
+      { name: 'maxFee', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'FeeAboveMax',
+  },
+  {
+    type: 'error',
     inputs: [{ name: 'required', internalType: 'uint256', type: 'uint256' }],
     name: 'FeeUnpaid',
   },
@@ -5658,6 +5727,7 @@ export const slotBoundNftWrapperAbi = [
   { type: 'error', inputs: [], name: 'NotDepositor' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotOwner' },
+  { type: 'error', inputs: [], name: 'NotReceived' },
   { type: 'error', inputs: [], name: 'NotReclaimable' },
   { type: 'error', inputs: [], name: 'NotTransferable' },
   { type: 'error', inputs: [], name: 'Occupied' },
@@ -5670,7 +5740,7 @@ export const slotBoundNftWrapperAbi = [
  *
  */
 export const slotBoundNftWrapperAddress = {
-  31337: '0x3F71d09fF751E55E6f0e5563Aac50e7F0F7FcBAD',
+  31337: '0x53352BB3e87F1c9778C9e32265D5FbbA1402a62A',
 } as const
 
 /**
@@ -6103,7 +6173,7 @@ export const slotCollectiveAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
       },
     ],
@@ -6125,7 +6195,7 @@ export const slotCollectiveAbi = [
         type: 'tuple',
         components: [
           { name: 'target', internalType: 'address', type: 'address' },
-          { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
       },
     ],
@@ -6555,6 +6625,7 @@ export const slotCollectiveAbi = [
     name: 'AddressEmptyCode',
   },
   { type: 'error', inputs: [], name: 'AdminRequired' },
+  { type: 'error', inputs: [], name: 'DeployedByAnAccount' },
   { type: 'error', inputs: [], name: 'EmptySplit' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   {
@@ -6599,7 +6670,7 @@ export const slotCollectiveAbi = [
  *
  */
 export const slotCollectiveAddress = {
-  31337: '0x28d716D33636Bba9C671bd92bbB6e68FcA46cBEB',
+  31337: '0x29c85E8af4f616A7cE094A04d6CEaaC48C6F2ADe',
 } as const
 
 /**
@@ -6879,7 +6950,7 @@ export const slotCollectiveFactoryAbi = [
  *
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0xc6D8715684Dcf77b5DA5a8Fc04e91436e7935D26',
+  31337: '0x96c1Da0afA356fe5e15fe438D50bBD3236103d99',
 } as const
 
 /**
@@ -6974,7 +7045,7 @@ export const slotFactoryAbi = [
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
-              { name: 'settings', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
         ],
@@ -7173,7 +7244,7 @@ export const slotFactoryAbi = [
  *
  */
 export const slotFactoryAddress = {
-  31337: '0x450b66AAE382CA7B8DCf64fd2bdd9A9EA6aD9Db9',
+  31337: '0x029eaC9382ad527dBEca0aD43244Ae8f7EaeA880',
 } as const
 
 /**
@@ -7386,31 +7457,31 @@ export const slotsTestTokenConfig = {
  */
 export const deployBlocks = {
   AdLand: {
-    '31337': 4,
+    '31337': 5,
   },
   MinimumTenureModule: {
-    '31337': 4,
+    '31337': 5,
   },
   OfferBook: {
-    '31337': 4,
+    '31337': 5,
   },
   Slot: {
-    '31337': 4,
+    '31337': 5,
   },
   SlotBoundNFTFactory: {
-    '31337': 4,
+    '31337': 5,
   },
   SlotBoundNFTWrapper: {
-    '31337': 4,
+    '31337': 5,
   },
   SlotCollective: {
-    '31337': 4,
+    '31337': 5,
   },
   SlotCollectiveFactory: {
-    '31337': 4,
+    '31337': 5,
   },
   SlotFactory: {
-    '31337': 4,
+    '31337': 5,
   },
   SlotsTestToken: {
     '31337': 0,

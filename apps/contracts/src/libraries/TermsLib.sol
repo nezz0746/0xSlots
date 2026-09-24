@@ -1,15 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {TaxTerms, ModuleTerms} from "../types/SlotTypes.sol";
-
-/// @notice Which terms are queued, and since when.
-struct TermsQueue {
-    uint8 mask;
-    uint64 proposedAt;
-    /// Accepted from the attached module; queued under `SCOPES`.
-    uint16 scopes;
-}
+import {TaxTerms, ModuleTerms, PendingTerms} from "../types/SlotTypes.sol";
 
 /**
  * @title TermsLib
@@ -36,82 +28,73 @@ library TermsLib {
     uint8 internal constant PROPOSABLE = TAX_TERMS | MODULE;
     uint8 internal constant ALL = PROPOSABLE | SCOPES;
 
-    /// @dev Copy the masked fields into the queued copy and restart the clock.
+    /// @dev Copy the masked fields into the queue and restart the clock.
     function propose(
-        TermsQueue storage q,
-        TaxTerms storage nextTaxTerms,
-        ModuleTerms storage nextModule,
+        PendingTerms storage p,
         TaxTerms calldata taxTerms,
         ModuleTerms calldata module,
         uint8 mask
     ) internal {
-        if (mask & TAX_RATE != 0) nextTaxTerms.rateBps = taxTerms.rateBps;
-        if (mask & RECIPIENT != 0) nextTaxTerms.recipient = taxTerms.recipient;
-        if (mask & MIN_RUNWAY != 0) nextTaxTerms.minRunwaySeconds = taxTerms.minRunwaySeconds;
+        if (mask & TAX_RATE != 0) p.taxTerms.rateBps = taxTerms.rateBps;
+        if (mask & RECIPIENT != 0) p.taxTerms.recipient = taxTerms.recipient;
+        if (mask & MIN_RUNWAY != 0) p.taxTerms.minRunwaySeconds = taxTerms.minRunwaySeconds;
         if (mask & MODULE != 0) {
-            nextModule.target = module.target;
-            nextModule.settings = module.settings;
+            p.moduleTerms.target = module.target;
+            p.moduleTerms.settings = module.settings;
         }
-        q.mask |= mask;
-        q.proposedAt = uint64(block.timestamp);
+        p.mask |= mask;
+        p.proposedAt = uint64(block.timestamp);
     }
 
     /// @dev Queue the attached module's scopes and restart the clock.
-    function queueScopes(TermsQueue storage q, uint16 scopes) internal {
-        q.scopes = scopes;
-        q.mask |= SCOPES;
-        q.proposedAt = uint64(block.timestamp);
+    function queueScopes(PendingTerms storage p, uint16 scopes) internal {
+        p.scopes = scopes;
+        p.mask |= SCOPES;
+        p.proposedAt = uint64(block.timestamp);
     }
 
     /// @dev Drop whichever of `mask` is queued. Returns what was dropped.
-    function cancel(
-        TermsQueue storage q,
-        TaxTerms storage nextTaxTerms,
-        ModuleTerms storage nextModule,
-        uint8 mask
-    ) internal returns (uint8 dropped) {
-        dropped = q.mask & mask;
-        clear(nextTaxTerms, nextModule, dropped);
-        if (dropped & SCOPES != 0) q.scopes = 0;
-        q.mask &= ~dropped;
-        if (q.mask == 0) q.proposedAt = 0;
+    function cancel(PendingTerms storage p, uint8 mask) internal returns (uint8 dropped) {
+        dropped = p.mask & mask;
+        clear(p, dropped);
+        p.mask &= ~dropped;
+        if (p.mask == 0) p.proposedAt = 0;
     }
 
-    function isRipe(TermsQueue storage q, uint64 delay) internal view returns (bool) {
-        return q.mask != 0 && block.timestamp >= q.proposedAt + delay;
+    function isRipe(PendingTerms storage p, uint64 delay) internal view returns (bool) {
+        return p.mask != 0 && block.timestamp >= p.proposedAt + delay;
     }
 
-    /// @dev Copy every queued field into the live copy and empty the queue.
+    /// @dev Copy every queued field into the live terms and empty the queue.
     ///      Returns what was queued. `SCOPES` is cleared, not copied: the
     ///      live scopes belong to the slot, which re-reads the module first.
     function applyQueued(
-        TermsQueue storage q,
+        PendingTerms storage p,
         TaxTerms storage liveTaxTerms,
-        ModuleTerms storage liveModule,
-        TaxTerms storage nextTaxTerms,
-        ModuleTerms storage nextModule
+        ModuleTerms storage liveModule
     ) internal returns (uint8 applied) {
-        applied = q.mask;
-        if (applied & TAX_RATE != 0) liveTaxTerms.rateBps = nextTaxTerms.rateBps;
-        if (applied & RECIPIENT != 0) liveTaxTerms.recipient = nextTaxTerms.recipient;
-        if (applied & MIN_RUNWAY != 0) liveTaxTerms.minRunwaySeconds = nextTaxTerms.minRunwaySeconds;
+        applied = p.mask;
+        if (applied & TAX_RATE != 0) liveTaxTerms.rateBps = p.taxTerms.rateBps;
+        if (applied & RECIPIENT != 0) liveTaxTerms.recipient = p.taxTerms.recipient;
+        if (applied & MIN_RUNWAY != 0) liveTaxTerms.minRunwaySeconds = p.taxTerms.minRunwaySeconds;
         if (applied & MODULE != 0) {
-            liveModule.target = nextModule.target;
-            liveModule.settings = nextModule.settings;
+            liveModule.target = p.moduleTerms.target;
+            liveModule.settings = p.moduleTerms.settings;
         }
-        clear(nextTaxTerms, nextModule, applied);
-        q.mask = 0;
-        q.proposedAt = 0;
-        q.scopes = 0;
+        clear(p, applied);
+        p.mask = 0;
+        p.proposedAt = 0;
     }
 
-    function clear(TaxTerms storage nextTaxTerms, ModuleTerms storage nextModule, uint8 mask) internal {
-        if (mask & TAX_RATE != 0) nextTaxTerms.rateBps = 0;
-        if (mask & RECIPIENT != 0) nextTaxTerms.recipient = address(0);
-        if (mask & MIN_RUNWAY != 0) nextTaxTerms.minRunwaySeconds = 0;
+    /// @dev Empty the queued fields named by `mask`.
+    function clear(PendingTerms storage p, uint8 mask) internal {
+        if (mask & TAX_RATE != 0) p.taxTerms.rateBps = 0;
+        if (mask & RECIPIENT != 0) p.taxTerms.recipient = address(0);
+        if (mask & MIN_RUNWAY != 0) p.taxTerms.minRunwaySeconds = 0;
         if (mask & MODULE != 0) {
-            nextModule.target = address(0);
-            nextModule.settings = bytes32(0);
+            delete p.moduleTerms;
+            p.reviewedManifest = bytes32(0);
         }
+        if (mask & SCOPES != 0) p.scopes = 0;
     }
 }

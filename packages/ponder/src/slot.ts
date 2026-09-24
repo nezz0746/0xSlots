@@ -37,7 +37,7 @@ import {
   lower,
   unpackScopes,
   ZERO_ADDR,
-  ZERO_DATA,
+  NO_SETTINGS,
 } from "./helpers";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -796,7 +796,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const nextModuleSettings = lower(h.settings);
   const nextRecipient = lower(taxTerms.recipient);
   const prevModule = s.module;
-  const prevModuleSettings = s.settings ?? ZERO_DATA;
+  const prevModuleSettings = s.settings ?? NO_SETTINGS;
   const moduleChanged = (prevModule ?? ZERO_ADDR) !== nextModule;
   const settingsChanged = prevModuleSettings !== nextModuleSettings;
   const taxChanged = s.taxRateBps !== BigInt(taxTerms.rateBps);

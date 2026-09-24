@@ -123,7 +123,10 @@ contract DeployAndDriveCollective is Script {
                     address(new SlotCollectiveFactory()),
                     abi.encodeCall(
                         SlotCollectiveFactory.initialize,
-                        (admin, address(new SlotCollective(address(warehouse))))
+                        // Salted, so forge routes it through the deterministic
+                        // CREATE2 deployer: a plain `new` under broadcast is
+                        // deployed by the EOA, which would then be FACTORY.
+                        (admin, address(new SlotCollective{salt: bytes32(0)}(address(warehouse))))
                     )
                 )
             )
@@ -145,7 +148,7 @@ contract DeployAndDriveCollective is Script {
                         mutableRecipient: true,
                         mutableModule: true,
                         taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(TAX_AT_BIRTH), minRunwaySeconds: uint32(1 days)}),
-                        moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
                     })
                 )
             )
@@ -160,7 +163,7 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_POLICY_MGR);
         collective.proposeModule(
             IManagedSlot(address(slot)),
-            ModuleTerms({target: moduleAddr, settings: bytes32(uint256(7 days))})
+            ModuleTerms({target: moduleAddr, settings: abi.encode(uint256(7 days))})
         );
 
         vm.broadcast(PK_POLICY_MGR);

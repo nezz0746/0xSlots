@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import {SlotStorage} from "./SlotStorage.sol";
 import {ISlotModule, Scopes, SlotContext} from "../interfaces/ISlotModule.sol";
 import {ScopesLib} from "../libraries/ScopesLib.sol";
-import {ModuleTerms, Manifest} from "../types/SlotTypes.sol";
+import {ModuleTerms, Manifest, PendingTerms} from "../types/SlotTypes.sol";
 import {Occupancy} from "./SlotStorage.sol";
-import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
+import {TermsLib} from "../libraries/TermsLib.sol";
 import "../errors/SlotErrors.sol";
 
 /**
@@ -116,10 +116,17 @@ abstract contract SlotModules is SlotStorage {
         if (bpsWord > BASIS_POINTS || recipientWord >> 160 != 0) return (false, declared);
         if (bpsWord != 0 && recipientWord == 0) return (false, declared);
 
-        declared.scopes = uint8(scopesWord);
+        declared.scopes = uint16(scopesWord);
         declared.feeBps = uint16(bpsWord);
         declared.feeRecipient = address(uint160(recipientWord));
         ok = true;
+    }
+
+    /// @dev The manifest a manager reviewed, as one word to keep beside the
+    ///      queued terms. Compared against a fresh read when the module
+    ///      attaches, so the two are the same manifest or the module is dropped.
+    function _manifestHash(Manifest memory m) internal pure returns (bytes32) {
+        return keccak256(abi.encode(m.scopes, m.feeBps, m.feeRecipient));
     }
 
     /**
@@ -154,7 +161,7 @@ abstract contract SlotModules is SlotStorage {
         Manifest storage live = _manifest();
         fee = offered.feeBps != live.feeBps || offered.feeRecipient != live.feeRecipient;
 
-        TermsQueue storage q = _queue();
+        PendingTerms storage q = _pending();
         bool queued = q.mask & TermsLib.SCOPES != 0 && q.scopes == offered.scopes;
         scopes = _settings().mutableModule && offered.scopes != live.scopes && !queued;
     }

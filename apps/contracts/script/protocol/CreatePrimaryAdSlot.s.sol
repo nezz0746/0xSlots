@@ -164,16 +164,14 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
 
         vm.startBroadcast();
 
-        // The slot's whole AdLand configuration, registered once and named by
-        // its hash. Keyless: `primary` is claimed below, delay and all.
-        bytes32 settings = adLand.registerSettings(
-            abi.encode(
-                AdConfig({
-                    tenureWindow: uint64(tenure),
-                    moderation: ModerationMode(moderation),
-                    key: bytes32(0)
-                })
-            )
+        // The slot's whole AdLand configuration, stored on the slot.
+        // Keyless: `primary` is claimed below, delay and all.
+        bytes memory settings = abi.encode(
+            AdConfig({
+                tenureWindow: uint64(tenure),
+                moderation: ModerationMode(moderation),
+                key: bytes32(0)
+            })
         );
 
         // An ordinary slot from the ordinary factory, with AdLand as its module.

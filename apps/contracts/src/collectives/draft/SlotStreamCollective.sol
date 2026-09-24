@@ -80,6 +80,11 @@ contract SlotStreamCollective is SlotGovernance {
     ///      strips its holders.
     bytes32 public constant POOL_MANAGER_ROLE = keccak256("POOL_MANAGER_ROLE");
 
+    /// @dev The pool manager decides who is paid, so a module fee is theirs too.
+    function _payoutRole() internal pure override returns (bytes32) {
+        return POOL_MANAGER_ROLE;
+    }
+
     // ═══════════════════════════════════════════════════════════
     // IMMUTABLES
     // ═══════════════════════════════════════════════════════════

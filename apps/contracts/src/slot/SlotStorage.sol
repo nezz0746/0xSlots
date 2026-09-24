@@ -7,8 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {SlotConstants} from "./SlotConstants.sol";
 import {ISlotEvents} from "../interfaces/ISlotEvents.sol";
-import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
-import {TermsQueue} from "../libraries/TermsLib.sol";
+import {TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../types/SlotTypes.sol";
 import "../errors/SlotErrors.sol";
 
 /// @notice How the slot is governed. Fixed at birth except `manager`.
@@ -26,6 +25,11 @@ struct Occupancy {
     uint64 since;
     uint64 tenureId;
     uint64 lastSettled;
+    /// Tax accrued below one whole unit of currency, in the numerator space
+    /// of `SlotMath` (always < MONTH * BASIS_POINTS). Kept rather than dropped,
+    /// so a settle never has to hold the clock back to stay honest. Packs into
+    /// the same word as the two fields above: nothing below moves.
+    uint64 taxCarry;
     uint256 price;
     uint256 deposit;
 }
@@ -69,15 +73,9 @@ abstract contract SlotStorage is
     /// @custom:storage-location erc7201:slots.module.manifest
     bytes32 private constant MANIFEST =
         0x99b5ec0ea69a4a3ef3d4d212549c40394931a4a31277b53f45146f31040b4900;
-    /// @custom:storage-location erc7201:slots.next.tax
-    bytes32 private constant NEXT_TAX_TERMS =
-        0x1e619fe027dd60ed86eac21a27ef124c5a4e8d3dd02b3b53f9082a4582fc8a00;
-    /// @custom:storage-location erc7201:slots.next.module
-    bytes32 private constant NEXT_MODULE =
-        0xa7945574a6263ae4eeeddef588b6b714dd7c2446bb67e757f7772e1bad0ead00;
-    /// @custom:storage-location erc7201:slots.queue
-    bytes32 private constant QUEUE =
-        0xe9f1ac798b7198349ced27e440d004066b641454823f46f5452894d62d456d00;
+    /// @custom:storage-location erc7201:slots.pending
+    bytes32 private constant PENDING =
+        0x023ee9066f3621eea0977361a106ad8381ddaa4680323fb13aa296d0d00f5c00;
     /// @custom:storage-location erc7201:slots.occupancy
     bytes32 private constant OCCUPANCY =
         0xd2b9f20f136b9d84887a054e10c7bff548205b499752039bfaf6e0a10e3d5e00;
@@ -110,21 +108,10 @@ abstract contract SlotStorage is
         }
     }
 
-    function _nextTaxTerms() internal pure returns (TaxTerms storage $) {
+    /// @dev The terms queued for the next buy, and the bookkeeping about them.
+    function _pending() internal pure returns (PendingTerms storage $) {
         assembly ("memory-safe") {
-            $.slot := NEXT_TAX_TERMS
-        }
-    }
-
-    function _nextModuleTerms() internal pure returns (ModuleTerms storage $) {
-        assembly ("memory-safe") {
-            $.slot := NEXT_MODULE
-        }
-    }
-
-    function _queue() internal pure returns (TermsQueue storage $) {
-        assembly ("memory-safe") {
-            $.slot := QUEUE
+            $.slot := PENDING
         }
     }
 

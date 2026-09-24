@@ -16,6 +16,16 @@ import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 import {Wallet} from "splits-v2/utils/Wallet.sol";
 import {Ownable} from "splits-v2/utils/Ownable.sol";
 
+/// @dev A module with code that charges a fee: what the policy role may no
+///      longer attach alone.
+contract ChargingModuleStub {
+    function manifest(bytes calldata) external pure returns (Manifest memory m) {
+        m.scopes = 4;
+        m.feeBps = 500;
+        m.feeRecipient = address(0xFEE);
+    }
+}
+
 /// @dev Records what the manager relayed, and reverts like the real slot does
 ///      when the caller is not the manager.
 contract MockSlot {
@@ -23,7 +33,7 @@ contract MockSlot {
 
     uint256 public taxPct;
     address public moduleAddr;
-    bytes32 public settings;
+    bytes public settings;
 
     bool public hasTax;
     bool public hasModule;
@@ -42,6 +52,11 @@ contract MockSlot {
 
     function grant(Manifest calldata expected) external onlyManager {
         acceptedFeeBps = expected.feeBps;
+    }
+
+    /// @dev What the slot accepted, as the real slot reports it.
+    function manifest() external view returns (Manifest memory m) {
+        m.feeBps = acceptedFeeBps;
     }
 
     modifier onlyManager() {
@@ -178,7 +193,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = Wallet.Call({
             to: address(slot),
             value: 0,
-            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1)))
+            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1)))
         });
 
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -203,7 +218,7 @@ contract SlotCollectiveTest is Test {
     function test_adminCanRelayBoth() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 250);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
         vm.stopPrank();
 
         assertEq(slot.taxPct(), 250);
@@ -214,11 +229,11 @@ contract SlotCollectiveTest is Test {
     ///      has to be able to express it.
     function test_thePolicyManagerCanDetachTheModule() public {
         vm.prank(policyMgr);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
         assertTrue(slot.hasModule());
 
         vm.prank(policyMgr);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""}));
         assertTrue(slot.hasModule(), "still queued, now queued as a detach");
         assertEq(slot.moduleAddr(), address(0));
     }
@@ -236,7 +251,7 @@ contract SlotCollectiveTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(1), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(1), settings: ""}));
     }
 
     /// @dev The gap the per-dimension cancel closed, and the reason the new
@@ -248,7 +263,7 @@ contract SlotCollectiveTest is Test {
         vm.prank(taxMgr);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(policyMgr);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
 
         vm.prank(policyMgr);
         mgr.cancelModuleProposal(IManagedSlot(address(slot)));
@@ -285,7 +300,7 @@ contract SlotCollectiveTest is Test {
     function test_adminCanCancelEitherDimension() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
         mgr.cancelTaxProposal(IManagedSlot(address(slot)));
         mgr.cancelModuleProposal(IManagedSlot(address(slot)));
         vm.stopPrank();
@@ -313,7 +328,7 @@ contract SlotCollectiveTest is Test {
         vm.prank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(admin);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: bytes32(0)}));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
         vm.prank(admin);
         mgr.cancelAllProposals(IManagedSlot(address(slot)));
         assertEq(slot.taxCancels(), 1);
@@ -396,13 +411,49 @@ contract SlotCollectiveTest is Test {
     }
 
     function test_policyManagerRelaysTheGrant() public {
-        Manifest memory declared = Manifest({scopes: 4, feeBps: 100, feeRecipient: payeeA});
+        Manifest memory declared = Manifest({scopes: 4, feeBps: 0, feeRecipient: address(0)});
 
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
         mgr.grant(IManagedSlot(address(slot)), declared);
 
+        // New scopes, no fee: the policy role's call alone.
+        vm.prank(policyMgr);
+        mgr.grant(IManagedSlot(address(slot)), declared);
+        assertEq(slot.acceptedFeeBps(), 0);
+    }
+
+    /// @notice Attaching a module that charges needs the payout role as well;
+    ///         one that charges nothing is the policy role's alone.
+    function test_attachingAChargingModuleNeedsThePayoutRoleToo() public {
+        ChargingModuleStub charging = new ChargingModuleStub();
+        bytes32 splitRole = mgr.SPLIT_MANAGER_ROLE();
+
+        vm.prank(policyMgr);
+        vm.expectRevert(_unauthorized(policyMgr, splitRole));
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""}));
+        assertFalse(slot.hasModule(), "nothing queued");
+
+        vm.prank(admin);
+        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""}));
+        assertEq(slot.moduleAddr(), address(charging), "the admin holds every role");
+    }
+
+    /// @notice A higher module fee takes a share of the revenue the split
+    ///         divides, so the payout role must agree to it too.
+    function test_aFeeRiseNeedsThePayoutRoleToo() public {
+        Manifest memory declared = Manifest({scopes: 4, feeBps: 100, feeRecipient: payeeA});
+        bytes32 splitRole = mgr.SPLIT_MANAGER_ROLE();
+
+        vm.prank(policyMgr);
+        vm.expectRevert(_unauthorized(policyMgr, splitRole));
+        mgr.grant(IManagedSlot(address(slot)), declared);
+        assertEq(slot.acceptedFeeBps(), 0, "the policy role alone moves nothing");
+
+        // One address holding both roles is both decisions at once.
+        vm.prank(admin);
+        mgr.grantRole(splitRole, policyMgr);
         vm.prank(policyMgr);
         mgr.grant(IManagedSlot(address(slot)), declared);
         assertEq(slot.acceptedFeeBps(), 100);
@@ -414,7 +465,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
         calls[1] = abi.encodeCall(
             mgr.proposeModule,
-            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: bytes32(0)}))
+            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""}))
         );
         vm.prank(admin);
         mgr.multicall(calls);
@@ -428,7 +479,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
         calls[1] = abi.encodeCall(
             mgr.proposeModule,
-            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: bytes32(0)}))
+            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""}))
         );
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
         vm.prank(taxMgr);
@@ -518,4 +569,13 @@ contract SlotCollectiveTest is Test {
     }
 
     receive() external payable {}
+
+    /// @notice An account with no code cannot deploy the implementation: it
+    ///         would be `FACTORY`, able to re-initialize every collective.
+    function test_AnImplementationDeployedByAnAccountIsRefused() public {
+        vm.prank(makeAddr("an account"));
+        vm.expectRevert(SlotCollective.DeployedByAnAccount.selector);
+        new SlotCollective(address(warehouse));
+    }
+
 }

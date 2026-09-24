@@ -72,8 +72,8 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
      * @notice The longest window this module will accept. Ten years.
      *
      * @dev Not a view about how long protection should last — it is an encoding
-     *      check. The module `settings` is 32 bytes and only the low ones are a duration,
-     *      so the characteristic mistake is a word that was never a number:
+     *      check. The module `settings` are one ABI-encoded number, so the
+     *      characteristic mistake is a word that was never a number:
      *      `bytes32("7 days")` is left-aligned text and decodes to roughly
      *      1e76 seconds.
      *
@@ -120,21 +120,19 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
     /// @inheritdoc ISlotModule
     /// @dev The whole of this module's configuration is one number, so
     ///      validation is {tenureOf} run for its revert.
-    function checkSettings(bytes32 data) external pure {
+    function checkSettings(bytes calldata data) external pure {
         tenureOf(data);
     }
 
     /**
      * @notice What this module claims to be, and what it takes.
      *
-     * @dev One field filling the slot's whole word, so the encoded value IS the
-     *      configuration — `"inline"` — and there is nothing to register. The
-     *      window is the SLOT's, never this contract's: one deployment serves
-     *      every duration, so the schema describes the shape and the slot's own
-     *      `moduleTerms().settings` holds the number.
+     * @dev One field. The window is the SLOT's, never this contract's: one
+     *      deployment serves every duration, so the schema describes the shape
+     *      and the slot's own `moduleTerms().settings` holds the number.
      *
      *      Not optional here, unlike on AdLand. A tenure module with no window is
-     *      a module that does nothing, and {tenureOf} refuses a zero word.
+     *      a module that does nothing, and {tenureOf} refuses empty settings.
      */
     function definition() external pure returns (string memory) {
         return
@@ -143,12 +141,11 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
                 "Protects an occupant from being bought out for a fixed window after they take the slot.",
                 "",
                 ModuleSchemaLib.list(tenureField("window", "uint256")),
-                false, // the encoded word IS the configuration
-                false // and a tenure module with no window does nothing
+                false // a tenure module with no window does nothing
             );
     }
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         f.beforeSelfAssess = true;

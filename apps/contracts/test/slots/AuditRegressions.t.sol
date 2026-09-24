@@ -26,9 +26,9 @@ contract Small is ERC20 {
 contract FlipModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         if (broken) revert("gone");
         f.beforeBuy = true;
@@ -56,9 +56,9 @@ contract FlipModule is ISlotModule {
 contract ShortAnswerModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         if (broken) assembly { mstore(0, 1) return(0, 32) } // 1 word, 256 wanted
         f.beforeBuy = true;
@@ -84,9 +84,9 @@ contract ShortAnswerModule is ISlotModule {
 contract DirtyBoolModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
-    function checkSettings(bytes32) external pure {}
+    function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes32) external view returns (Manifest memory o) {
+    function manifest(bytes calldata) external view returns (Manifest memory o) {
         Scopes memory f;
         if (broken) {
             assembly {
@@ -120,10 +120,10 @@ contract RejectingModule is ISlotModule {
     bool public broken;
     function flip() external { broken = true; }
 
-    function checkSettings(bytes32) external view {
+    function checkSettings(bytes calldata) external view {
         if (broken) revert No();
     }
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -145,8 +145,8 @@ contract RejectingModule is ISlotModule {
 /// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
 contract Counter is ISlotModule {
     uint256 public buys;
-    function checkSettings(bytes32) external pure {}
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function checkSettings(bytes calldata) external pure {}
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.afterBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -175,6 +175,17 @@ contract WeirdTok is ERC20 {
             assembly { mstore(0, 2) return(0, 32) }
         }
         return super.transfer(to, a);
+    }
+}
+
+/// @dev `transfer` moves the funds AND answers with a word that is neither 0
+///      nor 1: paid, and must not be credited on top.
+contract MovingWeirdTok is ERC20 {
+    constructor() ERC20("M", "M") {}
+    function mint(address to, uint256 a) external { _mint(to, a); }
+    function transfer(address to, uint256 a) public override returns (bool) {
+        super.transfer(to, a);
+        assembly { mstore(0, 2) return(0, 32) }
     }
 }
 
@@ -208,7 +219,7 @@ contract AuditRegressionsTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(minDep)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
     }
 
@@ -258,7 +269,7 @@ contract AuditRegressionsTest is Test {
         vm.stopPrank();
 
         FlipModule h = new FlipModule();
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(h), settings: bytes32(0)}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(h), settings: ""}), uint8(8));
 
         vm.warp(block.timestamp + 3650 days);
         assertTrue(s.isInsolvent());
@@ -291,7 +302,7 @@ contract AuditRegressionsTest is Test {
         // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
         // and would refuse it otherwise. The break happens afterwards, which is
         // the whole point: the apply path cannot re-verify what it accepted.
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: pending, settings: bytes32(0)}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: pending, settings: ""}), uint8(8));
         if (etchAway) vm.etch(pending, "");
         else IFlippable(pending).flip();
 
@@ -306,7 +317,7 @@ contract AuditRegressionsTest is Test {
 
         assertEq(s.occupant(), grinder, "the buy went through");
         assertEq(s.module(), address(0), "and the module was dropped, not attached");
-        assertEq(s.moduleTerms().settings, bytes32(0), "its configuration went with it");
+        assertEq(s.moduleTerms().settings, bytes(""), "its configuration went with it");
     }
 
     /// @notice A queued module with NO CODE cannot block a buy.
@@ -345,7 +356,7 @@ contract AuditRegressionsTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
         w.mint(occ, 1_000_000);
         vm.startPrank(occ);
@@ -378,7 +389,7 @@ contract AuditRegressionsTest is Test {
 
     function test_QueuedTermsCannotBindTheNextBlocksBuyer() public {
         Slot s = _slot(address(token), 0);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
@@ -418,4 +429,28 @@ contract AuditRegressionsTest is Test {
         book.board(address(s));
         assertEq(book.liveCount(address(s)), 0, "and it is not live");
     }
+
+    /// @notice A token that pays and answers `2` is paid once, never also
+    ///         credited — a credit on top would pay twice, out of escrow.
+    function test_APayingTokenWithAnOddAnswerIsNotCreditedTwice() public {
+        MovingWeirdTok w = new MovingWeirdTok();
+        Slot s = Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(w)),
+            manager: address(this),
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
+            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
+        }))));
+        w.mint(occ, 1_000_000);
+        vm.startPrank(occ);
+        w.approve(address(s), type(uint256).max);
+        s.buy(occ, PRICE, 100, 0);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 3650 days);
+        s.liquidate();
+        assertEq(s.withdrawableOf(recipient), 0, "paid, so not credited");
+        assertGt(w.balanceOf(recipient), 0, "and the recipient holds it");
+    }
+
 }

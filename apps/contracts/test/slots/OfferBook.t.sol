@@ -10,6 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
+import {OfferBookStorage} from "../../src/periphery/book/OfferBookStorage.sol";
 import "../../src/periphery/book/OfferBookErrors.sol";
 
 contract Tok is ERC20 {
@@ -50,7 +51,7 @@ contract OfferBookSlotsTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
 
         address[3] memory who = [alice, bob, carol];
@@ -184,7 +185,7 @@ contract OfferBookSlotsTest is Test {
 
         TaxTerms memory t;
         t.rateBps = 10_000;
-        slot.proposeTerms(t, ModuleTerms({target: address(0), settings: bytes32(0)}), 1);
+        slot.proposeTerms(t, ModuleTerms({target: address(0), settings: ""}), 1);
         vm.warp(block.timestamp + 1 days + 1);
         assertGt(slot.minDepositForBuy(90e18), slot.deposit(), "under the queued rate alice would be short");
 
@@ -321,7 +322,7 @@ contract OfferBookSlotsTest is Test {
             manager: address(0),
             mutableTax: false, mutableRecipient: false, mutableModule: false,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
         vm.deal(alice, 100 ether);
         uint256 dep = native_.minDepositForBuy(1 ether);
@@ -339,4 +340,40 @@ contract OfferBookSlotsTest is Test {
         vm.expectRevert(OfferNotLive.selector); // `_fundable` refuses it first
         book.acceptOffer(address(native_), id, 0);
     }
+
+    // ─── liveness includes the escrow floor; the board reads in pages ───────
+
+    /// @notice A bid whose deposit the slot would refuse is never live, so it
+    ///         cannot sit at the top of the book.
+    function test_ABidBelowTheEscrowFloorIsNotLive() public {
+        uint64 expiry = uint64(block.timestamp + 7 days);
+        vm.prank(bob);
+        uint256 id = book.offer(address(slot), 500e18, 0, expiry);
+        assertFalse(book.isLive(address(slot), id), "a zero deposit cannot be seated");
+        (bool found, , ) = book.best(address(slot));
+        assertFalse(found, "so it cannot top the book either");
+    }
+
+    /// @notice Every whole-board read has a bounded twin.
+    function test_TheBoardCanBeReadInPages() public {
+        _post(bob, 70e18);
+        _post(carol, 90e18);
+
+        (OfferBookStorage.Offer[] memory first, ) = book.boardPage(address(slot), 0, 1);
+        (OfferBookStorage.Offer[] memory rest, ) = book.boardPage(address(slot), 1, 10);
+        assertEq(first.length, 1);
+        assertEq(rest.length, 1);
+        assertEq(first[0].bidder, bob);
+        assertEq(rest[0].bidder, carol);
+
+        (bool found, uint256 id, ) = book.bestIn(address(slot), 1, 1);
+        assertTrue(found);
+        assertEq(id, 1);
+
+        (OfferBookStorage.Offer[] memory none, ) = book.boardPage(address(slot), 5, 10);
+        assertEq(none.length, 0, "past the end is empty, not a revert");
+        assertEq(book.liveCountIn(address(slot), 0, 1), 1);
+        assertEq(book.liveCount(address(slot)), 2);
+    }
+
 }

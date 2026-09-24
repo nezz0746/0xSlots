@@ -68,12 +68,12 @@ enum ModerationMode {
 }
 
 /**
- * @notice Everything a slot configures on AdLand, as one registered value.
+ * @notice Everything a slot configures on AdLand.
  *
- * @dev The slot stores only `keccak256(abi.encode(AdConfig))` in its
- *      `ModuleTerms.settings`, so changing any of this is a module term: it needs a
- *      mutable module, waits out the terms delay and lands at the next buy. A slot whose word is zero configures nothing: no window,
- *      `Open`, no key.
+ * @dev The slot stores `abi.encode(AdConfig)` as its `ModuleTerms.settings`,
+ *      so changing any of this is a module term: it needs a mutable module,
+ *      waits out the terms delay and lands at the next buy. Empty settings
+ *      configure nothing: no window, `Open`, no key.
  */
 struct AdConfig {
     /// Seconds an advertiser cannot be outbid off the space, except at ten
@@ -92,6 +92,11 @@ struct Pending {
     ///      is not expressible. Deliberate: retiring a key is `cancelSlot` and
     ///      leaving it, not a scheduled erase.
     uint64 readyAt;
+    /// @dev Proposed by the owner. A holder can neither overwrite nor cancel
+    ///      it — otherwise the owner's recovery of a squatted key is erased
+    ///      by the squatter once every delay, for ever. Packs into the same
+    ///      word as the two fields above.
+    bool byOwner;
 }
 
 /// @notice Everything the render path reads, in one call.
@@ -148,6 +153,10 @@ interface IAdLand {
     error NotKeyOwner(bytes32 key);
     error NothingPending();
     error TooEarly(uint64 readyAt);
+    /// @notice `primary` is the SDK's default render target: the owner's to set.
+    error ReservedKey(bytes32 key);
+    /// @notice The owner's proposal for this key outranks the holder's.
+    error OwnerProposalPending(bytes32 key);
     error NativeSlotHasNoPermit();
     error UnexpectedValue();
     /// @notice Only the slot's manager moderates it.
@@ -156,6 +165,8 @@ interface IAdLand {
     error NothingToModerate();
     /// @notice The waiting creative is no longer the one the manager reviewed.
     error SubmissionChanged();
+    /// @notice A slot's settings are neither empty nor one encoded `AdConfig`.
+    error MalformedSettings();
 
     // ─── publishing ─────────────────────────────────────────────────────────
 

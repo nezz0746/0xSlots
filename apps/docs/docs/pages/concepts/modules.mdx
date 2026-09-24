@@ -94,6 +94,8 @@ other seating — one seating path, one set of checks.
 A module says what it wants from a slot in its **manifest** —
 `manifest(settings)` returns the callbacks it needs (its **scopes**, as bits)
 and an optional share of collected tax (`feeBps`, paid to `feeRecipient`).
+It takes the slot's `settings` so the answer can depend on them: AdLand asks
+for its `before` scopes only when the config sets a tenure window.
 
 The slot **copies** the manifest when the module is installed and never re-reads
 it on a callback or a payout. The slot only calls the callbacks the copy lists —
@@ -106,14 +108,23 @@ the manager compares the two with `grantStatus()` and accepts with
 
 - A new **fee** applies at once. It only changes how collected tax is split
   between the module and the recipient, never what an occupant pays, and tax
-  collected so far is paid out under the old fee first.
+  collected so far is paid out under the old fee first. A fee can be anything up
+  to all of the rent, but **raising** one — or attaching a module that charges at
+  all — needs a slot whose recipient is mutable: the fee sends rent somewhere the
+  recipient is not, and a slot that promised a fixed recipient keeps that promise.
 - New **scopes** change what the module may do to an occupant, so they queue and
   land at the next buy — and only on a slot whose module is mutable.
 
+A module **proposed** as a replacement is pinned the same way. The slot keeps
+the manifest it read at proposal, reads the module again when it lands, and
+drops it instead of installing it if the two differ — so the delay cannot be
+used to raise a fee or add `strict` after the manager looked.
+
 ## Settings
 
-`settings` is 32 bytes stored **on the slot** and handed back in every callback
-as `ctx.moduleTerms.settings`. It is what lets one deployment serve every
+`settings` are bytes stored **on the slot** and handed back in every callback
+as `ctx.moduleTerms.settings`: `abi.encode` of the fields the module's
+definition lists. It is what lets one deployment serve every
 configuration: a seven-day and a thirty-day minimum tenure point at the same
 `MinimumTenureModule`, each with its own window.
 
@@ -124,9 +135,8 @@ reporting itself immutable.
 
 The slot asks `checkSettings(settings)` whenever a module is proposed or
 installed. A module that rejects its configuration is refused there, rather than
-installed and vetoing every buy afterwards. Configuration larger than one word is
-registered with the module through `SettingsStore` and the slot stores its hash —
-AdLand works this way.
+installed and vetoing every buy afterwards. There is no size limit: large
+settings cost whoever builds and uses the slot, and they can see them first.
 
 ## Fail-closed, on purpose
 

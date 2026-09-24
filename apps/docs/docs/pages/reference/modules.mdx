@@ -11,8 +11,8 @@ The interfaces a module implements, and the modules the protocol ships. See
 
 ```solidity
 interface ISlotModule {
-    function checkSettings(bytes32 settings) external view;
-    function manifest(bytes32 settings) external view returns (Manifest memory);
+    function checkSettings(bytes calldata settings) external view;
+    function manifest(bytes calldata settings) external view returns (Manifest memory);
 
     // decisions — view, revert to veto
     function beforeBuy(SlotContext calldata ctx) external view;
@@ -34,11 +34,12 @@ declares.
 **`checkSettings`** reverts if `settings` is not a configuration the module
 accepts. The slot calls it when the module is proposed and when it is installed.
 A module that takes no configuration implements it as a no-op and so accepts
-anything, zero included.
+anything, empty included.
 
 **`manifest`** is `view`, not `pure` — a module may answer from storage. The
 answer must have non-zero `scopes` using only known bits, and a non-zero `feeBps`
-needs a `feeRecipient` and may not exceed 10,000. It must also answer within half
+needs a `feeRecipient` and may not exceed 10,000 — and needs a slot whose
+recipient is mutable (`NotMutable` otherwise). It must also answer within half
 of `MODULE_GAS`, which is what the slot allows the read when the module is
 installed; one that cannot is refused at proposal with `ManifestTooExpensive`.
 
@@ -80,8 +81,8 @@ judges the terms the buyer is seated under.
 
 ```solidity
 struct ModuleTerms {
-    address target;   // the module; zero for none
-    bytes32 settings; // this slot's configuration for it; must be zero when target is
+    address target; // the module; zero for none
+    bytes settings; // this slot's configuration for it; must be empty when target is
 }
 ```
 
@@ -146,7 +147,6 @@ from the module's own constants. `MinimumTenureModule` answers:
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "Minimum tenure",
     "type": "object",
-    "x-settings-encoding": "inline",
     "properties": {
       "window": {
         "type": "string",
@@ -167,13 +167,12 @@ from the module's own constants. `MinimumTenureModule` answers:
 ```
 
 `settings` is a JSON Schema 2020-12 document a form library can take as is,
-plus four conventions:
+plus three conventions:
 
 | Key | Meaning |
 |---|---|
-| `x-abi` | The values in ABI-encoding order, as viem `AbiParameter`s |
-| `x-settings-encoding` | `"inline"`: the encoded values are the slot's `settings` word. `"registered"`: register them with the module and use the returned id |
-| `x-optional` | The slot may leave the whole configuration at zero |
+| `x-abi` | The values in ABI-encoding order, as viem `AbiParameter`s. `abi.encode` of them is the slot's `settings` |
+| `x-optional` | The slot may leave `settings` empty |
 | `x-semantic` | A behaviour a client may recognise, such as `"minimum-tenure"` |
 
 Every value is a string, because JSON numbers lose precision above 2^53; bounds
@@ -181,30 +180,13 @@ travel as `x-minimum` / `x-maximum` strings. They are advice — `checkSettings`
 is the authority. A module that does not implement `definition()`, or answers
 with something that is not JSON, is simply undescribed; fall back to its scopes.
 
-## `SettingsStore`
-
-For configuration larger than one word. A module inheriting it lets anyone
-register bytes, and the slot stores their hash as `settings`.
-
-```solidity
-function registerSettings(bytes calldata settings) external returns (bytes32 id); // id = keccak256(settings)
-function settingsById(bytes32 id) external view returns (bytes memory);
-function areSettingsRegistered(bytes32 id) external view returns (bool);
-
-event SettingsRegistered(bytes32 indexed id, bytes settings);
-```
-
-Content-addressed, so a registered configuration can never change under a slot;
-changing it means registering new bytes and proposing the new id. Registration is
-permissionless and idempotent.
-
 ## `MinimumTenureModule`
 
 One deployment per chain; the window a slot enforces is its own `settings`, a
 number of seconds.
 
 ```solidity
-function tenureOf(bytes32 settings) external pure returns (uint256);
+function tenureOf(bytes settings) external pure returns (uint256); // settings = abi.encode(uint256 seconds)
 function requiredDeposit(uint256 price, uint256 taxRateBps, uint256 window)
     external pure returns (uint256);
 function reentryAllowedAt(address slot, address account) external view returns (uint256);
@@ -241,13 +223,14 @@ for the whole term sets `minRunwaySeconds` to at least the window.
 ## AdLand
 
 A sponsorship module: the occupant publishes a creative (`Published`), and it
-is cleared when the slot changes hands (`Cleared`). Its `settings` is the id of a
-registered `AdConfig` — an optional minimum-tenure window, a moderation mode and
-a registry key — and zero configures none of them. It inherits the
+is cleared when the slot changes hands (`Cleared`). Its `settings` are
+`abi.encode(AdConfig)` — an optional minimum-tenure window, a moderation mode and
+a registry key — and empty settings configure none of them. It inherits the
 `MinimumTenure` rule, so one module covers both behaviours.
 
-Scopes: `beforeBuy`, `beforeSelfAssess`, `afterBuy`, `afterRelease`,
-`afterLiquidate`. No fee. Its creatives are indexed — see
+Scopes: `afterBuy`, `afterRelease`, `afterLiquidate`, plus `beforeBuy` and
+`beforeSelfAssess` when the config sets a window, so a slot without one grants
+no veto. No fee. Its creatives are indexed — see
 [Indexer](/indexer#creatives).
 
 ## Slot-bound NFTs

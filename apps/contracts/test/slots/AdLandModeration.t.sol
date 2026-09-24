@@ -47,12 +47,10 @@ contract AdLandModerationTest is Test {
 
     // ─── helpers ────────────────────────────────────────────────────────────
 
-    /// @dev The mode is the slot's AdLand configuration, registered and named
-    ///      by its hash, so setting it is creating the slot with it.
-    function _config(ModerationMode mode) internal returns (bytes32) {
-        return adland.registerSettings(
-            abi.encode(AdConfig({tenureWindow: 0, moderation: mode, key: bytes32(0)}))
-        );
+    /// @dev The mode is the slot's AdLand configuration, stored on the slot,
+    ///      so setting it is creating the slot with it.
+    function _config(ModerationMode mode) internal pure returns (bytes memory) {
+        return abi.encode(AdConfig({tenureWindow: 0, moderation: mode, key: bytes32(0)}));
     }
 
     /// @dev Replaces `slot` with one configured for `mode`. Only meaningful
@@ -67,7 +65,7 @@ contract AdLandModerationTest is Test {
 
     function _makeSlot(address manager, ModerationMode mode) internal returns (Slot) {
         bool mutable_ = manager != address(0);
-        bytes32 settings = mode == ModerationMode.Open ? bytes32(0) : _config(mode);
+        bytes memory settings = mode == ModerationMode.Open ? bytes("") : _config(mode);
         return Slot(
             payable(factory.createSlot(
                     SlotInit({
@@ -352,9 +350,7 @@ contract AdLandModerationTest is Test {
 
     /// @notice A key is claimed from the slot that asks for it, first come.
     function test_AKeyIsClaimedFromTheSlotThatAsksForIt() public {
-        bytes32 settings = adland.registerSettings(
-            abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: "spot"}))
-        );
+        bytes memory settings = abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: "spot"}));
         Slot keyed = Slot(payable(factory.createSlot(SlotInit({
             currency: IERC20(address(0)),
             manager: address(this),
@@ -386,4 +382,65 @@ contract AdLandModerationTest is Test {
         vm.expectRevert(IAdLand.ZeroSlot.selector);
         adland.claimKey(address(slot));
     }
+
+    // ─── registry authority ─────────────────────────────────────────────────
+
+    function _keyedSlot(address manager_, bytes32 key) internal returns (Slot) {
+        bytes memory settings = abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: key}));
+        return Slot(payable(factory.createSlot(SlotInit({
+            currency: IERC20(address(0)),
+            manager: manager_,
+            mutableTax: true, mutableRecipient: true, mutableModule: true,
+            taxTerms: TaxTerms({recipient: manager_, rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+        }))));
+    }
+
+    /// @notice The SDK's default render target is not a first-come name.
+    function test_PrimaryCannotBeClaimed() public {
+        bytes32 primary = adland.PRIMARY();
+        Slot s = _keyedSlot(alice, primary);
+        vm.expectRevert(abi.encodeWithSelector(IAdLand.ReservedKey.selector, primary));
+        adland.claimKey(address(s));
+    }
+
+    /// @notice A name belongs to whoever manages the slot behind it now.
+    function test_AKeyFollowsTheSlotsManager() public {
+        Slot s = _keyedSlot(alice, "acme");
+        adland.claimKey(address(s));
+        assertEq(adland.keyOwner("acme"), alice);
+
+        vm.prank(alice);
+        s.setManager(bob);
+        assertEq(adland.keyOwner("acme"), bob, "the name moved with the slot");
+
+        Slot elsewhere = _keyedSlot(alice, "elsewhere");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAdLand.NotKeyOwner.selector, bytes32("acme")));
+        adland.setSlot("acme", address(elsewhere));
+    }
+
+    /// @notice The owner's recovery of a squatted key cannot be displaced by
+    ///         the squatter, by overwriting or by cancelling it.
+    function test_AHolderCannotDisplaceTheOwnersRecovery() public {
+        Slot squat = _keyedSlot(alice, "acme");
+        adland.claimKey(address(squat));
+        Slot good = _keyedSlot(bob, "good");
+        Slot bad = _keyedSlot(alice, "bad");
+
+        vm.prank(owner);
+        adland.setSlot("acme", address(good));
+
+        vm.startPrank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAdLand.OwnerProposalPending.selector, bytes32("acme")));
+        adland.setSlot("acme", address(bad));
+        vm.expectRevert(abi.encodeWithSelector(IAdLand.OwnerProposalPending.selector, bytes32("acme")));
+        adland.cancelSlot("acme");
+        vm.stopPrank();
+
+        skip(adland.CHANGE_DELAY());
+        adland.commitSlot("acme");
+        assertEq(adland.slotOf("acme"), address(good), "the owner's recovery lands");
+    }
+
 }

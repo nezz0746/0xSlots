@@ -7,9 +7,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotMath} from "../libraries/SlotMath.sol";
 import {SlotModules} from "./SlotModules.sol";
 import {ISlotModule, SlotContext} from "../interfaces/ISlotModule.sol";
-import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../types/SlotTypes.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
-import {TermsLib, TermsQueue} from "../libraries/TermsLib.sol";
+import {TermsLib} from "../libraries/TermsLib.sol";
 import "../errors/SlotErrors.sol";
 
 /**
@@ -18,7 +18,7 @@ import "../errors/SlotErrors.sol";
  */
 abstract contract SlotAccounting is SlotModules {
     using SafeERC20 for IERC20;
-    using TermsLib for TermsQueue;
+    using TermsLib for PendingTerms;
 
     event Settled(uint256 owed, uint256 paid, uint256 depositLeft);
     event TaxPaid(address indexed payer, uint256 owed, uint256 paid);
@@ -48,7 +48,13 @@ abstract contract SlotAccounting is SlotModules {
     function taxOwed() public view returns (uint256) {
         Occupancy storage o = _occupancy();
         if (o.occupant == address(0)) return 0;
-        return SlotMath.taxFor(o.price, _taxTerms().rateBps, block.timestamp - o.lastSettled);
+        (uint256 owed, ) = SlotMath.accrue(
+            o.price,
+            _taxTerms().rateBps,
+            block.timestamp - o.lastSettled,
+            o.taxCarry
+        );
+        return owed;
     }
 
     /// @notice The smallest deposit that funds `minRunwaySeconds` at `price_`.
@@ -78,20 +84,26 @@ abstract contract SlotAccounting is SlotModules {
             return;
         }
 
-        uint256 owed = taxOwed();
+        // The clock always reaches now, and whatever fell short of a whole
+        // unit is carried rather than dropped. That is the whole defence
+        // against grinding: a free `topUp(0)` every block cannot shave a
+        // fraction off each settle, because no fraction is ever discarded —
+        // and no window is ever left open for a later price or rate to reach
+        // back into, because there is none.
+        (uint256 owed, uint256 carry) = SlotMath.accrue(
+            o.price,
+            _taxTerms().rateBps,
+            upTo - o.lastSettled,
+            o.taxCarry
+        );
+        o.lastSettled = uint64(upTo);
+        o.taxCarry = uint64(carry);
+
         uint256 paid;
         if (owed >= o.deposit) {
-            // Nothing accrued, so there is nothing to realise — and moving the
-            // clock anyway would destroy the window. This branch is taken at
-            // `0 >= 0` too, so without the guard a price low enough that one
-            // second floors to zero tax could be ground forward for ever with
-            // free, permissionless `topUp(0)` calls, and the debt would never
-            // accrue: the same grind the solvent branch below converts `paid`
-            // back into seconds to prevent.
-            //
-            // `owed == 0` here implies `deposit == 0`, so everything skipped
-            // is a no-op: no tax to take, no debt to carry, and a `Settled`
-            // that would report zeros against an escrow that did not move.
+            // `owed == 0` here implies `deposit == 0`: no tax to take, no debt
+            // to carry, and a `Settled` that would report zeros against an
+            // escrow that did not move.
             if (owed == 0) return;
 
             paid = o.deposit;
@@ -101,33 +113,9 @@ abstract contract SlotAccounting is SlotModules {
             unchecked {
                 if (owed > paid) _ledger().debtOf[o.occupant] += owed - paid;
             }
-            o.lastSettled = uint64(upTo);
         } else {
             paid = owed;
             o.deposit -= owed;
-            // Advance the clock only over the time actually paid for.
-            //
-            // `taxOwed` floors, so a window too short to price one unit of
-            // currency accrues zero, and moving `lastSettled` to `now` anyway
-            // would destroy that window's tax: `topUp(0)` is a free settle, so
-            // anyone could grind the clock forward paying nothing. Converting
-            // `paid` back into seconds keeps the unpaid remainder owed.
-            //
-            // Rounded UP. The paid time is short of `elapsed` by less than one
-            // wei's worth, and rounding down left a whole paid second on the
-            // clock, charged again by the next settle. A settle every block
-            // then overcharged the occupant by a second per block. Up, the
-            // clock never passes `elapsed`, a non-zero `paid` always moves it,
-            // and the occupant is forgiven under one wei per settle.
-            uint256 secondsPaid = SlotMath.secondsPaidFor(
-                paid,
-                o.price,
-                _taxTerms().rateBps
-            );
-
-            uint256 elapsed = upTo - o.lastSettled;
-            if (secondsPaid >= elapsed) o.lastSettled = uint64(upTo);
-            else o.lastSettled += uint64(secondsPaid);
         }
         _ledger().collectedTax += paid;
 
@@ -153,7 +141,7 @@ abstract contract SlotAccounting is SlotModules {
     ///      deposit against queued terms has to agree with `_applyPending`
     ///      about whether they are going to apply.
     function hasRipeTerms() public view returns (bool) {
-        return _queue().isRipe(TERMS_DELAY);
+        return _pending().isRipe(TERMS_DELAY);
     }
 
     /**
@@ -178,10 +166,10 @@ abstract contract SlotAccounting is SlotModules {
      *      never reach back into it, and no history needs keeping.
      */
     function _applyPending() internal returns (bool attached) {
-        TermsQueue storage q = _queue();
+        PendingTerms storage q = _pending();
         if (!q.isRipe(TERMS_DELAY)) return false;
 
-        ModuleTerms memory next = _nextModuleTerms();
+        ModuleTerms memory next = q.moduleTerms;
         ModuleTerms memory current = _moduleTerms();
         bool moduleChanges = q.mask & TermsLib.MODULE != 0;
         // A queued module brings its own manifest, scopes included.
@@ -205,6 +193,7 @@ abstract contract SlotAccounting is SlotModules {
             (ok, declared) = _tryReadManifest(moduleChanges ? next : current);
         }
         uint16 acceptedScopes = q.scopes;
+        bytes32 reviewed = q.reviewedManifest;
 
         // Told BEFORE the swap, while the slot's terms still describe the module
         // being removed — so `ctx.moduleTerms` is its own configuration, and it can
@@ -214,14 +203,18 @@ abstract contract SlotAccounting is SlotModules {
             _uninstall(current);
         }
 
-        uint8 applied = q.applyQueued(_taxTerms(), _moduleTerms(), _nextTaxTerms(), _nextModuleTerms());
+        uint8 applied = q.applyQueued(_taxTerms(), _moduleTerms());
         Manifest storage live = _manifest();
 
         if (moduleChanges) {
             applied &= ~TermsLib.SCOPES;
-            if (next.target != address(0) && !ok) {
+                        // Dropped rather than installed when the module no longer declares
+            // what the manager reviewed. The re-read is what makes an upgraded
+            // module honest; the comparison is what stops it being a second,
+            // unreviewed proposal — the same test the scopes branch below runs.
+            if (next.target != address(0) && (!ok || _manifestHash(declared) != reviewed)) {
                 _moduleTerms().target = address(0);
-                _moduleTerms().settings = bytes32(0);
+                delete _moduleTerms().settings;
                 emit ModuleDropped(next.target);
                 declared = Manifest(0, 0, address(0));
             }
@@ -291,33 +284,55 @@ abstract contract SlotAccounting is SlotModules {
     function _payOrCredit(address to, uint256 amount) internal {
         if (amount == 0) return;
 
-        bool paid;
+        uint256 unpaid = amount;
         if (_isNative()) {
-            (paid, ) = to.call{value: amount, gas: PAYOUT_GAS}("");
+            (bool sent, ) = to.call{value: amount, gas: PAYOUT_GAS}("");
+            if (sent) unpaid = 0;
         } else {
             address token = address(_settings().currency);
             if (token.code.length > 0) {
+                // MEASURED, not decoded. What a token answers and what it did
+                // are two different facts, and trusting the answer fails in
+                // both directions: a token that moves the funds and answers
+                // `2` gets credited on top — paid twice, the second time out of
+                // other occupants' escrow — while one that answers `2` and
+                // moves nothing would be marked paid and the payee would lose
+                // it. The balance delta is the only answer both agree on.
+                (bool okBefore, uint256 before) = _selfBalance(token);
                 (bool ok, bytes memory data) = token.call(
                     abi.encodeCall(IERC20.transfer, (to, amount))
                 );
-                // Decoded by hand, because `abi.decode(data, (bool))` reverts
-                // on any word that is not 0 or 1 — and it reverts HERE, in a
-                // function whose whole contract is that it never does. A
-                // token that returns something odd must be treated as "did
-                // not pay" and credited, exactly like one that reverted.
-                if (ok) {
-                    if (data.length == 0) paid = true;
-                    else if (data.length >= 32) {
-                        paid = abi.decode(data, (uint256)) == 1;
+                (bool okAfter, uint256 afterward) = _selfBalance(token);
+
+                if (ok && okBefore && okAfter) {
+                    uint256 moved = before > afterward ? before - afterward : 0;
+                    unpaid = moved >= amount ? 0 : amount - moved;
+                } else if (ok) {
+                    // A currency whose `balanceOf` will not answer: fall back to
+                    // the reply. Decoded by hand, because `abi.decode(data,
+                    // (bool))` reverts on any word that is not 0 or 1 — and it
+                    // would revert HERE, in a function whose whole contract is
+                    // that it never does.
+                    if (data.length == 0) unpaid = 0;
+                    else if (data.length >= 32 && abi.decode(data, (uint256)) == 1) {
+                        unpaid = 0;
                     }
                 }
             }
         }
 
-        if (!paid) {
-            _ledger().withdrawableOf[to] += amount;
-            emit Credited(to, amount);
+        if (unpaid != 0) {
+            _ledger().withdrawableOf[to] += unpaid;
+            emit Credited(to, unpaid);
         }
+    }
+
+    /// @dev `balanceOf(this)` that cannot revert, for `_payOrCredit`.
+    function _selfBalance(address token) private view returns (bool ok, uint256 bal) {
+        bytes memory data;
+        (ok, data) = token.staticcall(abi.encodeCall(IERC20.balanceOf, (address(this))));
+        if (!ok || data.length < 32) return (false, 0);
+        bal = abi.decode(data, (uint256));
     }
 
     function _vacate() internal {
@@ -327,6 +342,7 @@ abstract contract SlotAccounting is SlotModules {
         o.deposit = 0;
         o.since = 0;
         o.lastSettled = uint64(block.timestamp);
+        o.taxCarry = 0;
     }
 
     /**

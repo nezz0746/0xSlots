@@ -178,17 +178,14 @@ interface ISlotModule {
      *      is refused at the only moment somebody is around to fix it.
      *
      *      Not optional. `settings` is opaque to the slot: only the module knows
-     *      whether a given word means anything. Left unchecked, a slot attaches
+     *      whether given bytes mean anything. Left unchecked, a slot attaches
      *      a module with data it will reject on every callback, and since
      *      `before` is fail-closed, that is a slot nobody can ever buy.
      *
      *      A module that takes no configuration implements this as a no-op and
-     *      thereby accepts anything, including zero. Say so deliberately.
-     *
-     *      A module needing more than one word stores its configuration itself and
-     *      takes the hash here: see `SettingsStore`.
+     *      thereby accepts anything, including nothing. Say so deliberately.
      */
-    function checkSettings(bytes32 settings) external view;
+    function checkSettings(bytes calldata settings) external view;
 
     /**
      * @notice What this module asks of a slot configured with `settings`: the
@@ -210,7 +207,7 @@ interface ISlotModule {
      *      takes nothing; a non-zero `feeBps` needs a recipient and may not
      *      exceed 10_000.
      */
-    function manifest(bytes32 settings) external view returns (Manifest memory);
+    function manifest(bytes calldata settings) external view returns (Manifest memory);
 
     // ─── decisions: `view`, revert to veto ──────────────────────────────────
 

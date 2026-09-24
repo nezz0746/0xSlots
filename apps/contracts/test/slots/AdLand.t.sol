@@ -54,7 +54,7 @@ contract AdLandTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(adland), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(adland), settings: ""})
         }))));
 
         vm.deal(alice, 100 ether);
@@ -103,7 +103,7 @@ contract AdLandTest is Test {
         adland.publish(address(slot), "alice's ad");
 
         // Detach the module, so no `afterBuy` can possibly run, then reseat.
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: bytes32(0)}), uint8(8));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(8));
         vm.warp(block.timestamp + 8 days);
         _seat(bob, 1 ether);
 
@@ -284,7 +284,7 @@ contract AdLandTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
     }
 
@@ -306,7 +306,7 @@ contract AdLandTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(adland), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(adland), settings: ""})
         }))));
         uint256 dep = SlotMath.depositFor(1 ether, 500, 7 days);
 

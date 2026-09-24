@@ -8,7 +8,6 @@ import {ModuleSchemaLib} from "../../libraries/ModuleSchemaLib.sol";
 import {Manifest, ModuleTerms, PendingTerms} from "../../types/SlotTypes.sol";
 import {TermsLib} from "../../libraries/TermsLib.sol";
 import {MinimumTenure} from "../MinimumTenure.sol";
-import {SettingsStore} from "../base/SettingsStore.sol";
 import {AdLandCreatives} from "./AdLandCreatives.sol";
 import {AdLandModeration} from "./AdLandModeration.sol";
 import {AdConfig, ISlotAd, ModerationMode} from "./IAdLand.sol";
@@ -29,13 +28,12 @@ import {AdConfig, ISlotAd, ModerationMode} from "./IAdLand.sol";
 abstract contract AdLandModule is
     AdLandCreatives,
     MinimumTenure,
-    SettingsStore,
     ISlotModule,
     IDescribedModule
 {
     using ModuleSchemaLib for ModuleSchemaLib.Field;
 
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata settings) external pure returns (Manifest memory o) {
         Scopes memory f;
         // Every path that ends a tenure. `afterSettle` is tax moving under a
         // tenure that has not ended.
@@ -49,42 +47,44 @@ abstract contract AdLandModule is
         // {MinimumTenureModule} so there is one implementation rather than two
         // that drift.
         //
-        // Declared unconditionally because `manifest` is `pure` and
-        // cannot see a slot's data. Slots that configure no window pay one
-        // staticcall that returns immediately; the alternative is a flag the
-        // module could not honestly answer.
-        f.beforeBuy = true;
-        f.beforeSelfAssess = true;
+        // Asked for only when the settings configure a window. Without one both
+        // callbacks return at once, so a slot would be granting a veto that
+        // never fires. A slot that wants a window later proposes new settings,
+        // and the slot reads this again then.
+        if (_windowOf(settings) != 0) {
+            f.beforeBuy = true;
+            f.beforeSelfAssess = true;
+        }
         o.scopes = ScopesLib.pack(f);
     }
 
     /**
-     * @dev The word is the id of a registered {AdConfig}: window, moderation
-     *      mode and the key this slot asks for. ZERO configures nothing — no
+     * @dev The settings are `abi.encode(AdConfig)`: window, moderation mode
+     *      and the key this slot asks for. EMPTY configures nothing — no
      *      window, `Open`, no key — which is a legitimate advertising slot.
      *
      *      Everything a slot configures here is therefore a module term: changing
      *      any of it goes through `proposeTerms`, needs a mutable module, waits
      *      out the delay and lands at the next buy.
      */
-    function checkSettings(bytes32 id) external view {
-        if (id == bytes32(0)) return;
-        AdConfig memory c = adConfigOf(id);
-        if (c.tenureWindow != 0) tenureOf(bytes32(uint256(c.tenureWindow)));
+    function checkSettings(bytes calldata settings) external pure {
+        AdConfig memory c = adConfigOf(settings);
+        if (c.tenureWindow != 0) _checkedWindow(c.tenureWindow);
     }
 
-    /// @notice The configuration registered under `id`.
-    /// @dev Reverts when nothing is registered, which is what stops a slot
-    ///      attaching an id nobody wrote.
-    function adConfigOf(bytes32 id) public view returns (AdConfig memory) {
-        return abi.decode(_settingsById(id), (AdConfig));
+    /// @notice Decode a slot's settings. Empty is the default configuration.
+    /// @dev Reverts on anything that is not exactly one encoded {AdConfig}.
+    function adConfigOf(bytes memory settings) public pure returns (AdConfig memory c) {
+        if (settings.length == 0) return c;
+        if (settings.length != 96) revert MalformedSettings();
+        return abi.decode(settings, (AdConfig));
     }
 
     /// @notice What a slot configured, or the defaults when it configured nothing.
     function adConfig(address slot) public view returns (AdConfig memory c) {
         if (slot.code.length == 0) return c;
         try ISlotAd(slot).moduleTerms() returns (ModuleTerms memory terms) {
-            if (terms.target != address(this) || terms.settings == bytes32(0)) return c;
+            if (terms.target != address(this)) return c;
             return adConfigOf(terms.settings);
         } catch {
             return c;
@@ -106,7 +106,6 @@ abstract contract AdLandModule is
         try ISlotAd(slot).pendingTerms() returns (PendingTerms memory p) {
             if (p.mask & TermsLib.MODULE == 0) return live;
             if (p.moduleTerms.target != address(this)) return ModerationMode.Open;
-            if (p.moduleTerms.settings == bytes32(0)) return ModerationMode.Open;
             return adConfigOf(p.moduleTerms.settings).moderation;
         } catch {
             return live;
@@ -114,8 +113,7 @@ abstract contract AdLandModule is
     }
 
     /// @inheritdoc MinimumTenure
-    function _windowOf(bytes32 settings) internal view override returns (uint256) {
-        if (settings == bytes32(0)) return 0;
+    function _windowOf(bytes memory settings) internal pure override returns (uint256) {
         return adConfigOf(settings).tenureWindow;
     }
 
@@ -161,8 +159,24 @@ abstract contract AdLandModule is
 
     function onInstall(SlotContext calldata) external {}
 
-
-
+    /**
+     * @notice What this module claims to be, and what it takes.
+     *
+     * @dev Three values travelling together as one {AdConfig}, encoded as the
+     *      slot's settings.
+     *
+     *      Optional as a whole. A slot that leaves the settings empty is an
+     *      ordinary advertising slot with no window, no key and `Open`
+     *      moderation — not an unconfigured one.
+     *
+     *      The tenure field is the rule's own, declared by {MinimumTenure} with
+     *      its bounds and its `x-semantic` tag, so an application recognises the
+     *      behaviour here exactly as it does on {MinimumTenureModule} without
+     *      learning that AdLand hosts it.
+     *
+     *      `pure`, so it says what the module CAN enforce. What a given slot is
+     *      configured with is `Slot.moduleTerms().settings`.
+     */
     function definition() external pure returns (string memory) {
         return
             ModuleSchemaLib.describe(
@@ -187,8 +201,7 @@ abstract contract AdLandModule is
                         .explain("A registry name this slot asks for. Claimed first come, with claimKey.")
                         .means("adland-key")
                 ),
-                true, // three values do not fit a word, so the slot holds their id
-                true // and a slot may configure none of them
+                true // a slot may configure none of them
             );
     }
 

@@ -25,7 +25,7 @@ src/
 ├── types/SlotTypes.sol    # SlotInit, TaxTerms, ModuleTerms, Manifest, Terms, PendingTerms
 ├── interfaces/            # ISlotModule, IDescribedModule, ISlotEvents
 ├── libraries/             # ScopesLib, TermsLib, SlotMath, ModuleSchemaLib
-├── modules/               # MinimumTenureModule, AdLand, slot-bound NFTs, SettingsStore
+├── modules/               # MinimumTenureModule, AdLand, slot-bound NFTs
 ├── periphery/book/        # OfferBook — standing bids and the fill
 └── collectives/           # SlotCollective(Factory) — split recipient + role-gated manager
 ```
@@ -56,7 +56,7 @@ Shipped modules:
 - **`MinimumTenureModule`** — a protection window read from `settings`; buyouts
   inside it cost 10x.
 - **`AdLand`** — sponsor creatives with optional moderation and a minimum
-  tenure; configured through `SettingsStore`.
+  tenure; `settings` is an encoded `AdConfig`.
 - **`SlotBoundNFT`** / **`SlotBoundNFTWrapper`** — an ERC-721 owned by whoever
   occupies its slot; created by `SlotBoundNFTFactory`.
 

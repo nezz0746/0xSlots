@@ -35,7 +35,7 @@ contract OperatorTenureTest is Test {
             manager: address(this),
             mutableTax: true, mutableRecipient: true, mutableModule: true,
             taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(1_000), minRunwaySeconds: uint32(1 hours)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: bytes32(0)})
+            moduleTerms: ModuleTerms({target: address(0), settings: ""})
         }))));
         dep = PRICE * 1_000 * 1 hours / (30 days * 10_000) + 1;
         vm.deal(alice, 10 ether);

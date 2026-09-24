@@ -152,20 +152,37 @@ contract SlotBoundNFTWrapper is
         uint256 underlyingId,
         uint16 taxRateBps,
         uint256 valuation,
-        Mode mode
+        Mode mode,
+        uint256 maxFee
     ) external payable nonReentrant returns (uint256 tokenId, address slot) {
         // Read once: the owner could change it between quote and execution, and
         // a wrap should pay the fee it was priced at within this frame.
         uint256 fee = wrapFeeWei;
         if (msg.value < fee) revert FeeUnpaid(fee);
+        // And bounded by the caller. `msg.value` is fee plus escrow, so a fee
+        // raised between the quote and this transaction would otherwise be paid
+        // out of the depositor's runway — silently, not as a revert.
+        if (fee > maxFee) revert FeeAboveMax(fee, maxFee);
         // Everything above the fee is escrow. The slot enforces its own floor
         // on that remainder, and anything past the floor is simply longer
         // runway — the same latitude a feeless wrap has.
         uint256 deposit = msg.value - fee;
 
+        // One live wrap per token. The index is the only thing that ties a
+        // wrapper token back to what it escrows, and two live entries for one
+        // key would let the first withdrawal erase the second's.
+        if (_byUnderlying[_key(address(underlying), underlyingId)] != 0) {
+            revert AlreadyWrapped();
+        }
+
         // Plain `transferFrom`: no receiver callback, so no arbitrary code runs
         // inside this frame. See {onERC721Received}.
         underlying.transferFrom(msg.sender, address(this), underlyingId);
+        // Measured, not assumed — the ERC-20 leg in {SlotBoundNFT} measures its
+        // balance for the same reason. `underlying` is any contract the caller
+        // names, and one whose `transferFrom` does nothing would otherwise get
+        // a wrapper token and a slot for escrow that was never taken.
+        if (underlying.ownerOf(underlyingId) != address(this)) revert NotReceived();
 
         // Nothing below is re-validated here. `taxRateBps`, `valuation` and the
         // deposit floor are the slot's to enforce, and one validation means one
@@ -183,7 +200,7 @@ contract SlotBoundNFTWrapper is
                     rateBps: taxRateBps,
                     minRunwaySeconds: MIN_RUNWAY_SECONDS
                 }),
-                moduleTerms: ModuleTerms({target: address(this), settings: bytes32(0)})
+                moduleTerms: ModuleTerms({target: address(this), settings: ""})
             })
         );
 
@@ -332,7 +349,7 @@ contract SlotBoundNFTWrapper is
     ///      the bit thereafter, so a beacon upgrade could never retrofit the
     ///      retirement veto onto slots already created. Without it,
     ///      {beforeBuy} is never called and a retired slot stays buyable.
-    function manifest(bytes32) external pure returns (Manifest memory o) {
+    function manifest(bytes calldata) external pure returns (Manifest memory o) {
         Scopes memory f;
         f.beforeBuy = true; // the retirement veto
         f.afterBuy = true;
@@ -342,7 +359,7 @@ contract SlotBoundNFTWrapper is
         o.scopes = ScopesLib.pack(f);
     }
 
-    function checkSettings(bytes32) external view {}
+    function checkSettings(bytes calldata) external view {}
 
 
     /// @dev The one thing that stops a retired slot being sold. Merely clearing

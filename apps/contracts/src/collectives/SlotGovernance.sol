@@ -5,6 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
+import {ISlotModule} from "../interfaces/ISlotModule.sol";
 
 
 /// @notice The subset of `Slot` a collective drives.
@@ -14,6 +15,8 @@ interface IManagedSlot {
     function cancelTerms(uint8 mask) external;
 
     function grant(Manifest calldata expected) external;
+
+    function manifest() external view returns (Manifest memory);
 
     function collect() external;
 
@@ -120,11 +123,20 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      out of its own contract until it granted itself every role. This is
     ///      the "ADMIN can run all of them, OR you hold the specific role" rule.
     modifier onlyRoleOrAdmin(bytes32 role) {
+        _requireRoleOrAdmin(role);
+        _;
+    }
+
+    function _requireRoleOrAdmin(bytes32 role) internal view {
         if (!hasRole(role, msg.sender) && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert AccessControlUnauthorizedAccount(msg.sender, role);
         }
-        _;
     }
+
+    /// @dev The role that decides where this engine's revenue goes — the split
+    ///      manager of a split, the pool manager of a stream. Only the engine
+    ///      knows its name.
+    function _payoutRole() internal pure virtual returns (bytes32);
 
     // ═══════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -227,6 +239,17 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     }
 
     function _proposeModule(IManagedSlot slot, ModuleTerms calldata module) internal {
+        // A module that takes a fee takes it from the revenue this collective
+        // exists to divide, so attaching one is the payout role's decision as
+        // much as the policy role's. Without this the policy role could send
+        // every slot's rent to a module's fee recipient and the split's members
+        // would receive nothing, with the split itself untouched.
+        // Only a target with code can charge anything: the slot reads every
+        // module's manifest when it is proposed and refuses one it cannot read.
+        if (module.target.code.length != 0) {
+            Manifest memory m = ISlotModule(module.target).manifest(module.settings);
+            if (m.feeBps != 0) _requireRoleOrAdmin(_payoutRole());
+        }
         TaxTerms memory none;
         slot.proposeTerms(none, module, TermsLib.MODULE);
         emit TermsRelayed(
@@ -240,13 +263,18 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     /// @notice Accept the attached module's current manifest on `slot`: a new fee at
     ///         once, new scopes at the next buy.
     ///
-    /// @dev The policy manager's decision, like proposing a module. `expected` is
-    ///      the manifest they reviewed; the slot reverts if the module now declares
-    ///      anything else.
+    /// @dev The policy manager's decision, like proposing a module — and, for a
+    ///      higher fee, the payout role's as well. `expected` is the manifest they
+    ///      reviewed; the slot reverts if the module now declares anything else.
     function grant(IManagedSlot slot, Manifest calldata expected)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
+        // Raising the fee is the payout role's call too, for the reason given
+        // in {_proposeModule}. Lowering it, or accepting new scopes, is not.
+        if (expected.feeBps > slot.manifest().feeBps) {
+            _requireRoleOrAdmin(_payoutRole());
+        }
         slot.grant(expected);
         emit ScopesGrantRelayed(address(slot), msg.sender, expected);
     }

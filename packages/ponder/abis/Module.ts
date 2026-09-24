@@ -14,13 +14,13 @@ export const SlotModuleAbi = [
   {
     type: "function",
     name: "manifest",
-    inputs: [{ name: "config", type: "bytes32" }],
+    inputs: [{ name: "settings", type: "bytes" }],
     outputs: [
       {
         name: "",
         type: "tuple",
         components: [
-          { name: "scopes", type: "uint8" },
+          { name: "scopes", type: "uint16" },
           { name: "feeBps", type: "uint16" },
           { name: "feeRecipient", type: "address" },
         ],

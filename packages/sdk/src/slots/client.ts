@@ -15,6 +15,7 @@ import {
   type Hash,
   type Hex,
   type PublicClient,
+  size,
   type WalletClient,
   zeroAddress,
 } from "viem";
@@ -32,6 +33,8 @@ import { isNativeCurrency } from "../native";
 export const MAX_PRICE = 2n ** 128n - 1n;
 /** Ceiling on the monthly tax rate, in basis points. */
 export const MAX_TAX_BPS = 10_000n;
+/** `Slot.MAX_MIN_RUNWAY`: a year. The escrow floor scales with the runway. */
+export const MAX_MIN_RUNWAY_SECONDS = 365 * 24 * 60 * 60;
 export const BASIS_POINTS = 10_000n;
 /** The tax period. Basis points are per 30 days, not per year. */
 export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
@@ -44,11 +47,10 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
  * from {@link SlotsClient.hasRipeTerms}, which asks the chain's clock rather
  * than the browser's.
  */
-export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
+export const TERMS_DELAY_SECONDS = 60n * 60n;
 
-/** "This module configured nothing" — 32 zero bytes. */
-export const ZERO_SETTINGS =
-  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+/** "This module configured nothing": empty settings. */
+export const NO_SETTINGS = "0x" as const;
 
 /**
  * Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
@@ -78,9 +80,12 @@ export interface TaxTerms {
 
 /** The slot's module and its configuration. Mirrors `ModuleTerms`. */
 export interface ModuleTerms {
-  /** The module contract. {@link zeroAddress} for none, with `settings` zero too. */
+  /** The module contract. {@link zeroAddress} for none, with `settings` empty too. */
   target: Address;
-  /** This slot's settings for the module. Opaque to the slot. */
+  /**
+   * This slot's settings for the module: `abi.encode` of the fields its
+   * definition's `x-abi` lists. Opaque to the slot. {@link NO_SETTINGS} for none.
+   */
   settings: Hex;
 }
 
@@ -110,7 +115,7 @@ export const SCOPE_BITS = {
   onUninstall: 256,
 } as const;
 
-export const NO_MODULE: ModuleTerms = { target: zeroAddress, settings: ZERO_SETTINGS };
+export const NO_MODULE: ModuleTerms = { target: zeroAddress, settings: NO_SETTINGS };
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
@@ -136,7 +141,7 @@ export interface SlotInit {
 function fullModuleTerms(module?: Partial<ModuleTerms> & { target: Address }): ModuleTerms {
   return {
     target: module?.target ?? zeroAddress,
-    settings: module?.settings ?? ZERO_SETTINGS,
+    settings: module?.settings ?? NO_SETTINGS,
   };
 }
 
@@ -167,13 +172,16 @@ function assertTaxTerms(taxTerms: Partial<TaxTerms>, mask: number, where: string
   }
   if (mask & TERMS.MIN_RUNWAY) {
     const min = taxTerms.minRunwaySeconds ?? 0;
-    if (min < 0 || min > 0xffffffff)
-      throw new SlotsError(where, "minRunwaySeconds must fit in uint32");
+    if (min < 0 || min > MAX_MIN_RUNWAY_SECONDS)
+      throw new SlotsError(
+        where,
+        `minRunwaySeconds must be 0..${MAX_MIN_RUNWAY_SECONDS} (a year)`,
+      );
   }
 }
 
 function assertModule(module: ModuleTerms, where: string) {
-  if (module.target === zeroAddress && module.settings !== ZERO_SETTINGS)
+  if (module.target === zeroAddress && size(module.settings) !== 0)
     throw new SlotsError(where, "module settings need a module — pass a target, or drop the settings");
 }
 
@@ -284,13 +292,11 @@ export interface SlotTerms {
 }
 
 /**
- * The two reads any module may answer, declared here rather than taken from a
- * generated ABI.
+ * `definition()`, declared here rather than taken from a generated ABI.
  *
- * Both are optional surface that any module may implement, so borrowing one
- * module's ABI to call them on another would tie this to whichever module happened
- * to be generated. `settingsById` exists on every module that registers its
- * configuration rather than inlining it.
+ * Optional surface that any module may implement, so borrowing one module's
+ * ABI to call it on another would tie this to whichever module happened to be
+ * generated.
  */
 const describedModuleAbi = [
   {
@@ -299,13 +305,6 @@ const describedModuleAbi = [
     stateMutability: "pure",
     inputs: [],
     outputs: [{ type: "string" }],
-  },
-  {
-    type: "function",
-    name: "settingsById",
-    stateMutability: "view",
-    inputs: [{ name: "id", type: "bytes32" }],
-    outputs: [{ type: "bytes" }],
   },
 ] as const;
 
@@ -330,8 +329,6 @@ export interface ModuleSettingsSchema {
   type: "object";
   properties: Record<string, Record<string, unknown>>;
   required: string[];
-  /** `registered`: encode, `registerSettings`, attach the returned id. */
-  "x-settings-encoding": "inline" | "registered";
   /** Whether a slot may carry no configuration at all. */
   "x-optional"?: boolean;
   "x-abi": ModuleSettingsParam[];
@@ -523,6 +520,9 @@ export interface SlotsClientConfig {
  */
 /** `OfferBook.Offer` as viem decodes it. */
 type RawOffer = Omit<BookOffer, "id">;
+
+/** Board entries read per `boardPage` call. Far under any RPC's gas budget. */
+const BOARD_PAGE = 200n;
 
 const SIMULATION_ABI = [
   ...slotAbi,
@@ -762,9 +762,11 @@ export class SlotsClient {
    * inferring it against the wrong clock.
    */
   async pending(slot: Address): Promise<PendingTerms> {
-    return toPendingTerms(
-      await this.read<PendingTermsResult>(slot, "pendingTerms"),
-    );
+    const [p, ripe] = await Promise.all([
+      this.read<PendingTermsResult>(slot, "pendingTerms"),
+      this.hasRipeTerms(slot),
+    ]);
+    return toPendingTerms(p, ripe);
   }
 
   /** The token this slot is denominated in. {@link zeroAddress} means native ETH. */
@@ -859,7 +861,7 @@ export class SlotsClient {
    * What `module` asks of a slot configured with `settings`, as it declares it
    * today. Not what any slot has accepted: that is {@link manifest}.
    */
-  readManifest(module: Address, settings: Hex = ZERO_SETTINGS): Promise<Manifest> {
+  readManifest(module: Address, settings: Hex = NO_SETTINGS): Promise<Manifest> {
     return this.publicClient.readContract({
       address: module,
       abi: minimumTenureModuleAbi,
@@ -918,33 +920,20 @@ export class SlotsClient {
   }
 
   /**
-   * The bytes a slot's module settings stand for.
+   * A slot's module settings, decoded against the schema's `x-abi` — how a
+   * client reads back a configuration it did not write, for any module.
    *
-   * When a schema says `x-settings-encoding: "registered"`, the slot's word is an
-   * id and the values live in the module's own store. This resolves the word and
-   * decodes it against `x-abi`, which is how a client reads back a
-   * configuration it did not write — generically, for any module.
-   *
-   * `null` when the word is unregistered or does not decode.
+   * `null` when the settings are empty or do not decode.
    */
-  async moduleSettings(
-    module: Address,
+  moduleSettings(
     schema: ModuleSettingsSchema,
     settings: Hex,
-  ): Promise<Record<string, string> | null> {
+  ): Record<string, string> | null {
+    if (size(settings) === 0) return null;
     try {
-      let encoded = settings;
-      if (schema["x-settings-encoding"] === "registered") {
-        encoded = await this.publicClient.readContract({
-          address: module,
-          abi: describedModuleAbi,
-          functionName: "settingsById",
-          args: [settings],
-        });
-      }
       const values = decodeAbiParameters(
         schema["x-abi"] as readonly AbiParameter[],
-        encoded,
+        settings,
       );
       return Object.fromEntries(
         schema["x-abi"].map((p, i) => [p.name, String(values[i])]),
@@ -977,7 +966,7 @@ export class SlotsClient {
       settings: i.terms.moduleTerms.settings,
       manifest: i.terms.manifest,
       scopes: i.scopes,
-      pending: toPendingTerms(i.pending),
+      pending: toPendingTerms(i.pending, i.hasRipeTerms),
       occupiedSince: i.occupiedSince,
       lastSettled: i.lastSettled,
       collectedTax: i.collectedTax,
@@ -1416,19 +1405,42 @@ export class SlotsClient {
    * out by the book's own verdict, never recomputed here.
    */
   async offerBoard(slot: Address): Promise<OfferBoard> {
-    const [[list, live], liveCount, [found, bestId, best]] = await Promise.all([
-      this.bookRead<readonly [readonly RawOffer[], readonly boolean[]]>("board", [slot]),
-      this.bookRead<bigint>("liveCount", [slot]),
-      this.bookRead<readonly [boolean, bigint, RawOffer]>("best", [slot]),
-    ]);
-    const offers = list
-      .map((o, i) => ({ ...o, id: BigInt(i) }))
-      .filter((o) => live[Number(o.id)] === true)
-      .sort((a, b) => (b.price > a.price ? 1 : b.price < a.price ? -1 : 0));
+    // Paged, because the board only grows and every entry costs the book four
+    // foreign reads to judge: a few thousand dust bids would put a whole-board
+    // `board()` past the RPC's gas budget for ever. `best` and `liveCount` come
+    // from the same pages rather than two more whole-board calls.
+    const count = await this.bookRead<bigint>("offerCount", [slot]);
+    const pages: Promise<readonly [readonly RawOffer[], readonly boolean[]]>[] = [];
+    for (let start = 0n; start < count; start += BOARD_PAGE) {
+      pages.push(
+        this.bookRead<readonly [readonly RawOffer[], readonly boolean[]]>(
+          "boardPage",
+          [slot, start, BOARD_PAGE],
+        ),
+      );
+    }
+
+    const live: BookOffer[] = [];
+    let id = 0n;
+    for (const [list, isLive] of await Promise.all(pages)) {
+      list.forEach((o, i) => {
+        if (isLive[i] === true) live.push({ ...o, id: id + BigInt(i) });
+      });
+      id += BigInt(list.length);
+    }
+
+    // The book's own rule: the highest price, and the lowest id among equals —
+    // `bestIn` only moves on a strictly higher price.
+    let best: BookOffer | undefined;
+    for (const o of live) if (!best || o.price > best.price) best = o;
+
+    const offers = [...live].sort((a, b) =>
+      b.price > a.price ? 1 : b.price < a.price ? -1 : 0,
+    );
     return {
       offers,
-      liveCount,
-      ...(found ? { best: { ...best, id: bestId } } : {}),
+      liveCount: BigInt(live.length),
+      ...(best ? { best } : {}),
     };
   }
 
@@ -1890,7 +1902,7 @@ interface PendingTermsResult {
   scopes: number;
   mask: number;
   proposedAt: bigint;
-  ripe: boolean;
+  reviewedManifest: Hex;
 }
 
 /** `getSlotInfo()` as viem decodes it. */
@@ -1914,9 +1926,10 @@ interface SlotInfoResult {
   isInsolvent: boolean;
   secondsUntilLiquidation: bigint;
   pending: PendingTermsResult;
+  hasRipeTerms: boolean;
 }
 
-function toPendingTerms(p: PendingTermsResult): PendingTerms {
+function toPendingTerms(p: PendingTermsResult, ripe: boolean): PendingTerms {
   const isEmpty = p.mask === 0;
   return {
     taxTerms: p.taxTerms,
@@ -1930,7 +1943,7 @@ function toPendingTerms(p: PendingTermsResult): PendingTerms {
     hasScopes: (p.mask & TERMS.SCOPES) !== 0,
     proposedAt: p.proposedAt,
     appliesAt: isEmpty ? 0n : p.proposedAt + TERMS_DELAY_SECONDS,
-    applies: p.ripe,
+    applies: ripe,
     isEmpty,
   };
 }
