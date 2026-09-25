@@ -175,14 +175,9 @@ contract DeployAndDriveCollective is Script {
         Pending memory __p1 = slot.pending();
         TaxTerms memory pendingTaxTerms = __p1.taxTerms;
         uint16 mask = __p1.mask;
-        require(
-            mask & slot.getSlotConstants().termTaxRate != 0,
-            "the tax manager's proposal did not survive"
-        );
+        require(mask & slot.TERM_TAX_RATE() != 0, "the tax manager's proposal did not survive");
         require(pendingTaxTerms.rateBps == TAX_PROPOSED, "wrong tax survived");
-        require(
-            mask & slot.getSlotConstants().termModule == 0, "the module proposal was not cancelled"
-        );
+        require(mask & slot.TERM_MODULE() == 0, "the module proposal was not cancelled");
 
         // ── 7. a real buy, so the surviving proposal lands ──────────────────
         // Both reads are hoisted above the broadcast on purpose: forge refuses a

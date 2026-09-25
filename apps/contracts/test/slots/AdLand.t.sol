@@ -11,6 +11,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {AdView} from "../../src/modules/adland/IAdLand.sol";
 import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 
@@ -44,7 +45,7 @@ contract AdLandTest is Test {
         ERC1967Proxy fProxy = new ERC1967Proxy(address(factoryImpl), fInit);
         factory = SlotFactory(address(fProxy));
 
-        AdLand adImpl = new AdLand();
+        AdLand adImpl = new AdLand(new SlotLens());
         bytes memory aInit = abi.encodeCall(AdLand.initialize, (owner));
         ERC1967Proxy aProxy = new ERC1967Proxy(address(adImpl), aInit);
         adland = AdLand(address(aProxy));

@@ -7,6 +7,7 @@ import {
 import {Versioned} from "../../utils/Versioned.sol";
 import {AdLandLens} from "./AdLandLens.sol";
 import {AdLandRegistry} from "./AdLandRegistry.sol";
+import {SlotLens} from "../../periphery/lens/SlotLens.sol";
 
 /**
  * @title AdLand
@@ -26,6 +27,9 @@ import {AdLandRegistry} from "./AdLandRegistry.sol";
  *      construction, identity, and who may replace the code.
  */
 contract AdLand is AdLandLens, AdLandRegistry, MulticallUpgradeable {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor(SlotLens slotLens) AdLandLens(slotLens) {}
+
     function initialize(address initialOwner) external initializer {
         __Ownable_init(initialOwner);
     }

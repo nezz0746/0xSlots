@@ -2,9 +2,10 @@ import {
   minimumTenureModuleAbi,
   offerBookAbi,
   offerBookAddress,
-  slotFactoryAddress,
   slotAbi,
   slotFactoryAbi,
+  slotLensAbi,
+  slotLensAddress,
 } from "@0xslots/contracts/slots";
 import {
   type AbiParameter,
@@ -517,6 +518,12 @@ export interface SlotsClientConfig {
    * defaults to the book deployed on the wallet's chain.
    */
   offerBookAddress?: Address;
+  /**
+   * The `SlotLens`. {@link SlotsClient.slotState}, {@link SlotsClient.slotStates}
+   * and {@link SlotsClient.moduleUpdate} read through it, and it defaults to
+   * the lens deployed on the chain.
+   */
+  lensAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
@@ -565,12 +572,14 @@ export class SlotsClient {
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
   private readonly _offerBook?: Address;
+  private readonly _lens?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
     this._offerBook = config.offerBookAddress;
+    this._lens = config.lensAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -591,6 +600,24 @@ export class SlotsClient {
     if (!this._factory)
       throw new SlotsError("SlotsClient", "No factoryAddress provided");
     return this._factory;
+  }
+
+  /** The SlotLens this client reads through. */
+  private get lens(): Address {
+    const lens = this._lens ?? slotLensAddress[this.chain.id];
+    if (!lens)
+      throw new SlotsError("SlotsClient", "No lensAddress provided or deployed on this chain");
+    return lens;
+  }
+
+  /** A read on the lens. */
+  private readLens<T>(functionName: string, args: readonly unknown[]) {
+    return this.publicClient.readContract({
+      address: this.lens,
+      abi: slotLensAbi,
+      functionName,
+      args,
+    } as never) as Promise<T>;
   }
 
   /** The OfferBook this client sends to. */
@@ -976,35 +1003,15 @@ export class SlotsClient {
 
   /** The whole slot, as of one block, in one call. */
   async slotState(slot: Address): Promise<SlotState> {
-    const i = await this.read<SlotInfoResult>(slot, "getSlotInfo");
-    return {
-      occupant: i.occupant,
-      price: i.price,
-      deposit: i.deposit,
-      taxOwed: i.taxOwed,
-      isVacant: i.isVacant,
-      isInsolvent: i.isInsolvent,
-      secondsUntilLiquidation: i.secondsUntilLiquidation,
-      currency: i.currency,
-      taxRateBps: BigInt(i.terms.taxTerms.rateBps),
-      minRunwaySeconds: BigInt(i.terms.taxTerms.minRunwaySeconds),
-      recipient: i.terms.taxTerms.recipient,
-      manager: i.manager,
-      mutableTax: i.mutableTax,
-      mutableRecipient: i.mutableRecipient,
-      mutableModule: i.mutableModule,
-      module: i.terms.moduleTerms.module,
-      settings: i.terms.moduleTerms.settings,
-      scopes: i.scopes,
-      fee: i.fee,
-      pending: toPending(i.pending, i.hasRipeTerms),
-      occupiedSince: i.occupiedSince,
-      lastSettled: i.lastSettled,
-      collectedTax: i.collectedTax,
-      tenureId: i.tenureId,
-    };
+    return toSlotState(await this.readLens<SlotInfoResult>("getSlotInfo", [slot]));
   }
 
+  /** Several slots, as of one block, in one call. Throws if any is not a slot. */
+  async slotStates(slots: readonly Address[]): Promise<SlotState[]> {
+    if (slots.length === 0) return [];
+    const infos = await this.readLens<readonly SlotInfoResult[]>("getSlotInfos", [slots]);
+    return infos.map(toSlotState);
+  }
 
   /**
    * The smallest deposit `minRunwaySeconds` requires at `price`.
@@ -1634,63 +1641,24 @@ export class SlotsClient {
    * whether `acceptFee` / `acceptScopes` would change anything. Never throws
    * for a module that will not answer: `declared` is `null`.
    *
-   * Asks the factory, so the answer is the contract's own. Without a factory
-   * for the chain, the same checks run here.
+   * Asks the lens, so the answer is the contract's own.
    */
   async moduleUpdate(slot: Address): Promise<ModuleUpdate> {
-    const factory = this._factory ?? slotFactoryAddress[this.chain.id];
-    if (factory) {
-      const u = (await this.publicClient.readContract({
-        address: factory,
-        abi: slotFactoryAbi,
-        functionName: "moduleUpdate",
-        args: [slot],
-      })) as {
-        currentScopes: number;
-        currentFee: ModuleFee;
-        answered: boolean;
-        declaredScopes: number;
-        declaredFee: ModuleFee;
-        feeDiffers: boolean;
-        scopesDiffer: boolean;
-      };
-      return {
-        current: { scopes: u.currentScopes, fee: u.currentFee },
-        declared: u.answered ? { scopes: u.declaredScopes, fee: u.declaredFee } : null,
-        feeDiffers: u.feeDiffers,
-        scopesDiffer: u.scopesDiffer,
-      };
-    }
-
-    const i = await this.read<SlotInfoResult>(slot, "getSlotInfo");
-    const current = { scopes: packScopes(i.scopes), fee: i.fee };
-    const { module: target, settings } = i.terms.moduleTerms;
-    let declared: ModuleUpdate["declared"] = null;
-    if (target !== zeroAddress) {
-      try {
-        const [scopes, fee] = await Promise.all([
-          this.readScopes(target, settings),
-          this.readFee(target, settings),
-        ]);
-        declared = { scopes, fee };
-      } catch {
-        declared = null;
-      }
-    }
-    if (!declared) return { current, declared, feeDiffers: false, scopesDiffer: false };
-
-    const feeChanged =
-      declared.fee.bps !== current.fee.bps ||
-      declared.fee.recipient.toLowerCase() !== current.fee.recipient.toLowerCase();
-    // A rise needs a movable recipient, as `acceptFee` requires.
-    const feeDiffers =
-      feeChanged && (declared.fee.bps <= current.fee.bps || i.mutableRecipient);
-    const p = i.pending;
-    const moduleQueued = (p.mask & TERMS.MODULE) !== 0;
-    const alreadyQueued = (p.mask & TERMS.SCOPES) !== 0 && p.nextModule.scopes === declared.scopes;
-    const scopesDiffer =
-      i.mutableModule && !moduleQueued && !alreadyQueued && declared.scopes !== current.scopes;
-    return { current, declared, feeDiffers, scopesDiffer };
+    const u = await this.readLens<{
+      currentScopes: number;
+      currentFee: ModuleFee;
+      answered: boolean;
+      declaredScopes: number;
+      declaredFee: ModuleFee;
+      feeDiffers: boolean;
+      scopesDiffer: boolean;
+    }>("moduleUpdate", [slot]);
+    return {
+      current: { scopes: u.currentScopes, fee: u.currentFee },
+      declared: u.answered ? { scopes: u.declaredScopes, fee: u.declaredFee } : null,
+      feeDiffers: u.feeDiffers,
+      scopesDiffer: u.scopesDiffer,
+    };
   }
 
   /**
@@ -2006,7 +1974,37 @@ interface InstalledModuleResult {
   settings: Hex;
 }
 
-/** `getSlotInfo()` as viem decodes it. */
+/** `SlotLens.getSlotInfo` as the client hands it out. */
+function toSlotState(i: SlotInfoResult): SlotState {
+  return {
+    occupant: i.occupant,
+    price: i.price,
+    deposit: i.deposit,
+    taxOwed: i.taxOwed,
+    isVacant: i.isVacant,
+    isInsolvent: i.isInsolvent,
+    secondsUntilLiquidation: i.secondsUntilLiquidation,
+    currency: i.currency,
+    taxRateBps: BigInt(i.terms.taxTerms.rateBps),
+    minRunwaySeconds: BigInt(i.terms.taxTerms.minRunwaySeconds),
+    recipient: i.terms.taxTerms.recipient,
+    manager: i.manager,
+    mutableTax: i.mutableTax,
+    mutableRecipient: i.mutableRecipient,
+    mutableModule: i.mutableModule,
+    module: i.terms.moduleTerms.module,
+    settings: i.terms.moduleTerms.settings,
+    scopes: i.scopes,
+    fee: i.fee,
+    pending: toPending(i.pending, i.hasRipeTerms),
+    occupiedSince: i.occupiedSince,
+    lastSettled: i.lastSettled,
+    collectedTax: i.collectedTax,
+    tenureId: i.tenureId,
+  };
+}
+
+/** `SlotLens.getSlotInfo` as viem decodes it. */
 interface SlotInfoResult {
   currency: Address;
   manager: Address;

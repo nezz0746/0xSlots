@@ -40,6 +40,7 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 | **Slot** | Core primitive — occupancy, pricing, deposits, tax, liquidation |
 | **SlotFactory** | UUPS-upgradeable factory deploying Slots behind one beacon |
 | **OfferBook** | Standing bids; the occupant accepts one to sell |
+| **SlotLens** | UUPS-upgradeable reads: a whole slot, many slots, constants, module updates |
 | **SlotCollective** | Splits payout + role-gated management for a slot's terms |
 | **SlotCollectiveFactory** | Mints collectives behind one upgradeable beacon |
 | **MinimumTenureModule** | Module — a minimum holding window, one deployment for every duration |
@@ -49,13 +50,13 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 A slot installs at most one **module** (`ISlotModule`) — the single extension
 point. Its `before` callbacks may refuse a buy or a reprice; its `after`
 callbacks are told what happened, gas-capped and unable to block anything unless
-the module declares `afterCallbacksMustSucceed`. The module's manifest lists the scopes it needs
-and any fee it takes, and the slot keeps its own copy.
+the module declares `afterCallbacksMustSucceed`. The module declares the scopes
+it needs and any fee it takes, and the slot keeps its own copy.
 
 Slots are immutable by default. Tax, recipient and module are each optionally
 mutable by a manager — three independent flags, because they are three
 different promises. Changes are queued, not applied: they land at the next buy
-after a one-day delay, so terms cannot shift under someone mid-tenancy.
+after a one-hour delay, so terms cannot shift under someone mid-tenancy.
 
 See [apps/contracts/README.md](apps/contracts/README.md) and the
 [docs](apps/docs) for the full picture.

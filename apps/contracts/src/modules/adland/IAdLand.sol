@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInfo} from "../../slot/SlotViews.sol";
+import {SlotInfo} from "../../periphery/lens/SlotLens.sol";
 import {ModuleTerms, Pending} from "../../types/SlotTypes.sol";
 
 /// @dev The slice of `Slot` AdLand calls. Narrow on purpose: declaring the
 ///      whole surface would recompile this on every unrelated change to it.
 interface ISlotAd {
-    function getSlotInfo() external view returns (SlotInfo memory);
     function occupant() external view returns (address);
     function tenureId() external view returns (uint64);
     function currency() external view returns (address);

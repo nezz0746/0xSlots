@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInfo} from "../../slot/SlotViews.sol";
-
 /// @dev The slice of `Slot` this collection calls. Narrow on purpose: declaring
 ///      the whole surface would recompile it on every unrelated change.
 interface ISlotOccupancy {
     function occupant() external view returns (address);
 
     function minDepositForBuy(uint256 price) external view returns (uint256);
-
-    function getSlotInfo() external view returns (SlotInfo memory);
 
     function buy(
         address account,

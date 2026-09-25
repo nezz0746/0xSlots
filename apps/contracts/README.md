@@ -27,6 +27,7 @@ src/
 ├── libraries/             # ScopesLib, TermsLib, SlotMath, ModuleSchemaLib
 ├── modules/               # MinimumTenureModule, AdLand, slot-bound NFTs
 ├── periphery/book/        # OfferBook — standing bids and the fill
+├── periphery/lens/        # SlotLens — whole slots, many slots, constants, module updates
 └── collectives/           # SlotCollective(Factory) — split recipient + role-gated manager
 ```
 

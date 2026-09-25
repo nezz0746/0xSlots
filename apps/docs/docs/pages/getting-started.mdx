@@ -53,7 +53,7 @@ const state = await client.slotState("0x...");
 const cost = await client.quoteBuy("0x...", buyer, depositAmount); // what buy() charges
 ```
 
-`slotState` is one `getSlotInfo()` call, so every figure is from the same block.
+`slotState` is one `SlotLens.getSlotInfo` call, so every figure is from the same block.
 
 ## Create a slot
 

@@ -12,7 +12,6 @@ import {ISlotModule, Scopes, SlotContext} from "../../interfaces/ISlotModule.sol
 import {ScopesLib} from "../../libraries/ScopesLib.sol";
 import {SlotFactory} from "../../SlotFactory.sol";
 import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../types/SlotTypes.sol";
-import {SlotInfo} from "../../slot/SlotViews.sol";
 import {SlotMath} from "../../libraries/SlotMath.sol";
 import {ISlotBoundNFT, ISlotOccupancy} from "./ISlotBoundNFT.sol";
 
@@ -157,12 +156,6 @@ contract SlotBoundNFT is ERC721, Ownable, ReentrancyGuard, ISlotModule, ISlotBou
             valuation, _terms.taxTerms.rateBps, _terms.taxTerms.minRunwaySeconds
         );
         return (valuation + deposit, valuation, deposit);
-    }
-
-    function getSlotInfoOf(uint256 tokenId) external view returns (SlotInfo memory) {
-        address slot = slotOf[tokenId];
-        if (slot == address(0)) revert NoSuchToken(tokenId);
-        return ISlotOccupancy(slot).getSlotInfo();
     }
 
     /// @notice The whole of what {Ownable} is for here; the owner holds no

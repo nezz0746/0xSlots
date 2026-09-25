@@ -7,6 +7,7 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 
 /**
@@ -47,6 +48,12 @@ contract UpgradeSafetyTest is Test {
         impl.initialize(address(this), slotImpl);
     }
 
+    function test_SlotLensImplementationIsLocked() public {
+        SlotLens impl = new SlotLens();
+        vm.expectRevert();
+        impl.initialize(address(this));
+    }
+
     /// @notice The book has no initializer to lock, and that is the point.
     /// @dev It is not behind a proxy: occupants make it their slot's operator,
     ///      and an operator may reprice. An upgradeable book would mean every
@@ -76,7 +83,8 @@ contract UpgradeSafetyTest is Test {
         assertGt(new SlotFactory().version(), 0, "SlotFactory");
         assertGt(new OfferBook().version(), 0, "OfferBook");
         assertGt(new SlotCollectiveFactory().version(), 0, "SlotCollectiveFactory");
-        assertGt(new AdLand().version(), 0, "AdLand");
+        assertGt(new SlotLens().version(), 0, "SlotLens");
+        assertGt(new AdLand(new SlotLens()).version(), 0, "AdLand");
     }
 
     /// @notice And the two numbers do not pretend to be each other.

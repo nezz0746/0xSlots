@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInfo} from "../../slot/SlotViews.sol";
+import {SlotInfo, SlotLens} from "../../periphery/lens/SlotLens.sol";
 import {AdLandStorage} from "./AdLandStorage.sol";
 import {AdView, Creative, ISlotAd} from "./IAdLand.sol";
 
@@ -14,8 +14,23 @@ import {AdView, Creative, ISlotAd} from "./IAdLand.sol";
  *      genuinely be in, and none should arrive at the SDK as a failed RPC it has
  *      to tell apart from a network error. They come back as zero, and
  *      `slot == address(0)` is the cue to draw nothing.
+ *
+ *      The slot half of the answer comes from `SLOT_LENS`, the protocol's
+ *      reader, so AdLand never keeps its own copy of how a slot is read.
  */
 abstract contract AdLandLens is AdLandStorage {
+    error NoSlotLens();
+
+    /// @notice Where the slot half of `ad()` is read.
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    SlotLens public immutable SLOT_LENS;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor(SlotLens slotLens) {
+        if (address(slotLens) == address(0)) revert NoSlotLens();
+        SLOT_LENS = slotLens;
+    }
+
     /// @notice Resolve a named slot and read it, in one call.
     function adByKey(bytes32 key) external view returns (AdView memory) {
         return ad(slotOf[key]);
@@ -35,10 +50,10 @@ abstract contract AdLandLens is AdLandStorage {
 
         v.slot = slot;
 
-        // One call. `SlotInfo` carries the tenure and the module, so the
+        // One read. `SlotInfo` carries the tenure and the module, so the
         // creative resolves from the same result rather than from two more
         // reads.
-        try ISlotAd(slot).getSlotInfo() returns (SlotInfo memory info) {
+        try SLOT_LENS.getSlotInfo(slot) returns (SlotInfo memory info) {
             v.info = info;
             v.managed = info.terms.moduleTerms.module == address(this);
 

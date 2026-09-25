@@ -198,11 +198,6 @@ export class CollectionsClient {
     return this.read<string>(collection, "tokenURI", [tokenId]);
   }
 
-  /** The token's slot state — price, occupant, escrow, runway. */
-  getSlotInfoOf(collection: Address, tokenId: bigint) {
-    return this.read(collection, "getSlotInfoOf", [tokenId]);
-  }
-
   /** Where `tokenURI` is built from. Empty until the owner sets one. */
   baseURI(collection: Address): Promise<string> {
     return this.read<string>(collection, "baseURI");

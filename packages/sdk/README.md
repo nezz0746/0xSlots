@@ -22,7 +22,7 @@ const client = new SlotsClient({
   factoryAddress: slotFactoryAddress[chainId],   // only createSlot / collectAll need it
 });
 
-const state = await client.slotState(slot);      // one getSlotInfo() call
+const state = await client.slotState(slot);      // one SlotLens.getSlotInfo call
 
 // `account` is who becomes occupant — it need not be the signer.
 await client.buy({
@@ -45,7 +45,7 @@ for querying it directly — see [Indexer](https://docs.0xslots.org/indexer).
 
 | Area | Methods |
 | --- | --- |
-| Reads | `slotState`, `quoteBuy`, `minDepositForBuy`, `minDepositToHold`, `pending`, `hasRipeTerms`, `terms`, `module`, `scopes`, `fee`, `moduleUpdate`, `debtOf`, `claimableOf`, `isOperator`, and getters for the common fields |
+| Reads | `slotState`, `slotStates`, `quoteBuy`, `minDepositForBuy`, `minDepositToHold`, `pending`, `hasRipeTerms`, `terms`, `module`, `scopes`, `fee`, `moduleUpdate`, `debtOf`, `claimableOf`, `isOperator`, and getters for the common fields |
 | Create | `createSlot`, `simulateCreateSlot` |
 | Occupancy | `buy`, `simulateBuy`, `liquidateAndBuy`, `release`, `liquidate` |
 | Holding | `selfAssess`, `topUp`, `withdraw`, `manageTerms`, `setOperator` |

@@ -14,6 +14,7 @@ const client = new SlotsClient({
   walletClient,      // viem WalletClient — every write; needs an account and a chain
   factoryAddress,    // SlotFactory — only createSlot and the collectAll family
   offerBookAddress,  // OfferBook — defaults to the one recorded for the wallet's chain
+  lensAddress,       // SlotLens — slotState, slotStates, moduleUpdate; same default
 });
 ```
 
@@ -28,12 +29,13 @@ const state = await client.slotState(slot);
 // occupant, price, deposit, taxOwed, isVacant, isInsolvent,
 // secondsUntilLiquidation, currency, taxRateBps, minRunwaySeconds, recipient,
 // manager, mutableTax, mutableRecipient, mutableModule, module, settings,
-// manifest, scopes, pending, occupiedSince, lastSettled, collectedTax, tenureId
+// fee, scopes, pending, occupiedSince, lastSettled, collectedTax, tenureId
 ```
 
-`slotState` is one `getSlotInfo()` call. Individual reads exist for the common
+`slotState` is one `SlotLens.getSlotInfo` call, and `slotStates(slots)` reads
+many in one call. Individual reads exist for the common
 fields (`occupant`, `price`, `deposit`, `taxOwed`, `module`, `scopes`,
-`manifest`, `terms`, `tenureId`, …), plus:
+`fee`, `terms`, `tenureId`, …), plus:
 
 | Method | Returns |
 |---|---|
@@ -43,7 +45,7 @@ fields (`occupant`, `price`, `deposit`, `taxOwed`, `module`, `scopes`,
 | `pending(slot)` | queued terms, with `appliesAt` and `applies` |
 | `hasRipeTerms(slot)` | whether the next buy lands them — the chain's clock, not yours |
 | `fee(slot)` / `scopes(slot)` | the module's fee and scopes, as the slot copied them |
-| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }`, from the factory |
+| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }`, from the lens |
 | `debtOf(slot, account)` / `claimableOf(slot, account?)` | debt carried / credits to `claim` |
 | `isOperator(slot, operator)` | live, per tenure |
 

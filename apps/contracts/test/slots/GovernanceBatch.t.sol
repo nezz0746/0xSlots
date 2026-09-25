@@ -84,7 +84,7 @@ contract GovernanceBatchTest is Test {
     function test_ATaxBatchMovesEverySlot() public {
         gov.proposeTaxBatch(slots, 2000);
         for (uint256 i; i < slots.length; ++i) {
-            assertEq(Slot(payable(address(slots[i]))).getSlotInfo().pending.taxTerms.rateBps, 2000);
+            assertEq(Slot(payable(address(slots[i]))).pending().taxTerms.rateBps, 2000);
         }
     }
 
@@ -116,7 +116,7 @@ contract GovernanceBatchTest is Test {
         vm.expectRevert();
         gov.proposeTaxBatch(withStranger, 2000);
         assertEq(
-            Slot(payable(address(slots[0]))).getSlotInfo().pending.taxTerms.rateBps,
+            Slot(payable(address(slots[0]))).pending().taxTerms.rateBps,
             0,
             "and the good one did not move either"
         );
@@ -125,7 +125,7 @@ contract GovernanceBatchTest is Test {
     function test_AModuleBatchMovesEverySlot() public {
         gov.proposeModuleBatch(slots, ModuleTerms({module: address(0), settings: ""}));
         for (uint256 i; i < slots.length; ++i) {
-            assertTrue(Slot(payable(address(slots[i]))).getSlotInfo().pending.mask & 8 != 0);
+            assertTrue(Slot(payable(address(slots[i]))).pending().mask & 8 != 0);
         }
     }
 
@@ -141,7 +141,7 @@ contract GovernanceBatchTest is Test {
 
         gov.cancelTaxProposalBatch(slots);
         for (uint256 i; i < slots.length; ++i) {
-            assertFalse(Slot(payable(address(slots[i]))).getSlotInfo().pending.mask & 1 != 0);
+            assertFalse(Slot(payable(address(slots[i]))).pending().mask & 1 != 0);
         }
     }
 
@@ -150,8 +150,8 @@ contract GovernanceBatchTest is Test {
         gov.proposeModule(slots[0], ModuleTerms({module: address(0), settings: ""}));
         gov.cancelAllProposalsBatch(slots);
 
-        assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pending.mask & 1 != 0);
-        assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pending.mask & 8 != 0);
+        assertFalse(Slot(payable(address(slots[0]))).pending().mask & 1 != 0);
+        assertFalse(Slot(payable(address(slots[0]))).pending().mask & 8 != 0);
     }
 
     function test_AStrangerCannotBatch() public {

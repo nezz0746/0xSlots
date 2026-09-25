@@ -11,6 +11,7 @@ import {Test} from "forge-std/Test.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 import {MinimumTenure} from "../../src/modules/MinimumTenure.sol";
 import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
@@ -48,7 +49,7 @@ contract AdLandTenureTest is Test, SlotConstants {
         );
         factory = SlotFactory(address(fProxy));
 
-        AdLand adImpl = new AdLand();
+        AdLand adImpl = new AdLand(new SlotLens());
         ERC1967Proxy aProxy =
             new ERC1967Proxy(address(adImpl), abi.encodeCall(AdLand.initialize, (owner)));
         adland = AdLand(address(aProxy));

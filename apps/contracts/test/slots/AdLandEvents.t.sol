@@ -9,6 +9,7 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 
 /**
  * The events the indexer reads, asserted from the outside.
@@ -43,7 +44,7 @@ contract AdLandEventsTest is Test {
             )
         );
 
-        AdLand impl = new AdLand();
+        AdLand impl = new AdLand(new SlotLens());
         adland = AdLand(
             address(new ERC1967Proxy(address(impl), abi.encodeCall(AdLand.initialize, (owner))))
         );

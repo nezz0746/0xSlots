@@ -32,6 +32,7 @@ const MANAGER = "0x6666666666666666666666666666666666666666" as const;
 const TAKER = "0x9999999999999999999999999999999999999999" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 const OFFER_BOOK = "0x8888888888888888888888888888888888888888" as const;
+const LENS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
 
 const CHAIN_ID = 8453;
 
@@ -59,8 +60,6 @@ function harness(
    * which is the only simulate most tests reach; `collectAll` returns amounts.
    */
   simulateResult: unknown = SLOT,
-  /** `false` for a client with no factory, as on a chain without one. */
-  factory: boolean = true,
 ) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which is
@@ -82,8 +81,9 @@ function harness(
   const signTypedData = vi.fn(async (_args: any) => "0xsignature" as const);
 
   const client = new SlotsClient({
-    factoryAddress: factory ? FACTORY : undefined,
+    factoryAddress: FACTORY,
     offerBookAddress: OFFER_BOOK,
+    lensAddress: LENS,
     // Evict-and-take is periphery now. Wired here so every test exercises the
     // real routing rather than a client that quietly has nowhere to send it.
     publicClient: {
@@ -706,33 +706,7 @@ describe("reads", () => {
     expect(await client.scopes(SLOT)).toEqual(scopes);
   });
 
-  it("moduleUpdate runs the same checks itself on a chain with no factory", async () => {
-    const settleOnly = unpackScopes(SCOPE_BITS.afterSettle);
-    const { client } = harness({
-      getSlotInfo: {
-        mutableModule: true,
-        mutableRecipient: true,
-        terms: { taxTerms: TAX_TERMS_NONE, moduleTerms: { module: MODULE, settings: NO_SETTINGS } },
-        scopes: settleOnly,
-        fee: { bps: 100, recipient: MODULE },
-        pending: { taxTerms: TAX_TERMS_NONE, nextModule: { module: NO_MODULE.module, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_MODULE.settings }, mask: 0, proposedAt: 0n },
-        hasRipeTerms: false,
-      },
-      scopes: SCOPE_BITS.afterSettle | SCOPE_BITS.afterBuy,
-      fee: { bps: 200, recipient: MODULE },
-    }, undefined, SLOT, false);
-    expect(await client.moduleUpdate(SLOT)).toEqual({
-      current: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 100, recipient: MODULE } },
-      declared: {
-        scopes: SCOPE_BITS.afterSettle | SCOPE_BITS.afterBuy,
-        fee: { bps: 200, recipient: MODULE },
-      },
-      feeDiffers: true,
-      scopesDiffer: true,
-    });
-  });
-
-  it("moduleUpdate takes the factory's answer", async () => {
+  it("moduleUpdate takes the lens's answer", async () => {
     const { client, readContract } = harness(
       {
         moduleUpdate: {
@@ -753,7 +727,7 @@ describe("reads", () => {
       scopesDiffer: false,
     });
     expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
-      address: FACTORY,
+      address: LENS,
       functionName: "moduleUpdate",
       args: [SLOT],
     });
@@ -905,7 +879,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
   });
 
   it("slotState carries tenureId, so a cache can be keyed on it", async () => {
-    const { client } = harness({
+    const { client, readContract } = harness({
       getSlotInfo: {
         currency: ERC20,
         manager: ZERO,
@@ -951,6 +925,58 @@ describe("operator approvals belong to a tenure, not to an address", () => {
     expect(state.tenureId).toBe(12n);
     expect(state.taxRateBps).toBe(250n);
     expect(state.pending.isEmpty).toBe(true);
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
+      address: LENS,
+      functionName: "getSlotInfo",
+      args: [SLOT],
+    });
+  });
+
+  it("slotStates reads many slots in one lens call", async () => {
+    const { client: one, readContract: single } = harness({});
+    expect(await one.slotStates([])).toEqual([]);
+    expect(single).not.toHaveBeenCalled();
+
+    const info = (tenureId: bigint) => ({
+      currency: ERC20,
+      manager: ZERO,
+      mutableTax: false,
+      mutableRecipient: false,
+      mutableModule: false,
+      terms: {
+        taxTerms: { recipient: ACCOUNT, rateBps: 250, minRunwaySeconds: 0 },
+        moduleTerms: NO_MODULE,
+      },
+      scopes: unpackScopes(0),
+      occupant: ZERO,
+      price: 0n,
+      deposit: 0n,
+      occupiedSince: 0n,
+      tenureId,
+      lastSettled: 0n,
+      taxOwed: 0n,
+      collectedTax: 0n,
+      isVacant: true,
+      isInsolvent: false,
+      secondsUntilLiquidation: 0n,
+      fee: { bps: 0, recipient: ZERO },
+      pending: {
+        taxTerms: TAX_TERMS_NONE,
+        nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+        mask: 0,
+        proposedAt: 0n,
+      },
+      hasRipeTerms: false,
+    });
+    const { client, readContract } = harness({ getSlotInfos: [info(1n), info(2n)] });
+    const states = await client.slotStates([SLOT, SLOT_B]);
+    expect(states.map((s) => s.tenureId)).toEqual([1n, 2n]);
+    expect(readContract).toHaveBeenCalledTimes(1);
+    expect(readContract.mock.calls[0]![0]).toMatchObject({
+      address: LENS,
+      functionName: "getSlotInfos",
+      args: [[SLOT, SLOT_B]],
+    });
   });
 });
 

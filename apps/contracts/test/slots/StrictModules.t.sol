@@ -11,7 +11,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInfo} from "../../src/slot/SlotViews.sol";
 import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
@@ -224,12 +223,12 @@ contract StrictModulesTest is Test {
 
     function test_TheFlagIsSnapshottedAndPublished() public {
         Slot s = _slot(address(new FailingAfter(true)));
-        SlotInfo memory i = s.getSlotInfo();
-        assertTrue(i.scopes.afterCallbacksMustSucceed, "a buyer can read it before committing");
-        assertTrue(i.scopes.afterBuy, "and the callbacks alongside it");
+        Scopes memory i = s.scopes();
+        assertTrue(i.afterCallbacksMustSucceed, "a buyer can read it before committing");
+        assertTrue(i.afterBuy, "and the callbacks alongside it");
 
-        SlotInfo memory j = _slot(address(new FailingAfter(false))).getSlotInfo();
-        assertFalse(j.scopes.afterCallbacksMustSucceed, "default is off");
+        Scopes memory j = _slot(address(new FailingAfter(false))).scopes();
+        assertFalse(j.afterCallbacksMustSucceed, "default is off");
     }
 
     /// @notice A module that flips its answer later cannot change a live slot.
@@ -238,7 +237,7 @@ contract StrictModulesTest is Test {
     function test_TheSnapshotBeatsALaterChangeOfMind() public {
         Flipper h = new Flipper();
         Slot s = _slot(address(h));
-        assertFalse(s.getSlotInfo().scopes.afterCallbacksMustSucceed, "attached lenient");
+        assertFalse(s.scopes().afterCallbacksMustSucceed, "attached lenient");
 
         h.flip();
         assertTrue(

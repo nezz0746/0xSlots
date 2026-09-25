@@ -7,10 +7,10 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
-import {SlotFactory, ModuleUpdate} from "../../src/SlotFactory.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {SlotLens, ModuleUpdate} from "../../src/periphery/lens/SlotLens.sol";
 import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
-import {NotASlot} from "../../src/errors/SlotErrors.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 /// @dev Scopes and a fee its owner can change at any time.
@@ -43,13 +43,14 @@ contract LensModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 }
 
-/// @notice `SlotFactory.moduleUpdate` says what `acceptFee` and `acceptScopes`
+/// @notice `SlotLens.moduleUpdate` says what `acceptFee` and `acceptScopes`
 ///         would do, and never reverts on a module that misbehaves.
 contract ModuleUpdateTest is Test {
     uint16 constant SETTLE = ScopesLib.AFTER_SETTLE;
     uint16 constant SETTLE_AND_BUY = ScopesLib.AFTER_SETTLE | ScopesLib.AFTER_BUY;
 
     SlotFactory factory;
+    SlotLens lens = new SlotLens();
     address author = makeAddr("author");
 
     function setUp() public {
@@ -86,7 +87,7 @@ contract ModuleUpdateTest is Test {
     }
 
     function test_NoModuleIsNoAnswer() public {
-        ModuleUpdate memory u = factory.moduleUpdate(address(_slot(address(0), true, true)));
+        ModuleUpdate memory u = lens.moduleUpdate(address(_slot(address(0), true, true)));
         assertFalse(u.answered);
         assertFalse(u.feeDiffers);
         assertFalse(u.scopesDiffer);
@@ -95,7 +96,7 @@ contract ModuleUpdateTest is Test {
     function test_NothingNewIsNothingToAccept() public {
         LensModule m = new LensModule();
         m.set(1_000, author);
-        ModuleUpdate memory u = factory.moduleUpdate(address(_slot(address(m), true, true)));
+        ModuleUpdate memory u = lens.moduleUpdate(address(_slot(address(m), true, true)));
         assertTrue(u.answered);
         assertEq(u.currentScopes, SETTLE);
         assertEq(u.currentFee.bps, 1_000);
@@ -110,7 +111,7 @@ contract ModuleUpdateTest is Test {
         m.set(2_000, author);
         m.setScopes(SETTLE_AND_BUY);
 
-        ModuleUpdate memory u = factory.moduleUpdate(address(s));
+        ModuleUpdate memory u = lens.moduleUpdate(address(s));
         assertEq(u.declaredFee.bps, 2_000);
         assertEq(u.declaredScopes, SETTLE_AND_BUY);
         assertTrue(u.feeDiffers);
@@ -125,7 +126,7 @@ contract ModuleUpdateTest is Test {
         LensModule m = new LensModule();
         Slot s = _slot(address(m), false, true);
         m.set(2_000, author);
-        assertFalse(factory.moduleUpdate(address(s)).feeDiffers, "acceptFee would revert");
+        assertFalse(lens.moduleUpdate(address(s)).feeDiffers, "acceptFee would revert");
 
         // A cut still is.
         LensModule cheap = new LensModule();
@@ -146,40 +147,35 @@ contract ModuleUpdateTest is Test {
                 ))
         );
         cheap.set(500, author);
-        assertTrue(factory.moduleUpdate(address(t)).feeDiffers);
+        assertTrue(lens.moduleUpdate(address(t)).feeDiffers);
     }
 
     function test_ScopesAreNotOnOfferWhenTheyCannotBeAccepted() public {
         LensModule m = new LensModule();
         Slot locked = _slot(address(m), true, false);
         m.setScopes(SETTLE_AND_BUY);
-        assertFalse(factory.moduleUpdate(address(locked)).scopesDiffer, "module is immutable");
+        assertFalse(lens.moduleUpdate(address(locked)).scopesDiffer, "module is immutable");
 
         LensModule n = new LensModule();
         Slot s = _slot(address(n), true, true);
         n.setScopes(SETTLE_AND_BUY);
         s.acceptScopes(SETTLE_AND_BUY);
-        assertFalse(factory.moduleUpdate(address(s)).scopesDiffer, "already queued");
+        assertFalse(lens.moduleUpdate(address(s)).scopesDiffer, "already queued");
 
         LensModule o = new LensModule();
         Slot t = _slot(address(o), true, true);
         TaxTerms memory none;
         t.proposeTerms(none, ModuleTerms({module: address(new LensModule()), settings: ""}), 8);
         o.setScopes(SETTLE_AND_BUY);
-        assertFalse(factory.moduleUpdate(address(t)).scopesDiffer, "a new module is queued");
+        assertFalse(lens.moduleUpdate(address(t)).scopesDiffer, "a new module is queued");
     }
 
     function test_AModuleThatStopsAnsweringIsNoAnswerNotARevert() public {
         LensModule m = new LensModule();
         Slot s = _slot(address(m), true, true);
         m.setScopes(0); // out of range: the slot would not take it
-        ModuleUpdate memory u = factory.moduleUpdate(address(s));
+        ModuleUpdate memory u = lens.moduleUpdate(address(s));
         assertFalse(u.answered);
         assertEq(u.currentScopes, SETTLE, "the slot's copy is still reported");
-    }
-
-    function test_OnlyItsOwnSlots() public {
-        vm.expectRevert(NotASlot.selector);
-        factory.moduleUpdate(address(this));
     }
 }

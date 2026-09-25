@@ -9,6 +9,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
 import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {AdConfig, IAdLand, ModerationMode} from "../../src/modules/adland/IAdLand.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
@@ -38,7 +39,7 @@ contract AdLandModerationTest is Test, SlotConstants {
             abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)));
         factory = SlotFactory(address(new ERC1967Proxy(address(factoryImpl), fInit)));
 
-        AdLand adImpl = new AdLand();
+        AdLand adImpl = new AdLand(new SlotLens());
         bytes memory aInit = abi.encodeCall(AdLand.initialize, (owner));
         adland = AdLand(address(new ERC1967Proxy(address(adImpl), aInit)));
 

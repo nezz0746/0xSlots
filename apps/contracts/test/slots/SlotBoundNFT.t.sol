@@ -8,7 +8,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Slot} from "../../src/Slot.sol";
-import {SlotInfo} from "../../src/slot/SlotViews.sol";
+import {SlotInfo, SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotBoundNFT} from "../../src/modules/nft/SlotBoundNFT.sol";
 import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
@@ -351,12 +351,6 @@ contract SlotBoundNFTTest is Test {
         );
     }
 
-    /// @notice Asking about a token that was never minted says so.
-    function test_AnUnmintedTokenIsNamedNotGuessedAt() public {
-        vm.expectRevert(abi.encodeWithSelector(ISlotBoundNFT.NoSuchToken.selector, 999));
-        nft.getSlotInfoOf(999);
-    }
-
     /// @notice `mint` is guarded, so the recipient cannot reenter it.
     /// @dev The payout hands control to an arbitrary contract. Low severity —
     ///      the recipient is fixed at deploy and the mint's state is complete
@@ -482,7 +476,7 @@ contract SlotBoundNFTTest is Test {
     }
 
     function test_TheModuleIsStrictAndPermanent() public view {
-        assertTrue(slot.getSlotInfo().scopes.afterCallbacksMustSucceed);
+        assertTrue(slot.scopes().afterCallbacksMustSucceed);
         assertFalse(slot.mutableModule(), "a detachable module would strand the token");
         assertEq(slot.module(), address(nft));
     }
@@ -607,9 +601,9 @@ contract SlotBoundNFTTest is Test {
             );
     }
 
-    /// @notice One relay, and it is the slot's own answer.
-    function test_InfoOfRelaysTheSlotsOwnState() public view {
-        SlotInfo memory i = nft.getSlotInfoOf(tokenId);
+    /// @notice A token's slot reads like any other, through the lens.
+    function test_ATokensSlotReadsThroughTheLens() public {
+        SlotInfo memory i = new SlotLens().getSlotInfo(nft.slotOf(tokenId));
         assertEq(i.occupant, alice);
         assertEq(i.price, 100 ether);
         assertEq(i.deposit, _depositOf(nft, 100 ether), "escrowed to the minimum");
@@ -618,16 +612,16 @@ contract SlotBoundNFTTest is Test {
         assertTrue(i.scopes.afterCallbacksMustSucceed, "and carries what a buyer needs");
     }
 
-    /// @notice It follows the slot when the occupant reprices. The quote cannot:
-    ///         it knows the terms, and the valuation is the occupant's.
-    function test_TheRelayFollowsARepriceAndTheQuoteDoesNot() public {
+    /// @notice The slot follows a reprice. The quote cannot: it knows the
+    ///         terms, and the valuation is the occupant's.
+    function test_TheSlotFollowsARepriceAndTheQuoteDoesNot() public {
         // Raising the price raises the escrow floor with it, so top up first.
         vm.startPrank(alice);
         token.approve(address(slot), type(uint256).max);
         slot.topUp(_cost(200 ether));
         slot.selfAssess(200 ether);
         vm.stopPrank();
-        SlotInfo memory i = nft.getSlotInfoOf(tokenId);
+        SlotInfo memory i = new SlotLens().getSlotInfo(nft.slotOf(tokenId));
         assertEq((i.price * i.terms.taxTerms.rateBps) / 10_000, _taxTerms(200 ether), "doubled");
     }
 

@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {SlotMath} from "../libraries/SlotMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Scopes} from "../interfaces/ISlotModule.sol";
 import {SlotAccounting} from "./SlotAccounting.sol";
 import {
     TaxTerms,
@@ -14,64 +13,8 @@ import {
     InstalledModule
 } from "../types/SlotTypes.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
-import {Governance, Occupancy} from "./SlotStorage.sol";
+import {Occupancy} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
-
-/// @notice One slot, whole, as of one block.
-///
-/// @dev Everything a client needs to render a slot, in a single call, so no
-///      two figures can straddle a block.
-struct SlotInfo {
-    // governance
-    IERC20 currency;
-    address manager;
-    bool mutableTax;
-    bool mutableRecipient;
-    bool mutableModule;
-    Terms terms;
-    Scopes scopes;
-    ModuleFee fee;
-    // occupancy
-    address occupant;
-    uint256 price;
-    uint256 deposit;
-    uint64 occupiedSince;
-    uint64 tenureId;
-    uint64 lastSettled;
-    // money, as of this block
-    uint256 taxOwed;
-    uint256 collectedTax;
-    bool isVacant;
-    bool isInsolvent;
-    uint256 secondsUntilLiquidation;
-    Pending pending;
-    /// Whether `pending` lands at the next buy.
-    bool hasRipeTerms;
-}
-
-/// @notice The protocol's fixed numbers, in one call.
-///
-/// @dev Same argument as `SlotInfo`: a client sizing a deposit or validating a
-///      price needs several of these together, and seven separate `eth_call`s
-///      to fetch numbers that never change is the kind of friction that makes
-///      people hardcode them instead — which is the drift this contract exists
-///      to prevent.
-struct SlotConstantsInfo {
-    uint256 maxPrice;
-    uint256 maxTaxBps;
-    uint256 basisPoints;
-    uint256 month;
-    uint256 moduleCallbackGasLimit;
-    uint256 nativePayoutGasLimit;
-    uint64 termsDelay;
-    uint256 maxMinRunway;
-    /// `TERM_*` bits for `proposeTerms` and `cancelTerms`.
-    uint16 termTaxRate;
-    uint16 termRecipient;
-    uint16 termMinRunway;
-    uint16 termModule;
-    uint16 termScopes;
-}
 
 /**
  * @title SlotViews
@@ -81,58 +24,13 @@ struct SlotConstantsInfo {
  *      people build against, and they were buried among the transitions that
  *      move the state they report. Nothing here writes; if a function in this
  *      file is not `view`, it is in the wrong file.
+ *
+ *      One getter per field. `SlotLens` puts them together: a whole slot, many
+ *      slots, or the constants, in one call.
  */
 abstract contract SlotViews is SlotAccounting {
     using TermsLib for Pending;
     using ModuleLib for InstalledModule;
-
-    /// @notice The whole slot, in one call.
-    function getSlotInfo() external view returns (SlotInfo memory info) {
-        Governance storage st = _governance();
-        info.currency = st.currency;
-        info.manager = st.manager;
-        info.mutableTax = st.mutableTax;
-        info.mutableRecipient = st.mutableRecipient;
-        info.mutableModule = st.mutableModule;
-
-        info.terms = terms();
-        info.scopes = scopes();
-        info.fee = _module().fee;
-
-        Occupancy storage o = _occupancy();
-        info.occupant = o.occupant;
-        info.price = o.price;
-        info.deposit = o.deposit;
-        info.occupiedSince = o.occupiedSince;
-        info.tenureId = o.tenureId;
-        info.lastSettled = o.lastSettled;
-
-        info.taxOwed = taxOwed();
-        info.collectedTax = _ledger().collectedTax;
-        info.isVacant = isVacant();
-        info.isInsolvent = isInsolvent();
-        info.secondsUntilLiquidation = secondsUntilLiquidation();
-
-        info.pending = pending();
-        info.hasRipeTerms = hasRipeTerms();
-    }
-
-    /// @notice Every protocol constant, in one call.
-    function getSlotConstants() external pure returns (SlotConstantsInfo memory c) {
-        c.maxPrice = MAX_PRICE;
-        c.maxTaxBps = MAX_TAX_BPS;
-        c.basisPoints = BASIS_POINTS;
-        c.month = MONTH;
-        c.moduleCallbackGasLimit = MODULE_CALLBACK_GAS_LIMIT;
-        c.nativePayoutGasLimit = NATIVE_PAYOUT_GAS_LIMIT;
-        c.termsDelay = TERMS_DELAY;
-        c.maxMinRunway = MAX_MIN_RUNWAY;
-        c.termTaxRate = TERM_TAX_RATE;
-        c.termRecipient = TERM_RECIPIENT;
-        c.termMinRunway = TERM_MIN_RUNWAY;
-        c.termModule = TERM_MODULE;
-        c.termScopes = TERM_SCOPES;
-    }
 
     // ─── governance ─────────────────────────────────────────────────────────
 
