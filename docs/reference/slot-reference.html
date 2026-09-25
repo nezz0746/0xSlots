@@ -100,7 +100,7 @@
   .consts .v { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
   .consts .v .prop { font-size: 6.6pt; display: block; }
   h2 { margin: 8pt 0 0; font: 500 6.6pt/1.2 "IBM Plex Mono", Menlo, monospace; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
-  .reads td { padding-top: 0.9pt; padding-bottom: 0.9pt; }
+  .reads td { padding-top: 0.7pt; padding-bottom: 0.7pt; }
   .consts .wide { grid-column: span 4; }
 </style>
 </head>
@@ -366,12 +366,19 @@
         <td class="group" rowspan="3"><span class="struct">Bundles</span></td>
         <td class="sig"><b>getSlotInfo</b><span class="args">()</span></td><td class="type mono">SlotInfo</td><td>Everything above, in one call.</td><td></td>
       </tr>
-      <tr><td class="sig"><b>getSlotConstants</b><span class="args">()</span></td><td class="type mono">SlotConstantsInfo</td><td>The constants below, in one call.</td><td></td></tr>
+      <tr><td class="sig"><b>getSlotConstants</b><span class="args">()</span></td><td class="type mono">SlotConstantsInfo</td><td>The constants below, in one call. The only way to read them.</td><td></td></tr>
       <tr><td class="sig"><b>version</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Implementation version.</td><td></td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group"><span class="struct">SlotLens</span></td>
+        <td class="sig"><b>moduleUpdate</b><span class="args">(slot)</span></td><td class="type mono">ModuleUpdate</td><td>On the lens: what the module declares beside the slot’s copy, and whether <code>acceptFee</code> / <code>acceptScopes</code> would change it.</td><td></td>
+      </tr>
     </tbody>
   </table>
 
-  <h2>Public constants</h2>
+  <h2>Constants · internal, read through getSlotConstants()</h2>
   <div class="consts">
     <div><span class="k">MAX_PRICE</span><span class="v">2<sup>128</sup>−1</span></div>
     <div><span class="k">MAX_TAX_BPS</span><span class="v">10,000</span></div>

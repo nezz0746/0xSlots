@@ -31,6 +31,7 @@ const INCLUDE = [
   "Slot",
   "SlotFactory",
   "OfferBook",
+  "SlotLens",
   "SlotCollective",
   "SlotCollectiveFactory",
   "AdLand",

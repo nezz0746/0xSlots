@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -49,7 +51,7 @@ contract FloorModule is AskModule {
 
 /// @notice A module can take configuration of any size: the slot stores the bytes
 ///         and hands them to every callback, so the module keeps nothing.
-contract LargeSettingsTest is Test {
+contract LargeSettingsTest is Test, SlotConstants {
     SlotFactory factory;
     FloorModule module;
     address alice = makeAddr("alice");
@@ -146,19 +148,19 @@ contract LargeSettingsTest is Test {
         TaxTerms memory none;
         ModuleTerms memory next = ModuleTerms({target: address(module), settings: _config(2 ether)});
 
-        s.proposeTerms(none, next, s.TERM_MODULE());
+        s.proposeTerms(none, next, TERM_MODULE);
         Pending memory p = s.pending();
         assertEq(p.module.settings, next.settings, "queued whole");
         assertEq(p.module.scopes, ScopesLib.BEFORE_BUY, "and the reviewed scopes kept beside it");
 
-        s.cancelTerms(s.TERM_MODULE());
+        s.cancelTerms(TERM_MODULE);
         p = s.pending();
         assertEq(p.module.settings.length, 0, "cancel empties the bytes");
         assertEq(p.module.scopes, 0);
         assertEq(p.mask, 0);
 
-        s.proposeTerms(none, next, s.TERM_MODULE());
-        vm.warp(block.timestamp + s.TERMS_DELAY());
+        s.proposeTerms(none, next, TERM_MODULE);
+        vm.warp(block.timestamp + TERMS_DELAY);
         s.applyTerms();
         assertEq(s.moduleTerms().settings, next.settings, "landed");
         assertEq(s.pending().module.settings.length, 0, "and the queue is empty");

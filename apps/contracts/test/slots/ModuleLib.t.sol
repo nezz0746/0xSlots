@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -52,7 +54,7 @@ contract ChattyModule is AskModule {
 }
 
 /// @notice What `ModuleLib` promises the slot about calling its module.
-contract ModuleLibTest is Test {
+contract ModuleLibTest is Test, SlotConstants {
     SlotFactory factory;
     LibToken token;
     address alice = makeAddr("alice");
@@ -109,6 +111,6 @@ contract ModuleLibTest is Test {
         // ~12.5k words: as much as the module can return inside its cap.
         uint256 loud = _liquidationGas(address(new ChattyModule(400_000)));
 
-        assertLt(loud - quiet, new Slot().MODULE_GAS(), "bounded by the cap");
+        assertLt(loud - quiet, MODULE_GAS, "bounded by the cap");
     }
 }

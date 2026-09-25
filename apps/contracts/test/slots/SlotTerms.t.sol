@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -66,7 +68,7 @@ contract ChangingModule is AnyModule {
 
 /// @notice Terms queue per mutable term and land at transitions; modules declare
 ///         scopes and a fee the slot keeps a copy of until its manager accepts others.
-contract SlotTermsTest is Test {
+contract SlotTermsTest is Test, SlotConstants {
     event ScopesDropped(address indexed module, uint16 scopes);
 
     uint16 constant TAX_RATE = 1;
@@ -304,7 +306,7 @@ contract SlotTermsTest is Test {
             TAX_RATE | RECIPIENT | MIN_RUNWAY
         );
 
-        skip(slot.TERMS_DELAY());
+        skip(TERMS_DELAY);
         assertEq(slot.recipient(), recipient, "a delay alone applies nothing");
 
         _releaseAndApply(slot);
@@ -486,7 +488,7 @@ contract SlotTermsTest is Test {
         _buy(s);
         assertEq(h.buys(), 0, "the sitting occupant bought under the old scopes");
 
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         _releaseAndApply(s);
         assertEq(ScopesLib.pack(s.scopes()), SETTLE_AND_BUY, "the seat changed hands");
         assertEq(s.pending().mask, 0);
@@ -502,7 +504,7 @@ contract SlotTermsTest is Test {
         s.acceptScopes(SETTLE_AND_BUY);
 
         h.setScopes(SETTLE);
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
 
         vm.expectEmit(address(s));
         emit ScopesDropped(address(h), SETTLE_AND_BUY);
@@ -556,7 +558,7 @@ contract SlotTermsTest is Test {
         assertEq(p.mask, MODULE, "the accepted scopes are gone from the queue");
         assertEq(p.module.scopes, SETTLE, "replaced by what the new module declared");
 
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         _buy(s);
 
         assertEq(s.module(), address(other));
@@ -655,7 +657,7 @@ contract SlotTermsTest is Test {
         (Slot s,) = _changingSlot(true, 2_500, author);
         _buy(s);
         _propose(s, _taxTerms(), _noModule(), MODULE);
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         _releaseAndApply(s);
 
         ModuleFee memory f = s.fee();

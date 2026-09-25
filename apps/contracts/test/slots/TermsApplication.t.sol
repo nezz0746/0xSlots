@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {Slot} from "../../src/Slot.sol";
@@ -18,7 +20,7 @@ import {DenyBuys, SlotsTest} from "./Slots.t.sol";
  * What the occupant is promised is unchanged: nothing lands under them without
  * their say, and a buyer is always seated under the terms they funded.
  */
-contract TermsApplicationTest is SlotsTest {
+contract TermsApplicationTest is SlotsTest, SlotConstants {
     function _ripeDenial(Slot s) internal returns (DenyBuys deny) {
         deny = new DenyBuys();
         vm.prank(manager);
@@ -27,7 +29,7 @@ contract TermsApplicationTest is SlotsTest {
             ModuleTerms({target: address(deny), settings: ""}),
             uint16(9)
         );
-        vm.warp(block.timestamp + s.TERMS_DELAY());
+        vm.warp(block.timestamp + TERMS_DELAY);
         assertTrue(s.hasRipeTerms(), "terms are ripe");
     }
 

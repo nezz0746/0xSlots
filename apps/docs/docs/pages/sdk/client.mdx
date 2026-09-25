@@ -43,7 +43,7 @@ fields (`occupant`, `price`, `deposit`, `taxOwed`, `module`, `scopes`,
 | `pending(slot)` | queued terms, with `appliesAt` and `applies` |
 | `hasRipeTerms(slot)` | whether the next buy lands them — the chain's clock, not yours |
 | `fee(slot)` / `scopes(slot)` | the module's fee and scopes, as the slot copied them |
-| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }` |
+| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }`, from the chain's `SlotLens` |
 | `debtOf(slot, account)` / `withdrawableOf(slot, account?)` | debt carried / credits to `claim` |
 | `isOperator(slot, operator)` | live, per tenure |
 

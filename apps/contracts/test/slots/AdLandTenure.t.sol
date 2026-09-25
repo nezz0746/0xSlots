@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -27,7 +29,7 @@ import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
  * already attached to AdLand working: they were configured when this module took
  * no data at all.
  */
-contract AdLandTenureTest is Test {
+contract AdLandTenureTest is Test, SlotConstants {
     SlotFactory factory;
     AdLand adland;
 
@@ -271,9 +273,9 @@ contract AdLandTenureTest is Test {
         Slot s = _slot(0);
         TaxTerms memory none;
         s.proposeTerms(
-            none, ModuleTerms({target: address(adland), settings: _config(WINDOW)}), s.TERM_MODULE()
+            none, ModuleTerms({target: address(adland), settings: _config(WINDOW)}), TERM_MODULE
         );
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
         s.applyTerms();
         assertEq(ScopesLib.pack(s.scopes()) & VETO, VETO, "the veto landed with the window");
 

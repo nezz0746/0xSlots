@@ -59,6 +59,8 @@ function harness(
    * which is the only simulate most tests reach; `collectAll` returns amounts.
    */
   simulateResult: unknown = SLOT,
+  /** Anything else to hand the client, such as a lens address. */
+  config: { slotLensAddress?: `0x${string}` } = {},
 ) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which is
@@ -80,6 +82,7 @@ function harness(
   const signTypedData = vi.fn(async (_args: any) => "0xsignature" as const);
 
   const client = new SlotsClient({
+    ...config,
     factoryAddress: FACTORY,
     offerBookAddress: OFFER_BOOK,
     // Evict-and-take is periphery now. Wired here so every test exercises the
@@ -709,6 +712,7 @@ describe("reads", () => {
     const { client } = harness({
       getSlotInfo: {
         mutableModule: true,
+        mutableRecipient: true,
         terms: { taxTerms: TAX_TERMS_NONE, moduleTerms: { target: MODULE, settings: NO_SETTINGS } },
         scopes: settleOnly,
         fee: { bps: 100, recipient: MODULE },
@@ -726,6 +730,37 @@ describe("reads", () => {
       },
       feeDiffers: true,
       scopesDiffer: true,
+    });
+  });
+
+  it("moduleUpdate takes the lens's answer when there is a lens", async () => {
+    const LENS = "0x000000000000000000000000000000000000Ae45" as const;
+    const { client, readContract } = harness(
+      {
+        moduleUpdate: {
+          currentScopes: SCOPE_BITS.afterSettle,
+          currentFee: { bps: 100, recipient: MODULE },
+          answered: true,
+          declaredScopes: SCOPE_BITS.afterSettle,
+          declaredFee: { bps: 200, recipient: MODULE },
+          feeDiffers: false, // a rise the slot's fixed recipient refuses
+          scopesDiffer: false,
+        },
+      },
+      undefined,
+      SLOT,
+      { slotLensAddress: LENS },
+    );
+    expect(await client.moduleUpdate(SLOT)).toEqual({
+      current: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 100, recipient: MODULE } },
+      declared: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 200, recipient: MODULE } },
+      feeDiffers: false,
+      scopesDiffer: false,
+    });
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
+      address: LENS,
+      functionName: "moduleUpdate",
+      args: [SLOT],
     });
   });
 

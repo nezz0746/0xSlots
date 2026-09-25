@@ -2165,97 +2165,6 @@ export const slotAbi = [
   { type: 'receive', stateMutability: 'payable' },
   {
     type: 'function',
-    inputs: [],
-    name: 'BASIS_POINTS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MAX_MIN_RUNWAY',
-    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MAX_PRICE',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MAX_TAX_BPS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MODULE_GAS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MONTH',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'PAYOUT_GAS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TERMS_DELAY',
-    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TERM_MIN_RUNWAY',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TERM_MODULE',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TERM_RECIPIENT',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TERM_SCOPES',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TERM_TAX_RATE',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       {
         name: 'expected',
@@ -2381,6 +2290,11 @@ export const slotAbi = [
           { name: 'payoutGas', internalType: 'uint256', type: 'uint256' },
           { name: 'termsDelay', internalType: 'uint64', type: 'uint64' },
           { name: 'maxMinRunway', internalType: 'uint256', type: 'uint256' },
+          { name: 'termTaxRate', internalType: 'uint16', type: 'uint16' },
+          { name: 'termRecipient', internalType: 'uint16', type: 'uint16' },
+          { name: 'termMinRunway', internalType: 'uint16', type: 'uint16' },
+          { name: 'termModule', internalType: 'uint16', type: 'uint16' },
+          { name: 'termScopes', internalType: 'uint16', type: 'uint16' },
         ],
       },
     ],
@@ -7298,6 +7212,58 @@ export const slotFactoryConfig = {
   address: slotFactoryAddress,
   abi: slotFactoryAbi,
 } as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SlotLens
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const slotLensAbi = [
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'moduleUpdate',
+    outputs: [
+      {
+        name: 'u',
+        internalType: 'struct ModuleUpdate',
+        type: 'tuple',
+        components: [
+          { name: 'currentScopes', internalType: 'uint16', type: 'uint16' },
+          {
+            name: 'currentFee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
+            ],
+          },
+          { name: 'answered', internalType: 'bool', type: 'bool' },
+          { name: 'declaredScopes', internalType: 'uint16', type: 'uint16' },
+          {
+            name: 'declaredFee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
+            ],
+          },
+          { name: 'feeDiffers', internalType: 'bool', type: 'bool' },
+          { name: 'scopesDiffer', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'version',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'pure',
+  },
+] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SlotsTestToken

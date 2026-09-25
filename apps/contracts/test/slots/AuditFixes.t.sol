@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -71,7 +73,7 @@ contract ReenteringManager {
 
 /// @notice The critical findings of the 2026-09-22 review, each as the trace
 ///         that used to work.
-contract AuditFixesTest is Test {
+contract AuditFixesTest is Test, SlotConstants {
     SlotFactory factory;
     address manager = makeAddr("manager");
     address recipient = makeAddr("recipient");
@@ -138,7 +140,7 @@ contract AuditFixesTest is Test {
         // and `strict` on top.
         m.set(10_000, author);
         m.setScopes(ScopesLib.AFTER_SETTLE | ScopesLib.STRICT);
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         s.applyTerms();
 
         assertEq(s.module(), address(0), "the module is dropped, not installed");
@@ -157,7 +159,7 @@ contract AuditFixesTest is Test {
             ModuleTerms({target: address(m), settings: ""}),
             8
         );
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         s.applyTerms();
 
         assertEq(s.module(), address(m), "an honest module is unaffected");
@@ -187,7 +189,7 @@ contract AuditFixesTest is Test {
             ModuleTerms({target: address(m), settings: ""}),
             8
         );
-        skip(open.TERMS_DELAY());
+        skip(TERMS_DELAY);
         open.applyTerms();
         assertEq(open.fee().bps, 10_000, "100% is a choice, not a bug");
     }
@@ -315,7 +317,7 @@ contract CounterfeitSlot {
 }
 
 /// @notice Finding 10: the book may never pull more than the offer it is filling.
-contract OfferBookCeilingTest is Test {
+contract OfferBookCeilingTest is Test, SlotConstants {
     TestToken token;
     OfferBook book;
     address bidder = makeAddr("bidder");

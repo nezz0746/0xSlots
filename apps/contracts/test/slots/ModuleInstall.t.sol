@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -99,7 +101,7 @@ contract QuietModule is AskModule {
  * only ever fire where a seat is taken: at creation, and where a queued module
  * lands. Never on an eviction.
  */
-contract ModuleInstallTest is Test {
+contract ModuleInstallTest is Test, SlotConstants {
     SlotFactory factory;
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
@@ -168,7 +170,7 @@ contract ModuleInstallTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
         assertEq(spy.attachments(), 0, "not while it is only queued");
 
         _buy(s, alice);
@@ -190,7 +192,7 @@ contract ModuleInstallTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         _buy(s, bob);
         assertEq(spy.lastOccupant(), bob);
@@ -243,7 +245,7 @@ contract ModuleInstallTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         vm.prank(alice);
         s.applyTerms();
@@ -280,7 +282,7 @@ contract ModuleInstallTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(coming), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         _buy(s, alice);
 
@@ -321,7 +323,7 @@ contract ModuleInstallTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(0), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         vm.expectEmit(true, false, false, false);
         emit ModuleCallFailed(address(stubborn), ISlotModule.onUninstall.selector);
@@ -343,7 +345,7 @@ contract ModuleInstallTest is Test {
             ModuleTerms({target: address(spy), settings: ""}),
             8
         );
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         s.applyTerms();
 
         assertEq(s.module(), address(spy));
@@ -360,7 +362,7 @@ contract ModuleInstallTest is Test {
             ModuleTerms({target: address(0), settings: ""}),
             8
         );
-        skip(s.TERMS_DELAY());
+        skip(TERMS_DELAY);
         s.applyTerms();
         assertEq(spy.removals(), 1, "and it is told when it is removed");
     }

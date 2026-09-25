@@ -65,6 +65,12 @@ struct SlotConstantsInfo {
     uint256 payoutGas;
     uint64 termsDelay;
     uint256 maxMinRunway;
+    /// `TERM_*` bits for `proposeTerms` and `cancelTerms`.
+    uint16 termTaxRate;
+    uint16 termRecipient;
+    uint16 termMinRunway;
+    uint16 termModule;
+    uint16 termScopes;
 }
 
 /**
@@ -121,6 +127,11 @@ abstract contract SlotViews is SlotAccounting {
         c.payoutGas = PAYOUT_GAS;
         c.termsDelay = TERMS_DELAY;
         c.maxMinRunway = MAX_MIN_RUNWAY;
+        c.termTaxRate = TERM_TAX_RATE;
+        c.termRecipient = TERM_RECIPIENT;
+        c.termMinRunway = TERM_MIN_RUNWAY;
+        c.termModule = TERM_MODULE;
+        c.termScopes = TERM_SCOPES;
     }
 
     // ─── governance ─────────────────────────────────────────────────────────

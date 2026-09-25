@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
@@ -233,7 +235,7 @@ contract MovingWeirdTok is ERC20 {
  * @notice One test per audit finding, each written from the PoC that broke it.
  *         These are the regressions; if one fails the defect is back.
  */
-contract AuditRegressionsTest is Test {
+contract AuditRegressionsTest is Test, SlotConstants {
     SlotFactory factory;
     Small token;
     address occ = address(0xA11CE);
@@ -364,7 +366,7 @@ contract AuditRegressionsTest is Test {
         if (etchAway) vm.etch(pending, "");
         else IFlippable(pending).flip();
 
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         token.mint(grinder, 1_000_000);
         vm.startPrank(grinder);

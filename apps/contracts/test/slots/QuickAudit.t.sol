@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {SlotsTest, DenyBuys} from "./Slots.t.sol";
@@ -16,7 +18,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * the exact shape of the mistake, and the comment saying "this used to drain
  * the deposit" is worth more beside the assertion than in a commit message.
  */
-contract QuickAuditTest is SlotsTest {
+contract QuickAuditTest is SlotsTest, SlotConstants {
     /**
      * @notice Settling a hundred times in one second costs one second of tax.
      *
@@ -80,7 +82,7 @@ contract QuickAuditTest is SlotsTest {
             ModuleTerms({target: address(deny), settings: ""}),
             uint16(9)
         );
-        vm.warp(block.timestamp + s.TERMS_DELAY());
+        vm.warp(block.timestamp + TERMS_DELAY);
         assertTrue(s.hasRipeTerms());
 
         vm.startPrank(bob);

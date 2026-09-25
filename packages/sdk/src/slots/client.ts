@@ -2,6 +2,8 @@ import {
   minimumTenureModuleAbi,
   offerBookAbi,
   offerBookAddress,
+  slotLensAbi,
+  slotLensAddress,
   slotAbi,
   slotFactoryAbi,
 } from "@0xslots/contracts/slots";
@@ -397,7 +399,7 @@ export interface ModuleUpdate {
   current: { scopes: number; fee: ModuleFee };
   /** `null` when there is no module, or it does not answer. */
   declared: { scopes: number; fee: ModuleFee } | null;
-  /** {@link SlotsClient.acceptFee} would change the fee, at once. */
+  /** {@link SlotsClient.acceptFee} would change the fee, at once (a rise needs `mutableRecipient`). */
   feeDiffers: boolean;
   /**
    * {@link SlotsClient.acceptScopes} would queue new scopes for the next buy.
@@ -516,6 +518,11 @@ export interface SlotsClientConfig {
    * defaults to the book deployed on the wallet's chain.
    */
   offerBookAddress?: Address;
+  /**
+   * The `SlotLens`. {@link SlotsClient.moduleUpdate} asks it when there is one,
+   * and defaults to the lens deployed on the wallet's chain.
+   */
+  slotLensAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
@@ -564,12 +571,14 @@ export class SlotsClient {
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
   private readonly _offerBook?: Address;
+  private readonly _lens?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
     this._offerBook = config.offerBookAddress;
+    this._lens = config.slotLensAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -1629,10 +1638,38 @@ export class SlotsClient {
   }
 
   /**
-   * What the attached module declares today, beside what the slot copied.
-   * Never throws for a module that will not answer: `declared` is `null`.
+   * What the attached module declares today, beside what the slot copied, and
+   * whether `acceptFee` / `acceptScopes` would change anything. Never throws
+   * for a module that will not answer: `declared` is `null`.
+   *
+   * Asks the chain's `SlotLens` when there is one, so the answer is the
+   * contract's own. Otherwise the same checks run here.
    */
   async moduleUpdate(slot: Address): Promise<ModuleUpdate> {
+    const lens = this._lens ?? slotLensAddress[this.chain.id];
+    if (lens) {
+      const u = (await this.publicClient.readContract({
+        address: lens,
+        abi: slotLensAbi,
+        functionName: "moduleUpdate",
+        args: [slot],
+      })) as {
+        currentScopes: number;
+        currentFee: ModuleFee;
+        answered: boolean;
+        declaredScopes: number;
+        declaredFee: ModuleFee;
+        feeDiffers: boolean;
+        scopesDiffer: boolean;
+      };
+      return {
+        current: { scopes: u.currentScopes, fee: u.currentFee },
+        declared: u.answered ? { scopes: u.declaredScopes, fee: u.declaredFee } : null,
+        feeDiffers: u.feeDiffers,
+        scopesDiffer: u.scopesDiffer,
+      };
+    }
+
     const i = await this.read<SlotInfoResult>(slot, "getSlotInfo");
     const current = { scopes: packScopes(i.scopes), fee: i.fee };
     const { target, settings } = i.terms.moduleTerms;
@@ -1650,9 +1687,12 @@ export class SlotsClient {
     }
     if (!declared) return { current, declared, feeDiffers: false, scopesDiffer: false };
 
-    const feeDiffers =
+    const feeChanged =
       declared.fee.bps !== current.fee.bps ||
       declared.fee.recipient.toLowerCase() !== current.fee.recipient.toLowerCase();
+    // A rise needs a movable recipient, as `acceptFee` requires.
+    const feeDiffers =
+      feeChanged && (declared.fee.bps <= current.fee.bps || i.mutableRecipient);
     const p = i.pending;
     const moduleQueued = (p.mask & TERMS.MODULE) !== 0;
     const alreadyQueued = (p.mask & TERMS.SCOPES) !== 0 && p.module.scopes === declared.scopes;

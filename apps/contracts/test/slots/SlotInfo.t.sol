@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 import {SlotInit, TaxTerms, ModuleTerms, Pending} from "../../src/types/SlotTypes.sol";
@@ -24,7 +26,7 @@ contract Tok is ERC20 {
 
 /// @notice The bundled read must never disagree with the individual ones —
 ///         that is the only way a second implementation earns its place.
-contract SlotInfoTest is Test {
+contract SlotInfoTest is Test, SlotConstants {
     SlotFactory factory;
     Tok token;
     Slot slot;
@@ -149,16 +151,21 @@ contract SlotInfoTest is Test {
     }
 
     /// @notice The bundled constants must equal the individual ones.
-    function test_ConstantsAgreeWithTheirGetters() public view {
+    function test_ConstantsBundleEveryConstant() public view {
         SlotConstantsInfo memory c = slot.getSlotConstants();
-        assertEq(c.maxPrice, slot.MAX_PRICE());
-        assertEq(c.maxTaxBps, slot.MAX_TAX_BPS());
-        assertEq(c.basisPoints, slot.BASIS_POINTS());
-        assertEq(c.month, slot.MONTH());
-        assertEq(c.moduleGas, slot.MODULE_GAS());
-        assertEq(c.payoutGas, slot.PAYOUT_GAS());
-        assertEq(c.termsDelay, slot.TERMS_DELAY());
-        assertEq(c.maxMinRunway, slot.MAX_MIN_RUNWAY());
+        assertEq(c.maxPrice, MAX_PRICE);
+        assertEq(c.maxTaxBps, MAX_TAX_BPS);
+        assertEq(c.basisPoints, BASIS_POINTS);
+        assertEq(c.month, MONTH);
+        assertEq(c.moduleGas, MODULE_GAS);
+        assertEq(c.payoutGas, PAYOUT_GAS);
+        assertEq(c.termsDelay, TERMS_DELAY);
+        assertEq(c.maxMinRunway, MAX_MIN_RUNWAY);
+        assertEq(c.termTaxRate, TERM_TAX_RATE);
+        assertEq(c.termRecipient, TERM_RECIPIENT);
+        assertEq(c.termMinRunway, TERM_MIN_RUNWAY);
+        assertEq(c.termModule, TERM_MODULE);
+        assertEq(c.termScopes, TERM_SCOPES);
     }
 
     /// @notice And they are the numbers the contract actually enforces.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -17,7 +19,7 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
  * The manager here is this test contract, so moderation calls need no prank;
  * `alice` and `bob` are advertisers.
  */
-contract AdLandModerationTest is Test {
+contract AdLandModerationTest is Test, SlotConstants {
     SlotFactory factory;
     AdLand adland;
     Slot slot;
@@ -307,7 +309,7 @@ contract AdLandModerationTest is Test {
         _publish(alice, V1);
         assertEq(_showing(), V1, "so alice still publishes directly");
 
-        vm.warp(block.timestamp + slot.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
         _seat(bob, 2 ether);
         _publish(bob, V2);
         assertEq(_showing(), "", "bob is seated under Every");

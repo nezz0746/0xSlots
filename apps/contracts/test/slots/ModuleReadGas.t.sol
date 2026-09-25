@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
 import {AskModule, Ask} from "../utils/AskModule.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -66,7 +68,7 @@ contract HeavyModule is AskModule {
 }
 
 /// @notice A queued module must never be erased by a caller tuning gas.
-contract ModuleReadGasTest is Test {
+contract ModuleReadGasTest is Test, SlotConstants {
     address sink = makeAddr("sink");
     address alice = makeAddr("alice");
 
@@ -138,7 +140,7 @@ contract ModuleReadGasTest is Test {
 ///      means `63/64` of what is left is under that stipend — and the `1/64`
 ///      kept back is then far too little to finish the buy. The transaction
 ///      runs out of gas instead of seating anybody.
-contract BuyGasStarvationTest is Test {
+contract BuyGasStarvationTest is Test, SlotConstants {
     address alice = makeAddr("alice");
     address manager = makeAddr("manager");
 
@@ -172,7 +174,7 @@ contract BuyGasStarvationTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(veto), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
         vm.deal(alice, 1_000 ether);
@@ -261,7 +263,7 @@ contract PricyModule is AskModule {
  * enter the read with less than the cap — and a read that dies there burns
  * 63/64 of what was left, which is the gas the rest of the buy needed.
  */
-contract QueuedModuleStarvationTest is Test {
+contract QueuedModuleStarvationTest is Test, SlotConstants {
     address alice = makeAddr("alice");
     address manager = makeAddr("manager");
 
@@ -295,7 +297,7 @@ contract QueuedModuleStarvationTest is Test {
         TaxTerms memory none;
         vm.prank(manager);
         s.proposeTerms(none, ModuleTerms({target: address(pricy), settings: ""}), 8);
-        vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
+        vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
         vm.deal(alice, 1_000 ether);
@@ -359,7 +361,7 @@ contract GluttonModule is AskModule {
  * inside its stipend is attached as nothing. Proposing is uncapped, so without
  * this the module would pass proposal and then quietly vanish a day later.
  */
-contract ModuleStipendTest is Test {
+contract ModuleStipendTest is Test, SlotConstants {
     SlotFactory factory;
     address manager = makeAddr("manager");
 

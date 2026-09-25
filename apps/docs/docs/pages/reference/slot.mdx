@@ -108,7 +108,18 @@ the value they reviewed. Each reverts `NothingToAccept` if nothing would change.
   only when the slot's module is mutable. Reverts `ScopesChanged` if the module
   now says something else, and `ModuleChangeQueued` while a new module is queued.
 
-The SDK's `moduleUpdate(slot)` compares what the module declares with the copy.
+To see whether there is anything to accept, ask the `SlotLens`:
+
+```solidity
+function moduleUpdate(address slot) external view returns (ModuleUpdate memory);
+// { currentScopes, currentFee, answered, declaredScopes, declaredFee, feeDiffers, scopesDiffer }
+```
+
+It reads the module the way the slot would when it lands (fail-open, under a
+third of `MODULE_GAS` per read) and applies the accept rules, so `feeDiffers` and
+`scopesDiffer` mean `acceptFee` and `acceptScopes` would go through and change
+something. It never reverts on a module that misbehaves. The SDK's
+`moduleUpdate(slot)` calls it.
 
 ## Reading state
 
@@ -118,6 +129,9 @@ function getSlotConstants() external pure returns (SlotConstantsInfo memory);
 ```
 
 `getSlotInfo` is everything in one call, so no two figures straddle a block.
+`getSlotConstants` is the only way to read the protocol's constants (`MAX_PRICE`,
+`TERMS_DELAY`, `MODULE_GAS`, the `TERM_*` bits, …): they have no getters of their
+own, which keeps the slot under the 24,576-byte deploy limit.
 
 ```solidity
 struct SlotInfo {
