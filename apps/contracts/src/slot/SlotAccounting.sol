@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {ScopesLib} from "../libraries/ScopesLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -28,8 +29,8 @@ abstract contract SlotAccounting is SlotModules {
     event ModuleFeePaid(address indexed module, address indexed recipient, uint256 amount);
     event Credited(address indexed account, uint256 amount);
     event Claimed(address indexed account, uint256 amount);
-    /// @notice Debt from an earlier shortfall was paid, out of a buy, a buyout
-    ///         or a top-up.
+    /// @notice The occupant's debt from a shortfall this tenure was paid, out of
+    ///         a top-up or out of what a buyout pays them.
     event DebtRepaid(address indexed account, uint256 amount);
     /// @notice Queued terms took effect. `taxTerms`, `moduleTerms`, `scopes` and
     ///         `fee` are what is now in force; `mask` says which terms changed.
@@ -108,8 +109,11 @@ abstract contract SlotAccounting is SlotModules {
 
             paid = o.deposit;
             o.deposit = 0;
-            // What the deposit could not cover is carried, not forgiven.
-            // Forgiving it made defaulting the cheapest way to hold a slot.
+            // What the deposit could not cover is carried for the rest of the
+            // tenure, not forgiven: a top-up pays it first, and so does the
+            // price a buyer pays this occupant. It ends with the tenure,
+            // because `buy` seats whoever the payer names — debt that outlived
+            // the seat could be pinned on any address, for free.
             unchecked {
                 if (owed > paid) _ledger().debtOf[o.occupant] += owed - paid;
             }
@@ -132,7 +136,7 @@ abstract contract SlotAccounting is SlotModules {
         SlotContext memory ctx = _ctx(msg.sender, payer, o.price, o.deposit);
         ctx.taxOwed = owed;
         ctx.taxPaid = paid;
-        _after(F_AFTER_SETTLE, abi.encodeCall(ISlotModule.afterSettle, (ctx)));
+        _after(ScopesLib.AFTER_SETTLE, abi.encodeCall(ISlotModule.afterSettle, (ctx)));
     }
 
     /// @notice Whether queued terms have sat long enough to land.
@@ -192,7 +196,7 @@ abstract contract SlotAccounting is SlotModules {
             (ok, declaredScopes, declaredFee) =
                 _tryReadModule(ModuleTerms({module: next.module, settings: next.settings}));
         } else if (scopesChange) {
-            (ok, declaredScopes,) = _tryReadModule(_module().terms());
+            (ok, declaredScopes,) = _tryReadModule(live.terms());
         }
 
         // The outgoing module is told BEFORE anything moves, while the record
@@ -294,13 +298,16 @@ abstract contract SlotAccounting is SlotModules {
         bal = abi.decode(data, (uint256));
     }
 
+    /// @dev End the tenure. Always called straight after `_settle`, which has
+    ///      already moved `lastSettled` to now. Any debt the occupant still
+    ///      carries ends here with the seat.
     function _vacate() internal {
         Occupancy storage o = _occupancy();
+        delete _ledger().debtOf[o.occupant];
         o.occupant = address(0);
         o.price = 0;
         o.deposit = 0;
         o.occupiedSince = 0;
-        o.lastSettled = uint64(block.timestamp);
         o.taxCarry = 0;
     }
 

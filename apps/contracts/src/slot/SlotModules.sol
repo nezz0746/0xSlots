@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotStorage} from "./SlotStorage.sol";
+import {SlotStorage, Occupancy} from "./SlotStorage.sol";
 import {ISlotModule, Scopes, SlotContext} from "../interfaces/ISlotModule.sol";
 import {ScopesLib} from "../libraries/ScopesLib.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
 import {ModuleTerms, ModuleFee, InstalledModule} from "../types/SlotTypes.sol";
-import {Occupancy} from "./SlotStorage.sol";
 
 /**
  * @title SlotModules
@@ -15,7 +14,7 @@ import {Occupancy} from "./SlotStorage.sol";
  * @dev How is `ModuleLib`'s; this file decides when, and builds the context
  *      each call carries.
  *
- * @dev The asymmetry here is the whole design, so it is worth stating once:
+ *      The asymmetry here is the whole design, so it is worth stating once:
  *
  *      `_before*` is a STATICCALL to a `view` function. It is not gas-capped,
  *      because a `view` cannot write and therefore cannot reenter — there is
@@ -39,15 +38,6 @@ import {Occupancy} from "./SlotStorage.sol";
 abstract contract SlotModules is SlotStorage {
     using ModuleLib for InstalledModule;
 
-    uint16 internal constant F_BEFORE_BUY = ScopesLib.BEFORE_BUY;
-    uint16 internal constant F_BEFORE_SELF_ASSESS = ScopesLib.BEFORE_SELF_ASSESS;
-    uint16 internal constant F_AFTER_BUY = ScopesLib.AFTER_BUY;
-    uint16 internal constant F_AFTER_RELEASE = ScopesLib.AFTER_RELEASE;
-    uint16 internal constant F_AFTER_LIQUIDATE = ScopesLib.AFTER_LIQUIDATE;
-    uint16 internal constant F_AFTER_SETTLE = ScopesLib.AFTER_SETTLE;
-    uint16 internal constant F_ON_INSTALL = ScopesLib.ON_INSTALL;
-    uint16 internal constant F_ON_UNINSTALL = ScopesLib.ON_UNINSTALL;
-
     /// @notice A module callback reverted and was ignored.
     /// @dev Only ever emitted for the `after` side. A failing `before` reverts
     ///      the transaction and never reaches here.
@@ -59,11 +49,6 @@ abstract contract SlotModules is SlotStorage {
     }
 
     // ─── reading a module ───────────────────────────────────────────────────
-
-    /// @dev What a module asks for, strictly: its own revert bubbles.
-    function _readModule(ModuleTerms memory t) internal view returns (uint16, ModuleFee memory) {
-        return ModuleLib.read(t.module, t.settings);
-    }
 
     /// @dev What a module asks for, fail-open, under the cap the slot uses
     ///      wherever a module lands: a third of `MODULE_CALLBACK_GAS_LIMIT` per read, so the
@@ -129,7 +114,7 @@ abstract contract SlotModules is SlotStorage {
     ///      called where a seat is taken, never on an eviction.
     function _onInstall(address account, uint256 price_, uint256 depositAmount) internal {
         _after(
-            F_ON_INSTALL,
+            ScopesLib.ON_INSTALL,
             abi.encodeCall(
                 ISlotModule.onInstall, (_ctx(msg.sender, account, price_, depositAmount))
             )
@@ -148,7 +133,7 @@ abstract contract SlotModules is SlotStorage {
      */
     function _onUninstall() internal {
         InstalledModule storage m = _module();
-        if (!m.has(F_ON_UNINSTALL)) return;
+        if (!m.has(ScopesLib.ON_UNINSTALL)) return;
         bytes memory call = abi.encodeCall(
             ISlotModule.onUninstall, (_ctx(msg.sender, _occupancy().occupant, 0, 0))
         );

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -22,6 +22,22 @@ contract ChargingModuleStub {
     function fee(bytes calldata) external pure returns (ModuleFee memory f) {
         f.bps = 500;
         f.recipient = address(0xFEE);
+    }
+}
+
+/// @dev Tells the collective it charges nothing and everyone else that it
+///      takes the whole rent. The collective must judge the slot's answer.
+contract TwoFacedModuleStub {
+    address public immutable collective;
+
+    constructor(address collective_) {
+        collective = collective_;
+    }
+
+    function fee(bytes calldata) external view returns (ModuleFee memory f) {
+        if (msg.sender == collective) return f;
+        f.bps = 10_000;
+        f.recipient = address(0xBAD);
     }
 }
 
@@ -48,10 +64,12 @@ contract MockSlot {
     }
 
     uint16 public acceptedFeeBps;
+    address public acceptedFeeRecipient;
     uint16 public acceptedScopes;
 
     function acceptFee(ModuleFee calldata expected) external onlyManager {
         acceptedFeeBps = expected.bps;
+        acceptedFeeRecipient = expected.recipient;
     }
 
     function acceptScopes(uint16 expected) external onlyManager {
@@ -61,6 +79,7 @@ contract MockSlot {
     /// @dev The fee the slot accepted, as the real slot reports it.
     function fee() external view returns (ModuleFee memory f) {
         f.bps = acceptedFeeBps;
+        f.recipient = acceptedFeeRecipient;
     }
 
     modifier onlyManager() {
@@ -84,7 +103,23 @@ contract MockSlot {
             settings = moduleTerms.settings;
             moduleAddr = moduleTerms.module;
             hasModule = true;
+            // Reads the module's fee as ITSELF, as the real slot does, and
+            // keeps it as the reviewed fee `pending()` reports.
+            delete queuedFee;
+            (bool ok, bytes memory ret) = moduleTerms.module
+                .staticcall(abi.encodeWithSignature("fee(bytes)", moduleTerms.settings));
+            if (ok && ret.length >= 64) queuedFee = abi.decode(ret, (ModuleFee));
         }
+    }
+
+    ModuleFee internal queuedFee;
+
+    /// @dev The queued module and the fee the slot recorded for it.
+    function pending() external view returns (Pending memory p) {
+        if (!hasModule) return p;
+        p.nextModule.module = moduleAddr;
+        p.nextModule.fee = queuedFee;
+        p.mask = 8;
     }
 
     /// @dev Clears whichever of `mask` is queued, and reverts only when none
@@ -387,7 +422,7 @@ contract SlotCollectiveTest is Test {
         bytes32 before = mgr.splitHash();
 
         vm.prank(splitMgr);
-        mgr.setSplit(_split(), next, new address[](0));
+        mgr.setSplit(_split(), next, new address[](0), new IManagedSlot[](0));
 
         assertTrue(mgr.splitHash() != before);
         assertEq(mgr.splitHash(), keccak256(abi.encode(next)));
@@ -411,7 +446,7 @@ contract SlotCollectiveTest is Test {
         address[] memory tokens = new address[](1);
         tokens[0] = mgr.NATIVE_TOKEN();
         vm.prank(splitMgr);
-        mgr.setSplit(_split(), allToA, tokens);
+        mgr.setSplit(_split(), allToA, tokens, new IManagedSlot[](0));
 
         assertEq(payeeA.balance, 0.6 ether - 1, "payee A got the old share");
         assertEq(payeeB.balance, 0.4 ether - 1, "payee B was paid before being removed");
@@ -428,7 +463,7 @@ contract SlotCollectiveTest is Test {
         tokens[0] = mgr.NATIVE_TOKEN();
         vm.prank(splitMgr);
         vm.expectRevert();
-        mgr.setSplit(wrong, wrong, tokens);
+        mgr.setSplit(wrong, wrong, tokens, new IManagedSlot[](0));
     }
 
     function test_policyManagerRelaysAcceptances() public {
@@ -483,6 +518,38 @@ contract SlotCollectiveTest is Test {
         vm.prank(policyMgr);
         mgr.acceptFee(IManagedSlot(address(slot)), declared);
         assertEq(slot.acceptedFeeBps(), 100);
+    }
+
+    /// @notice A module that answers the collective differently from the slot
+    ///         cannot slip a fee past the payout role: the gate reads what the
+    ///         slot recorded.
+    function test_aModuleCannotHideItsFeeFromTheCollective() public {
+        TwoFacedModuleStub twoFaced = new TwoFacedModuleStub(address(mgr));
+        bytes32 splitRole = mgr.SPLIT_MANAGER_ROLE();
+
+        vm.prank(policyMgr);
+        vm.expectRevert(_unauthorized(policyMgr, splitRole));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({module: address(twoFaced), settings: ""})
+        );
+        assertFalse(slot.hasModule(), "nothing queued");
+    }
+
+    /// @notice Sending an accepted fee to a new recipient is a change of
+    ///         destination, so it needs the payout role even at the same rate.
+    ///         Lowering it to the same recipient does not.
+    function test_aNewFeeRecipientNeedsThePayoutRoleToo() public {
+        vm.prank(admin);
+        mgr.acceptFee(IManagedSlot(address(slot)), ModuleFee({bps: 100, recipient: payeeA}));
+        bytes32 splitRole = mgr.SPLIT_MANAGER_ROLE();
+
+        vm.prank(policyMgr);
+        vm.expectRevert(_unauthorized(policyMgr, splitRole));
+        mgr.acceptFee(IManagedSlot(address(slot)), ModuleFee({bps: 100, recipient: payeeB}));
+
+        vm.prank(policyMgr);
+        mgr.acceptFee(IManagedSlot(address(slot)), ModuleFee({bps: 50, recipient: payeeA}));
+        assertEq(slot.acceptedFeeBps(), 50, "a lower fee to the same place lands");
     }
 
     /// @notice A batch of different calls in one transaction.

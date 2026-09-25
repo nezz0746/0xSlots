@@ -113,6 +113,15 @@ contract CoreEscrowTest is Test {
         vm.warp(1_000_000);
     }
 
+    /// @dev Whole units accrued from a standing start, with no carry.
+    function _tax(
+        uint256 price,
+        uint256 taxRateBps,
+        uint256 elapsed
+    ) internal pure returns (uint256 owed) {
+        (owed,) = SlotMath.accrue(price, taxRateBps, elapsed, 0);
+    }
+
     function _slot(address currency) internal returns (Slot) {
         return Slot(
             payable(factory.createSlot(
@@ -288,35 +297,47 @@ contract CoreEscrowTest is Test {
         s.collect();
     }
 
-    // ─── debt: defaulting must not be cheap ─────────────────────────────────
+    // ─── debt: owed for the tenure, and only the tenure ─────────────────────
 
     /**
-     * @notice Tax that outran the deposit follows the ACCOUNT, not the seat.
+     * @notice Tax that outran the deposit is owed while the occupant holds the
+     *         seat, and ends with the seat.
      *
-     * @dev Without this, running a deposit dry and retaking the vacated slot
-     *      costs less than staying — which makes default the dominant strategy.
+     * @dev It cannot outlive the tenure, because `buy` seats whoever the payer
+     *      names: debt that followed the account could be pinned on anyone.
+     *      Carrying it across tenures only ever stopped a defaulter who would
+     *      not switch addresses anyway.
      */
-    function test_DebtFollowsTheAccountAcrossTenures() public {
+    function test_DebtEndsWithTheTenure() public {
         Slot s = _slot(address(token));
         _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
 
         // Run her dry, well past what the escrow covers.
         vm.warp(block.timestamp + 90 days);
+        assertGt(s.taxOwed(), s.deposit(), "she owes more than she holds");
         s.liquidate();
         assertTrue(s.isVacant());
+        assertEq(s.debtOf(alice), 0, "nothing follows her out");
 
-        uint256 debt = s.debtOf(alice);
-        assertGt(debt, 0, "unpaid tax was recorded against her");
-
-        // Retaking costs the debt on top of the deposit.
         uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
-        uint256 quoted = s.quoteBuy(alice, dep);
-        assertEq(quoted, dep + debt, "the quote carries the debt");
-
+        assertEq(s.quoteBuy(alice, dep), dep, "retaking costs only the deposit");
         uint256 spent = token.balanceOf(alice);
         _take(s, alice, dep, 1 ether);
-        assertEq(spent - token.balanceOf(alice), dep + debt, "and she paid it");
-        assertEq(s.debtOf(alice), 0, "settled");
+        assertEq(spent - token.balanceOf(alice), dep);
+    }
+
+    /// @notice Seating a stranger at a ruinous price cannot leave them owing
+    ///         anything once the seat is gone.
+    function test_SeatingSomebodyElseCannotPinDebtOnThem() public {
+        Slot s = _slotNoFloor(address(token));
+        uint256 maxPrice = s.MAX_PRICE();
+        s.buy(bob, maxPrice, 0, 0);
+
+        vm.warp(block.timestamp + 1 days);
+        s.liquidate();
+
+        assertEq(s.debtOf(bob), 0, "bob owes nothing for a seat he never asked for");
+        assertEq(s.quoteBuy(bob, 1 ether), 1 ether, "and can still buy");
     }
 
     /// @notice Somebody else's debt is not charged to a new buyer.
@@ -325,7 +346,6 @@ contract CoreEscrowTest is Test {
         _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
         vm.warp(block.timestamp + 90 days);
         s.liquidate();
-        assertGt(s.debtOf(alice), 0);
 
         uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
         assertEq(s.quoteBuy(bob, dep), dep, "bob owes only his own deposit");
@@ -403,7 +423,8 @@ contract CoreEscrowTest is Test {
         );
     }
 
-    /// @notice A debt larger than the price keeps what the price did not cover.
+    /// @notice A debt larger than the price takes all of it, and what the price
+    ///         did not cover ends with the tenure.
     function test_ABuyoutSmallerThanTheDebtPaysWhatItCan() public {
         (Slot s, uint256 debt) = _insolvent(100 ether);
         vm.warp(block.timestamp + 3650 days);
@@ -414,7 +435,7 @@ contract CoreEscrowTest is Test {
         _take(s, bob, SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP), 1 ether);
 
         assertEq(token.balanceOf(alice), before, "nothing left for her");
-        assertEq(s.debtOf(alice), debt - 100 ether, "the rest still follows her");
+        assertEq(s.debtOf(alice), 0, "the rest ends with her tenure");
     }
 
     /// @notice Topping up an empty escrow pays the debt before it funds the
@@ -449,7 +470,7 @@ contract CoreEscrowTest is Test {
     ///      of several wei per second, a settle per block overcharged by half.
     function test_SettlingEveryBlockChargesWhatSettlingOnceDoes() public {
         uint256 price = 1 ether;
-        assertGt(SlotMath.taxFor(price, TAX_RATE, 1), 1, "several wei per second");
+        assertGt(_tax(price, TAX_RATE, 1), 1, "several wei per second");
         uint256 dep = SlotMath.depositFor(price, TAX_RATE, 30 days);
 
         Slot ground = _slot(address(token));
@@ -508,8 +529,8 @@ contract CoreEscrowTest is Test {
      */
     function test_GrindingAnEmptyEscrowCannotEraseDebt() public {
         uint256 price = 1_000_000;
-        assertEq(SlotMath.taxFor(price, TAX_RATE, 1), 0, "one second accrues nothing");
-        assertGt(SlotMath.taxFor(price, TAX_RATE, 200), 0, "the whole window does");
+        assertEq(_tax(price, TAX_RATE, 1), 0, "one second accrues nothing");
+        assertGt(_tax(price, TAX_RATE, 200), 0, "the whole window does");
 
         Slot ground = _slotNoFloor(address(token));
         Slot honest = _slotNoFloor(address(token));

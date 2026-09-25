@@ -125,16 +125,17 @@ describe("money and roles", () => {
 });
 
 describe("split and module offers", () => {
-  it("setSplit sends the current split, the next one and native plus listed tokens", async () => {
+  it("setSplit sends the current split, the next one, native plus listed tokens and the slots to sweep", async () => {
     const { client, last } = harness();
     const next: CollectiveSplit = { recipients: [ALICE], allocations: [1n] };
-    await client.setSplit(COLLECTIVE, split, next, [BOB]);
+    await client.setSplit(COLLECTIVE, split, next, [BOB], [SLOT_A]);
     expect(last()).toMatchObject({
       functionName: "setSplit",
       args: [
         { totalAllocation: 100n },
         { recipients: [ALICE], totalAllocation: 1n },
         [SPLITS_NATIVE_TOKEN, BOB],
+        [SLOT_A],
       ],
     });
   });

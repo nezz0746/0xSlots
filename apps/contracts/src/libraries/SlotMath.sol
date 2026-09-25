@@ -5,7 +5,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title SlotMath
- * @notice The Harberger arithmetic, in one place.
+ * @notice The common-ownership arithmetic, in one place.
  *
  * @dev ── Why a library and not a base contract ──────────────────────────
  *
@@ -41,20 +41,6 @@ library SlotMath {
     uint256 private constant DEN = MONTH * BASIS_POINTS;
 
     /**
-     * @notice Tax accrued on `price` over `elapsed` seconds.
-     *
-     * @dev Rounds DOWN. A settler must not drop the shortfall — see `accrue`,
-     *      which carries it.
-     */
-    function taxFor(
-        uint256 price,
-        uint256 taxRateBps,
-        uint256 elapsed
-    ) internal pure returns (uint256) {
-        return Math.mulDiv(price, taxRateBps * elapsed, DEN);
-    }
-
-    /**
      * @notice The smallest deposit that funds `window` seconds at `price`.
      *
      * @dev Rounds UP, and that direction is load-bearing: rounding down let a
@@ -73,7 +59,7 @@ library SlotMath {
     /**
      * @notice How many seconds `amount` of tax buys at `price`.
      *
-     * @dev The inverse of `taxFor`, in the same numerator space rather than
+     * @dev The inverse of `accrue`, in the same numerator space rather than
      *      via a per-second rate. A rate divides before it multiplies, so it
      *      floors to zero whenever `price * taxRateBps < MONTH * BASIS_POINTS` —
      *      and a caller then reads "never runs out" for a position that is
@@ -95,7 +81,7 @@ library SlotMath {
      * @notice Tax accrued on `price` over `elapsed`, plus a remainder carried
      *         from before: whole units owed now, and the new remainder.
      *
-     * @dev What a settler uses instead of `taxFor`. Nothing is rounded away:
+     * @dev Nothing is rounded away:
      *      the part of the numerator below one unit is returned to be carried,
      *      so a settle can always move its clock to now. Converting paid tax
      *      back into seconds instead — the previous design — forgave up to a

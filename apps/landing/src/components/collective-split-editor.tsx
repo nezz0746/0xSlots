@@ -26,6 +26,7 @@ export function CollectiveSplitEditor({
   collective,
   recipients,
   currencies,
+  slots,
   canManage,
   onChanged,
 }: {
@@ -33,6 +34,8 @@ export function CollectiveSplitEditor({
   recipients: SplitRecipient[];
   /** The currencies its slots pay it in; each is paid out under the old split first. */
   currencies: Address[];
+  /** The slots paying it; each is swept first, so rent they hold goes to the old split. */
+  slots: Address[];
   canManage: boolean;
   onChanged: () => void;
 }) {
@@ -117,9 +120,10 @@ export function CollectiveSplitEditor({
 
   const save = () => {
     if (!valid) return;
-    // `setSplit` pays out what is held under the split in force before
-    // replacing it, so it needs that split and every token worth paying out:
-    // native ETH always, plus whatever currencies the collective's slots use.
+    // `setSplit` sweeps the collective's slots and pays out what is held under
+    // the split in force before replacing it, so it needs that split, every
+    // token worth paying out — native ETH always, plus whatever currencies the
+    // slots use — and the slots themselves.
     const current = {
       recipients: recipients.map((r) => r.account),
       allocations: recipients.map((r) => BigInt(r.allocation)),
@@ -151,6 +155,7 @@ export function CollectiveSplitEditor({
             distributionIncentive: 0,
           },
           tokens,
+          slots,
         ],
       },
       { onError: (e) => toast.error(e.message.split("\n")[0] ?? "Failed") },

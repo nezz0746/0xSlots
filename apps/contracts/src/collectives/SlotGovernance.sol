@@ -3,9 +3,8 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {TaxTerms, ModuleTerms, ModuleFee} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, ModuleFee, Pending} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
-import {ISlotModule} from "../interfaces/ISlotModule.sol";
 
 /// @notice The subset of `Slot` a collective drives.
 interface IManagedSlot {
@@ -23,13 +22,15 @@ interface IManagedSlot {
 
     function fee() external view returns (ModuleFee memory);
 
+    function pending() external view returns (Pending memory);
+
     function collect() external;
 
     function claim(address account) external;
 }
 
 /// @notice Which lever a relayed event describes. Local to this contract and
-///         never passed to a slot — see the note on `IManagedSlot`.
+///         never passed to a slot.
 enum Dimension {
     Tax,
     Module
@@ -65,13 +66,9 @@ abstract contract SlotGovernance is AccessControl, Initializable {
 
     // ── Why these exist at all ───────────────────────────────────
     //
-    // Not redundancy with the slot's own logs. The slot's propose events carry
-    // NO proposer:
-    //
-    //     event TaxUpdateProposed(uint256 newPercentage);
-    //     event UpdateProposed(Dimension indexed kind, bytes32 value, uint64 proposedAt);
-    //
-    // so from the slot side, who pulled the lever is simply absent.
+    // Not redundancy with the slot's own logs. The slot's `TermsProposed`
+    // carries NO proposer, so from the slot side, who pulled the lever is
+    // simply absent.
     //
     // An indexer cannot recover it from `transaction.from` either. That works
     // only while the role holder is an EOA, and breaks in exactly the cases a
@@ -105,8 +102,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     event AllTermsCancelled(address indexed slot, address indexed by);
 
     /// @dev Widens an address to the `bytes32` `TermsRelayed` carries, so one
-    ///      event shape describes a rate and two contract addresses. Mirrors
-    ///      `Slot._asValue`.
+    ///      event shape describes a rate and an address.
     function _asValue(address a) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
     }
@@ -243,29 +239,35 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         // much as the policy role's. Without this the policy role could send
         // every slot's rent to a module's fee recipient and the split's members
         // would receive nothing, with the split itself untouched.
-        // Only a target with code can charge anything: the slot reads every
-        // module's fee when it is proposed and refuses one it cannot read.
-        if (terms.module.code.length != 0) {
-            ModuleFee memory f = ISlotModule(terms.module).fee(terms.settings);
-            if (f.bps != 0) _requireRoleOrAdmin(_payoutRole());
-        }
+        //
+        // Checked against the fee the SLOT recorded, after it recorded it, and
+        // never against an answer the module gave this contract. A module's
+        // `fee` is a view that can see who is asking: asked separately, it
+        // could tell this contract nothing and the slot everything.
         TaxTerms memory none;
         slot.proposeTerms(none, terms, TermsLib.MODULE);
+        if (slot.pending().nextModule.fee.bps != 0) _requireRoleOrAdmin(_payoutRole());
         emit TermsRelayed(address(slot), msg.sender, Dimension.Module, _asValue(terms.module));
     }
 
     /// @notice Accept the attached module's current fee on `slot`. Applies at once.
     ///
     /// @dev The policy manager's decision, like proposing a module — and, for a
-    ///      higher fee, the payout role's as well. `expected` is the fee they
-    ///      reviewed; the slot reverts if the module now declares anything else.
+    ///      higher fee or a new fee recipient, the payout role's as well.
+    ///      `expected` is the fee they reviewed; the slot reverts if the module
+    ///      now declares anything else.
     function acceptFee(
         IManagedSlot slot,
         ModuleFee calldata expected
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
-        // Raising the fee is the payout role's call too, for the reason given
-        // in {_proposeModule}. Lowering it is not.
-        if (expected.bps > slot.fee().bps) {
+        // Raising the fee, or sending it somewhere new, is the payout role's
+        // call too, for the reason given in {_proposeModule}. Lowering it to
+        // the same recipient is not.
+        ModuleFee memory current = slot.fee();
+        if (
+            expected.bps > current.bps
+                || (expected.bps != 0 && expected.recipient != current.recipient)
+        ) {
             _requireRoleOrAdmin(_payoutRole());
         }
         slot.acceptFee(expected);
@@ -384,6 +386,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      to check against `splitHash`, and the pool needs a decision about
     ///      whether the money leaves as a lump or as a rate.
     function sweep(IManagedSlot[] calldata slots) external {
+        _sweep(slots);
+    }
+
+    function _sweep(IManagedSlot[] calldata slots) internal {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks

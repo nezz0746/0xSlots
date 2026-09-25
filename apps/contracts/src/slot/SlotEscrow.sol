@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {ScopesLib} from "../libraries/ScopesLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISlotModule} from "../interfaces/ISlotModule.sol";
@@ -37,7 +38,7 @@ abstract contract SlotEscrow is SlotOccupancy {
 
         Occupancy storage o = _occupancy();
         _before(
-            F_BEFORE_SELF_ASSESS,
+            ScopesLib.BEFORE_SELF_ASSESS,
             abi.encodeCall(
                 ISlotModule.beforeSelfAssess, (_ctx(msg.sender, o.occupant, newPrice, o.deposit))
             )

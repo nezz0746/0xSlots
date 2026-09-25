@@ -18,10 +18,9 @@ interface ISellableSlot {
     function deposit() external view returns (uint256);
     function currency() external view returns (address);
     function taxOwed() external view returns (uint256);
-    function debtOf(address account) external view returns (uint256);
 
-    /// @dev What `buy` will charge `account` for `depositAmount` of escrow:
-    ///      the sitting price, the escrow, and any debt that account owes.
+    /// @dev What `buy` will charge for `depositAmount` of escrow: the sitting
+    ///      price and the escrow.
     function quoteBuy(address account, uint256 depositAmount) external view returns (uint256);
 
     /// @dev The escrow floor at `price_` under the terms in force. `selfAssess`

@@ -2668,7 +2668,7 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
       { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'quoteBuy',
@@ -3409,6 +3409,7 @@ export const slotAbi = [
     ],
     name: 'CurrencyTakesACut',
   },
+  { type: 'error', inputs: [], name: 'DebtOutstanding' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'FeeChanged' },
   { type: 'error', inputs: [], name: 'InvalidCurrency' },
@@ -3423,6 +3424,7 @@ export const slotAbi = [
   { type: 'error', inputs: [], name: 'InvalidTax' },
   { type: 'error', inputs: [], name: 'InvalidValue' },
   { type: 'error', inputs: [], name: 'ModuleChangeQueued' },
+  { type: 'error', inputs: [], name: 'ModuleGasTooLow' },
   { type: 'error', inputs: [], name: 'ModuleTooExpensive' },
   { type: 'error', inputs: [], name: 'NoPendingTerms' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
@@ -6031,6 +6033,11 @@ export const slotCollectiveAbi = [
         ],
       },
       { name: 'tokens', internalType: 'address[]', type: 'address[]' },
+      {
+        name: 'slots',
+        internalType: 'contract IManagedSlot[]',
+        type: 'address[]',
+      },
     ],
     name: 'setSplit',
     outputs: [],

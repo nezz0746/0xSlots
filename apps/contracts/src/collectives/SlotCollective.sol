@@ -8,7 +8,7 @@ import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {PushSplit} from "splits-v2/splitters/push/PushSplit.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotGovernance} from "./SlotGovernance.sol";
+import {SlotGovernance, IManagedSlot} from "./SlotGovernance.sol";
 import {Versioned} from "../utils/Versioned.sol";
 
 /// @title SlotCollective — a collective that pays out through a 0xSplits split
@@ -22,7 +22,7 @@ import {Versioned} from "../utils/Versioned.sol";
 ///         a 0xSplits PushSplit that pays out to many recipients, wearing a
 ///         role-gated control panel on top.
 ///
-///         Point a slot's `recipient` AND `settings.manager` at an instance of
+///         Point a slot's `recipient` AND `manager` at an instance of
 ///         this and you get: tax accrues here, `distribute()` fans it out over
 ///         the split, and each of the slot's two governable dimensions is
 ///         gated behind its own role.
@@ -222,6 +222,10 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     ///        collected for the old recipients cannot be paid to the new ones.
     ///        A token left out is paid under `next`; listing all of them is the
     ///        split manager's responsibility.
+    /// @param slots The slots paying this collective. Swept first, as {sweep}
+    ///        does, so rent they are still holding for the old recipients
+    ///        reaches the collective in time to be paid under `current`. A slot
+    ///        left out pays what it holds under `next`.
     ///
     /// @dev Reverts while paused, because distributing does. Routed through the
     ///      inherited `updateSplit` by external self-call: `Ownable.onlyOwner`
@@ -230,8 +234,10 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     function setSplit(
         SplitV2Lib.Split calldata current,
         SplitV2Lib.Split calldata next,
-        address[] calldata tokens
+        address[] calldata tokens,
+        IManagedSlot[] calldata slots
     ) external onlyRoleOrAdmin(SPLIT_MANAGER_ROLE) {
+        _sweep(slots);
         uint256 length = tokens.length;
         for (uint256 i; i < length; ++i) {
             (uint256 held, uint256 warehoused) = getSplitBalance(tokens[i]);

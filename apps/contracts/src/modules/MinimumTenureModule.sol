@@ -28,7 +28,7 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      the slot, both halves of the configuration — which module, and how long —
  *      are frozen by the same flag.
  *
- *      ── Harberger impact: SOFT ──────────────────────────────────────────
+ *      ── Common-ownership impact: SOFT ──────────────────────────────────────────
  *
  *      Forced sale is delayed, not removed. A dishonestly low price is still
  *      punished, just `tenureSeconds` later. Two conditions keep that true and

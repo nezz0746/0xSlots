@@ -28,13 +28,6 @@ contract SlotFactory is VersionedUUPS {
         return 1;
     }
 
-    /// @notice Which migration has run against THIS proxy's storage.
-    /// @dev OpenZeppelin already tracks this and already refuses to run a
-    ///      `reinitializer(N)` twice or out of order — so an upgrade that
-    ///      needs new state gets its monotonicity enforced by the library
-    ///      rather than by a script. Exposed because it is otherwise
-    ///      internal, and during an incident you want both numbers.
-
     /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
     UpgradeableBeacon public beacon;
 

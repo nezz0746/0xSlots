@@ -163,10 +163,11 @@ contract OfferBookSlotsTest is Test {
         assertGt(token.balanceOf(alice), before, "alice was paid");
     }
 
-    /// @notice An offer is only fundable if the bidder can also cover the debt
-    ///         the fill will charge them.
-    function test_ABidderWithDebtIsFundableOnlyIfTheyCoverIt() public {
-        // Carol holds the slot, runs dry and is liquidated, leaving a debt.
+    /// @notice A bidder who once defaulted on this slot bids like anyone else:
+    ///         their debt ended with their tenure, so the fill charges only the
+    ///         price and the deposit.
+    function test_AFormerDefaulterIsFundableForPriceAndDeposit() public {
+        // Carol holds the slot, runs dry and is liquidated.
         uint256 dep = slot.minDepositForBuy(PRICE);
         vm.prank(alice);
         slot.release();
@@ -174,8 +175,7 @@ contract OfferBookSlotsTest is Test {
         slot.buy(carol, PRICE, dep, 0);
         vm.warp(block.timestamp + 30 days);
         slot.liquidate();
-        uint256 debt = slot.debtOf(carol);
-        assertGt(debt, 0);
+        assertEq(slot.debtOf(carol), 0, "nothing followed her out");
 
         uint256 aliceDep = slot.minDepositForBuy(PRICE);
         vm.prank(alice);
@@ -185,11 +185,7 @@ contract OfferBookSlotsTest is Test {
         uint256 cost = 90e18 + slot.minDepositForBuy(90e18);
         vm.prank(carol);
         token.approve(address(book), cost);
-        assertFalse(book.isFundable(address(slot), id), "price and deposit alone are not enough");
-
-        vm.prank(carol);
-        token.approve(address(book), cost + debt);
-        assertTrue(book.isFundable(address(slot), id));
+        assertTrue(book.isFundable(address(slot), id), "price and deposit are enough");
     }
 
     /// @notice The pre-check measures the floor the way `selfAssess` does:

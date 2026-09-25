@@ -71,8 +71,9 @@ struct ModuleUpdate {
     bool answered;
     uint16 declaredScopes;
     ModuleFee declaredFee;
-    /// `acceptFee` would change the fee now: it differs, and a rise is allowed
-    /// (`mutableRecipient`).
+    /// `acceptFee` would change the fee now: it differs, a rise or a new fee
+    /// recipient is allowed (`mutableRecipient`), and the occupant owes no
+    /// debt that would make it wait.
     bool feeDiffers;
     /// `acceptScopes` would queue new scopes: they differ, the module is
     /// mutable, no new module is queued, and they are not already queued.
@@ -98,6 +99,7 @@ interface ISlotReads {
     function tenureId() external view returns (uint64);
     function lastSettled() external view returns (uint64);
     function taxOwed() external view returns (uint256);
+    function debtOf(address account) external view returns (uint256);
     function collectedTax() external view returns (uint256);
     function isVacant() external view returns (bool);
     function isInsolvent() external view returns (bool);
@@ -255,8 +257,12 @@ contract SlotLens is VersionedUUPS {
             ModuleLib.tryRead(t.module, t.settings, s.MODULE_CALLBACK_GAS_LIMIT() / 3);
         if (!u.answered) return u;
 
+        bool redirects =
+            u.declaredFee.bps > u.currentFee.bps
+            || (u.declaredFee.bps != 0 && u.declaredFee.recipient != u.currentFee.recipient);
+        bool owes = s.taxOwed() > s.deposit() || s.debtOf(s.occupant()) != 0;
         u.feeDiffers = !ModuleLib.sameFee(u.declaredFee, u.currentFee)
-            && (u.declaredFee.bps <= u.currentFee.bps || s.mutableRecipient());
+            && (!redirects || s.mutableRecipient()) && !owes;
 
         Pending memory p = s.pending();
         bool moduleQueued = p.mask & TermsLib.MODULE != 0;

@@ -117,6 +117,9 @@ contract TermsApplicationTest is SlotsTest, SlotConstants {
     function test_OnlyTheOccupantAppliesTermsToTheirOwnSeat() public {
         Slot s = _slot(address(0));
         _seat(s, alice);
+        // Funded well past the delay, so she owes nothing when she applies.
+        vm.prank(alice);
+        s.topUp(10 ether);
         DenyBuys deny = _ripeDenial(s);
 
         vm.prank(bob);
@@ -128,6 +131,28 @@ contract TermsApplicationTest is SlotsTest, SlotConstants {
         s.applyTerms();
         assertEq(s.module(), address(deny), "she waived the wait herself");
         assertEq(s.occupant(), alice, "and kept her seat");
+    }
+
+    /// @notice An occupant carrying debt cannot move the terms that debt is
+    ///         owed under. Paying it off first lets them.
+    function test_AnOccupantInDebtPaysBeforeApplying() public {
+        Slot s = _slot(address(0));
+        _seat(s, alice);
+        DenyBuys deny = _ripeDenial(s);
+        vm.warp(block.timestamp + 30 days);
+        assertGt(s.taxOwed(), s.deposit(), "alice has run dry");
+
+        vm.prank(alice);
+        vm.expectRevert(DebtOutstanding.selector);
+        s.applyTerms();
+
+        vm.prank(alice);
+        s.topUp(10 ether);
+        assertEq(s.debtOf(alice), 0, "the top-up paid it");
+
+        vm.prank(alice);
+        s.applyTerms();
+        assertEq(s.module(), address(deny));
     }
 
     /// @notice Nothing ripe is nothing to apply.

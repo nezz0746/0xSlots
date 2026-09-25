@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -56,7 +56,23 @@ contract MockSlot {
             settings = moduleTerms.settings;
             moduleAddr = moduleTerms.module;
             hasModule = true;
+            // Reads the module's fee as ITSELF, as the real slot does, and
+            // keeps it as the reviewed fee `pending()` reports.
+            delete queuedFee;
+            (bool ok, bytes memory ret) = moduleTerms.module
+                .staticcall(abi.encodeWithSignature("fee(bytes)", moduleTerms.settings));
+            if (ok && ret.length >= 64) queuedFee = abi.decode(ret, (ModuleFee));
         }
+    }
+
+    ModuleFee internal queuedFee;
+
+    /// @dev The queued module and the fee the slot recorded for it.
+    function pending() external view returns (Pending memory p) {
+        if (!hasModule) return p;
+        p.nextModule.module = moduleAddr;
+        p.nextModule.fee = queuedFee;
+        p.mask = 8;
     }
 
     /// @dev Clears whichever of `mask` is queued, and reverts only when none

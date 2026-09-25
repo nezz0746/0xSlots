@@ -163,7 +163,7 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration {
         if (msg.value != 0) revert UnexpectedValue();
 
         // Exactly what the buy will pull, from the slot itself: the standing
-        // price when occupied, the deposit, and any debt the buyer owes. Safe
+        // price when occupied and the deposit. Safe
         // to read ahead of the call — settling moves the deposit, the collected
         // tax and the settle timestamp, and none of those are in the quote.
         uint256 owed = ISlotAd(slot).quoteBuy(msg.sender, depositAmount);

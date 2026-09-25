@@ -29,7 +29,6 @@ import {TermsLib} from "../libraries/TermsLib.sol";
  *      slots, or the constants, in one call.
  */
 abstract contract SlotViews is SlotAccounting {
-    using TermsLib for Pending;
     using ModuleLib for InstalledModule;
 
     // ─── governance ─────────────────────────────────────────────────────────
@@ -131,6 +130,8 @@ abstract contract SlotViews is SlotAccounting {
         return _ledger().claimableOf[account];
     }
 
+    /// @notice Tax the occupant's deposit could not cover, still owed this
+    ///         tenure. Zero for anyone not seated: debt ends with the seat.
     function debtOf(address account) external view returns (uint256) {
         return _ledger().debtOf[account];
     }
@@ -177,8 +178,8 @@ abstract contract SlotViews is SlotAccounting {
      */
     function minDepositForBuy(uint256 price_) public view returns (uint256) {
         TaxTerms memory r = _taxTerms();
-        Pending storage q = _pending();
-        if (q.isRipe(TERMS_DELAY)) {
+        if (hasRipeTerms()) {
+            Pending storage q = _pending();
             if (q.mask & TermsLib.TAX_RATE != 0) r.rateBps = q.taxTerms.rateBps;
             if (q.mask & TermsLib.MIN_RUNWAY != 0) {
                 r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;
@@ -190,12 +191,16 @@ abstract contract SlotViews is SlotAccounting {
     /**
      * @notice What `buy` will charge for `depositAmount`.
      *
-     * @dev A taker pays the sitting occupant's price plus their own deposit and
-     *      any debt; a taker of a vacant slot pays only the deposit. For a
-     *      native slot this is exactly the `msg.value` to send.
+     * @dev A taker pays the sitting occupant's price plus their own deposit;
+     *      a taker of a vacant slot pays only the deposit. For a native slot
+     *      this is exactly the `msg.value` to send.
+     *
+     *      The first argument is the account to seat. It no longer changes the
+     *      answer, since a buyer never carries debt in, and is kept so existing
+     *      callers keep working.
      */
-    function quoteBuy(address account, uint256 depositAmount) public view returns (uint256) {
+    function quoteBuy(address, uint256 depositAmount) public view returns (uint256) {
         Occupancy storage o = _occupancy();
-        return (o.occupant == address(0) ? 0 : o.price) + depositAmount + _ledger().debtOf[account];
+        return (o.occupant == address(0) ? 0 : o.price) + depositAmount;
     }
 }

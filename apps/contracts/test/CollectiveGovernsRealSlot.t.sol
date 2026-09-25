@@ -277,6 +277,31 @@ contract CollectiveGovernsRealSlotTest is Test {
         assertGt(address(collective).balance, before, "tax reached the engine");
     }
 
+    /// @notice Rewriting the split first pulls in the rent its slots are still
+    ///         holding, so what was earned under the old split is paid under it.
+    function test_SetSplitPaysTheSlotsRentUnderTheOldSplit() public {
+        _ripen();
+        _seat(buyer);
+        vm.warp(block.timestamp + 10 days);
+        assertGt(slot.taxOwed(), 0, "the slot is holding rent");
+
+        address newcomer = makeAddr("newcomer");
+        SplitV2Lib.Split memory next = _split();
+        next.recipients[0] = newcomer;
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = collective.NATIVE_TOKEN();
+        IManagedSlot[] memory slots = new IManagedSlot[](1);
+        slots[0] = IManagedSlot(address(slot));
+
+        uint256 before = payee.balance;
+        vm.prank(admin);
+        collective.setSplit(_split(), next, tokens, slots);
+
+        assertGt(payee.balance, before, "the old payee was paid the slot's rent");
+        assertEq(newcomer.balance, 0, "and the newcomer none of it");
+    }
+
     /// @notice The blanket cancel works against a real slot with only one
     ///         dimension queued — the case that would revert if it asked for
     ///         both at once.

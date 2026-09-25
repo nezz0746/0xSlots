@@ -141,7 +141,7 @@ contract OfferBook is OfferBookInternals {
      *        1. `selfAssess(price)` — the occupant's own declared price,
      *           restated to what they have agreed to sell at. Needs the
      *           operator grant.
-     *        2. `buy(bidder, price, deposit, price + deposit + debt)` — the
+     *        2. `buy(bidder, price, deposit, price + deposit)` — the
      *           ordinary market path, which pays the outgoing occupant their
      *           deposit plus the price.
      *
@@ -212,9 +212,9 @@ contract OfferBook is OfferBookInternals {
         // `currency` are both answered by `slot` — an address nothing here has
         // verified is a slot. Unbounded, a counterfeit slot quotes the bidder's
         // whole standing allowance to this book and spends it. `_fundable`
-        // already treats price + deposit + debt as the bid's true cost; this is
-        // the same ceiling on the paying side.
-        uint256 ceiling = price + dep + ISellableSlot(slot).debtOf(bidder);
+        // already treats price + deposit as the bid's true cost; this is the
+        // same ceiling on the paying side.
+        uint256 ceiling = price + dep;
         if (owed > ceiling) revert QuoteAboveOffer(owed, ceiling);
 
         IERC20(currency).safeTransferFrom(bidder, address(this), owed);

@@ -54,5 +54,13 @@ error NothingProposed();
 error UnknownTerms();
 
 error PaymentAboveMax();
+/// @dev The occupant owes tax their deposit could not cover. Terms that would
+///      change who that tax is paid to wait until it is repaid, or until the
+///      occupant is liquidated and the debt ends with their tenure.
+error DebtOutstanding();
+/// @dev Too little gas left to give a module callback its full stipend. Sent
+///      with more gas, the same call goes through; refusing it stops a caller
+///      from starving the callback on purpose and having the failure swallowed.
+error ModuleGasTooLow();
 /// @dev The currency delivered a different amount than was transferred.
 error CurrencyTakesACut(uint256 sent, uint256 received);

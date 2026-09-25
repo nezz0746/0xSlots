@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {SlotMath} from "../libraries/SlotMath.sol";
+import {TermsLib} from "../libraries/TermsLib.sol";
 
 /**
  * @title SlotConstants
@@ -54,11 +55,12 @@ abstract contract SlotConstants {
     // seated on terms they never saw.
     uint64 public constant TERMS_DELAY = 1 hours;
 
-    // Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
-    // `TERM_SCOPES` is queued by `grant`, never proposed.
-    uint16 public constant TERM_TAX_RATE = 1 << 0;
-    uint16 public constant TERM_RECIPIENT = 1 << 1;
-    uint16 public constant TERM_MIN_RUNWAY = 1 << 2;
-    uint16 public constant TERM_MODULE = 1 << 3;
-    uint16 public constant TERM_SCOPES = 1 << 4;
+    // Term bits for `proposeTerms` and `cancelTerms`, read from `TermsLib` so
+    // the two can never disagree. `TERM_SCOPES` is queued by `acceptScopes`,
+    // never proposed.
+    uint16 public constant TERM_TAX_RATE = TermsLib.TAX_RATE;
+    uint16 public constant TERM_RECIPIENT = TermsLib.RECIPIENT;
+    uint16 public constant TERM_MIN_RUNWAY = TermsLib.MIN_RUNWAY;
+    uint16 public constant TERM_MODULE = TermsLib.MODULE;
+    uint16 public constant TERM_SCOPES = TermsLib.SCOPES;
 }

@@ -234,7 +234,7 @@ contract AuditFixesTest is Test, SlotConstants {
     function test_RaisingThePriceDoesNotBillThePastAtTheNewOne() public {
         Slot s = _slot(manager, recipient, 1, 0, true, _noModule());
 
-        // A dust price accrues nothing at all: `taxFor` floors to zero.
+        // A dust price accrues nothing at all: accrual floors to zero.
         vm.deal(alice, 10 ether);
         vm.prank(alice);
         s.buy{value: 1 ether}(alice, 1, 1 ether, 1 ether);

@@ -142,7 +142,7 @@ contract CollectAllTest is Test {
         assertEq(token.balanceOf(recipientB), collected[1], "and what b paid");
 
         // Four times the price at the same rate for the same time. Within a
-        // few wei: `taxFor` floors, so four times a floored figure is not the
+        // few wei: accrual floors, so four times a floored figure is not the
         // floor of four times it.
         assertApproxEqAbs(collected[1], collected[0] * 4, 4, "proportional to the valuation");
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {ScopesLib} from "./libraries/ScopesLib.sol";
 import {SlotViews} from "./slot/SlotViews.sol";
 import {SlotOccupancy} from "./slot/SlotOccupancy.sol";
 import {SlotEscrow} from "./slot/SlotEscrow.sol";
@@ -14,7 +15,7 @@ import {TermsLib} from "./libraries/TermsLib.sol";
 
 /**
  * @title Slot
- * @notice One Harberger-taxed position. Always for sale at a price its holder
+ * @notice One commonly owned position. Always for sale at a price its holder
  *         sets, taxed continuously on that price.
  *
  * @dev ── The two rules everything else serves ────────────────────────────
@@ -92,7 +93,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         // strictly when it declared `afterCallbacksMustSucceed`: refusing here fails the creation,
         // which is the creator's own transaction and nobody else's problem.
         _after(
-            F_ON_INSTALL,
+            ScopesLib.ON_INSTALL,
             abi.encodeCall(ISlotModule.onInstall, (_ctx(msg.sender, address(0), 0, 0)))
         );
 

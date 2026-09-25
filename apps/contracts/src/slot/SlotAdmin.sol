@@ -16,7 +16,8 @@ import {
     NotMutable,
     NoPendingTerms,
     NothingProposed,
-    UnknownTerms
+    UnknownTerms,
+    DebtOutstanding
 } from "../errors/SlotErrors.sol";
 import {SlotEscrow} from "./SlotEscrow.sol";
 import {TaxTerms, ModuleTerms, ModuleFee, Pending, InstalledModule} from "../types/SlotTypes.sol";
@@ -109,19 +110,27 @@ abstract contract SlotAdmin is SlotEscrow {
      * @dev Applies at once, on any slot: it only changes how collected tax is
      *      split between the recipient and the module, never what an occupant
      *      pays. Tax collected so far is paid out under the old fee first.
-     *      Raising it needs `mutableRecipient`, the same authority as moving
-     *      the recipient: more of the rent leaves by a different door.
-     *      Lowering it always lands.
+     *      Raising it, or sending it to a new fee recipient, needs
+     *      `mutableRecipient`, the same authority as moving the recipient: rent
+     *      leaves by a different door. Lowering it to the same recipient, or to
+     *      nothing, always lands.
+     *
+     *      Refused while the occupant carries debt: that tax was earned under
+     *      the fee in force and is paid out when it is repaid. Liquidating them
+     *      ends it, so this can only ever wait, never be blocked.
      */
     function acceptFee(ModuleFee calldata expected) external nonReentrant onlyManager {
         InstalledModule storage m = _module();
         if (m.module == address(0)) revert InvalidModule();
-        (, ModuleFee memory offered) = _readModule(m.terms());
+        (, ModuleFee memory offered) = ModuleLib.read(m.module, m.settings);
         if (!ModuleLib.sameFee(offered, expected)) revert FeeChanged();
         if (ModuleLib.sameFee(offered, m.fee)) revert NothingToAccept();
-        if (offered.bps > m.fee.bps && !_governance().mutableRecipient) revert NotMutable();
+        bool redirects =
+            offered.bps > m.fee.bps || (offered.bps != 0 && offered.recipient != m.fee.recipient);
+        if (redirects && !_governance().mutableRecipient) revert NotMutable();
 
         _settle();
+        _requireNoDebt();
         _flush();
         m.fee.bps = offered.bps;
         m.fee.recipient = offered.recipient;
@@ -146,7 +155,7 @@ abstract contract SlotAdmin is SlotEscrow {
         Pending storage p = _pending();
         if (p.mask & TermsLib.MODULE != 0) revert ModuleChangeQueued();
 
-        (uint16 offered,) = _readModule(m.terms());
+        (uint16 offered,) = ModuleLib.read(m.module, m.settings);
         if (offered != expected) revert ScopesChanged();
         if (offered == m.scopes) revert NothingToAccept();
         if (p.mask & TermsLib.SCOPES != 0 && p.nextModule.scopes == offered) {
@@ -167,14 +176,17 @@ abstract contract SlotAdmin is SlotEscrow {
      *      protect, so anyone may press it, which keeps a manager from waiting
      *      on a buyer to land a change.
      *
-     *      Everything ripe lands together, as it would at a buy.
+     *      Everything ripe lands together, as it would at a buy. Refused while
+     *      the occupant carries debt, for the reason given on {acceptFee}; a
+     *      top-up pays it off first.
      */
     function applyTerms() external nonReentrant {
         address occupant = _occupancy().occupant;
         if (occupant != address(0) && msg.sender != occupant) revert NotOccupant();
-        if (!_pending().isRipe(TERMS_DELAY)) revert NoPendingTerms();
+        if (!hasRipeTerms()) revert NoPendingTerms();
 
         _settle();
+        _requireNoDebt();
         if (_applyPending()) {
             _onInstall(_occupancy().occupant, _occupancy().price, _occupancy().deposit);
         }
@@ -192,6 +204,13 @@ abstract contract SlotAdmin is SlotEscrow {
     }
 
     // ─── validation ─────────────────────────────────────────────────────────
+
+    /// @dev Debt is tax earned under the terms in force and not yet paid in.
+    ///      Changing who that tax goes to before it arrives would hand it to
+    ///      the new recipient or fee instead.
+    function _requireNoDebt() internal view {
+        if (_ledger().debtOf[_occupancy().occupant] != 0) revert DebtOutstanding();
+    }
 
     function _validateRent(TaxTerms memory taxTerms, uint16 mask) internal pure {
         if (mask & TermsLib.TAX_RATE != 0) {
@@ -217,7 +236,7 @@ abstract contract SlotAdmin is SlotEscrow {
 
     /// @dev Returns the module's scopes and fee, as it declares them.
     ///
-    ///      Read twice, for two different answers. `_readModule` is uncapped and
+    ///      Read twice, for two different answers. `ModuleLib.read` is uncapped and
     ///      bubbles the module's own revert, so a module refusing its settings
     ///      says why. `_tryReadModule` is the read the slot will actually use
     ///      when the module attaches: a module too expensive to answer under
@@ -234,7 +253,7 @@ abstract contract SlotAdmin is SlotEscrow {
             if (h.settings.length != 0) revert InvalidModule();
             return (0, fee_);
         }
-        (scopes_, fee_) = _readModule(h);
+        (scopes_, fee_) = ModuleLib.read(h.module, h.settings);
         (bool affordable,,) = _tryReadModule(h);
         if (!affordable) revert ModuleTooExpensive();
     }

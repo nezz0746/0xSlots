@@ -9,15 +9,24 @@ import {SlotMath} from "../../src/libraries/SlotMath.sol";
 contract SlotMathTest is Test {
     uint256 constant DEN = 30 days * 10_000;
 
+    /// @dev Whole units accrued from a standing start, with no carry.
+    function _tax(
+        uint256 price,
+        uint256 taxRateBps,
+        uint256 elapsed
+    ) internal pure returns (uint256 owed) {
+        (owed,) = SlotMath.accrue(price, taxRateBps, elapsed, 0);
+    }
+
     // ── the two rounding directions, and why each is what it is ───────────
 
     /// @notice Accrual floors: you are never charged for a second you did not
     ///         hold the slot.
     function test_TaxFloors() public pure {
         // one second at a price too small to price one unit
-        assertEq(SlotMath.taxFor(1, 1, 1), 0);
+        assertEq(_tax(1, 1, 1), 0);
         // and exactly a month at 100% is the price
-        assertEq(SlotMath.taxFor(1e18, 10_000, 30 days), 1e18);
+        assertEq(_tax(1e18, 10_000, 30 days), 1e18);
     }
 
     /// @notice The requirement ceils: a window can never be funded for nothing.
@@ -26,7 +35,7 @@ contract SlotMathTest is Test {
         assertEq(SlotMath.depositFor(1, 1, 1), 1, "never zero for a real ask");
         assertGe(
             SlotMath.depositFor(1e18, 500, 7 days),
-            SlotMath.taxFor(1e18, 500, 7 days),
+            _tax(1e18, 500, 7 days),
             "the deposit must cover the tax it is sized against"
         );
     }
@@ -37,7 +46,7 @@ contract SlotMathTest is Test {
 
     // ── the inverse ───────────────────────────────────────────────────────
 
-    /// @notice `secondsFor` inverts `taxFor` — the property the old
+    /// @notice `secondsFor` inverts `accrue` — the property the old
     ///         per-second rate broke by dividing before multiplying.
     function testFuzz_SecondsForInvertsTaxFor(
         uint128 price,
@@ -45,7 +54,7 @@ contract SlotMathTest is Test {
         uint32 elapsed
     ) public pure {
         vm.assume(price > 0 && taxRateBps > 0 && taxRateBps <= 10_000);
-        uint256 owed = SlotMath.taxFor(price, taxRateBps, elapsed);
+        uint256 owed = _tax(price, taxRateBps, elapsed);
         uint256 back = SlotMath.secondsFor(owed, price, taxRateBps);
         // Never claims MORE time than was paid for.
         assertLe(back, uint256(elapsed));
@@ -60,7 +69,7 @@ contract SlotMathTest is Test {
 
         uint256 runway = SlotMath.secondsFor(1e6, price, taxRateBps);
         assertLt(runway, type(uint256).max, "must be a real number");
-        assertGt(SlotMath.taxFor(price, taxRateBps, runway + 1), 0, "and it drains");
+        assertGt(_tax(price, taxRateBps, runway + 1), 0, "and it drains");
     }
 
     function test_AZeroRateIsForever() public pure {
@@ -99,6 +108,5 @@ contract SlotMathTest is Test {
         }
 
         assertGt(SlotMath.depositFor(price, taxRateBps, window), 0, "mulDiv does not");
-        assertGt(SlotMath.taxFor(price, taxRateBps, window), 0);
     }
 }

@@ -313,9 +313,10 @@ contract AdLandTest is Test {
         }(who, price, dep, type(uint256).max);
     }
 
-    /// @notice Buy-and-publish approves what the slot will actually charge,
-    ///         debt included, so an advertiser who owes debt can still use it.
-    function test_BuyAndPublishCoversTheBuyersDebt() public {
+    /// @notice Buy-and-publish approves what the slot will actually charge. A
+    ///         sponsor who once defaulted pays only the deposit again: their
+    ///         debt ended with their tenure.
+    function test_BuyAndPublishAfterADefaultChargesOnlyTheDeposit() public {
         AdTok tok = new AdTok();
         tok.mint(alice, 1_000 ether);
         Slot s = Slot(
@@ -344,16 +345,14 @@ contract AdLandTest is Test {
 
         vm.warp(block.timestamp + 365 days);
         s.liquidate();
-        uint256 debt = s.debtOf(alice);
-        assertGt(debt, 0);
+        assertEq(s.debtOf(alice), 0, "nothing followed her out");
 
         vm.startPrank(alice);
-        tok.approve(address(adland), dep + debt);
+        tok.approve(address(adland), dep);
         adland.buyAndPublish(address(s), 1 ether, dep, 0, "data:text/plain,back");
         vm.stopPrank();
 
         assertEq(s.occupant(), alice);
-        assertEq(s.debtOf(alice), 0, "her debt was paid through AdLand");
         assertEq(adland.creativeOf(address(s)), "data:text/plain,back");
     }
 }

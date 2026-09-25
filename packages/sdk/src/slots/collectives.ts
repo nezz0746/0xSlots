@@ -336,20 +336,27 @@ export class CollectivesClient {
   /**
    * Replace the split. Split managers or admin.
    *
-   * Pays out every listed token under `current` first, so rent already
-   * collected for the old recipients is not paid to the new ones. Native ETH
-   * is always included; list every currency the collective's slots pay in.
-   * Reverts while paused.
+   * Sweeps `slots` first, then pays out every listed token under `current`, so
+   * rent earned for the old recipients — whether already in the collective or
+   * still held by its slots — is not paid to the new ones. Native ETH is always
+   * included; list every currency the collective's slots pay in, and every
+   * slot paying it. Reverts while paused.
    */
   async setSplit(
     collective: Address,
     current: CollectiveSplit,
     next: CollectiveSplit,
     tokens: readonly Address[] = [],
+    slots: readonly Address[] = [],
   ): Promise<Hash> {
     assertCollectiveSplit(next, "setSplit");
     const all = [...new Set<Address>([SPLITS_NATIVE_TOKEN, ...tokens])];
-    return this.write(collective, "setSplit", [encodeSplit(current), encodeSplit(next), all]);
+    return this.write(collective, "setSplit", [
+      encodeSplit(current),
+      encodeSplit(next),
+      all,
+      [...slots],
+    ]);
   }
 
   /** Pause or resume distributions. Split managers or admin. */

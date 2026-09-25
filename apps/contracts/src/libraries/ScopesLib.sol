@@ -19,7 +19,7 @@ library ScopesLib {
     uint16 internal constant AFTER_RELEASE = 1 << 3;
     uint16 internal constant AFTER_LIQUIDATE = 1 << 4;
     uint16 internal constant AFTER_SETTLE = 1 << 5;
-    /// Not a callback: a mode. See {Scopes-strict}.
+    /// Not a callback: a mode. See {Scopes-afterCallbacksMustSucceed}.
     uint16 internal constant AFTER_CALLBACKS_MUST_SUCCEED = 1 << 6;
     uint16 internal constant ON_INSTALL = 1 << 7;
     uint16 internal constant ON_UNINSTALL = 1 << 8;

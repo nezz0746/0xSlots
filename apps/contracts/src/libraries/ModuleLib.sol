@@ -5,7 +5,7 @@ import {ISlotModule} from "../interfaces/ISlotModule.sol";
 import {ScopesLib} from "./ScopesLib.sol";
 import {SlotMath} from "./SlotMath.sol";
 import {InstalledModule, ModuleTerms, ModuleFee} from "../types/SlotTypes.sol";
-import {InvalidModule, InvalidModuleFee} from "../errors/SlotErrors.sol";
+import {InvalidModule, InvalidModuleFee, ModuleGasTooLow} from "../errors/SlotErrors.sol";
 
 /**
  * @title ModuleLib
@@ -54,13 +54,13 @@ library ModuleLib {
      *      or accepting, in a call somebody sent on purpose, and a module that
      *      will not answer is a module that will not work: better refused now
      *      than attached with nothing firing. The module's own revert bubbles.
+     *
+     *      `target` is never zero: every caller refuses a missing module first.
      */
     function read(
         address target,
         bytes memory settings
     ) internal view returns (uint16 scopes, ModuleFee memory fee) {
-        if (target == address(0)) return (0, fee);
-
         ISlotModule(target).validateSettings(settings);
         scopes = ISlotModule(target).scopes(settings);
         fee = ISlotModule(target).fee(settings);
@@ -199,12 +199,19 @@ library ModuleLib {
      *      Nothing is copied from the returndata, so a module answering with a
      *      huge payload cannot spend the caller's gas on the copy — the path
      *      evictions run through stays bounded by `gasCap` alone.
+     *
+     *      And the module always gets the whole of `gasCap`. A call forwards at
+     *      most 63/64 of the gas left, so without this check a caller could send
+     *      just enough gas for the call to run out while the last 1/64 finishes
+     *      the transaction, and skip the callback on purpose. The margin covers
+     *      the cost of the call itself.
      */
     function callCapped(
         address target,
         bytes memory data,
         uint256 gasCap
     ) internal returns (bool ok) {
+        if (gasleft() < gasCap * 64 / 63 + 10_000) revert ModuleGasTooLow();
         assembly ("memory-safe") {
             ok := call(gasCap, target, 0, add(data, 0x20), mload(data), 0, 0)
         }
