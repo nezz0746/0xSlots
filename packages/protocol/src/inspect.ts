@@ -48,6 +48,7 @@ export interface Upgradeable {
  */
 export const PROXIES: Record<string, Upgradeable> = {
   SlotFactory: { target: "src/SlotFactory.sol:SlotFactory", kind: "uups" },
+  SlotLens: { target: "src/periphery/lens/SlotLens.sol:SlotLens", kind: "uups" },
   SlotCollectiveFactory: {
     target: "src/collectives/SlotCollectiveFactory.sol:SlotCollectiveFactory",
     kind: "uups",
@@ -137,6 +138,50 @@ export function scriptVersion(constant: string): string | null {
     new RegExp(`${constant}\\s*=\\s*(\\d+)`),
   );
   return m?.[1] ?? null;
+}
+
+/** EIP-170: the most runtime code one contract may deploy. */
+export const CODE_SIZE_LIMIT = 24_576;
+/** EIP-3860: the most initcode one creation may carry. */
+export const INITCODE_SIZE_LIMIT = 49_152;
+
+export interface CodeSize {
+  runtime: number;
+  init: number;
+}
+
+/**
+ * The bytecode size of each contract in `targets`, as this build compiles it.
+ *
+ * Asked of forge rather than read from `out/`, so the answer is the compiler's
+ * own for the profile the deploy uses. Only `src` is built: tests and scripts
+ * are never deployed, and they would only add names to disambiguate.
+ *
+ * Forge keys a contract by name, and by `Name (path)` when two share a name —
+ * both are matched, the second against the target's own file.
+ */
+export function codeSizes(targets: Record<string, string>): Map<string, CodeSize> | null {
+  let raw: Record<string, { runtime_size: number; init_size: number }>;
+  try {
+    raw = JSON.parse(
+      execFileSync("forge", ["build", "src", "--sizes", "--json"], {
+        cwd: CONTRACTS,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...FORGE_ENV },
+      }),
+    );
+  } catch {
+    return null;
+  }
+
+  const sizes = new Map<string, CodeSize>();
+  for (const [name, target] of Object.entries(targets)) {
+    const [file, contract] = target.split(":") as [string, string];
+    const hit = raw[contract] ?? raw[`${contract} (${file})`];
+    if (hit) sizes.set(name, { runtime: hit.runtime_size, init: hit.init_size });
+  }
+  return sizes;
 }
 
 export interface StorageVar {
