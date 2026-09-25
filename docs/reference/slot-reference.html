@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Slot Reference Sheets</title>
 <!--
-  Printable reference: slot storage and methods. Edit this file, then render:
+  Printable reference: slot storage and methods, then the factory and the lens. Edit this file, then render:
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
     --no-pdf-header-footer --virtual-time-budget=10000 \
     --print-to-pdf=docs/reference/slot-reference.pdf "file://$PWD/docs/reference/slot-reference.html"
@@ -96,6 +96,15 @@
   h2 { margin: 8pt 0 0; font: 500 6.6pt/1.2 "IBM Plex Mono", Menlo, monospace; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
   .reads td { padding-top: 0.7pt; padding-bottom: 0.7pt; }
   .consts .wide { grid-column: span 4; }
+  h3 { margin: 9pt 0 3pt; font: 600 9.5pt/1.2 "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; display: flex; align-items: baseline; gap: 8pt; }
+  h3:first-of-type { margin-top: 0; }
+  h3 .sub { font: 400 7.2pt/1.2 "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; color: var(--muted); }
+  .structs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18pt; margin-top: 4pt; }
+  .structs .row { display: grid; grid-template-columns: 33% 23% 1fr; gap: 6pt; border-bottom: 0.4pt solid var(--rule); padding: 1.2pt 0; }
+  .structs .k { font-family: "IBM Plex Mono", Menlo, monospace; font-weight: 500; font-size: 7pt; }
+  .structs .t { font-family: "IBM Plex Mono", Menlo, monospace; color: var(--muted); font-size: 7pt; }
+  .structs .d { color: var(--muted); }
+  .structs h2 { margin-top: 4pt; }
 </style>
 </head>
 <body>
@@ -261,7 +270,7 @@
 <section class="sheet">
   <div class="head">
     <h1>Slot methods · reads</h1>
-    <div class="meta">All <code>view</code>. Grouped by what they read.</div>
+    <div class="meta">All <code>view</code>. Grouped by what they read.<br>A whole slot, or many, in one call: <code>SlotLens</code>, next page.</div>
   </div>
 
   <table class="reads">
@@ -359,16 +368,6 @@
         <td class="sig"><b>version</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Implementation version.</td>
       </tr>
     </tbody>
-
-    <tbody>
-      <tr>
-        <td class="group" rowspan="4"><span class="struct">SlotLens</span><span class="role">UUPS proxy. Reads the slot’s own getters.</span></td>
-        <td class="sig"><b>getSlotInfo</b><span class="args">(slot)</span></td><td class="type mono">SlotInfo</td><td>Everything above, in one call.</td>
-      </tr>
-      <tr><td class="sig"><b>getSlotInfos</b><span class="args">(slots)</span></td><td class="type mono">SlotInfo[]</td><td>Many slots in one call. Reverts if one is not a slot.</td></tr>
-      <tr><td class="sig"><b>getSlotConstants</b><span class="args">(slot)</span></td><td class="type mono">SlotConstantsInfo</td><td>The constants below, in one call.</td></tr>
-      <tr><td class="sig"><b>moduleUpdate</b><span class="args">(slot)</span></td><td class="type mono">ModuleUpdate</td><td>What the module declares beside the slot’s copy, and whether <code>acceptFee</code> / <code>acceptScopes</code> would change it.</td></tr>
-    </tbody>
   </table>
 
   <h2>Constants · a public getter each</h2>
@@ -382,6 +381,128 @@
     <div><span class="k">MODULE_CALLBACK_GAS_LIMIT</span><span class="v">500,000</span></div>
     <div><span class="k">NATIVE_PAYOUT_GAS_LIMIT</span><span class="v">30,000</span></div>
     <div class="wide"><span class="k">TERM_* bits</span><span class="v">TAX_RATE 1 · RECIPIENT 2 · MIN_RUNWAY 4 · MODULE 8 · SCOPES 16</span></div>
+  </div>
+</section>
+
+<!-- ─────────────────────────── FACTORY & LENS ─────────────────────────── -->
+<section class="sheet">
+  <div class="head">
+    <h1>Factory &amp; lens</h1>
+    <div class="meta">Both are UUPS proxies (<code>ERC1967Proxy</code>) deployed by <code>DeployProtocol</code>. <code>admin</code> upgrades each.<br>
+      Plain sequential storage, not ERC-7201. Admin errors: <code>NotManager</code>; a zero address: <code>InvalidRecipient</code>.</div>
+  </div>
+
+  <h3>SlotFactory <span class="sub">Creates slots behind one beacon. Upgrading the beacon upgrades every slot.</span></h3>
+  <table class="reads">
+    <colgroup>
+      <col style="width:10%"><col style="width:27%"><col style="width:14%"><col style="width:49%">
+    </colgroup>
+    <thead>
+      <tr><th>Group</th><th>Member</th><th>Type · returns</th><th>Does</th></tr>
+    </thead>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="4"><span class="struct">Storage</span><span class="role">All public.</span></td>
+        <td class="sig"><b>beacon</b></td><td class="type mono">UpgradeableBeacon</td><td>The beacon every slot delegates to. Owned by the factory, not the admin.</td>
+      </tr>
+      <tr><td class="sig"><b>admin</b></td><td class="type mono">address</td><td>Upgrades the beacon and the factory.</td></tr>
+      <tr><td class="sig"><b>isSlot</b><span class="args">(address)</span></td><td class="type mono">bool</td><td>Slots this factory created.</td></tr>
+      <tr><td class="sig"><b>slotCount</b></td><td class="type mono">uint256</td><td>Slots created so far. With the chain id, the CREATE2 salt of the next one.</td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Anyone</span></td>
+        <td class="sig"><b>createSlot</b><span class="args">(SlotInit init)</span></td><td class="type mono">address</td><td>Deploy a <code>BeaconProxy</code> at a CREATE2 address, initialize it, record it. Emits <code>SlotCreated</code>.</td>
+      </tr>
+      <tr><td class="sig"><b>collectAll</b><span class="args">(address[] slots)</span></td><td class="type mono">uint256[]</td><td>Pay out collected tax from many slots. Each one is isolated: a failure reads 0.</td></tr>
+      <tr><td class="sig"><b>collectFrom</b><span class="args">(slot)</span></td><td class="type mono">uint256</td><td>Pay out one slot and return what moved. Reverts <code>NotASlot</code> for a slot it did not create.</td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Admin</span></td>
+        <td class="sig"><b>upgradeBeacon</b><span class="args">(implementation)</span></td><td class="type mono"></td><td>Point every slot at new code. Emits <code>BeaconUpgraded</code>.</td>
+      </tr>
+      <tr><td class="sig"><b>upgradeToAndCall</b><span class="args">(implementation, data)</span></td><td class="type mono"></td><td>Upgrade the factory itself.</td></tr>
+      <tr><td class="sig"><b>transferAdmin</b><span class="args">(next)</span></td><td class="type mono"></td><td>Hand over the admin role, beacon power included. Emits <code>AdminTransferred</code>.</td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Reads</span></td>
+        <td class="sig"><b>implementation</b><span class="args">()</span></td><td class="type mono">address</td><td>The slot code the beacon points at now.</td>
+      </tr>
+      <tr><td class="sig"><b>version</b><span class="args">()</span></td><td class="type mono">uint64</td><td>The factory’s own code version.</td></tr>
+      <tr><td class="sig"><b>initializedVersion</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Which migration has run in the proxy’s storage.</td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Events</span></td>
+        <td class="sig"><b>SlotCreated</b><span class="args">(slot, recipient, creator, currency, module)</span></td><td class="type mono"></td><td>The first three indexed. <code>creator</code> is <code>msg.sender</code>.</td>
+      </tr>
+      <tr><td class="sig"><b>BeaconUpgraded</b><span class="args">(implementation)</span></td><td class="type mono"></td><td>Every slot now runs this code.</td></tr>
+      <tr><td class="sig"><b>AdminTransferred</b><span class="args">(from, to)</span></td><td class="type mono"></td><td>Also emitted at initialize, from zero.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>SlotLens <span class="sub">Reads a slot through its own getters. Stateless apart from its admin; every answer comes from one block.</span></h3>
+  <table class="reads">
+    <colgroup>
+      <col style="width:10%"><col style="width:27%"><col style="width:14%"><col style="width:49%">
+    </colgroup>
+    <thead>
+      <tr><th>Group</th><th>Member</th><th>Type · returns</th><th>Does</th></tr>
+    </thead>
+
+    <tbody>
+      <tr>
+        <td class="group"><span class="struct">Storage</span></td>
+        <td class="sig"><b>admin</b></td><td class="type mono">address</td><td>Upgrades the lens. Holds no other power.</td>
+      </tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="5"><span class="struct">Reads</span><span class="role">Anyone. None writes.</span></td>
+        <td class="sig"><b>getSlotInfo</b><span class="args">(slot)</span></td><td class="type mono">SlotInfo</td><td>Every read on the slot’s reads page, in one call. Reverts if <code>slot</code> is not a slot.</td>
+      </tr>
+      <tr><td class="sig"><b>getSlotInfos</b><span class="args">(address[] slots)</span></td><td class="type mono">SlotInfo[]</td><td>Many slots in one call. Reverts if any one is not a slot.</td></tr>
+      <tr><td class="sig"><b>getSlotConstants</b><span class="args">(slot)</span></td><td class="type mono">SlotConstantsInfo</td><td>Every constant the slot runs under, read from the slot.</td></tr>
+      <tr><td class="sig"><b>moduleUpdate</b><span class="args">(slot)</span></td><td class="type mono">ModuleUpdate</td><td>What the module declares beside the slot’s copy, and whether <code>acceptFee</code> / <code>acceptScopes</code> would change it. Never reverts on a bad module.</td></tr>
+      <tr><td class="sig"><b>version</b> · <b>initializedVersion</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Code version · migration run in the proxy’s storage.</td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="2"><span class="struct">Admin</span></td>
+        <td class="sig"><b>upgradeToAndCall</b><span class="args">(implementation, data)</span></td><td class="type mono"></td><td>Upgrade the lens.</td>
+      </tr>
+      <tr><td class="sig"><b>transferAdmin</b><span class="args">(next)</span></td><td class="type mono"></td><td>Hand over the admin role. Emits <code>AdminTransferred(from, to)</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="structs">
+    <div>
+      <h2>ModuleUpdate</h2>
+      <div class="row"><span class="k">currentScopes</span><span class="t">uint16</span><span class="d">The slot’s copy, as scope bits.</span></div>
+      <div class="row"><span class="k">currentFee</span><span class="t">ModuleFee</span><span class="d">The slot’s copy.</span></div>
+      <div class="row"><span class="k">answered</span><span class="t">bool</span><span class="d">False: no module, a revert, or an answer out of range.</span></div>
+      <div class="row"><span class="k">declaredScopes · declaredFee</span><span class="t">uint16 · ModuleFee</span><span class="d">What the module says now.</span></div>
+      <div class="row"><span class="k">feeDiffers</span><span class="t">bool</span><span class="d"><code>acceptFee</code> would change the fee.</span></div>
+      <div class="row"><span class="k">scopesDiffer</span><span class="t">bool</span><span class="d"><code>acceptScopes</code> would queue new scopes.</span></div>
+    </div>
+    <div>
+      <h2>SlotConstantsInfo · SlotInfo</h2>
+      <div class="row"><span class="k">maxPrice · maxTaxBps</span><span class="t">uint256</span><span class="d"><code>MAX_PRICE</code> · <code>MAX_TAX_BPS</code></span></div>
+      <div class="row"><span class="k">basisPoints · month</span><span class="t">uint256</span><span class="d"><code>BASIS_POINTS</code> · <code>MONTH</code></span></div>
+      <div class="row"><span class="k">moduleCallbackGasLimit</span><span class="t">uint256</span><span class="d"><code>MODULE_CALLBACK_GAS_LIMIT</code>; <code>nativePayoutGasLimit</code> likewise.</span></div>
+      <div class="row"><span class="k">termsDelay · maxMinRunway</span><span class="t">uint64 · uint256</span><span class="d"><code>TERMS_DELAY</code> · <code>MAX_MIN_RUNWAY</code></span></div>
+      <div class="row"><span class="k">termTaxRate … termScopes</span><span class="t">uint16</span><span class="d">The five <code>TERM_*</code> bits.</span></div>
+      <div class="row"><span class="k">SlotInfo</span><span class="t">struct</span><span class="d">One field per slot read: governance, terms, scopes, fee, occupancy, money, pending.</span></div>
+    </div>
   </div>
 </section>
 
