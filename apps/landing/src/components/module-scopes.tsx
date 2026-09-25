@@ -48,9 +48,9 @@ export function ModuleScopeRow({
             className={cn(
               "inline-flex items-center px-1.5 py-0.5 text-[10px] leading-none whitespace-nowrap",
               on
-                ? // `strict` costs the SLOT something rather than telling the
-                  // module something, so it is the one that reads as a warning.
-                  key === "strict"
+                ? // `afterCallbacksMustSucceed` costs the SLOT something rather
+                  // than telling the module something, so it reads as a warning.
+                  key === "afterCallbacksMustSucceed"
                   ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
                   : "bg-green-500/15 text-green-700 dark:text-green-500"
                 : "bg-muted text-muted-foreground/50",

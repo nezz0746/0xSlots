@@ -222,7 +222,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     }
 
     /// @notice FAILURE MODE TWO. Without `_sync` returning early on a retired
-    ///         token, `afterRelease` reverts on a burned token, `strict`
+    ///         token, `afterRelease` reverts on a burned token, `afterCallbacksMustSucceed`
     ///         propagates it, and the depositor's escrow is stuck forever.
     function test_AWithdrawingOccupantCanStillReleaseAndGetTheirDepositBack() public {
         (uint256 id, Slot slot) = _wrap(1, Mode.Reclaimable);

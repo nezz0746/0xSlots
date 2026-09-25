@@ -66,7 +66,7 @@ contract OfferBookSlotsTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -201,7 +201,7 @@ contract OfferBookSlotsTest is Test {
 
         TaxTerms memory t;
         t.rateBps = 10_000;
-        slot.proposeTerms(t, ModuleTerms({target: address(0), settings: ""}), 1);
+        slot.proposeTerms(t, ModuleTerms({module: address(0), settings: ""}), 1);
         vm.warp(block.timestamp + 1 days + 1);
         assertGt(
             slot.minDepositForBuy(90e18),
@@ -347,7 +347,7 @@ contract OfferBookSlotsTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );

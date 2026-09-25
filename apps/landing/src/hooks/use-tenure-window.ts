@@ -12,7 +12,7 @@ const TENURE = "minimum-tenure";
 const abi = [
   {
     type: "function",
-    name: "definition",
+    name: "uiMetadata",
     stateMutability: "pure",
     inputs: [],
     outputs: [{ type: "string" }],
@@ -58,7 +58,7 @@ export function useTenureWindow(
         const raw = await publicClient!.readContract({
           address: module!,
           abi,
-          functionName: "definition",
+          functionName: "uiMetadata",
         });
         const config = parseDefinition(raw)?.settings;
         if (!config) return null;

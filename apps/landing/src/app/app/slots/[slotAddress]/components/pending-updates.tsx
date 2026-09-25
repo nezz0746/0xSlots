@@ -113,7 +113,7 @@ export function pendingChanges(
       dimension: "module",
       label: "Module",
       current: moduleLabel(chainId, state.module),
-      next: moduleLabel(chainId, pending.moduleTerms.target),
+      next: moduleLabel(chainId, pending.moduleTerms.module),
     });
   }
   if (pending.hasScopes) {

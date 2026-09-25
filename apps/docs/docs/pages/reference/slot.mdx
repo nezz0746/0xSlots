@@ -82,7 +82,7 @@ function setManager(address next) external;               // immediate, one step
 | `16` | `TERM_SCOPES` | queued by `acceptScopes`, never proposed | `mutableModule` |
 
 Fields outside the mask are ignored. Proposals are validated now — a module is
-asked `checkSettings`, `scopes` and `fee` at proposal — and then **queue**: they
+asked `validateSettings`, `scopes` and `fee` at proposal — and then **queue**: they
 ripen after `TERMS_DELAY` (one hour) and land at the next `buy`, or earlier
 through `applyTerms`. Proposing again overwrites the named terms, keeps the rest
 queued, and restarts the delay. `cancelTerms` drops whichever of `mask` is
@@ -108,15 +108,15 @@ the value they reviewed. Each reverts `NothingToAccept` if nothing would change.
   only when the slot's module is mutable. Reverts `ScopesChanged` if the module
   now says something else, and `ModuleChangeQueued` while a new module is queued.
 
-To see whether there is anything to accept, ask the `SlotLens`:
+To see whether there is anything to accept, ask the factory:
 
 ```solidity
-function moduleUpdate(address slot) external view returns (ModuleUpdate memory);
+function moduleUpdate(address slot) external view returns (ModuleUpdate memory); // on SlotFactory
 // { currentScopes, currentFee, answered, declaredScopes, declaredFee, feeDiffers, scopesDiffer }
 ```
 
 It reads the module the way the slot would when it lands (fail-open, under a
-third of `MODULE_GAS` per read) and applies the accept rules, so `feeDiffers` and
+third of `MODULE_CALLBACK_GAS_LIMIT` per read) and applies the accept rules, so `feeDiffers` and
 `scopesDiffer` mean `acceptFee` and `acceptScopes` would go through and change
 something. It never reverts on a module that misbehaves. The SDK's
 `moduleUpdate(slot)` calls it.
@@ -130,7 +130,7 @@ function getSlotConstants() external pure returns (SlotConstantsInfo memory);
 
 `getSlotInfo` is everything in one call, so no two figures straddle a block.
 `getSlotConstants` is the only way to read the protocol's constants (`MAX_PRICE`,
-`TERMS_DELAY`, `MODULE_GAS`, the `TERM_*` bits, …): they have no getters of their
+`TERMS_DELAY`, `MODULE_CALLBACK_GAS_LIMIT`, the `TERM_*` bits, …): they have no getters of their
 own, which keeps the slot under the 24,576-byte deploy limit.
 
 ```solidity
@@ -147,7 +147,7 @@ struct SlotInfo {
     // money, as of this block
     uint256 taxOwed; uint256 collectedTax;
     bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
-    Pending pending;      // { taxTerms, module: { target, scopes, fee, settings }, mask, proposedAt }
+    Pending pending;      // { taxTerms, nextModule: { module, scopes, fee, settings }, mask, proposedAt }
     bool hasRipeTerms;    // whether `pending` lands at the next buy
 }
 ```
@@ -162,7 +162,7 @@ function hasRipeTerms() external view returns (bool);
 function pending() external view returns (Pending memory); // stored as-is
 function isOperator(address operator) external view returns (bool);
 function debtOf(address account) external view returns (uint256);
-function withdrawableOf(address account) external view returns (uint256);
+function claimableOf(address account) external view returns (uint256);
 ```
 
 Size a buy's deposit with `minDepositForBuy`: a buy applies ripe queued terms

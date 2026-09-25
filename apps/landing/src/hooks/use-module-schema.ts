@@ -44,14 +44,14 @@ import { useChain } from "@/context/chain";
 const describedModuleAbi = [
   {
     type: "function",
-    name: "definition",
+    name: "uiMetadata",
     stateMutability: "pure",
     inputs: [],
     outputs: [{ type: "string" }],
   },
   {
     type: "function",
-    name: "checkSettings",
+    name: "validateSettings",
     stateMutability: "view",
     inputs: [{ name: "settings", type: "bytes" }],
     outputs: [],
@@ -141,7 +141,7 @@ export function useModuleDefinition(address: string) {
   const { data, isLoading } = useReadContract({
     address: valid ? (address as Address) : undefined,
     abi: describedModuleAbi,
-    functionName: "definition",
+    functionName: "uiMetadata",
     chainId,
     query: {
       enabled: valid,
@@ -281,7 +281,7 @@ export function useSettingsCheck(
       await client.readContract({
         address: address as Address,
         abi: checkAbi,
-        functionName: "checkSettings",
+        functionName: "validateSettings",
         args: [settled as Hex],
       });
       return true as const;

@@ -33,7 +33,6 @@ const map = (name: string): Partial<Record<number, Address>> =>
 
 export const slotFactoryAddress = map("slotFactoryAddress");
 export const offerBookAddress = map("offerBookAddress");
-export const slotLensAddress = map("slotLensAddress");
 export const slotCollectiveFactoryAddress = map("slotCollectiveFactoryAddress");
 export const adLandAddress = map("adLandAddress");
 

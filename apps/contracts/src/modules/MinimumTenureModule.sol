@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ISlotModule, Scopes, SlotContext} from "../interfaces/ISlotModule.sol";
 import {ScopesLib} from "../libraries/ScopesLib.sol";
 import {ModuleFee} from "../types/SlotTypes.sol";
-import {IDescribedModule} from "../interfaces/IDescribedModule.sol";
+import {IModuleMetadata} from "../interfaces/IModuleMetadata.sol";
 import {ModuleSchemaLib} from "../libraries/ModuleSchemaLib.sol";
 import {MinimumTenure} from "./MinimumTenure.sol";
 
@@ -66,7 +66,7 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      occupant selling through the OfferBook reprices to the bid first, so the
  *      buy that follows clears the floor and the check never bites.
  */
-contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
+contract MinimumTenureModule is MinimumTenure, ISlotModule, IModuleMetadata {
     /**
      * @notice The longest window this module will accept. Ten years.
      *
@@ -118,7 +118,7 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
     /// @inheritdoc ISlotModule
     /// @dev The whole of this module's configuration is one number, so
     ///      validation is {tenureOf} run for its revert.
-    function checkSettings(bytes calldata data) external pure {
+    function validateSettings(bytes calldata data) external pure {
         tenureOf(data);
     }
 
@@ -132,7 +132,7 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
      *      Not optional here, unlike on AdLand. A tenure module with no window is
      *      a module that does nothing, and {tenureOf} refuses empty settings.
      */
-    function definition() external pure returns (string memory) {
+    function uiMetadata() external pure returns (string memory) {
         return ModuleSchemaLib.describe(
             "Minimum tenure",
             "Protects an occupant from being bought out for a fixed window after they take the slot.",

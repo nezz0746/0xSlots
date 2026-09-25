@@ -55,7 +55,7 @@ contract BeaconUpgradeTest is Test {
                             rateBps: uint16(1_000),
                             minRunwaySeconds: uint32(1 hours)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );

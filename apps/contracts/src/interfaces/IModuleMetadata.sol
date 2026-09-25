@@ -21,7 +21,7 @@ pragma solidity ^0.8.24;
  *
  *      ── The rule that keeps this safe ───────────────────────────────────
  *
- *      `Slot` MUST NEVER call `definition()`. Not in `ModuleLib`, not anywhere.
+ *      `Slot` MUST NEVER call `uiMetadata()`. Not in `ModuleLib`, not anywhere.
  *      This is self-reported by an untrusted contract and returns an unbounded
  *      string; the moment the protocol reads it, a label becomes an attack
  *      surface inside the path that has to keep working for liquidation to stay
@@ -31,14 +31,14 @@ pragma solidity ^0.8.24;
  *      It follows that a module may lie. That is acceptable precisely because
  *      nothing safety-relevant hangs off it: authority comes from
  *      the scopes the slot copies and enforces, and from
- *      `checkSettings`, which the slot calls. The honest thing for a UI to
+ *      `validateSettings`, which the slot calls. The honest thing for a UI to
  *      say is "this module says it takes a 7-day window".
  *
- *      Implementing this is optional. A client staticcalls `definition()` and
+ *      Implementing this is optional. A client staticcalls `uiMetadata()` and
  *      treats a revert, or JSON it cannot parse, as simply "undescribed" —
  *      falling back to the scopes, which still say whether the module may
  *      refuse a buy. Degraded, but honest.
  */
-interface IDescribedModule {
-    function definition() external pure returns (string memory);
+interface IModuleMetadata {
+    function uiMetadata() external pure returns (string memory);
 }

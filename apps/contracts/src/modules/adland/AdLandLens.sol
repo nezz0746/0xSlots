@@ -40,7 +40,7 @@ abstract contract AdLandLens is AdLandStorage {
         // reads.
         try ISlotAd(slot).getSlotInfo() returns (SlotInfo memory info) {
             v.info = info;
-            v.managed = info.terms.moduleTerms.target == address(this);
+            v.managed = info.terms.moduleTerms.module == address(this);
 
             Creative storage c = _creative[slot];
             if (

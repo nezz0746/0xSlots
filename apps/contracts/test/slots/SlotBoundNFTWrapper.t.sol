@@ -312,7 +312,7 @@ contract SlotBoundNFTWrapperTest is Test {
                 taxTerms: TaxTerms({
                     recipient: bob, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(7 days)
                 }),
-                moduleTerms: ModuleTerms({target: address(wrapper), settings: ""})
+                moduleTerms: ModuleTerms({module: address(wrapper), settings: ""})
             })
         );
         assertEq(wrapper.tokenOf(rogue), 0, "not ours");
@@ -331,7 +331,7 @@ contract SlotBoundNFTWrapperTest is Test {
         vm.prank(alice);
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
 
@@ -355,7 +355,10 @@ contract SlotBoundNFTWrapperTest is Test {
     }
 
     function test_TheModuleIsStrict() public view {
-        assertTrue(ScopesLib.unpack(wrapper.scopes("")).strict, "so the move cannot be starved");
+        assertTrue(
+            ScopesLib.unpack(wrapper.scopes("")).afterCallbacksMustSucceed,
+            "so the move cannot be starved"
+        );
         assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterBuy);
         assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterRelease);
         assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterLiquidate);

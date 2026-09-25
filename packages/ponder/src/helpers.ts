@@ -273,7 +273,7 @@ export type ScopeSet = {
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
-  strict: boolean;
+  afterCallbacksMustSucceed: boolean;
 };
 
 /** What a slot with no module obeys: nothing. */
@@ -284,7 +284,7 @@ export const NO_SCOPES: ScopeSet = {
   afterRelease: false,
   afterLiquidate: false,
   afterSettle: false,
-  strict: false,
+  afterCallbacksMustSucceed: false,
 };
 
 /** Scope bits as a set. Bits follow `ScopesLib`. */
@@ -297,7 +297,7 @@ export function unpackScopes(scopes: number): ScopeSet {
     afterRelease: has(8),
     afterLiquidate: has(16),
     afterSettle: has(32),
-    strict: has(64),
+    afterCallbacksMustSucceed: has(64),
   };
 }
 
@@ -402,7 +402,7 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const r = taxTerms as
     | { recipient: Hex; rateBps: number; minRunwaySeconds: number }
     | undefined;
-  const h = moduleTerms as { target: Hex; settings: Hex } | undefined;
+  const h = moduleTerms as { module: Hex; settings: Hex } | undefined;
   const sc = scopesRead as ScopeSet | undefined;
   const f = feeRead as { bps: number; recipient: Hex } | undefined;
   const managerAddr =
@@ -431,7 +431,7 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
           afterRelease: sc.afterRelease,
           afterLiquidate: sc.afterLiquidate,
           afterSettle: sc.afterSettle,
-          strict: sc.strict,
+          afterCallbacksMustSucceed: sc.afterCallbacksMustSucceed,
         }
       : NO_SCOPES,
     settings: h ? lower(h.settings) : NO_SETTINGS,
@@ -467,7 +467,7 @@ export async function getOrCreateModule(
     declaredAfterRelease: f.afterRelease,
     declaredAfterLiquidate: f.afterLiquidate,
     declaredAfterSettle: f.afterSettle,
-    declaredStrict: f.strict,
+    declaredAfterCallbacksMustSucceed: f.afterCallbacksMustSucceed,
     slotCount: 0,
     failedCallCount: 0,
     firstSeenAt: timestamp,
@@ -499,5 +499,5 @@ export const scopeColumns = (f: ScopeSet) => ({
   scopeAfterRelease: f.afterRelease,
   scopeAfterLiquidate: f.afterLiquidate,
   scopeAfterSettle: f.afterSettle,
-  scopeStrict: f.strict,
+  scopeAfterCallbacksMustSucceed: f.afterCallbacksMustSucceed,
 });

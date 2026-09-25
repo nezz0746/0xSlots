@@ -27,7 +27,7 @@ import {Occupancy} from "./SlotStorage.sol";
  *      there would be able to block an eviction, and unconditional liquidation
  *      is the first thing this protocol promises.
  *
- *      Unless the module declared `strict`, which drops the stipend and lets the
+ *      Unless the module declared `afterCallbacksMustSucceed`, which drops the stipend and lets the
  *      revert through. That is one more bit in the same accepted byte, so a
  *      slot's exposure is fixed when it attaches and legible from
  *      `SlotInfo.scopes` — and the promise above still holds for every module
@@ -62,18 +62,18 @@ abstract contract SlotModules is SlotStorage {
 
     /// @dev What a module asks for, strictly: its own revert bubbles.
     function _readModule(ModuleTerms memory t) internal view returns (uint16, ModuleFee memory) {
-        return ModuleLib.read(t.target, t.settings);
+        return ModuleLib.read(t.module, t.settings);
     }
 
     /// @dev What a module asks for, fail-open, under the cap the slot uses
-    ///      wherever a module lands: a third of `MODULE_GAS` per read, so the
+    ///      wherever a module lands: a third of `MODULE_CALLBACK_GAS_LIMIT` per read, so the
     ///      three reads together cost what one callback may.
     function _tryReadModule(ModuleTerms memory t)
         internal
         view
         returns (bool, uint16, ModuleFee memory)
     {
-        return ModuleLib.tryRead(t.target, t.settings, MODULE_GAS / 3);
+        return ModuleLib.tryRead(t.module, t.settings, MODULE_CALLBACK_GAS_LIMIT / 3);
     }
 
     /// @dev The context every callback receives. Built once per call site.
@@ -95,13 +95,13 @@ abstract contract SlotModules is SlotStorage {
             caller: caller,
             account: account,
             occupant: o.occupant,
-            occupiedSince: o.since,
+            occupiedSince: o.occupiedSince,
             taxRateBps: _taxTerms().rateBps,
             currentPrice: o.price,
             newPrice: newPrice,
             depositAmount: depositAmount,
-            owed: 0,
-            paid: 0,
+            taxOwed: 0,
+            taxPaid: 0,
             moduleTerms: _module().terms()
         });
     }
@@ -113,12 +113,14 @@ abstract contract SlotModules is SlotStorage {
         _module().callBefore(scope, call);
     }
 
-    /// @dev An effect: capped and swallowed unless `strict`. See {ModuleLib-callAfter}.
+    /// @dev An effect: capped and swallowed unless `afterCallbacksMustSucceed`. See {ModuleLib-callAfter}.
     function _after(uint16 scope, bytes memory call) internal {
         InstalledModule storage m = _module();
-        // `call` is always an encoded call, so its first four bytes are a selector.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        if (m.callAfter(scope, call, MODULE_GAS)) emit ModuleCallFailed(m.target, bytes4(call));
+        if (m.callAfter(scope, call, MODULE_CALLBACK_GAS_LIMIT)) {
+            // `call` is always an encoded call: its first four bytes are a selector.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            emit ModuleCallFailed(m.module, bytes4(call));
+        }
     }
 
     // ─── install and remove ─────────────────────────────────────────────────
@@ -139,7 +141,7 @@ abstract contract SlotModules is SlotStorage {
      *      Called while its record is still installed, so the context carries
      *      its own settings.
      *
-     *      Capped and swallowed even for a `strict` module, unlike every other
+     *      Capped and swallowed even for a `afterCallbacksMustSucceed` module, unlike every other
      *      callback it declared. A module able to revert here is a module a manager
      *      can never replace: the removal is the one action that must not
      *      depend on the thing being removed.
@@ -150,8 +152,8 @@ abstract contract SlotModules is SlotStorage {
         bytes memory call = abi.encodeCall(
             ISlotModule.onUninstall, (_ctx(msg.sender, _occupancy().occupant, 0, 0))
         );
-        if (!ModuleLib.callCapped(m.target, call, MODULE_GAS)) {
-            emit ModuleCallFailed(m.target, ISlotModule.onUninstall.selector);
+        if (!ModuleLib.callCapped(m.module, call, MODULE_CALLBACK_GAS_LIMIT)) {
+            emit ModuleCallFailed(m.module, ISlotModule.onUninstall.selector);
         }
     }
 }

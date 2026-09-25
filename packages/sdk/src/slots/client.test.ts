@@ -59,8 +59,8 @@ function harness(
    * which is the only simulate most tests reach; `collectAll` returns amounts.
    */
   simulateResult: unknown = SLOT,
-  /** Anything else to hand the client, such as a lens address. */
-  config: { slotLensAddress?: `0x${string}` } = {},
+  /** `false` for a client with no factory, as on a chain without one. */
+  factory: boolean = true,
 ) {
   // Approvals mutate state, so the double has to as well: a static allowance
   // would make the post-approval poll re-read the old value and throw, which is
@@ -82,8 +82,7 @@ function harness(
   const signTypedData = vi.fn(async (_args: any) => "0xsignature" as const);
 
   const client = new SlotsClient({
-    ...config,
-    factoryAddress: FACTORY,
+    factoryAddress: factory ? FACTORY : undefined,
     offerBookAddress: OFFER_BOOK,
     // Evict-and-take is periphery now. Wired here so every test exercises the
     // real routing rather than a client that quietly has nowhere to send it.
@@ -551,11 +550,11 @@ describe("manager terms", () => {
     await client.proposeTerms(SLOT, {
       taxRateBps: 100,
       recipient: MANAGER,
-      moduleTerms: { target: MODULE },
+      moduleTerms: { module: MODULE },
     });
     expect(sent(writeContract, "proposeTerms").args).toEqual([
       { recipient: MANAGER, rateBps: 100, minRunwaySeconds: 0 },
-      { target: MODULE, settings: NO_SETTINGS },
+      { module: MODULE, settings: NO_SETTINGS },
       TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.MODULE,
     ]);
   });
@@ -564,7 +563,7 @@ describe("manager terms", () => {
     const { client } = harness({});
     await expect(
       client.proposeTerms(SLOT, {
-        moduleTerms: { target: ZERO, settings: `0x${"1".padStart(64, "0")}` },
+        moduleTerms: { module: ZERO, settings: `0x${"1".padStart(64, "0")}` },
       }),
     ).rejects.toThrow(/need a module/);
   });
@@ -591,7 +590,7 @@ describe("creation", () => {
   it("createSlot sends the full tuple to the factory", async () => {
     const { client, writeContract } = harness({});
 
-    await client.createSlot({ ...base, moduleTerms: { target: MODULE } });
+    await client.createSlot({ ...base, moduleTerms: { module: MODULE } });
 
     const call = sent(writeContract, "createSlot");
     expect(call.address).toBe(FACTORY);
@@ -599,7 +598,7 @@ describe("creation", () => {
       ...base,
       // Filled by `encodeSlotInit`: viem encodes a struct BY NAME, so a missing
       // key would silently encode a zero.
-      moduleTerms: { target: MODULE, settings: NO_SETTINGS },
+      moduleTerms: { module: MODULE, settings: NO_SETTINGS },
     });
   });
 
@@ -628,7 +627,7 @@ describe("creation", () => {
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pending: { taxTerms: TAX_TERMS_NONE, module: { target: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS }, mask: 0, proposedAt: 0n },
+      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS }, mask: 0, proposedAt: 0n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
@@ -640,9 +639,9 @@ describe("reads", () => {
   });
 
   it("pending unpacks a queued module change", async () => {
-    const module = { ...NO_MODULE, target: MODULE };
+    const module = { ...NO_MODULE, module: MODULE };
     const { client } = harness({
-      pending: { taxTerms: TAX_TERMS_NONE, module: { ...module, scopes: 0, fee: { bps: 0, recipient: ZERO } }, mask: TERMS.MODULE, proposedAt: 1234n },
+      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { ...module, scopes: 0, fee: { bps: 0, recipient: ZERO } }, mask: TERMS.MODULE, proposedAt: 1234n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
@@ -669,7 +668,7 @@ describe("reads", () => {
     const { client, readContract } = harness({
       pending: {
         taxTerms: { ...TAX_TERMS_NONE, rateBps: 500 },
-        module: { target: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+        nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
         mask: TERMS.TAX_RATE,
         proposedAt: 1234n,
       },
@@ -701,27 +700,27 @@ describe("reads", () => {
       afterRelease: false,
       afterLiquidate: false,
       afterSettle: false,
-      strict: false,
+      afterCallbacksMustSucceed: false,
     };
     const { client } = harness({ scopes: scopes });
     expect(await client.scopes(SLOT)).toEqual(scopes);
   });
 
-  it("moduleUpdate compares what the module declares with what the slot copied", async () => {
+  it("moduleUpdate runs the same checks itself on a chain with no factory", async () => {
     const settleOnly = unpackScopes(SCOPE_BITS.afterSettle);
     const { client } = harness({
       getSlotInfo: {
         mutableModule: true,
         mutableRecipient: true,
-        terms: { taxTerms: TAX_TERMS_NONE, moduleTerms: { target: MODULE, settings: NO_SETTINGS } },
+        terms: { taxTerms: TAX_TERMS_NONE, moduleTerms: { module: MODULE, settings: NO_SETTINGS } },
         scopes: settleOnly,
         fee: { bps: 100, recipient: MODULE },
-        pending: { taxTerms: TAX_TERMS_NONE, module: { target: NO_MODULE.target, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_MODULE.settings }, mask: 0, proposedAt: 0n },
+        pending: { taxTerms: TAX_TERMS_NONE, nextModule: { module: NO_MODULE.module, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_MODULE.settings }, mask: 0, proposedAt: 0n },
         hasRipeTerms: false,
       },
       scopes: SCOPE_BITS.afterSettle | SCOPE_BITS.afterBuy,
       fee: { bps: 200, recipient: MODULE },
-    });
+    }, undefined, SLOT, false);
     expect(await client.moduleUpdate(SLOT)).toEqual({
       current: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 100, recipient: MODULE } },
       declared: {
@@ -733,8 +732,7 @@ describe("reads", () => {
     });
   });
 
-  it("moduleUpdate takes the lens's answer when there is a lens", async () => {
-    const LENS = "0x000000000000000000000000000000000000Ae45" as const;
+  it("moduleUpdate takes the factory's answer", async () => {
     const { client, readContract } = harness(
       {
         moduleUpdate: {
@@ -747,9 +745,6 @@ describe("reads", () => {
           scopesDiffer: false,
         },
       },
-      undefined,
-      SLOT,
-      { slotLensAddress: LENS },
     );
     expect(await client.moduleUpdate(SLOT)).toEqual({
       current: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 100, recipient: MODULE } },
@@ -758,7 +753,7 @@ describe("reads", () => {
       scopesDiffer: false,
     });
     expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
-      address: LENS,
+      address: FACTORY,
       functionName: "moduleUpdate",
       args: [SLOT],
     });
@@ -774,12 +769,12 @@ describe("reads", () => {
   });
 
   it("packScopes undoes unpackScopes", () => {
-    const bits = SCOPE_BITS.beforeBuy | SCOPE_BITS.onInstall | SCOPE_BITS.strict;
+    const bits = SCOPE_BITS.beforeBuy | SCOPE_BITS.onInstall | SCOPE_BITS.afterCallbacksMustSucceed;
     expect(packScopes(unpackScopes(bits))).toBe(bits);
   });
 
   it("unpackScopes follows ScopesLib's bit order", () => {
-    expect(unpackScopes(SCOPE_BITS.beforeBuy | SCOPE_BITS.strict)).toEqual({
+    expect(unpackScopes(SCOPE_BITS.beforeBuy | SCOPE_BITS.afterCallbacksMustSucceed)).toEqual({
       beforeBuy: true,
       beforeSelfAssess: false,
       afterBuy: false,
@@ -788,7 +783,7 @@ describe("reads", () => {
       afterSettle: false,
       onInstall: false,
       onUninstall: false,
-      strict: true,
+      afterCallbacksMustSucceed: true,
     });
   });
 
@@ -928,7 +923,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
           afterRelease: false,
           afterLiquidate: false,
           afterSettle: false,
-          strict: false,
+          afterCallbacksMustSucceed: false,
         },
         occupant: ACCOUNT,
         price: 1n,
@@ -944,7 +939,7 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         fee: { bps: 0, recipient: ZERO },
         pending: {
           taxTerms: TAX_TERMS_NONE,
-          module: { target: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+          nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
           mask: 0,
           proposedAt: 0n,
         },
@@ -1236,23 +1231,23 @@ describe("offer book", () => {
 });
 
 describe("module reads", () => {
-  it("checkSettings resolves ok when the module accepts", async () => {
-    const { client } = harness({ checkSettings: undefined });
-    expect(await client.checkSettings(MODULE, NO_SETTINGS)).toEqual({ ok: true });
+  it("validateSettings resolves ok when the module accepts", async () => {
+    const { client } = harness({ validateSettings: undefined });
+    expect(await client.validateSettings(MODULE, NO_SETTINGS)).toEqual({ ok: true });
   });
 
-  it("checkSettings resolves with the reason when the module refuses", async () => {
+  it("validateSettings resolves with the reason when the module refuses", async () => {
     const { client } = harness({});
-    const check = await client.checkSettings(MODULE, NO_SETTINGS);
+    const check = await client.validateSettings(MODULE, NO_SETTINGS);
     expect(check.ok).toBe(false);
   });
 
-  it("moduleDefinition is null for a module that does not describe itself", async () => {
+  it("moduleMetadata is null for a module that does not describe itself", async () => {
     const { client } = harness({});
-    expect(await client.moduleDefinition(MODULE)).toBeNull();
+    expect(await client.moduleMetadata(MODULE)).toBeNull();
   });
 
-  it("moduleDefinition parses what the module answered", async () => {
+  it("moduleMetadata parses what the module answered", async () => {
     const definition = {
       version: 1,
       title: "Minimum tenure",
@@ -1266,13 +1261,13 @@ describe("module reads", () => {
         "x-abi": [{ name: "window", type: "uint256" }],
       },
     };
-    const { client } = harness({ definition: JSON.stringify(definition) });
-    expect(await client.moduleDefinition(MODULE)).toEqual(definition);
+    const { client } = harness({ uiMetadata: JSON.stringify(definition) });
+    expect(await client.moduleMetadata(MODULE)).toEqual(definition);
   });
 
-  it("moduleDefinition is null when the module answers something that is not JSON", async () => {
-    const { client } = harness({ definition: "not json" });
-    expect(await client.moduleDefinition(MODULE)).toBeNull();
+  it("moduleMetadata is null when the module answers something that is not JSON", async () => {
+    const { client } = harness({ uiMetadata: "not json" });
+    expect(await client.moduleMetadata(MODULE)).toBeNull();
   });
 
   it("moduleSettings decodes the slot's settings against x-abi", () => {

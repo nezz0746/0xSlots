@@ -115,7 +115,7 @@ contract SlotBoundNFTTest is Test {
 
     function test_TheCollectionMintsItsTermsNotTheMintersTerms() public view {
         SlotInit memory t = nft.terms();
-        assertEq(t.moduleTerms.target, address(nft), "forced to the collection");
+        assertEq(t.moduleTerms.module, address(nft), "forced to the collection");
         assertFalse(t.mutableModule, "and permanently so");
         assertEq(slot.taxRateBps(), t.taxTerms.rateBps, "every slot, the same terms");
         assertEq(slot.recipient(), recipient);
@@ -398,7 +398,7 @@ contract SlotBoundNFTTest is Test {
                 taxTerms: TaxTerms({
                     recipient: carol, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)
                 }),
-                moduleTerms: ModuleTerms({target: address(nft), settings: abi.encode(tokenId)})
+                moduleTerms: ModuleTerms({module: address(nft), settings: abi.encode(tokenId)})
             })
         );
 
@@ -443,7 +443,7 @@ contract SlotBoundNFTTest is Test {
         vm.expectRevert();
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         vm.expectRevert();
@@ -482,7 +482,7 @@ contract SlotBoundNFTTest is Test {
     }
 
     function test_TheModuleIsStrictAndPermanent() public view {
-        assertTrue(slot.getSlotInfo().scopes.strict);
+        assertTrue(slot.getSlotInfo().scopes.afterCallbacksMustSucceed);
         assertFalse(slot.mutableModule(), "a detachable module would strand the token");
         assertEq(slot.module(), address(nft));
     }
@@ -495,7 +495,7 @@ contract SlotBoundNFTTest is Test {
         SlotInit memory t = nft.terms();
         assertFalse(t.mutableModule, "never - a detachable module strands the token");
         assertEq(t.manager, manager);
-        assertEq(t.moduleTerms.target, address(nft));
+        assertEq(t.moduleTerms.module, address(nft));
         assertEq(t.moduleTerms.settings, bytes(""));
     }
 
@@ -559,7 +559,7 @@ contract SlotBoundNFTTest is Test {
         Slot managed = Slot(payable(s));
         managed.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         assertEq(managed.taxRateBps(), 1000, "alice keeps what she bought");
@@ -584,7 +584,7 @@ contract SlotBoundNFTTest is Test {
         Slot(payable(s))
             .proposeTerms(
                 TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}),
-                ModuleTerms({target: address(0), settings: ""}),
+                ModuleTerms({module: address(0), settings: ""}),
                 uint16(1)
             );
     }
@@ -602,7 +602,7 @@ contract SlotBoundNFTTest is Test {
         Slot(payable(s))
             .proposeTerms(
                 TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}),
-                ModuleTerms({target: address(0), settings: ""}),
+                ModuleTerms({module: address(0), settings: ""}),
                 uint16(1)
             );
     }
@@ -615,7 +615,7 @@ contract SlotBoundNFTTest is Test {
         assertEq(i.deposit, _depositOf(nft, 100 ether), "escrowed to the minimum");
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
         assertEq((i.price * i.terms.taxTerms.rateBps) / 10_000, _taxTerms(100 ether));
-        assertTrue(i.scopes.strict, "and carries what a buyer needs");
+        assertTrue(i.scopes.afterCallbacksMustSucceed, "and carries what a buyer needs");
     }
 
     /// @notice It follows the slot when the occupant reprices. The quote cannot:

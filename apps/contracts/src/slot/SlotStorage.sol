@@ -11,7 +11,7 @@ import {TaxTerms, InstalledModule, Pending} from "../types/SlotTypes.sol";
 import {NotManager, NotOccupant, NotOccupantOrOperator} from "../errors/SlotErrors.sol";
 
 /// @notice How the slot is governed. Fixed at birth except `manager`.
-struct Settings {
+struct Governance {
     IERC20 currency;
     address manager;
     bool mutableTax;
@@ -22,7 +22,7 @@ struct Settings {
 /// @notice Who holds the slot, at what price, funded by how much.
 struct Occupancy {
     address occupant;
-    uint64 since;
+    uint64 occupiedSince;
     uint64 tenureId;
     uint64 lastSettled;
     /// Tax accrued below one whole unit of currency, in the numerator space
@@ -37,7 +37,7 @@ struct Occupancy {
 /// @notice Tax taken, and what could not be paid in either direction.
 struct Ledger {
     uint256 collectedTax;
-    mapping(address => uint256) withdrawableOf;
+    mapping(address => uint256) claimableOf;
     mapping(address => uint256) debtOf;
     mapping(uint64 tenureId => mapping(address operator => bool)) operatorOf;
 }
@@ -61,9 +61,9 @@ abstract contract SlotStorage is
     ReentrancyGuard,
     Multicall
 {
-    /// @custom:storage-location erc7201:slots.settings
-    bytes32 private constant SETTINGS =
-        0xbf320a74cef9fbdc82fa0ef1191ba8006c03393c33ff9c5048e07e826f3f9700;
+    /// @custom:storage-location erc7201:slots.governance
+    bytes32 private constant GOVERNANCE =
+        0xddbb26c33591c22412567a8671458fc7cb3a35b2036db695ea4c088654d29000;
     /// @custom:storage-location erc7201:slots.terms.tax
     bytes32 private constant TAX_TERMS =
         0x9ced1b0fc58b3fce277f0e66820898812467bac04a43b3f7986c99b5a310c200;
@@ -80,9 +80,9 @@ abstract contract SlotStorage is
     bytes32 private constant LEDGER =
         0x00ad3db4016d1b422971826df42227f88ab7704e4f4548ce9d63b5964b276400;
 
-    function _settings() internal pure returns (Settings storage $) {
+    function _governance() internal pure returns (Governance storage $) {
         assembly ("memory-safe") {
-            $.slot := SETTINGS
+            $.slot := GOVERNANCE
         }
     }
 
@@ -130,7 +130,7 @@ abstract contract SlotStorage is
     }
 
     function _checkManager() internal view {
-        if (msg.sender != _settings().manager) revert NotManager();
+        if (msg.sender != _governance().manager) revert NotManager();
     }
 
     function _checkOccupant() internal view {

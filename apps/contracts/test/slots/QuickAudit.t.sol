@@ -79,7 +79,7 @@ contract QuickAuditTest is SlotsTest, SlotConstants {
         vm.prank(manager);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(deny), settings: ""}),
+            ModuleTerms({module: address(deny), settings: ""}),
             uint16(9)
         );
         vm.warp(block.timestamp + TERMS_DELAY);

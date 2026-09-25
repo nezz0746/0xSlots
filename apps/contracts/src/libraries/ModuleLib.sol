@@ -24,17 +24,17 @@ library ModuleLib {
 
     /// @dev The record's `ModuleTerms`: which module, configured how.
     function terms(InstalledModule storage m) internal view returns (ModuleTerms memory) {
-        return ModuleTerms({target: m.target, settings: m.settings});
+        return ModuleTerms({module: m.module, settings: m.settings});
     }
 
     /// @dev Whether the slot calls this module for `scope`.
     function has(InstalledModule storage m, uint16 scope) internal view returns (bool) {
-        return m.target != address(0) && m.scopes & scope != 0;
+        return m.module != address(0) && m.scopes & scope != 0;
     }
 
     /// @dev Replace the installed record with `next`. An empty `next` removes it.
     function install(InstalledModule storage m, InstalledModule memory next) internal {
-        m.target = next.target;
+        m.module = next.module;
         m.scopes = next.scopes;
         m.fee.bps = next.fee.bps;
         m.fee.recipient = next.fee.recipient;
@@ -61,7 +61,7 @@ library ModuleLib {
     ) internal view returns (uint16 scopes, ModuleFee memory fee) {
         if (target == address(0)) return (0, fee);
 
-        ISlotModule(target).checkSettings(settings);
+        ISlotModule(target).validateSettings(settings);
         scopes = ISlotModule(target).scopes(settings);
         fee = ISlotModule(target).fee(settings);
 
@@ -97,7 +97,7 @@ library ModuleLib {
     ) internal view returns (bool ok, uint16 scopes, ModuleFee memory fee) {
         if (target == address(0)) return (false, 0, fee);
 
-        bytes memory cd = abi.encodeCall(ISlotModule.checkSettings, (settings));
+        bytes memory cd = abi.encodeCall(ISlotModule.validateSettings, (settings));
         bool answered;
         assembly ("memory-safe") {
             answered := staticcall(gasEach, target, add(cd, 0x20), mload(cd), 0, 0)
@@ -156,7 +156,7 @@ library ModuleLib {
      */
     function callBefore(InstalledModule storage m, uint16 scope, bytes memory data) internal view {
         if (!has(m, scope)) return;
-        (bool ok, bytes memory err) = m.target.staticcall(data);
+        (bool ok, bytes memory err) = m.module.staticcall(data);
         if (ok) return;
         assembly ("memory-safe") {
             revert(add(err, 0x20), mload(err))
@@ -168,7 +168,7 @@ library ModuleLib {
      *      the call it is being told about. Returns true when a call failed and
      *      was swallowed, for the slot to log.
      *
-     *      Unless the module declared `strict`: then uncapped, and the revert
+     *      Unless the module declared `afterCallbacksMustSucceed`: then uncapped, and the revert
      *      propagates. A module that asked for this can do work that MUST land,
      *      and can also fail the slot, eviction included. That trade was made
      *      when the module was attached.
@@ -180,9 +180,9 @@ library ModuleLib {
         uint256 gasCap
     ) internal returns (bool swallowed) {
         if (!has(m, scope)) return false;
-        address target = m.target;
+        address target = m.module;
 
-        if (m.scopes & ScopesLib.STRICT != 0) {
+        if (m.scopes & ScopesLib.AFTER_CALLBACKS_MUST_SUCCEED != 0) {
             (bool ok, bytes memory err) = target.call(data);
             if (ok) return false;
             assembly ("memory-safe") {

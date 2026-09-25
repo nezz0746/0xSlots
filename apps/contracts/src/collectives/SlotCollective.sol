@@ -67,7 +67,7 @@ import {Versioned} from "../utils/Versioned.sol";
 ///      DELEGATECALL gas cost. Deployed directly there is no proxy. Without a
 ///      `receive()`, every native-ETH tax push from `Slot._payOrCredit` — a
 ///      deliberately gas-capped `call{gas: 30_000}` — would fail and silently
-///      degrade into a `withdrawableOf` credit needing a manual `claim`.
+///      degrade into a `claimableOf` credit needing a manual `claim`.
 ///
 ///      ── WHY `multicall` IS SAFE WHERE `execCalls` IS NOT ─────────────────
 ///      `multicall` only delegatecalls this contract's own functions, keeping

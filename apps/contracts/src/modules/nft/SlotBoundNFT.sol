@@ -21,7 +21,7 @@ import {ISlotBoundNFT, ISlotOccupancy} from "./ISlotBoundNFT.sol";
  * @notice One token per slot, owned by whoever occupies it.
  *
  * @dev Ownership is real ERC-721 storage moved in `afterBuy`, safe only because
- *      this module declares `strict` — so the move cannot be starved, and the slot
+ *      this module declares `afterCallbacksMustSucceed` — so the move cannot be starved, and the slot
  *      is only as evictable as this contract. Deriving `ownerOf` instead would
  *      avoid that but emit no {Transfer}, so no marketplace would ever see it.
  *
@@ -75,7 +75,7 @@ contract SlotBoundNFT is ERC721, Ownable, ReentrancyGuard, ISlotModule, ISlotBou
             taxTerms: TaxTerms({
                 recipient: recipient_, rateBps: taxRateBps_, minRunwaySeconds: minRunwaySeconds_
             }),
-            moduleTerms: ModuleTerms({target: address(this), settings: ""})
+            moduleTerms: ModuleTerms({module: address(this), settings: ""})
         });
 
         if (minRunwaySeconds_ == 0) revert TermsCannotBeMinted();
@@ -186,7 +186,7 @@ contract SlotBoundNFT is ERC721, Ownable, ReentrancyGuard, ISlotModule, ISlotBou
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
-        f.strict = true; // why this contract can hold real ownership state
+        f.afterCallbacksMustSucceed = true; // why this contract can hold real ownership state
         return ScopesLib.pack(f);
     }
 
@@ -194,7 +194,7 @@ contract SlotBoundNFT is ERC721, Ownable, ReentrancyGuard, ISlotModule, ISlotBou
     /// @dev Takes nothing.
     function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
-    function checkSettings(bytes calldata) external view {}
+    function validateSettings(bytes calldata) external view {}
 
     function beforeBuy(SlotContext calldata) external view {}
 

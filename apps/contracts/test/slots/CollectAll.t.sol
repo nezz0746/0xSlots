@@ -25,18 +25,18 @@ contract Tok is ERC20 {
 }
 
 /**
- * @dev Reverts in `afterSettle` and declares `strict`, so the revert is NOT
+ * @dev Reverts in `afterSettle` and declares `afterCallbacksMustSucceed`, so the revert is NOT
  *      swallowed by the slot's stipend — it propagates out of `collect()`.
  *      That is the one way a healthy-looking slot can fail a collection, and
  *      the case the batch has to survive.
  */
 contract StrictBreaker is AskModule {
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterSettle = true;
-        f.strict = true;
+        f.afterCallbacksMustSucceed = true;
         o.scopes = ScopesLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
@@ -104,7 +104,7 @@ contract CollectAllTest is Test {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(MIN_DEP)
                         }),
-                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                        moduleTerms: ModuleTerms({module: module, settings: ""})
                     })
                 ))
         );
@@ -219,7 +219,7 @@ contract CollectAllTest is Test {
     /**
      * @notice A slot that reverts must not cost the others their rent.
      *
-     * @dev `strict` is what makes this reachable: without it the slot caps the
+     * @dev `afterCallbacksMustSucceed` is what makes this reachable: without it the slot caps the
      *      module's gas and swallows the revert, so `collect()` succeeds anyway.
      *      With it, the module's revert comes all the way out of `collect()`.
      */

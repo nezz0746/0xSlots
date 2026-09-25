@@ -34,10 +34,10 @@ struct SlotContext {
     uint256 newPrice;
     uint256 depositAmount;
     /// Tax that accrued, and what could actually be taken from the deposit.
-    /// `owed > paid` means the occupant has run dry. `afterSettle` only.
-    uint256 owed;
-    uint256 paid;
-    /// The slot's terms FOR THIS MODULE: its address (`target`) and `settings`.
+    /// `taxOwed > taxPaid` means the occupant has run dry. `afterSettle` only.
+    uint256 taxOwed;
+    uint256 taxPaid;
+    /// The slot's terms FOR THIS MODULE: its address (`module`) and `settings`.
     ///
     /// What lets one deployment serve every configuration, instead of a
     /// factory deploying a contract per setting. It is the slot's storage, not
@@ -47,7 +47,7 @@ struct SlotContext {
 
 /**
  * @notice What a module may do to a slot, unpacked: the callbacks it receives,
- *         and whether it may block an exit (`strict`).
+ *         and whether it may block an exit (`afterCallbacksMustSucceed`).
  *
  * @dev Declared by the module in `scopes(settings)` and copied when it attaches.
  *      Never re-read on its own: a module able to widen its own reach mid-tenure
@@ -93,14 +93,14 @@ struct Scopes {
      *      uncapped and already propagates, so a module could always refuse every
      *      purchase for ever. What this adds is the ability to refuse an EXIT.
      */
-    bool strict;
+    bool afterCallbacksMustSucceed;
     /**
      * @notice Be told when this module is attached to a slot, so it can set up
      *         whatever it keeps per slot.
      *
      * @dev Fires from `initialize` and from the application of a queued module.
      *      Neither can happen during an eviction — terms land when a seat is
-     *      taken, never when one is given up — so `strict` is honoured here
+     *      taken, never when one is given up — so `afterCallbacksMustSucceed` is honoured here
      *      like anywhere else: a module that must not be attached half-configured
      *      can refuse the attachment outright.
      */
@@ -113,7 +113,7 @@ struct Scopes {
      *      detach clears it, while the slot's terms still describe the one
      *      being removed.
      *
-     *      Capped and swallowed ALWAYS, `strict` or not. A module that could
+     *      Capped and swallowed ALWAYS, `afterCallbacksMustSucceed` or not. A module that could
      *      refuse its own removal would be a module a manager can never replace,
      *      and the slot would be stuck with it for ever. Whatever this does
      *      must therefore be optional to the module's correctness — the same trade
@@ -136,7 +136,7 @@ struct Scopes {
  *        That is what makes it safe to call without a gas cap.
  *      - `after` is gas-capped and its revert is swallowed, so it cannot block
  *        a buy — and above all cannot block a liquidation, which this protocol
- *        treats as unconditional for every module that does not declare `strict`.
+ *        treats as unconditional for every module that does not declare `afterCallbacksMustSucceed`.
  *        One that does trades that guarantee for delivery; see {Scopes}.
  *
  *      A module that wants to record something about a decision does it in the
@@ -154,7 +154,7 @@ struct Scopes {
  *          whole context at once. Fine for a lenient module.
  *        - read the slot instead of the argument — `occupant()`, `moduleTerms()`
  *          — which costs a staticcall and is indifferent to who is calling.
- *          Preferable for a `strict` module, where a revert is a stuck slot.
+ *          Preferable for a `afterCallbacksMustSucceed` module, where a revert is a stuck slot.
  *
  *      What is NOT safe is keying storage on `ctx` without either.
  *
@@ -185,7 +185,7 @@ interface ISlotModule {
      *      A module that takes no configuration implements this as a no-op and
      *      thereby accepts anything, including nothing. Say so deliberately.
      */
-    function checkSettings(bytes calldata settings) external view;
+    function validateSettings(bytes calldata settings) external view;
 
     /**
      * @notice The callbacks this module asks for on a slot configured with
@@ -234,6 +234,6 @@ interface ISlotModule {
     function onInstall(SlotContext calldata ctx) external;
 
     /// @notice This module is no longer this slot's module. `msg.sender` is the slot.
-    /// @dev Never fatal, even for a `strict` module: see {Scopes-onUninstall}.
+    /// @dev Never fatal, even for a `afterCallbacksMustSucceed` module: see {Scopes-onUninstall}.
     function onUninstall(SlotContext calldata ctx) external;
 }

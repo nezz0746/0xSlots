@@ -113,15 +113,15 @@ abstract contract SlotEscrow is SlotOccupancy {
     ///         on anyone's behalf; the funds always go to `account`.
     function claim(address account) external nonReentrant {
         Ledger storage l = _ledger();
-        uint256 amount = l.withdrawableOf[account];
+        uint256 amount = l.claimableOf[account];
         if (amount == 0) revert NothingToClaim();
-        l.withdrawableOf[account] = 0;
+        l.claimableOf[account] = 0;
 
         if (_isNative()) {
             (bool ok,) = account.call{value: amount}("");
             if (!ok) revert TransferFailed();
         } else {
-            _settings().currency.safeTransfer(account, amount);
+            _governance().currency.safeTransfer(account, amount);
         }
         emit Claimed(account, amount);
     }

@@ -56,7 +56,7 @@ contract SlotInfoTest is Test, SlotConstants {
                             minRunwaySeconds: uint32(1 days)
                         }),
                         moduleTerms: ModuleTerms({
-                            target: address(new MinimumTenureModule()),
+                            module: address(new MinimumTenureModule()),
                             settings: abi.encode(uint256(7 days))
                         })
                     })
@@ -77,7 +77,7 @@ contract SlotInfoTest is Test, SlotConstants {
         assertEq(ScopesLib.pack(i.scopes), ScopesLib.pack(slot.scopes()));
         assertEq(i.terms.taxTerms.rateBps, slot.taxRateBps());
         assertEq(i.terms.taxTerms.minRunwaySeconds, slot.minRunwaySeconds());
-        assertEq(i.terms.moduleTerms.target, slot.module());
+        assertEq(i.terms.moduleTerms.module, slot.module());
         assertEq(i.terms.moduleTerms.settings, slot.moduleTerms().settings);
         assertEq(i.scopes.beforeBuy, slot.scopes().beforeBuy);
         assertEq(i.occupant, slot.occupant());
@@ -94,12 +94,12 @@ contract SlotInfoTest is Test, SlotConstants {
         assertEq(i.hasRipeTerms, slot.hasRipeTerms());
         Pending memory __p1 = slot.pending();
         TaxTerms memory taxTerms = __p1.taxTerms;
-        ModuleTerms memory module = ModuleTerms(__p1.module.target, __p1.module.settings);
+        ModuleTerms memory module = ModuleTerms(__p1.nextModule.module, __p1.nextModule.settings);
         uint16 mask = __p1.mask;
         uint64 at = __p1.proposedAt;
         assertEq(i.pending.taxTerms.rateBps, taxTerms.rateBps);
         assertEq(i.pending.taxTerms.recipient, taxTerms.recipient);
-        assertEq(i.pending.module.target, module.target);
+        assertEq(i.pending.nextModule.module, module.module);
         assertEq(i.pending.mask, mask);
         assertEq(i.pending.proposedAt, at);
     }
@@ -126,7 +126,7 @@ contract SlotInfoTest is Test, SlotConstants {
 
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         _assertAgrees(); // queued, not ripe
@@ -157,8 +157,8 @@ contract SlotInfoTest is Test, SlotConstants {
         assertEq(c.maxTaxBps, MAX_TAX_BPS);
         assertEq(c.basisPoints, BASIS_POINTS);
         assertEq(c.month, MONTH);
-        assertEq(c.moduleGas, MODULE_GAS);
-        assertEq(c.payoutGas, PAYOUT_GAS);
+        assertEq(c.moduleCallbackGasLimit, MODULE_CALLBACK_GAS_LIMIT);
+        assertEq(c.nativePayoutGasLimit, NATIVE_PAYOUT_GAS_LIMIT);
         assertEq(c.termsDelay, TERMS_DELAY);
         assertEq(c.maxMinRunway, MAX_MIN_RUNWAY);
         assertEq(c.termTaxRate, TERM_TAX_RATE);
@@ -182,7 +182,7 @@ contract SlotInfoTest is Test, SlotConstants {
             TaxTerms({
                 recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0
             }),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
     }

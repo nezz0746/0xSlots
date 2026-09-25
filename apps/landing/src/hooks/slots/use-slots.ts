@@ -207,7 +207,7 @@ export function useWithdrawable(
     queryKey: ["slots", "withdrawable", chainId, slot, account],
     enabled: !!slot && !!account,
     refetchInterval: 10_000,
-    queryFn: () => client.withdrawableOf(slot!, account!),
+    queryFn: () => client.claimableOf(slot!, account!),
   });
 }
 

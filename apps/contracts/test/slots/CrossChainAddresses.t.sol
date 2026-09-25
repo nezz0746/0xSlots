@@ -119,7 +119,7 @@ contract CrossChainAddressesTest is Test {
             taxTerms: TaxTerms({
                 recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)
             }),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
+            moduleTerms: ModuleTerms({module: address(0), settings: ""})
         });
     }
 

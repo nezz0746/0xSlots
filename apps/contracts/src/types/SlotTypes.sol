@@ -24,8 +24,8 @@ struct TaxTerms {
 struct ModuleTerms {
     /// The module contract. Zero for a slot with no module, in which case `settings`
     /// is empty too.
-    address target;
-    /// This slot's configuration for the module, as the module's `definition()`
+    address module;
+    /// This slot's configuration for the module, as the module's `uiMetadata()`
     /// says to encode it. Opaque to the slot, handed to every callback.
     bytes settings;
 }
@@ -72,13 +72,13 @@ struct Terms {
  * @notice A slot's module, as installed: which contract, its settings, and the
  *         scopes and fee the slot copied from it.
  * @dev One record, live and queued (`Pending.module`). Installing a module is
- *      copying a record in; removing it is deleting it. Ordered so `target`
+ *      copying a record in; removing it is deleting it. Ordered so `module`
  *      and `scopes`, read on every callback, share one storage word.
  *      Append new fields at the end only.
  */
 struct InstalledModule {
     /// Zero for no module; the other fields are then empty.
-    address target;
+    address module;
     /// Callbacks the slot calls, as `ScopesLib` bits. Copied from the module.
     uint16 scopes;
     /// The module's share of collected tax. Copied from the module.
@@ -100,7 +100,7 @@ struct Pending {
     /// manager reviewed. With `TERM_SCOPES`: only `scopes`, the new scopes
     /// accepted from the current module. Read again when it lands; different
     /// means dropped.
-    InstalledModule module;
+    InstalledModule nextModule;
     /// Which terms are queued: `TERM_*` bits.
     uint16 mask;
     /// When the delay started. Every proposal restarts it.

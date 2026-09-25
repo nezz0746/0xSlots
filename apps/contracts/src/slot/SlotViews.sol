@@ -14,7 +14,7 @@ import {
     InstalledModule
 } from "../types/SlotTypes.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
-import {Settings, Occupancy} from "./SlotStorage.sol";
+import {Governance, Occupancy} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 
 /// @notice One slot, whole, as of one block.
@@ -61,8 +61,8 @@ struct SlotConstantsInfo {
     uint256 maxTaxBps;
     uint256 basisPoints;
     uint256 month;
-    uint256 moduleGas;
-    uint256 payoutGas;
+    uint256 moduleCallbackGasLimit;
+    uint256 nativePayoutGasLimit;
     uint64 termsDelay;
     uint256 maxMinRunway;
     /// `TERM_*` bits for `proposeTerms` and `cancelTerms`.
@@ -88,7 +88,7 @@ abstract contract SlotViews is SlotAccounting {
 
     /// @notice The whole slot, in one call.
     function getSlotInfo() external view returns (SlotInfo memory info) {
-        Settings storage st = _settings();
+        Governance storage st = _governance();
         info.currency = st.currency;
         info.manager = st.manager;
         info.mutableTax = st.mutableTax;
@@ -103,7 +103,7 @@ abstract contract SlotViews is SlotAccounting {
         info.occupant = o.occupant;
         info.price = o.price;
         info.deposit = o.deposit;
-        info.occupiedSince = o.since;
+        info.occupiedSince = o.occupiedSince;
         info.tenureId = o.tenureId;
         info.lastSettled = o.lastSettled;
 
@@ -123,8 +123,8 @@ abstract contract SlotViews is SlotAccounting {
         c.maxTaxBps = MAX_TAX_BPS;
         c.basisPoints = BASIS_POINTS;
         c.month = MONTH;
-        c.moduleGas = MODULE_GAS;
-        c.payoutGas = PAYOUT_GAS;
+        c.moduleCallbackGasLimit = MODULE_CALLBACK_GAS_LIMIT;
+        c.nativePayoutGasLimit = NATIVE_PAYOUT_GAS_LIMIT;
         c.termsDelay = TERMS_DELAY;
         c.maxMinRunway = MAX_MIN_RUNWAY;
         c.termTaxRate = TERM_TAX_RATE;
@@ -137,23 +137,23 @@ abstract contract SlotViews is SlotAccounting {
     // ─── governance ─────────────────────────────────────────────────────────
 
     function currency() public view returns (IERC20) {
-        return _settings().currency;
+        return _governance().currency;
     }
 
     function manager() public view returns (address) {
-        return _settings().manager;
+        return _governance().manager;
     }
 
     function mutableTax() external view returns (bool) {
-        return _settings().mutableTax;
+        return _governance().mutableTax;
     }
 
     function mutableRecipient() external view returns (bool) {
-        return _settings().mutableRecipient;
+        return _governance().mutableRecipient;
     }
 
     function mutableModule() external view returns (bool) {
-        return _settings().mutableModule;
+        return _governance().mutableModule;
     }
 
     // ─── terms ──────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ abstract contract SlotViews is SlotAccounting {
     }
 
     function module() external view returns (address) {
-        return _module().target;
+        return _module().module;
     }
 
     /// @notice The module's fee as this slot accepted it. What payouts use.
@@ -212,7 +212,7 @@ abstract contract SlotViews is SlotAccounting {
     }
 
     function occupiedSince() external view returns (uint64) {
-        return _occupancy().since;
+        return _occupancy().occupiedSince;
     }
 
     function tenureId() external view returns (uint64) {
@@ -229,8 +229,8 @@ abstract contract SlotViews is SlotAccounting {
         return _ledger().collectedTax;
     }
 
-    function withdrawableOf(address account) external view returns (uint256) {
-        return _ledger().withdrawableOf[account];
+    function claimableOf(address account) external view returns (uint256) {
+        return _ledger().claimableOf[account];
     }
 
     function debtOf(address account) external view returns (uint256) {

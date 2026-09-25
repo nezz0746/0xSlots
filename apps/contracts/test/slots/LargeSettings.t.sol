@@ -25,7 +25,7 @@ contract FloorModule is AskModule {
         address[] allowlist;
     }
 
-    function checkSettings(bytes calldata settings) external pure {
+    function validateSettings(bytes calldata settings) external pure {
         abi.decode(settings, (Config));
     }
 
@@ -93,7 +93,7 @@ contract LargeSettingsTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: address(module), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(module), settings: settings})
                     })
                 ))
         );
@@ -140,29 +140,31 @@ contract LargeSettingsTest is Test, SlotConstants {
                             recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
                         }),
                         moduleTerms: ModuleTerms({
-                            target: address(module), settings: _config(1 ether)
+                            module: address(module), settings: _config(1 ether)
                         })
                     })
                 ))
         );
         TaxTerms memory none;
-        ModuleTerms memory next = ModuleTerms({target: address(module), settings: _config(2 ether)});
+        ModuleTerms memory next = ModuleTerms({module: address(module), settings: _config(2 ether)});
 
         s.proposeTerms(none, next, TERM_MODULE);
         Pending memory p = s.pending();
-        assertEq(p.module.settings, next.settings, "queued whole");
-        assertEq(p.module.scopes, ScopesLib.BEFORE_BUY, "and the reviewed scopes kept beside it");
+        assertEq(p.nextModule.settings, next.settings, "queued whole");
+        assertEq(
+            p.nextModule.scopes, ScopesLib.BEFORE_BUY, "and the reviewed scopes kept beside it"
+        );
 
         s.cancelTerms(TERM_MODULE);
         p = s.pending();
-        assertEq(p.module.settings.length, 0, "cancel empties the bytes");
-        assertEq(p.module.scopes, 0);
+        assertEq(p.nextModule.settings.length, 0, "cancel empties the bytes");
+        assertEq(p.nextModule.scopes, 0);
         assertEq(p.mask, 0);
 
         s.proposeTerms(none, next, TERM_MODULE);
         vm.warp(block.timestamp + TERMS_DELAY);
         s.applyTerms();
         assertEq(s.moduleTerms().settings, next.settings, "landed");
-        assertEq(s.pending().module.settings.length, 0, "and the queue is empty");
+        assertEq(s.pending().nextModule.settings.length, 0, "and the queue is empty");
     }
 }

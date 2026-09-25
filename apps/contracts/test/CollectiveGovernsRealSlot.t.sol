@@ -81,7 +81,7 @@ contract CollectiveGovernsRealSlotTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -136,11 +136,11 @@ contract CollectiveGovernsRealSlotTest is Test {
     {
         Pending memory __p1 = slot.pending();
         TaxTerms memory __r1 = __p1.taxTerms;
-        ModuleTerms memory __h1 = ModuleTerms(__p1.module.target, __p1.module.settings);
+        ModuleTerms memory __h1 = ModuleTerms(__p1.nextModule.module, __p1.nextModule.settings);
         uint16 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
         tax = __r1.rateBps;
-        module = __h1.target;
+        module = __h1.module;
         hasTax = (__m1 & 1 != 0);
         hasModule = (__m1 & 8 != 0);
     }
@@ -174,7 +174,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(policyMgr);
         collective.proposeModule(
             IManagedSlot(address(slot)),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))})
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))})
         );
 
         _ripen();
@@ -187,7 +187,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(policyMgr);
         vm.expectRevert();
         collective.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(warehouse), settings: ""})
         );
     }
 
@@ -200,7 +200,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(policyMgr);
         collective.proposeModule(
             IManagedSlot(address(slot)),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))})
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))})
         );
 
         vm.prank(policyMgr);
@@ -228,7 +228,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.expectRevert();
         collective.proposeModule(
             IManagedSlot(address(slot)),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))})
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))})
         );
 
         (,, bool hasTax, bool hasModule) = _pending();
@@ -252,7 +252,7 @@ contract CollectiveGovernsRealSlotTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );

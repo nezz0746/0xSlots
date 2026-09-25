@@ -45,13 +45,13 @@ for querying it directly — see [Indexer](https://docs.0xslots.org/indexer).
 
 | Area | Methods |
 | --- | --- |
-| Reads | `slotState`, `quoteBuy`, `minDepositForBuy`, `minDepositToHold`, `pending`, `hasRipeTerms`, `terms`, `module`, `scopes`, `fee`, `moduleUpdate`, `debtOf`, `withdrawableOf`, `isOperator`, and getters for the common fields |
+| Reads | `slotState`, `quoteBuy`, `minDepositForBuy`, `minDepositToHold`, `pending`, `hasRipeTerms`, `terms`, `module`, `scopes`, `fee`, `moduleUpdate`, `debtOf`, `claimableOf`, `isOperator`, and getters for the common fields |
 | Create | `createSlot`, `simulateCreateSlot` |
 | Occupancy | `buy`, `simulateBuy`, `liquidateAndBuy`, `release`, `liquidate` |
 | Holding | `selfAssess`, `topUp`, `withdraw`, `manageTerms`, `setOperator` |
 | Money out | `collect`, `collectAll`, `simulateCollectAll`, `collectFrom`, `claim` |
 | Manager | `proposeTerms`, `cancelTerms`, `acceptFee`, `acceptScopes`, `setManager` |
-| Modules | `checkSettings`, `readScopes`, `readFee`, `moduleDefinition`, `moduleSettings` |
+| Modules | `validateSettings`, `readScopes`, `readFee`, `moduleMetadata`, `moduleSettings` |
 | OfferBook | `offerBoard`, `offerAt`, `isOfferFundable`, `offerCost`, `postOffer`, `cancelOffer`, `approveOfferBook`, `authorizeOfferBook`, `acceptOffer` |
 
 `buy` sends the quote it just read as `maxPayment`, so it pays what it was
@@ -64,7 +64,7 @@ Terms are proposed by presence, and land at the next buy after a one-day delay:
 import { NO_MODULE, TERMS } from "@0xslots/sdk";
 
 await client.proposeTerms(slot, { taxRateBps: 200 });
-await client.proposeTerms(slot, { moduleTerms: { target, settings } });
+await client.proposeTerms(slot, { moduleTerms: { module, settings } });
 await client.proposeTerms(slot, { moduleTerms: NO_MODULE }); // remove the module
 await client.cancelTerms(slot, TERMS.MODULE);
 ```

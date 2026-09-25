@@ -197,7 +197,7 @@ export function ManageTermsPanel({
               ...(changeModule
                 ? {
                     moduleTerms: {
-                      target: moduleAddress,
+                      module: moduleAddress,
                       settings:
                         moduleAddress === zeroAddress ? NO_SETTINGS : data,
                     },

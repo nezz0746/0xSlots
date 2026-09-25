@@ -82,7 +82,7 @@ contract AdLandModerationTest is Test, SlotConstants {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: settings})
                     })
                 ))
         );
@@ -299,7 +299,7 @@ contract AdLandModerationTest is Test, SlotConstants {
 
         TaxTerms memory none;
         slot.proposeTerms(
-            none, ModuleTerms({target: address(adland), settings: _config(ModerationMode.Every)}), 8
+            none, ModuleTerms({module: address(adland), settings: _config(ModerationMode.Every)}), 8
         );
 
         (ModerationMode current, ModerationMode next,) = adland.moderationOf(address(slot));
@@ -373,7 +373,7 @@ contract AdLandModerationTest is Test, SlotConstants {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: settings})
                     })
                 ))
         );
@@ -398,7 +398,7 @@ contract AdLandModerationTest is Test, SlotConstants {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: settings})
                     })
                 ))
         );
@@ -430,7 +430,7 @@ contract AdLandModerationTest is Test, SlotConstants {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: settings})
                     })
                 ))
         );

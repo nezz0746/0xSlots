@@ -5,14 +5,14 @@ import {LibString} from "solady/utils/LibString.sol";
 
 /**
  * @title ModuleSchemaLib
- * @notice Builds the JSON document a module answers `definition()` with.
+ * @notice Builds the JSON document a module answers `uiMetadata()` with.
  *
  * @dev ── Why a module writes JSON at all ──────────────────────────────────
  *
  *      So that an application can render a configuration form for a module
  *      nobody wrote a UI for, by reading the chain and nothing else. JSON
  *      Schema is the format with libraries behind it — `react-jsonschema-form`,
- *      JSONForms, AJV — so `definition().settings` is handed to one of those
+ *      JSONForms, AJV — so `uiMetadata().settings` is handed to one of those
  *      untouched, and the work is already done.
  *
  *      Built here rather than stored as a literal because the BOUNDS are the
@@ -30,7 +30,7 @@ import {LibString} from "solady/utils/LibString.sol";
  *      `x-maximum` strings beside it.
  *
  *      The cost is that AJV cannot range-check a string, which is the right
- *      trade here: the bounds were always advice, and `checkSettings` on
+ *      trade here: the bounds were always advice, and `validateSettings` on
  *      the chain is the authority. A form shows the hint; the module gives the
  *      verdict.
  *
@@ -217,7 +217,7 @@ library ModuleSchemaLib {
     // ─── the document ───────────────────────────────────────────────────────
 
     /**
-     * @notice Everything a module answers `definition()` with, in one call.
+     * @notice Everything a module answers `uiMetadata()` with, in one call.
      *
      * @param title What the module is called.
      * @param description One line about what it does.

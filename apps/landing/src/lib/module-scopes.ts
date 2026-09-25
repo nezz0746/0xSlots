@@ -16,11 +16,11 @@ export interface ScopeSet {
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
-  strict: boolean;
+  afterCallbacksMustSucceed: boolean;
 }
 
 /**
- * Every scope, in the order `Scopes` declares them, with `strict` last.
+ * Every scope, in the order `Scopes` declares them, with `afterCallbacksMustSucceed` last.
  *
  * A fixed order so the row is a shape the eye learns rather than a list that
  * reshuffles per app.
@@ -32,7 +32,7 @@ export const SCOPE_ORDER = [
   "afterRelease",
   "afterLiquidate",
   "afterSettle",
-  "strict",
+  "afterCallbacksMustSucceed",
 ] as const satisfies readonly (keyof ScopeSet)[];
 
 /** Scope name → what it is, for a list of those granted. */
@@ -43,7 +43,7 @@ export const SCOPE_LABELS: Record<string, string> = {
   afterRelease: "after release",
   afterLiquidate: "after liquidate",
   afterSettle: "after settle",
-  strict: "strict",
+  afterCallbacksMustSucceed: "must succeed",
 };
 
 /** Callback name → the ACTION it sees, for "may refuse" / "notified on". */
@@ -69,7 +69,7 @@ export function describeScopes(scopes: Partial<ScopeSet> | undefined | null): {
   granted: string[];
   mayRefuse: string[];
   notifiedOn: string[];
-  strict: boolean;
+  afterCallbacksMustSucceed: boolean;
 } {
   const on = Object.keys(SCOPE_LABELS).filter(
     (k) => (scopes as Record<string, boolean> | undefined)?.[k],
@@ -85,6 +85,6 @@ export function describeScopes(scopes: Partial<ScopeSet> | undefined | null): {
     notifiedOn: on
       .filter((k) => k.startsWith("after"))
       .map((k) => VERB_LABELS[k] as string),
-    strict: !!scopes?.strict,
+    afterCallbacksMustSucceed: !!scopes?.afterCallbacksMustSucceed,
   };
 }

@@ -93,7 +93,7 @@ No module can prevent liquidation, and none can stop an occupant leaving. Both
 paths tell the module what happened, on a fixed gas budget, and ignore it if it
 fails.
 
-The one exception is a module that declares `strict`, whose `after` callbacks
+The one exception is a module that declares `afterCallbacksMustSucceed`, whose `after` callbacks
 run uncapped and can fail the transaction. Whether a slot's module did that is
 readable from `scopes()` before you buy, and cannot change under a sitting
 occupant.

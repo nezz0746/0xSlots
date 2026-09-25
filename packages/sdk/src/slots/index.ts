@@ -23,7 +23,7 @@ export {
   type SettingsCheck,
   type ModuleSettingsParam,
   type ModuleSettingsSchema,
-  type ModuleDefinition,
+  type ModuleMetadata,
   type ModuleFee,
   type ModuleUpdate,
   type Scopes,

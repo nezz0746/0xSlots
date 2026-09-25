@@ -44,7 +44,7 @@ contract GasHog is ERC20 {
 /// @dev A healthy module whose configuration check is expensive but well inside
 ///      its stipend.
 contract HeavyModule is AskModule {
-    function checkSettings(bytes calldata) external pure {
+    function validateSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 700; ++i) {
             x = uint256(keccak256(abi.encode(x, i)));
@@ -99,7 +99,7 @@ contract ModuleReadGasTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: sink, rateBps: 1000, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -111,7 +111,7 @@ contract ModuleReadGasTest is Test, SlotConstants {
         vm.stopPrank();
 
         TaxTerms memory none;
-        s.proposeTerms(none, ModuleTerms({target: address(heavy), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(heavy), settings: ""}), 8);
         vm.warp(block.timestamp + 30 days);
         assertTrue(s.isInsolvent());
 
@@ -166,14 +166,14 @@ contract BuyGasStarvationTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(veto), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(veto), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
@@ -210,7 +210,7 @@ contract VetoModule is AskModule {
         o.scopes = ScopesLib.BEFORE_BUY;
     }
 
-    function checkSettings(bytes calldata) external view {}
+    function validateSettings(bytes calldata) external view {}
 
     function beforeBuy(SlotContext calldata) external view {
         revert Vetoed();
@@ -228,7 +228,7 @@ contract VetoModule is AskModule {
 /// @dev Healthy, and expensive to read: the costlier the read, the wider the
 ///      window a caller tuning gas would have to aim at.
 contract PricyModule is AskModule {
-    function checkSettings(bytes calldata) external pure {
+    function validateSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 500; ++i) {
             x = uint256(keccak256(abi.encode(x, i)));
@@ -289,14 +289,14 @@ contract QueuedModuleStarvationTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(pricy), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(pricy), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         uint256 dep = s.minDepositForBuy(1 ether);
@@ -328,7 +328,7 @@ contract QueuedModuleStarvationTest is Test, SlotConstants {
 /// @dev Answers honestly, but costs more than the stipend the slot reads it
 ///      under.
 contract GluttonModule is AskModule {
-    function checkSettings(bytes calldata) external pure {
+    function validateSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 1_500; ++i) {
             x = uint256(keccak256(abi.encode(x, i)));
@@ -384,7 +384,7 @@ contract ModuleStipendTest is Test, SlotConstants {
             mutableRecipient: true,
             mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: module, settings: ""})
+            moduleTerms: ModuleTerms({module: module, settings: ""})
         });
     }
 
@@ -401,7 +401,7 @@ contract ModuleStipendTest is Test, SlotConstants {
         TaxTerms memory none;
         vm.prank(manager);
         vm.expectRevert(ModuleTooExpensive.selector);
-        s.proposeTerms(none, ModuleTerms({target: address(glutton), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(glutton), settings: ""}), 8);
     }
 
     /// @notice A module that fits is not caught by the same check.

@@ -149,7 +149,7 @@ contract DeployAndDriveCollective is Script {
                                 rateBps: uint16(TAX_AT_BIRTH),
                                 minRunwaySeconds: uint32(1 days)
                             }),
-                            moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                            moduleTerms: ModuleTerms({module: address(0), settings: ""})
                         })
                     ))
         );
@@ -163,7 +163,7 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_POLICY_MGR);
         collective.proposeModule(
             IManagedSlot(address(slot)),
-            ModuleTerms({target: moduleAddr, settings: abi.encode(uint256(7 days))})
+            ModuleTerms({module: moduleAddr, settings: abi.encode(uint256(7 days))})
         );
 
         vm.broadcast(PK_POLICY_MGR);

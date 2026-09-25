@@ -20,7 +20,7 @@ library ScopesLib {
     uint16 internal constant AFTER_LIQUIDATE = 1 << 4;
     uint16 internal constant AFTER_SETTLE = 1 << 5;
     /// Not a callback: a mode. See {Scopes-strict}.
-    uint16 internal constant STRICT = 1 << 6;
+    uint16 internal constant AFTER_CALLBACKS_MUST_SUCCEED = 1 << 6;
     uint16 internal constant ON_INSTALL = 1 << 7;
     uint16 internal constant ON_UNINSTALL = 1 << 8;
 
@@ -33,7 +33,7 @@ library ScopesLib {
         if (f.afterRelease) b |= AFTER_RELEASE;
         if (f.afterLiquidate) b |= AFTER_LIQUIDATE;
         if (f.afterSettle) b |= AFTER_SETTLE;
-        if (f.strict) b |= STRICT;
+        if (f.afterCallbacksMustSucceed) b |= AFTER_CALLBACKS_MUST_SUCCEED;
         if (f.onInstall) b |= ON_INSTALL;
         if (f.onUninstall) b |= ON_UNINSTALL;
     }
@@ -45,7 +45,7 @@ library ScopesLib {
         f.afterRelease = b & AFTER_RELEASE != 0;
         f.afterLiquidate = b & AFTER_LIQUIDATE != 0;
         f.afterSettle = b & AFTER_SETTLE != 0;
-        f.strict = b & STRICT != 0;
+        f.afterCallbacksMustSucceed = b & AFTER_CALLBACKS_MUST_SUCCEED != 0;
         f.onInstall = b & ON_INSTALL != 0;
         f.onUninstall = b & ON_UNINSTALL != 0;
     }

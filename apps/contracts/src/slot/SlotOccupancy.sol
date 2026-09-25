@@ -136,7 +136,7 @@ abstract contract SlotOccupancy is SlotViews {
         }
         o.price = selfAssessedPrice;
         o.deposit = depositAmount;
-        o.since = uint64(block.timestamp);
+        o.occupiedSince = uint64(block.timestamp);
         o.lastSettled = uint64(block.timestamp);
         // The outgoing tenure's fraction of a unit ends with it.
         o.taxCarry = 0;

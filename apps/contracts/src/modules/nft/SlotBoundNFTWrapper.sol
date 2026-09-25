@@ -26,7 +26,7 @@ import {ISlotBoundNFTWrapper, Mode, Wrap} from "./ISlotBoundNFTWrapper.sol";
  *
  * @dev {SlotBoundNFT} mints a token backed by nothing. This escrows a real one
  *      and keeps the identical lifecycle: ownership is real ERC-721 storage
- *      moved in `afterBuy`, safe only because this module declares `strict`.
+ *      moved in `afterBuy`, safe only because this module declares `afterCallbacksMustSucceed`.
  *
  *      Monolithic and permissionless — any ERC-721, any depositor, terms per
  *      wrap. The depositor is the recipient and the manager of their own slot;
@@ -202,7 +202,7 @@ contract SlotBoundNFTWrapper is
                 taxTerms: TaxTerms({
                     recipient: msg.sender, rateBps: taxRateBps, minRunwaySeconds: MIN_RUNWAY_SECONDS
                 }),
-                moduleTerms: ModuleTerms({target: address(this), settings: ""})
+                moduleTerms: ModuleTerms({module: address(this), settings: ""})
             })
         );
 
@@ -332,7 +332,7 @@ contract SlotBoundNFTWrapper is
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
-        f.strict = true; // why this contract can hold real ownership state
+        f.afterCallbacksMustSucceed = true; // why this contract can hold real ownership state
         return ScopesLib.pack(f);
     }
 
@@ -340,7 +340,7 @@ contract SlotBoundNFTWrapper is
     /// @dev Takes nothing.
     function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
-    function checkSettings(bytes calldata) external view {}
+    function validateSettings(bytes calldata) external view {}
 
     /// @dev The one thing that stops a retired slot being sold. Merely clearing
     ///      `tokenOf` would send {_sync} down its "not ours" path and let the
@@ -382,7 +382,7 @@ contract SlotBoundNFTWrapper is
 
         // Retired: the token is burned and nothing should move. Returning
         // rather than reverting is what lets `release` and `liquidate` still
-        // settle — under `strict` a revert here would strand the deposit.
+        // settle — under `afterCallbacksMustSucceed` a revert here would strand the deposit.
         if (_wrapped[tokenId].retired) return;
 
         address want = ISlotOccupancy(slot).occupant();

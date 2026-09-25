@@ -9,7 +9,7 @@ import {InvalidManager, InvalidCurrency, InvalidValue} from "./errors/SlotErrors
 import {Versioned} from "./utils/Versioned.sol";
 import {SlotInit, ModuleFee, InstalledModule} from "./types/SlotTypes.sol";
 import {ISlotModule} from "./interfaces/ISlotModule.sol";
-import {Settings} from "./slot/SlotStorage.sol";
+import {Governance} from "./slot/SlotStorage.sol";
 import {TermsLib} from "./libraries/TermsLib.sol";
 
 /**
@@ -24,7 +24,7 @@ import {TermsLib} from "./libraries/TermsLib.sol";
  *         currency — may prevent it. Every capped call and swallowed revert in
  *         this codebase exists for that sentence.
  *
- *         The ONE exception is a module that declared `strict`, whose `after`
+ *         The ONE exception is a module that declared `afterCallbacksMustSucceed`, whose `after`
  *         callbacks are uncapped and fatal so it can do work that must land.
  *         A slot attaching one is only as evictable as that module. The flag is
  *         copied at attach and readable from {SlotInfo}'s `scopes`, so
@@ -69,7 +69,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         _validateRent(p.taxTerms, TermsLib.ALL);
         (uint16 declaredScopes, ModuleFee memory declaredFee) = _validateModule(p.moduleTerms);
 
-        Settings storage st = _settings();
+        Governance storage st = _governance();
         st.currency = p.currency;
         st.manager = p.manager;
         st.mutableTax = p.mutableTax;
@@ -81,7 +81,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         _taxTerms().minRunwaySeconds = p.taxTerms.minRunwaySeconds;
 
         InstalledModule storage m = _module();
-        m.target = p.moduleTerms.target;
+        m.module = p.moduleTerms.module;
         m.settings = p.moduleTerms.settings;
         m.scopes = declaredScopes;
         m.fee = declaredFee;
@@ -89,7 +89,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         _occupancy().lastSettled = uint64(block.timestamp);
 
         // The module is attached; tell it, if it asked to be told. Honoured
-        // strictly when it declared `strict`: refusing here fails the creation,
+        // strictly when it declared `afterCallbacksMustSucceed`: refusing here fails the creation,
         // which is the creator's own transaction and nobody else's problem.
         _after(
             F_ON_INSTALL,

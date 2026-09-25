@@ -72,7 +72,7 @@ contract MockSlot {
     ///      set, so two roles can queue independently.
     function proposeTerms(
         TaxTerms calldata taxTerms,
-        ModuleTerms calldata module,
+        ModuleTerms calldata moduleTerms,
         uint16 mask
     ) external onlyManager {
         if (mask == 0) revert NoPendingTerms();
@@ -81,8 +81,8 @@ contract MockSlot {
             hasTax = true;
         }
         if (mask & 8 != 0) {
-            settings = module.settings;
-            moduleAddr = module.target;
+            settings = moduleTerms.settings;
+            moduleAddr = moduleTerms.module;
             hasModule = true;
         }
     }
@@ -199,7 +199,7 @@ contract SlotCollectiveTest is Test {
                 MockSlot.proposeTerms,
                 (
                     TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}),
-                    ModuleTerms({target: address(0), settings: ""}),
+                    ModuleTerms({module: address(0), settings: ""}),
                     uint16(1)
                 )
             )
@@ -228,7 +228,7 @@ contract SlotCollectiveTest is Test {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 250);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xCAFE), settings: ""})
         );
         vm.stopPrank();
 
@@ -241,13 +241,13 @@ contract SlotCollectiveTest is Test {
     function test_thePolicyManagerCanDetachTheModule() public {
         vm.prank(policyMgr);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xCAFE), settings: ""})
         );
         assertTrue(slot.hasModule());
 
         vm.prank(policyMgr);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0), settings: ""})
         );
         assertTrue(slot.hasModule(), "still queued, now queued as a detach");
         assertEq(slot.moduleAddr(), address(0));
@@ -267,7 +267,7 @@ contract SlotCollectiveTest is Test {
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(1), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(1), settings: ""})
         );
     }
 
@@ -279,7 +279,7 @@ contract SlotCollectiveTest is Test {
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(policyMgr);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xCAFE), settings: ""})
         );
 
         vm.prank(policyMgr);
@@ -318,7 +318,7 @@ contract SlotCollectiveTest is Test {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xCAFE), settings: ""})
         );
         mgr.cancelTaxProposal(IManagedSlot(address(slot)));
         mgr.cancelModuleProposal(IManagedSlot(address(slot)));
@@ -348,7 +348,7 @@ contract SlotCollectiveTest is Test {
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(admin);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xCAFE), settings: ""})
         );
         vm.prank(admin);
         mgr.cancelAllProposals(IManagedSlot(address(slot)));
@@ -455,13 +455,13 @@ contract SlotCollectiveTest is Test {
         vm.prank(policyMgr);
         vm.expectRevert(_unauthorized(policyMgr, splitRole));
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(charging), settings: ""})
         );
         assertFalse(slot.hasModule(), "nothing queued");
 
         vm.prank(admin);
         mgr.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(charging), settings: ""})
         );
         assertEq(slot.moduleAddr(), address(charging), "the admin holds every role");
     }
@@ -491,7 +491,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
         calls[1] = abi.encodeCall(
             mgr.proposeModule,
-            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""}))
+            (IManagedSlot(address(slot)), ModuleTerms({module: address(0), settings: ""}))
         );
         vm.prank(admin);
         mgr.multicall(calls);
@@ -505,7 +505,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = abi.encodeCall(mgr.proposeTax, (IManagedSlot(address(slot)), 500));
         calls[1] = abi.encodeCall(
             mgr.proposeModule,
-            (IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""}))
+            (IManagedSlot(address(slot)), ModuleTerms({module: address(0), settings: ""}))
         );
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
         vm.prank(taxMgr);

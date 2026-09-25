@@ -37,8 +37,8 @@ struct TaxTerms {
 }
 
 struct ModuleTerms {
-    address target;            // the module; zero for none
-    bytes   settings;          // its configuration; must be empty when target is
+    address module;            // zero for none
+    bytes   settings;          // its configuration; must be empty when module is
 }
 ```
 
@@ -50,7 +50,7 @@ struct ModuleTerms {
 - `settings` without a module, or a module that rejects its settings, declares
   invalid scopes or fee, or cannot answer within its gas allowance
   (`InvalidModule`, `InvalidModuleFee`, `ModuleTooExpensive`, or the module's
-  own error from `checkSettings`).
+  own error from `validateSettings`).
 
 If the module declares `onInstall`, it is called at creation.
 
@@ -76,7 +76,7 @@ function isSlot(address) external view returns (bool);
 ```
 
 `collectAll` calls `collect()` on each slot this factory created, isolating
-failures: a slot with nothing to collect, a reverting `strict` module or an
+failures: a slot with nothing to collect, a reverting `afterCallbacksMustSucceed` module or an
 address the factory did not create leaves a zero rather than failing the batch.
 Nothing about it is privileged — `collect()` is permissionless and pays each
 slot's own recipient. Simulate it to learn the amounts.

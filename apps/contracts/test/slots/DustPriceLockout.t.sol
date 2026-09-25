@@ -71,7 +71,7 @@ contract C01Test is Test {
                             minRunwaySeconds: uint32(0)
                         }),
                         moduleTerms: ModuleTerms({
-                            target: address(module), settings: abi.encode(TENURE)
+                            module: address(module), settings: abi.encode(TENURE)
                         })
                     })
                 ))

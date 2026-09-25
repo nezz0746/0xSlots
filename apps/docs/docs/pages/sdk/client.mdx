@@ -43,8 +43,8 @@ fields (`occupant`, `price`, `deposit`, `taxOwed`, `module`, `scopes`,
 | `pending(slot)` | queued terms, with `appliesAt` and `applies` |
 | `hasRipeTerms(slot)` | whether the next buy lands them — the chain's clock, not yours |
 | `fee(slot)` / `scopes(slot)` | the module's fee and scopes, as the slot copied them |
-| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }`, from the chain's `SlotLens` |
-| `debtOf(slot, account)` / `withdrawableOf(slot, account?)` | debt carried / credits to `claim` |
+| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }`, from the factory |
+| `debtOf(slot, account)` / `claimableOf(slot, account?)` | debt carried / credits to `claim` |
 | `isOperator(slot, operator)` | live, per tenure |
 
 ## Writes
@@ -94,7 +94,7 @@ await client.createSlot({
   mutableRecipient: false,
   mutableModule: true,
   taxTerms: { recipient: "0x...", rateBps: 100, minRunwaySeconds: 86_400 },
-  moduleTerms: { target: module, settings }, // omit for no module
+  moduleTerms: { module, settings }, // omit for no module
 });
 ```
 
@@ -106,7 +106,7 @@ viem encodes a struct **by component name**, so the SDK takes a typed shape and
 ```ts
 await client.proposeTerms(slot, { taxRateBps: 200 });
 await client.proposeTerms(slot, { recipient, minRunwaySeconds: 3_600 });
-await client.proposeTerms(slot, { moduleTerms: { target, settings } });
+await client.proposeTerms(slot, { moduleTerms: { module, settings } });
 await client.proposeTerms(slot, { moduleTerms: NO_MODULE });   // remove the module
 
 await client.cancelTerms(slot, TERMS.MODULE);  // one term
@@ -128,16 +128,16 @@ next buy after the one-hour delay — see [How a slot works](/concepts/slots#ter
 import { minimumTenureModuleAddress } from "@0xslots/contracts";
 import { toHex } from "viem";
 
-const target = minimumTenureModuleAddress[chainId];
+const module = minimumTenureModuleAddress[chainId];
 const settings = toHex(7n * 24n * 3600n, { size: 32 });  // abi.encode(uint256 window)
 
-await client.checkSettings(target, settings);  // { ok: true } | { ok: false, reason }
-await client.readScopes(target, settings);     // what the module asks, today
-await client.readFee(target, settings);
-await client.moduleDefinition(target);         // parsed definition() JSON, or null
+await client.validateSettings(module, settings); // { ok: true } | { ok: false, reason }
+await client.readScopes(module, settings);       // what the module asks, today
+await client.readFee(module, settings);
+await client.moduleMetadata(module);             // parsed uiMetadata() JSON, or null
 ```
 
-`checkSettings` runs the same check the slot runs at proposal and resolves with
+`validateSettings` runs the same check the slot runs at proposal and resolves with
 the module's own reason rather than throwing, so a form can show it.
 
 Constants: `TERMS`, `ALL_TERMS`, `SCOPE_BITS`, `unpackScopes`, `NO_MODULE`,

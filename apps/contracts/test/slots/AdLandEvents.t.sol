@@ -67,7 +67,7 @@ contract AdLandEventsTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: ""})
                     })
                 ))
         );

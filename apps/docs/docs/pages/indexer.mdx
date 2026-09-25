@@ -48,8 +48,8 @@ accepted — what it obeys — while `module.declared*` is what the module decla
 when the indexer first saw it. Comparing them is how you find a module that
 changed its scopes after slots had committed to it.
 
-`slot.scopeStrict` is the one worth surfacing: a strict module's `after` callbacks
-run uncapped and can fail the slot, eviction included.
+`slot.scopeAfterCallbacksMustSucceed` is the one worth surfacing: such a
+module's `after` callbacks run uncapped and can fail the slot, eviction included.
 
 `module.failedCallCount` counts `after` callbacks that reverted and were swallowed
 (`moduleCallFailedEvent`). A module accumulating those is quietly broken.

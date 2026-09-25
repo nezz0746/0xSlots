@@ -23,7 +23,7 @@ contract TT is ERC20 {
     }
 }
 
-/// @dev Base for the fixtures: `strict` is a constructor argument so the same
+/// @dev Base for the fixtures: `afterCallbacksMustSucceed` is a constructor argument so the same
 ///      behaviour can be tested under both modes without duplicating a module.
 abstract contract Modal is AskModule {
     bool internal immutable _strict;
@@ -31,7 +31,7 @@ abstract contract Modal is AskModule {
     constructor(bool strict_) {
         _strict = strict_;
     }
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view virtual {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterSettle(SlotContext calldata) external {}
@@ -51,7 +51,7 @@ contract FailingAfter is Modal {
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
-        f.strict = _strict;
+        f.afterCallbacksMustSucceed = _strict;
         o.scopes = ScopesLib.pack(f);
     }
 
@@ -77,7 +77,7 @@ contract BlocksEviction is Modal {
         Scopes memory f;
         f.afterBuy = true;
         f.afterLiquidate = true;
-        f.strict = _strict;
+        f.afterCallbacksMustSucceed = _strict;
         o.scopes = ScopesLib.pack(f);
     }
     function afterBuy(SlotContext calldata) external {}
@@ -88,7 +88,7 @@ contract BlocksEviction is Modal {
     }
 }
 
-/// @dev Writes 40 fresh storage slots in `afterBuy` — ~800k, past MODULE_GAS.
+/// @dev Writes 40 fresh storage slots in `afterBuy` — ~800k, past MODULE_CALLBACK_GAS_LIMIT.
 contract HungryAfter is Modal {
     mapping(uint256 => uint256) public junk;
     uint256 public runs;
@@ -97,7 +97,7 @@ contract HungryAfter is Modal {
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true;
-        f.strict = _strict;
+        f.afterCallbacksMustSucceed = _strict;
         o.scopes = ScopesLib.pack(f);
     }
 
@@ -148,7 +148,7 @@ contract StrictModulesTest is Test {
                             rateBps: uint16(1000),
                             minRunwaySeconds: uint32(0)
                         }),
-                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                        moduleTerms: ModuleTerms({module: module, settings: ""})
                     })
                 ))
         );
@@ -208,7 +208,7 @@ contract StrictModulesTest is Test {
     }
 
     /// @notice Strict removes the stipend, which is what it is FOR.
-    /// @dev The ERC-721 mirror case. 40 cold SSTOREs is ~800k, past MODULE_GAS's
+    /// @dev The ERC-721 mirror case. 40 cold SSTOREs is ~800k, past MODULE_CALLBACK_GAS_LIMIT's
     ///      500k — so lenient drops the write silently and strict lands it.
     function test_StrictGivesTheAfterModuleMoreThanTheStipend() public {
         HungryAfter lenient = new HungryAfter(false);
@@ -225,23 +225,25 @@ contract StrictModulesTest is Test {
     function test_TheFlagIsSnapshottedAndPublished() public {
         Slot s = _slot(address(new FailingAfter(true)));
         SlotInfo memory i = s.getSlotInfo();
-        assertTrue(i.scopes.strict, "a buyer can read it before committing");
+        assertTrue(i.scopes.afterCallbacksMustSucceed, "a buyer can read it before committing");
         assertTrue(i.scopes.afterBuy, "and the callbacks alongside it");
 
         SlotInfo memory j = _slot(address(new FailingAfter(false))).getSlotInfo();
-        assertFalse(j.scopes.strict, "default is off");
+        assertFalse(j.scopes.afterCallbacksMustSucceed, "default is off");
     }
 
     /// @notice A module that flips its answer later cannot change a live slot.
-    /// @dev `strict` is one more bit in the accepted byte, so it obeys the
+    /// @dev `afterCallbacksMustSucceed` is one more bit in the accepted byte, so it obeys the
     ///      same rule as every other: the slot honours what it read at attach.
     function test_TheSnapshotBeatsALaterChangeOfMind() public {
         Flipper h = new Flipper();
         Slot s = _slot(address(h));
-        assertFalse(s.getSlotInfo().scopes.strict, "attached lenient");
+        assertFalse(s.getSlotInfo().scopes.afterCallbacksMustSucceed, "attached lenient");
 
         h.flip();
-        assertTrue(ScopesLib.unpack(h.scopes("")).strict, "the module now claims strict");
+        assertTrue(
+            ScopesLib.unpack(h.scopes("")).afterCallbacksMustSucceed, "the module now claims strict"
+        );
 
         // Still swallowed: the slot obeys its snapshot, not the live answer.
         _buy(s, alice, 1 ether, 1 ether);
@@ -257,12 +259,12 @@ contract Flipper is AskModule {
     function flip() external {
         flipped = true;
     }
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true;
-        f.strict = flipped;
+        f.afterCallbacksMustSucceed = flipped;
         o.scopes = ScopesLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}

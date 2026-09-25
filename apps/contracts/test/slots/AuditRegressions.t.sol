@@ -41,7 +41,7 @@ contract FlipModule is AskModule {
     function flip() external {
         broken = true;
     }
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
@@ -72,7 +72,7 @@ contract ShortAnswerModule is AskModule {
     function flip() external {
         broken = true;
     }
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
@@ -107,7 +107,7 @@ contract DirtyBoolModule is AskModule {
     function flip() external {
         broken = true;
     }
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
@@ -144,7 +144,7 @@ contract RejectingModule is AskModule {
         broken = true;
     }
 
-    function checkSettings(bytes calldata) external view {
+    function validateSettings(bytes calldata) external view {
         if (broken) revert No();
     }
 
@@ -168,7 +168,7 @@ contract RejectingModule is AskModule {
 /// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
 contract Counter is AskModule {
     uint256 public buys;
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -273,7 +273,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(minDep)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -323,7 +323,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
         FlipModule h = new FlipModule();
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(h), settings: ""}),
+            ModuleTerms({module: address(h), settings: ""}),
             uint16(8)
         );
 
@@ -360,7 +360,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
         // the whole point: the apply path cannot re-verify what it accepted.
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: pending, settings: ""}),
+            ModuleTerms({module: pending, settings: ""}),
             uint16(8)
         );
         if (etchAway) vm.etch(pending, "");
@@ -423,7 +423,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(0)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -436,7 +436,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
         vm.warp(block.timestamp + 3650 days);
         s.liquidate(); // must not revert on the odd return word
         assertTrue(s.isVacant());
-        assertGt(s.withdrawableOf(recipient), 0, "credited instead");
+        assertGt(s.claimableOf(recipient), 0, "credited instead");
     }
 
     // ── 3. the runway view must not claim "never" ──────────────────────────
@@ -460,7 +460,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
         Slot s = _slot(address(token), 0);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
 
@@ -513,7 +513,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(0)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -525,7 +525,7 @@ contract AuditRegressionsTest is Test, SlotConstants {
 
         vm.warp(block.timestamp + 3650 days);
         s.liquidate();
-        assertEq(s.withdrawableOf(recipient), 0, "paid, so not credited");
+        assertEq(s.claimableOf(recipient), 0, "paid, so not credited");
         assertGt(w.balanceOf(recipient), 0, "and the recipient holds it");
     }
 }

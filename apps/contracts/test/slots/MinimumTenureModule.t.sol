@@ -73,7 +73,7 @@ contract MinimumTenureModuleTest is Test {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(0)
                         }),
-                        moduleTerms: ModuleTerms({target: address(module), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(module), settings: settings})
                     })
                 ))
         );
@@ -249,7 +249,7 @@ contract MinimumTenureModuleTest is Test {
         forged.slot = address(s);
         forged.account = bob;
         forged.moduleTerms =
-            ModuleTerms({target: address(module), settings: abi.encode(uint256(365 days))});
+            ModuleTerms({module: address(module), settings: abi.encode(uint256(365 days))});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         module.afterRelease(forged);
@@ -369,9 +369,9 @@ contract MinimumTenureModuleTest is Test {
     ///         commit.
     function test_TheModuleRejectsTheEmptyConfigurationDirectly() public {
         vm.expectRevert(MinimumTenure.TenureNotConfigured.selector);
-        module.checkSettings("");
+        module.validateSettings("");
 
-        module.checkSettings(abi.encode(TENURE)); // no revert
+        module.validateSettings(abi.encode(TENURE)); // no revert
         assertEq(module.tenureOf(abi.encode(TENURE)), TENURE);
     }
 
@@ -389,7 +389,7 @@ contract MinimumTenureModuleTest is Test {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(0)
                         }),
-                        moduleTerms: ModuleTerms({target: h, settings: abi.encode(TENURE)})
+                        moduleTerms: ModuleTerms({module: h, settings: abi.encode(TENURE)})
                     })
                 ))
         );
@@ -415,7 +415,7 @@ contract MinimumTenureModuleTest is Test {
                             minRunwaySeconds: uint32(0)
                         }),
                         moduleTerms: ModuleTerms({
-                            target: address(module), settings: abi.encode(TENURE)
+                            module: address(module), settings: abi.encode(TENURE)
                         })
                     })
                 ))
@@ -426,7 +426,7 @@ contract MinimumTenureModuleTest is Test {
         vm.prank(mgr);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             8 // TERM_MODULE: detach
         );
         skip(1 days);

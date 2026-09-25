@@ -32,7 +32,7 @@ contract Recorder is AskModule {
     uint256 public settles;
     uint256 public lastPaid;
 
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -60,7 +60,7 @@ contract Recorder is AskModule {
 
     function afterSettle(SlotContext calldata c) external {
         settles++;
-        lastPaid = c.paid;
+        lastPaid = c.taxPaid;
     }
 
     function onUninstall(SlotContext calldata) external {}
@@ -71,7 +71,7 @@ contract Recorder is AskModule {
 /// @dev Refuses every buy. The canonical `before` module.
 contract DenyBuys is AskModule {
     error Denied();
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -95,7 +95,7 @@ contract DenyBuys is AskModule {
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
 contract Hostile is AskModule {
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -136,7 +136,7 @@ contract Hostile is AskModule {
 /// @dev Burns every unit of gas it is handed.
 contract GasBurner is AskModule {
     uint256 public sink;
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -206,7 +206,7 @@ contract SlotsTest is Test {
             taxTerms: TaxTerms({
                 recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(minDep)
             }),
-            moduleTerms: ModuleTerms({target: module, settings: ""})
+            moduleTerms: ModuleTerms({module: module, settings: ""})
         });
     }
 
@@ -263,7 +263,7 @@ contract SlotsTest is Test {
         vm.prank(manager);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
 
@@ -335,7 +335,7 @@ contract SlotsTest is Test {
         vm.expectRevert(InvalidModule.selector);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: useless, settings: ""}),
+            ModuleTerms({module: useless, settings: ""}),
             uint16(8)
         );
     }
@@ -375,7 +375,7 @@ contract SlotsTest is Test {
 
 /// @dev Declares no subscriptions at all.
 contract Nothing is AskModule {
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;

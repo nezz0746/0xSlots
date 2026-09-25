@@ -42,7 +42,7 @@ contract CancelProposalTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 hours)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -56,11 +56,11 @@ contract CancelProposalTest is Test {
     {
         Pending memory __p1 = slot.pending();
         TaxTerms memory __r1 = __p1.taxTerms;
-        ModuleTerms memory __h1 = ModuleTerms(__p1.module.target, __p1.module.settings);
+        ModuleTerms memory __h1 = ModuleTerms(__p1.nextModule.module, __p1.nextModule.settings);
         uint16 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
         tax = __r1.rateBps;
-        module = __h1.target;
+        module = __h1.module;
         hasTax = (__m1 & 1 != 0);
         hasModule = (__m1 & 8 != 0);
     }
@@ -69,12 +69,12 @@ contract CancelProposalTest is Test {
     function test_CancellingTheModuleLeavesTheTaxProposalStanding() public {
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}),
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))}),
             uint16(8)
         );
 
@@ -90,12 +90,12 @@ contract CancelProposalTest is Test {
     function test_CancellingTheTaxLeavesTheModuleProposalStanding() public {
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}),
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))}),
             uint16(8)
         );
 
@@ -111,7 +111,7 @@ contract CancelProposalTest is Test {
     function test_CancellingBothClearsEverything() public {
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}),
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))}),
             uint16(9)
         );
         slot.cancelTerms(uint16(9));
@@ -127,7 +127,7 @@ contract CancelProposalTest is Test {
     function test_CancellingWhatWasNeverProposedReverts() public {
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
 
@@ -145,7 +145,7 @@ contract CancelProposalTest is Test {
     function test_AStrangerCannotCancel() public {
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         vm.prank(address(0xBAD));
@@ -157,12 +157,12 @@ contract CancelProposalTest is Test {
     function test_TheSurvivingProposalStillApplies() public {
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}),
+            ModuleTerms({module: moduleA, settings: abi.encode(uint256(7 days))}),
             uint16(8)
         );
         slot.cancelTerms(uint16(8));
@@ -193,7 +193,7 @@ contract CancelProposalTest is Test {
 
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(1)
         );
         // Not yet: a queued rise the transition will not apply must not be

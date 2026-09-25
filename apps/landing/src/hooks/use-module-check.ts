@@ -56,8 +56,8 @@ export interface ModuleCheckData {
   scopes: ScopeSet;
   /** The fee it declares for an empty configuration. Null when it did not answer. */
   fee: ModuleFee | null;
-  /** Declared `strict`: its `after` calls are uncapped and may revert. */
-  strict: boolean;
+  /** Declared `afterCallbacksMustSucceed`: its `after` calls are uncapped and may revert. */
+  afterCallbacksMustSucceed: boolean;
   /** The callbacks it declared, in the order `Scopes` declares them. */
   granted: string[];
   /**

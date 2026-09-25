@@ -150,7 +150,7 @@ export default function CreatePage() {
         rateBps: Number(percentToBps(taxRateBps)),
         minRunwaySeconds: Number(toSeconds(minDepositValue, minDepositUnit)),
       },
-      moduleTerms: { target: resolvedModule },
+      moduleTerms: { module: resolvedModule },
     };
   }, [
     previewRecipient,
@@ -358,7 +358,7 @@ export default function CreatePage() {
         ),
       },
       moduleTerms: {
-        target:
+        module:
           moduleAddress === zeroAddress ? zeroAddress : getAddress(moduleAddress),
         settings: moduleAddress === zeroAddress ? NO_SETTINGS : settings,
       },

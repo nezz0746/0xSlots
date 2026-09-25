@@ -7,7 +7,7 @@ and refuses no buyer, because there is nothing attached to decide either.
 
 A **module** is the one way to extend a slot — the sponsor creative that
 renders, the NFT that follows the occupant, the seven-day tenure nobody outbids
-you through. A slot installs **at most one**, as `ModuleTerms { target, settings }`,
+you through. A slot installs **at most one**, as `ModuleTerms { module, settings }`,
 at creation or later through its manager. Leave it empty for a bare,
 instant-buy slot.
 
@@ -21,10 +21,10 @@ Every other property of a module falls out of that one line:
   cap — a `view` cannot write, so it cannot reenter. Their only power is to
   **revert**, which vetoes the action, and the module's own error bubbles up.
 - **`after*` callbacks are gas-capped and their revert is swallowed.** They run
-  after the action has settled, on `MODULE_GAS` (500,000), and a failure is
+  after the action has settled, on `MODULE_CALLBACK_GAS_LIMIT` (500,000), and a failure is
   logged as `ModuleCallFailed` and otherwise ignored. A broken module can never
   block a buy, and above all can never block a **liquidation**.
-- **Unless the module declares `strict`.** Then its `after*` callbacks run
+- **Unless the module declares `afterCallbacksMustSucceed`.** Then its `after*` callbacks run
   uncapped and their revert propagates, so work that must land — a mint, a
   transfer — cannot be silently dropped. The price is that the slot is only as
   evictable as the module.
@@ -40,7 +40,7 @@ scopes let it do:
 - A module with **`before*` scopes acts as a validator.** It can refuse a buy
   or a self-assessment. View-only, uncapped.
 - A module with **`after*` scopes acts as a hook.** It records what happened.
-  Gas-capped, and cannot block anything unless it declares `strict`.
+  Gas-capped, and cannot block anything unless it declares `afterCallbacksMustSucceed`.
 
 One module can be both — `MinimumTenureModule` and AdLand are. These are
 labels, not interfaces: every module implements the same `ISlotModule`, and a
@@ -82,7 +82,7 @@ flowchart LR
     class decide d
 ```
 
-`onUninstall` is always capped and swallowed, `strict` or not: a module that
+`onUninstall` is always capped and swallowed, `afterCallbacksMustSucceed` or not: a module that
 could refuse its own removal could never be replaced.
 
 There is no sell callback. A sale through the [OfferBook](/reference/book) is
@@ -119,7 +119,7 @@ the manager accepts the new value, and the two follow different rules:
 A module **proposed** as a replacement is checked the same way. The slot keeps
 the scopes and fee it read at proposal in `pending()`, reads the module again
 when it lands, and drops it instead of installing it if either differs — so the
-delay cannot be used to raise a fee or add `strict` after the manager looked.
+delay cannot be used to raise a fee or add `afterCallbacksMustSucceed` after the manager looked.
 
 ## Settings
 
@@ -134,7 +134,7 @@ frozen — which module, and how it is configured. A module keeping the setting
 in its own storage could rewrite a slot's rules while the slot went on
 reporting itself immutable.
 
-The slot asks `checkSettings(settings)` whenever a module is proposed or
+The slot asks `validateSettings(settings)` whenever a module is proposed or
 installed. A module that rejects its configuration is refused there, rather than
 installed and vetoing every buy afterwards. There is no size limit: large
 settings cost whoever builds and uses the slot, and they can see them first.
@@ -177,8 +177,8 @@ redirect the buyer — and two exits never consult a validator:
 - **`release()`** — an occupant can always leave. Otherwise a module could trap
   you in a position you no longer want.
 
-Both still tell the module afterwards, and a `strict` module can fail them —
-which is exactly why `strict` is readable from the slot before anyone buys.
+Both still tell the module afterwards, and a `afterCallbacksMustSucceed` module can fail them —
+which is exactly why `afterCallbacksMustSucceed` is readable from the slot before anyone buys.
 Short of that, the worst a bad module can do is stop *new* people arriving.
 
 <Callout type="warning">
@@ -218,22 +218,22 @@ land at the next buy (or earlier, through `applyTerms`):
 3. the incoming module gets `onInstall` — on a buy, once the buyer is seated and
    before `afterBuy`.
 
-Proposing `ModuleTerms` with a zero `target` removes the module.
+Proposing `ModuleTerms` with a zero `module` removes the module.
 
 ## Describing a module
 
 A module is just an address; on its own it says nothing to a UI. It may
-*optionally* implement `IDescribedModule`, whose `definition()` returns a JSON
+*optionally* implement `IModuleMetadata`, whose `uiMetadata()` returns a JSON
 document: a title, a description, and a JSON Schema for its settings — enough
 for a client to render a configuration form for a module nobody wrote a screen
 for.
 
 <Callout type="info">
-The slot never reads `definition()`. It is self-reported and unbounded, and the
+The slot never reads `uiMetadata()`. It is self-reported and unbounded, and the
 moment the protocol trusted it a label would become an attack surface on the
 path liquidation depends on. A UI may say "this module *says* it takes a 7-day
 window"; authority is always the slot's copy of the scopes and fee, and the module's
-own `checkSettings`.
+own `validateSettings`.
 </Callout>
 
 To name the modules it knows, a client uses the catalogue in

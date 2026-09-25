@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ISlotModule, Scopes, SlotContext} from "../../interfaces/ISlotModule.sol";
-import {IDescribedModule} from "../../interfaces/IDescribedModule.sol";
+import {IModuleMetadata} from "../../interfaces/IModuleMetadata.sol";
 import {ScopesLib} from "../../libraries/ScopesLib.sol";
 import {ModuleSchemaLib} from "../../libraries/ModuleSchemaLib.sol";
 import {ModuleFee, ModuleTerms, Pending} from "../../types/SlotTypes.sol";
@@ -25,7 +25,7 @@ import {AdConfig, ISlotAd, ModerationMode} from "./IAdLand.sol";
  *      tenure cannot attach both — which is why the rule is inherited here from
  *      {MinimumTenure} rather than standing behind a second contract.
  */
-abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, IDescribedModule {
+abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, IModuleMetadata {
     using ModuleSchemaLib for ModuleSchemaLib.Field;
 
     function scopes(bytes calldata settings) external pure returns (uint16) {
@@ -66,7 +66,7 @@ abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, I
      *      any of it goes through `proposeTerms`, needs a mutable module, waits
      *      out the delay and lands at the next buy.
      */
-    function checkSettings(bytes calldata settings) external pure {
+    function validateSettings(bytes calldata settings) external pure {
         AdConfig memory c = adConfigOf(settings);
         if (c.tenureWindow != 0) _checkedWindow(c.tenureWindow);
     }
@@ -83,7 +83,7 @@ abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, I
     function adConfig(address slot) public view returns (AdConfig memory c) {
         if (slot.code.length == 0) return c;
         try ISlotAd(slot).moduleTerms() returns (ModuleTerms memory terms) {
-            if (terms.target != address(this)) return c;
+            if (terms.module != address(this)) return c;
             return adConfigOf(terms.settings);
         } catch {
             return c;
@@ -102,8 +102,8 @@ abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, I
     ) internal view override returns (ModerationMode) {
         try ISlotAd(slot).pending() returns (Pending memory p) {
             if (p.mask & TermsLib.MODULE == 0) return live;
-            if (p.module.target != address(this)) return ModerationMode.Open;
-            return adConfigOf(p.module.settings).moderation;
+            if (p.nextModule.module != address(this)) return ModerationMode.Open;
+            return adConfigOf(p.nextModule.settings).moderation;
         } catch {
             return live;
         }
@@ -173,7 +173,7 @@ abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, I
      *      `pure`, so it says what the module CAN enforce. What a given slot is
      *      configured with is `Slot.moduleTerms().settings`.
      */
-    function definition() external pure returns (string memory) {
+    function uiMetadata() external pure returns (string memory) {
         return ModuleSchemaLib.describe(
             "AdLand",
             "An advertising space: the occupant publishes a creative, the manager may screen it, and a minimum tenure can protect them while it runs.",

@@ -259,7 +259,7 @@ contract SlotCollectiveFactoryTest is Test {
     ///      arrives via `Slot._payOrCredit`'s `call{gas: 30_000}`, and a
     ///      BeaconProxy adds a staticcall to the beacon plus a delegatecall
     ///      before `receive()` even runs. If that no longer fits, every native
-    ///      push silently degrades into a `withdrawableOf` credit needing a
+    ///      push silently degrades into a `claimableOf` credit needing a
     ///      manual claim.
     function test_nativeTaxStillFitsThe30kCapThroughTheProxy() public {
         SlotCollective mgr = _create(managerAdmin);

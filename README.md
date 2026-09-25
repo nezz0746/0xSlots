@@ -49,7 +49,7 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 A slot installs at most one **module** (`ISlotModule`) — the single extension
 point. Its `before` callbacks may refuse a buy or a reprice; its `after`
 callbacks are told what happened, gas-capped and unable to block anything unless
-the module declares `strict`. The module's manifest lists the scopes it needs
+the module declares `afterCallbacksMustSucceed`. The module's manifest lists the scopes it needs
 and any fee it takes, and the slot keeps its own copy.
 
 Slots are immutable by default. Tax, recipient and module are each optionally

@@ -99,7 +99,7 @@ contract SeedSlots is Script {
         f.buy{value: depF}(me, 0.02 ether, depF, 0);
         f.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint8(1)
         );
 
@@ -166,7 +166,7 @@ contract SeedSlots is Script {
                             rateBps: uint16(tax),
                             minRunwaySeconds: uint32(minRunwaySeconds)
                         }),
-                        moduleTerms: ModuleTerms({target: module, settings: settings})
+                        moduleTerms: ModuleTerms({module: module, settings: settings})
                     })
                 ))
         );

@@ -4,7 +4,11 @@ pragma solidity ^0.8.24;
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {Slot} from "./Slot.sol";
-import {SlotInit} from "./types/SlotTypes.sol";
+import {SlotInit, ModuleFee} from "./types/SlotTypes.sol";
+import {SlotInfo} from "./slot/SlotViews.sol";
+import {ModuleLib} from "./libraries/ModuleLib.sol";
+import {ScopesLib} from "./libraries/ScopesLib.sol";
+import {TermsLib} from "./libraries/TermsLib.sol";
 import {NotManager, InvalidRecipient, NotASlot} from "./errors/SlotErrors.sol";
 import {VersionedUUPS} from "./utils/VersionedUUPS.sol";
 import {Versioned} from "./utils/Versioned.sol";
@@ -21,6 +25,24 @@ import {Versioned} from "./utils/Versioned.sol";
  *      struct once — and it also splits the indexer, which then has to register
  *      every handler twice to cover both eras.
  */
+/// @notice What a slot's module declares today, beside the slot's copy.
+struct ModuleUpdate {
+    /// The slot's copy, as `ScopesLib` bits.
+    uint16 currentScopes;
+    ModuleFee currentFee;
+    /// Whether the module answered, under the cap the slot reads it with.
+    /// False for no module, one that reverts, or an answer out of range.
+    bool answered;
+    uint16 declaredScopes;
+    ModuleFee declaredFee;
+    /// `acceptFee` would change the fee now: it differs, and a rise is allowed
+    /// (`mutableRecipient`).
+    bool feeDiffers;
+    /// `acceptScopes` would queue new scopes: they differ, the module is
+    /// mutable, no new module is queued, and they are not already queued.
+    bool scopesDiffer;
+}
+
 contract SlotFactory is VersionedUUPS {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
@@ -126,7 +148,7 @@ contract SlotFactory is VersionedUUPS {
             init.taxTerms.recipient,
             msg.sender,
             address(init.currency),
-            init.moduleTerms.target
+            init.moduleTerms.module
         );
     }
 
@@ -154,7 +176,7 @@ contract SlotFactory is VersionedUUPS {
      *      are ordinary rather than exceptional: `NothingToCollect` for a slot
      *      whose tax is already flushed — which is most of them, most of the
      *      time — and a module that reverts in `afterSettle` while running
-     *      uncapped under `strict`. Neither is a reason to deny nineteen other
+     *      uncapped under `afterCallbacksMustSucceed`. Neither is a reason to deny nineteen other
      *      recipients their rent, so a failure leaves a zero in `collected` and
      *      the loop carries on.
      *
@@ -213,6 +235,45 @@ contract SlotFactory is VersionedUUPS {
         uint256 escrow = s.deposit();
         amount = s.collectedTax() + (owed > escrow ? escrow : owed);
         s.collect();
+    }
+
+    /**
+     * @notice What `slot`'s module declares today, and whether accepting it
+     *         would change anything. A quote: it changes nothing.
+     *
+     * @dev Here rather than on the slot, which is at its deploy-size limit —
+     *      and a read that calls an untrusted module is better kept out of the
+     *      slot anyway. Everything comes from the slot itself: its state from
+     *      `getSlotInfo`, its read cap from `getSlotConstants`.
+     *
+     *      Never reverts on a module that misbehaves: it is read fail-open,
+     *      under a third of `MODULE_CALLBACK_GAS_LIMIT` per read, which is what the slot
+     *      allows when a module lands.
+     */
+    function moduleUpdate(address slot) external view returns (ModuleUpdate memory u) {
+        if (!isSlot[slot]) revert NotASlot();
+        Slot s = Slot(payable(slot));
+        SlotInfo memory info = s.getSlotInfo();
+        u.currentScopes = ScopesLib.pack(info.scopes);
+        u.currentFee = info.fee;
+
+        address target = info.terms.moduleTerms.module;
+        if (target == address(0)) return u;
+
+        uint256 cap = s.getSlotConstants().moduleCallbackGasLimit / 3;
+        (u.answered, u.declaredScopes, u.declaredFee) =
+            ModuleLib.tryRead(target, info.terms.moduleTerms.settings, cap);
+        if (!u.answered) return u;
+
+        u.feeDiffers = !ModuleLib.sameFee(u.declaredFee, u.currentFee)
+            && (u.declaredFee.bps <= u.currentFee.bps || info.mutableRecipient);
+
+        uint16 mask = info.pending.mask;
+        bool moduleQueued = mask & TermsLib.MODULE != 0;
+        bool alreadyQueued =
+            mask & TermsLib.SCOPES != 0 && info.pending.nextModule.scopes == u.declaredScopes;
+        u.scopesDiffer = info.mutableModule && !moduleQueued && !alreadyQueued
+            && u.declaredScopes != u.currentScopes;
     }
 
     function transferAdmin(address next) external onlyAdmin {

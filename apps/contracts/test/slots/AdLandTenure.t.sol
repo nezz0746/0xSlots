@@ -87,7 +87,7 @@ contract AdLandTenureTest is Test, SlotConstants {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: settings})
                     })
                 ))
         );
@@ -209,7 +209,7 @@ contract AdLandTenureTest is Test, SlotConstants {
         SlotContext memory forged;
         forged.slot = address(s);
         forged.account = bob;
-        forged.moduleTerms = ModuleTerms({target: address(adland), settings: _config(WINDOW)});
+        forged.moduleTerms = ModuleTerms({module: address(adland), settings: _config(WINDOW)});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         adland.afterRelease(forged);
@@ -273,7 +273,7 @@ contract AdLandTenureTest is Test, SlotConstants {
         Slot s = _slot(0);
         TaxTerms memory none;
         s.proposeTerms(
-            none, ModuleTerms({target: address(adland), settings: _config(WINDOW)}), TERM_MODULE
+            none, ModuleTerms({module: address(adland), settings: _config(WINDOW)}), TERM_MODULE
         );
         vm.warp(block.timestamp + TERMS_DELAY + 1);
         s.applyTerms();
@@ -306,7 +306,7 @@ contract AdLandTenureTest is Test, SlotConstants {
      *         three fields a slot registers together, in encoding order.
      */
     function test_TheDefinitionDescribesTheWholeConfiguration() public view {
-        string memory d = adland.definition();
+        string memory d = adland.uiMetadata();
 
         assertEq(vm.parseJsonString(d, ".settings.title"), "AdLand");
         assertFalse(
@@ -332,7 +332,7 @@ contract AdLandTenureTest is Test, SlotConstants {
 
     /// @notice Every value is a string, so no client rounds a `uint64`.
     function test_EveryValueIsAStringWithAPattern() public view {
-        string memory d = adland.definition();
+        string memory d = adland.uiMetadata();
         assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.type"), "string");
         assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.pattern"), "^[0-9]+$");
         assertEq(vm.parseJsonString(d, ".settings.properties.key.pattern"), "^0x[0-9a-fA-F]{64}$");
@@ -350,17 +350,17 @@ contract AdLandTenureTest is Test, SlotConstants {
 
         assertEq(
             vm.parseJsonString(
-                adland.definition(), ".settings.properties.tenureWindow[\'x-semantic\']"
+                adland.uiMetadata(), ".settings.properties.tenureWindow[\'x-semantic\']"
             ),
             "minimum-tenure"
         );
         assertEq(
             vm.parseJsonString(
-                standalone.definition(), ".settings.properties.window[\'x-semantic\']"
+                standalone.uiMetadata(), ".settings.properties.window[\'x-semantic\']"
             ),
             "minimum-tenure"
         );
-        assertFalse(vm.keyExistsJson(standalone.definition(), '.settings["x-settings-encoding"]'));
+        assertFalse(vm.keyExistsJson(standalone.uiMetadata(), '.settings["x-settings-encoding"]'));
     }
 
     /**
@@ -373,17 +373,17 @@ contract AdLandTenureTest is Test, SlotConstants {
     function test_TheSchemaCannotDriftFromTheCheck() public {
         uint256 max = vm.parseUint(
             vm.parseJsonString(
-                adland.definition(), ".settings.properties.tenureWindow[\'x-maximum\']"
+                adland.uiMetadata(), ".settings.properties.tenureWindow[\'x-maximum\']"
             )
         );
         assertEq(max, adland.MAX_TENURE());
 
         // The top of the published range is accepted.
-        adland.checkSettings(_config(max));
+        adland.validateSettings(_config(max));
 
         // One past it is not, and the revert names the same number.
         bytes memory tooLong = _config(max + 1);
         vm.expectRevert(abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, max));
-        adland.checkSettings(tooLong);
+        adland.validateSettings(tooLong);
     }
 }

@@ -755,7 +755,7 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
         ? BigInt(taxTerms.minRunwaySeconds)
         : row.pendingMinRunwaySeconds,
       pendingHasModule: hk || row.pendingHasModule,
-      pendingModule: hk ? lower(h.target) : row.pendingModule,
+      pendingModule: hk ? lower(h.module) : row.pendingModule,
       pendingModuleSettings: hk ? lower(h.settings) : row.pendingModuleSettings,
       // A proposed module replaces scopes accepted from the current one.
       ...(hk
@@ -782,7 +782,7 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
     taxRateBps: BigInt(taxTerms.rateBps),
     recipient: lower(taxTerms.recipient),
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
-    module: lower(h.target),
+    module: lower(h.module),
     settings: lower(h.settings),
     timestamp: event.block.timestamp,
     blockNumber: event.block.number,
@@ -800,7 +800,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const s = await loadSlot(context, slotAddr);
   const { taxTerms, moduleTerms: h, scopes: scopeBits, fee, mask } = event.args;
 
-  const nextModule = lower(h.target);
+  const nextModule = lower(h.module);
   const nextModuleSettings = lower(h.settings);
   const nextRecipient = lower(taxTerms.recipient);
   const prevModule = s.module;

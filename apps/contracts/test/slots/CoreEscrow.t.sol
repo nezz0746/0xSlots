@@ -53,7 +53,7 @@ contract Deaf {
 /// @dev Subscribes to `afterBuy` and always reverts there. The slot must
 ///      swallow it and say so.
 contract BrokenAfter is AskModule {
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -127,7 +127,7 @@ contract CoreEscrowTest is Test {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(MIN_DEP)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -149,7 +149,7 @@ contract CoreEscrowTest is Test {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(0)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -247,7 +247,7 @@ contract CoreEscrowTest is Test {
         vm.prank(bob);
         s.buy{value: pay}(bob, 2 ether, bobDep, type(uint256).max);
 
-        uint256 owedToDeaf = s.withdrawableOf(address(deaf));
+        uint256 owedToDeaf = s.claimableOf(address(deaf));
         assertGt(owedToDeaf, 0, "the push failed and became a credit");
 
         // Anyone may claim on their behalf; the funds go to the account.
@@ -256,7 +256,7 @@ contract CoreEscrowTest is Test {
         vm.expectRevert(TransferFailed.selector); // it still refuses ETH
         s.claim(address(deaf));
         assertEq(address(deaf).balance, before, "nothing moved");
-        assertEq(s.withdrawableOf(address(deaf)), owedToDeaf, "credit intact");
+        assertEq(s.claimableOf(address(deaf)), owedToDeaf, "credit intact");
     }
 
     /// @notice Claiming nothing is refused rather than silently succeeding.
@@ -359,7 +359,7 @@ contract CoreEscrowTest is Test {
                             rateBps: uint16(TAX_RATE),
                             minRunwaySeconds: uint32(MIN_DEP)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -367,7 +367,7 @@ contract CoreEscrowTest is Test {
 
         TaxTerms memory t;
         t.recipient = next;
-        s.proposeTerms(t, ModuleTerms({target: address(0), settings: ""}), 2);
+        s.proposeTerms(t, ModuleTerms({module: address(0), settings: ""}), 2);
         vm.warp(block.timestamp + 10 days);
 
         uint256 owed = s.taxOwed();
@@ -662,7 +662,7 @@ contract CoreEscrowTest is Test {
     ///         slot logs it rather than failing silently.
     function test_AFailingAfterModuleIsSwallowedAndLogged() public {
         SlotInit memory i = _init();
-        i.moduleTerms.target = address(new BrokenAfter());
+        i.moduleTerms.module = address(new BrokenAfter());
         Slot s = Slot(payable(factory.createSlot(i)));
 
         uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);

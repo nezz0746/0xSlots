@@ -198,7 +198,7 @@ export const module = onchainTable(
     declaredAfterSettle: t.boolean().notNull(),
     /// Not a callback — a mode. `after` calls run uncapped and their revert
     /// propagates, so a slot attaching this module is only as evictable as it is.
-    declaredStrict: t.boolean().notNull(),
+    declaredAfterCallbacksMustSucceed: t.boolean().notNull(),
     /// Slots pointing at this module right now.
     slotCount: t.integer().notNull(),
     /// `after` callbacks that reverted and were swallowed. A module accumulating
@@ -439,9 +439,9 @@ export const slot = onchainTable(
     scopeAfterLiquidate: t.boolean().notNull(),
     scopeAfterSettle: t.boolean().notNull(),
     /// The one flag that changes what the SLOT promises rather than what the
-    /// module hears about. Accepted like the rest: a module cannot become strict
-    /// under a sitting occupant.
-    scopeStrict: t.boolean().notNull(),
+    /// module hears about. Accepted like the rest: a module cannot start
+    /// requiring its after callbacks to succeed under a sitting occupant.
+    scopeAfterCallbacksMustSucceed: t.boolean().notNull(),
 
     // ── occupancy ─────────────────────────────────────────────────────────
     occupant: t.hex(),

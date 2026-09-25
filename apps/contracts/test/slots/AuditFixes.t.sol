@@ -38,7 +38,7 @@ contract FlipModule is AskModule {
         return Ask(scopeBits, bps, to);
     }
 
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -119,7 +119,7 @@ contract AuditFixesTest is Test, SlotConstants {
     }
 
     function _noModule() internal pure returns (ModuleTerms memory) {
-        return ModuleTerms({target: address(0), settings: ""});
+        return ModuleTerms({module: address(0), settings: ""});
     }
 
     // ── 1. a queued module cannot change its scopes or fee after review ────
@@ -132,20 +132,20 @@ contract AuditFixesTest is Test, SlotConstants {
         vm.prank(manager);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(m), settings: ""}),
+            ModuleTerms({module: address(m), settings: ""}),
             8 // TERM_MODULE
         );
 
         // Rewritten while the proposal ripens: all of the rent, to its author,
-        // and `strict` on top.
+        // and `afterCallbacksMustSucceed` on top.
         m.set(10_000, author);
-        m.setScopes(ScopesLib.AFTER_SETTLE | ScopesLib.STRICT);
+        m.setScopes(ScopesLib.AFTER_SETTLE | ScopesLib.AFTER_CALLBACKS_MUST_SUCCEED);
         skip(TERMS_DELAY);
         s.applyTerms();
 
         assertEq(s.module(), address(0), "the module is dropped, not installed");
         assertEq(s.fee().bps, 0, "and its fee never lands");
-        assertFalse(s.scopes().strict, "nor the eviction veto it gave itself");
+        assertFalse(s.scopes().afterCallbacksMustSucceed, "nor the eviction veto it gave itself");
     }
 
     function test_AModuleThatKeepsItsScopesAndFeeStillAttaches() public {
@@ -156,7 +156,7 @@ contract AuditFixesTest is Test, SlotConstants {
         vm.prank(manager);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(m), settings: ""}),
+            ModuleTerms({module: address(m), settings: ""}),
             8
         );
         skip(TERMS_DELAY);
@@ -177,7 +177,7 @@ contract AuditFixesTest is Test, SlotConstants {
         vm.expectRevert(NotMutable.selector);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(m), settings: ""}),
+            ModuleTerms({module: address(m), settings: ""}),
             8
         );
 
@@ -186,7 +186,7 @@ contract AuditFixesTest is Test, SlotConstants {
         vm.prank(manager);
         open.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(m), settings: ""}),
+            ModuleTerms({module: address(m), settings: ""}),
             8
         );
         skip(TERMS_DELAY);
@@ -197,7 +197,7 @@ contract AuditFixesTest is Test, SlotConstants {
     function test_AFeeRiseCannotBeAcceptedOnAFixedRecipientSlot() public {
         FlipModule m = new FlipModule();
         Slot s = _slot(
-            manager, recipient, 500, 0, false, ModuleTerms({target: address(m), settings: ""})
+            manager, recipient, 500, 0, false, ModuleTerms({module: address(m), settings: ""})
         );
 
         m.set(2_000, author);

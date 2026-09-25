@@ -40,14 +40,14 @@ abstract contract SlotConstants {
 
     // Gas handed to a module's `after` callbacks.
     // Bounded because these run inside `buy`, `release` and `liquidate`. A module must never be able to price out an eviction.
-    uint256 internal constant MODULE_GAS = 500_000;
+    uint256 internal constant MODULE_CALLBACK_GAS_LIMIT = 500_000;
 
     // Gas for a native payout before it degrades to a claimable credit.
     // A native send runs the recipient's code, and this fires inside SOMEONE
     //      ELSE'S transaction — a buy, a liquidation. Uncapped, an outgoing
     //      occupant with a greedy `receive()` could make their own eviction
     //      expensive and unreliable. 30k covers an EOA and a typical Safe.
-    uint256 internal constant PAYOUT_GAS = 30_000;
+    uint256 internal constant NATIVE_PAYOUT_GAS_LIMIT = 30_000;
 
     // How long a proposal must sit before it may be applied.
     //

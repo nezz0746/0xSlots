@@ -8,7 +8,6 @@ import {ProtocolConfig} from "./ProtocolConfig.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
-import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {SlotBoundNFTFactory} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
 import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
 import {AdLand} from "../../src/modules/adland/AdLand.sol";
@@ -63,9 +62,6 @@ contract DeployProtocol is ProtocolConfig {
         address slotImpl = _deploy2("Slot", v.slot, type(Slot).creationCode);
         address factoryImpl = _deploy2("SlotFactoryImpl", v.factory, type(SlotFactory).creationCode);
         address bookImpl = _deploy2("OfferBook", v.book, type(OfferBook).creationCode);
-        // Stateless quotes about a slot. Not a proxy: a new version is a new
-        // address, and nothing holds this one.
-        address lens = _deploy2("SlotLens", v.lens, type(SlotLens).creationCode);
         // The collectives sit on 0xSplits, which is an external dependency
         // and therefore per-chain configuration rather than something this
         // script knows. On a local chain there is none, so one is deployed.
@@ -186,7 +182,6 @@ contract DeployProtocol is ProtocolConfig {
         record("Slot", slotImpl, Slot(payable(slotImpl)).version());
         record("SlotFactory", factory, SlotFactory(factory).version());
         record("OfferBook", book, OfferBook(book).version());
-        record("SlotLens", lens, SlotLens(lens).version());
         record("SlotCollective", collectiveImpl, v.collective);
         record(
             "SlotCollectiveFactory",
@@ -201,7 +196,6 @@ contract DeployProtocol is ProtocolConfig {
         console2.log("");
         console2.log("SlotFactory          ", factory);
         console2.log("OfferBook            ", book);
-        console2.log("SlotLens             ", lens);
         console2.log("SlotCollectiveFactory", collectiveFactory);
         console2.log("AdLand               ", adLand);
         console2.log("MinimumTenureModule    ", tenureModule);
@@ -213,7 +207,6 @@ contract DeployProtocol is ProtocolConfig {
         uint64 slot;
         uint64 factory;
         uint64 book;
-        uint64 lens;
         uint64 collective;
         uint64 collectiveFactory;
         uint64 adLand;
@@ -245,7 +238,6 @@ contract DeployProtocol is ProtocolConfig {
         v.slot = new Slot().version();
         v.factory = new SlotFactory().version();
         v.book = new OfferBook().version();
-        v.lens = new SlotLens().version();
         address probeWarehouse = chainConfig().splitsWarehouse;
         if (probeWarehouse.code.length == 0) {
             probeWarehouse = address(new SplitsWarehouse("Ether", "ETH"));

@@ -23,7 +23,7 @@ src/
 ├── Slot.sol, slot/        # one position: occupancy, escrow, tax, terms, module calls
 ├── SlotFactory.sol        # UUPS factory; deploys slots behind one beacon
 ├── types/SlotTypes.sol    # SlotInit, TaxTerms, ModuleTerms, ModuleFee, Terms, Pending
-├── interfaces/            # ISlotModule, IDescribedModule, ISlotEvents
+├── interfaces/            # ISlotModule, IModuleMetadata, ISlotEvents
 ├── libraries/             # ScopesLib, TermsLib, SlotMath, ModuleSchemaLib
 ├── modules/               # MinimumTenureModule, AdLand, slot-bound NFTs
 ├── periphery/book/        # OfferBook — standing bids and the fill
@@ -35,7 +35,7 @@ src/
 - **`Slot`** — one position, deployed as a beacon proxy. Tax accrues per second
   at `rateBps` basis points of the declared price per 30 days, and is settled at
   the start of every mutating call. Liquidation is unconditional unless the
-  slot's module declares `strict`. Terms a manager queues wait `TERMS_DELAY`
+  slot's module declares `afterCallbacksMustSucceed`. Terms a manager queues wait `TERMS_DELAY`
   and land at the next buy — never under a sitting occupant who did not ask.
 - **`SlotFactory`** — `createSlot(SlotInit)` and batch `collectAll`. Its admin
   can upgrade the beacon, which moves every slot at once, so slot storage is
@@ -45,11 +45,11 @@ src/
 
 A slot installs at most one module, `ISlotModule`. `before` callbacks are views
 that may revert to refuse a buy or a reprice; `after` callbacks are gas-capped
-and swallowed unless the module declares `strict`. A module declares
+and swallowed unless the module declares `afterCallbacksMustSucceed`. A module declares
 the scopes it needs (`scopes`) and an optional fee on collected tax (`fee`); the
 slot keeps its own copy, and the manager accepts changes with `acceptFee` and
 `acceptScopes`. Per-slot configuration is the slot's `settings` bytes, checked
-by the module's `checkSettings`.
+by the module's `validateSettings`.
 
 Shipped modules:
 

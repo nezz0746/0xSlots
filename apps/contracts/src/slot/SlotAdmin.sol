@@ -21,7 +21,7 @@ import {
 import {SlotEscrow} from "./SlotEscrow.sol";
 import {TaxTerms, ModuleTerms, ModuleFee, Pending, InstalledModule} from "../types/SlotTypes.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
-import {Settings} from "./SlotStorage.sol";
+import {Governance} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 
 /**
@@ -69,7 +69,7 @@ abstract contract SlotAdmin is SlotEscrow {
             // destination — the power `mutableRecipient` governs. A slot that
             // promised a fixed recipient keeps that promise whole: the fee may
             // be anything, up to all of it, on a slot whose recipient can move.
-            if (reviewedFee.bps != 0 && !_settings().mutableRecipient) {
+            if (reviewedFee.bps != 0 && !_governance().mutableRecipient) {
                 revert NotMutable();
             }
         }
@@ -78,10 +78,10 @@ abstract contract SlotAdmin is SlotEscrow {
         p.propose(taxTerms, moduleTerms, mask);
         // Kept, so the module that attaches when this lands is the one read
         // here. Without it the apply-time re-read installs whatever the module
-        // says by then — including a fee and `strict` nobody accepted.
+        // says by then — including a fee and `afterCallbacksMustSucceed` nobody accepted.
         if (mask & TermsLib.MODULE != 0) {
-            p.module.scopes = reviewedScopes;
-            p.module.fee = reviewedFee;
+            p.nextModule.scopes = reviewedScopes;
+            p.nextModule.fee = reviewedFee;
         }
         emit TermsProposed(taxTerms, moduleTerms, mask);
     }
@@ -115,11 +115,11 @@ abstract contract SlotAdmin is SlotEscrow {
      */
     function acceptFee(ModuleFee calldata expected) external nonReentrant onlyManager {
         InstalledModule storage m = _module();
-        if (m.target == address(0)) revert InvalidModule();
+        if (m.module == address(0)) revert InvalidModule();
         (, ModuleFee memory offered) = _readModule(m.terms());
         if (!ModuleLib.sameFee(offered, expected)) revert FeeChanged();
         if (ModuleLib.sameFee(offered, m.fee)) revert NothingToAccept();
-        if (offered.bps > m.fee.bps && !_settings().mutableRecipient) revert NotMutable();
+        if (offered.bps > m.fee.bps && !_governance().mutableRecipient) revert NotMutable();
 
         _settle();
         _flush();
@@ -140,16 +140,18 @@ abstract contract SlotAdmin is SlotEscrow {
      *      one declaring these scopes is on its way out.
      */
     function acceptScopes(uint16 expected) external nonReentrant onlyManager {
-        if (!_settings().mutableModule) revert NotMutable();
+        if (!_governance().mutableModule) revert NotMutable();
         InstalledModule storage m = _module();
-        if (m.target == address(0)) revert InvalidModule();
+        if (m.module == address(0)) revert InvalidModule();
         Pending storage p = _pending();
         if (p.mask & TermsLib.MODULE != 0) revert ModuleChangeQueued();
 
         (uint16 offered,) = _readModule(m.terms());
         if (offered != expected) revert ScopesChanged();
         if (offered == m.scopes) revert NothingToAccept();
-        if (p.mask & TermsLib.SCOPES != 0 && p.module.scopes == offered) revert NothingToAccept();
+        if (p.mask & TermsLib.SCOPES != 0 && p.nextModule.scopes == offered) {
+            revert NothingToAccept();
+        }
 
         p.queueScopes(offered);
         emit ScopesAccepted(offered);
@@ -185,8 +187,8 @@ abstract contract SlotAdmin is SlotEscrow {
      */
     function setManager(address next) external nonReentrant onlyManager {
         if (next == address(0)) revert InvalidManager();
-        emit ManagerSet(_settings().manager, next);
-        _settings().manager = next;
+        emit ManagerSet(_governance().manager, next);
+        _governance().manager = next;
     }
 
     // ─── validation ─────────────────────────────────────────────────────────
@@ -205,7 +207,7 @@ abstract contract SlotAdmin is SlotEscrow {
 
     /// @dev Each term moves only if the slot was born able to move it.
     function _requireMutable(uint16 mask) internal view {
-        Settings storage st = _settings();
+        Governance storage st = _governance();
         if (mask & (TermsLib.TAX_RATE | TermsLib.MIN_RUNWAY) != 0 && !st.mutableTax) {
             revert NotMutable();
         }
@@ -226,7 +228,7 @@ abstract contract SlotAdmin is SlotEscrow {
         view
         returns (uint16 scopes_, ModuleFee memory fee_)
     {
-        if (h.target == address(0)) {
+        if (h.module == address(0)) {
             // Settings for a module that is not there. Nothing would read them,
             // and they would silently go live the day a module attaches without its own.
             if (h.settings.length != 0) revert InvalidModule();

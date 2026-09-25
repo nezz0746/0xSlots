@@ -2,8 +2,7 @@ import {
   minimumTenureModuleAbi,
   offerBookAbi,
   offerBookAddress,
-  slotLensAbi,
-  slotLensAddress,
+  slotFactoryAddress,
   slotAbi,
   slotFactoryAbi,
 } from "@0xslots/contracts/slots";
@@ -83,10 +82,10 @@ export interface TaxTerms {
 /** The slot's module and its configuration. Mirrors `ModuleTerms`. */
 export interface ModuleTerms {
   /** The module contract. {@link zeroAddress} for none, with `settings` empty too. */
-  target: Address;
+  module: Address;
   /**
    * This slot's settings for the module: `abi.encode` of the fields its
-   * definition's `x-abi` lists. Opaque to the slot. {@link NO_SETTINGS} for none.
+   * metadata's `x-abi` lists. Opaque to the slot. {@link NO_SETTINGS} for none.
    */
   settings: Hex;
 }
@@ -110,12 +109,12 @@ export const SCOPE_BITS = {
   afterRelease: 8,
   afterLiquidate: 16,
   afterSettle: 32,
-  strict: 64,
+  afterCallbacksMustSucceed: 64,
   onInstall: 128,
   onUninstall: 256,
 } as const;
 
-export const NO_MODULE: ModuleTerms = { target: zeroAddress, settings: NO_SETTINGS };
+export const NO_MODULE: ModuleTerms = { module: zeroAddress, settings: NO_SETTINGS };
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
@@ -135,13 +134,13 @@ export interface SlotInit {
   mutableModule: boolean;
   taxTerms: TaxTerms;
   /** Omit for no module. */
-  moduleTerms?: Partial<ModuleTerms> & { target: Address };
+  moduleTerms?: Partial<ModuleTerms> & { module: Address };
 }
 
-function fullModuleTerms(module?: Partial<ModuleTerms> & { target: Address }): ModuleTerms {
+function fullModuleTerms(terms?: Partial<ModuleTerms> & { module: Address }): ModuleTerms {
   return {
-    target: module?.target ?? zeroAddress,
-    settings: module?.settings ?? NO_SETTINGS,
+    module: terms?.module ?? zeroAddress,
+    settings: terms?.settings ?? NO_SETTINGS,
   };
 }
 
@@ -180,9 +179,9 @@ function assertTaxTerms(taxTerms: Partial<TaxTerms>, mask: number, where: string
   }
 }
 
-function assertModule(module: ModuleTerms, where: string) {
-  if (module.target === zeroAddress && size(module.settings) !== 0)
-    throw new SlotsError(where, "module settings need a module — pass a target, or drop the settings");
+function assertModule(terms: ModuleTerms, where: string) {
+  if (terms.module === zeroAddress && size(terms.settings) !== 0)
+    throw new SlotsError(where, "module settings need a module — pass one, or drop the settings");
 }
 
 /** Throw on the initialisations `Slot.initialize` refuses, before spending gas. */
@@ -226,7 +225,7 @@ export interface Scopes {
    * failing `afterLiquidate` blocks the eviction rather than being swallowed.
    * Surface it wherever a user commits funds to a slot.
    */
-  strict: boolean;
+  afterCallbacksMustSucceed: boolean;
 }
 
 /** Scope bits (see {@link SCOPE_BITS}) as {@link Scopes}. */
@@ -241,7 +240,7 @@ export function unpackScopes(scopes: number): Scopes {
     afterSettle: has(SCOPE_BITS.afterSettle),
     onInstall: has(SCOPE_BITS.onInstall),
     onUninstall: has(SCOPE_BITS.onUninstall),
-    strict: has(SCOPE_BITS.strict),
+    afterCallbacksMustSucceed: has(SCOPE_BITS.afterCallbacksMustSucceed),
   };
 }
 
@@ -298,7 +297,7 @@ export interface ProposeTermsParams {
   recipient?: Address;
   minRunwaySeconds?: number;
   /** The whole module terms. Its scopes and fee are the module's own, read when it attaches. */
-  moduleTerms?: Partial<ModuleTerms> & { target: Address };
+  moduleTerms?: Partial<ModuleTerms> & { module: Address };
 }
 
 /** Every term in force. Mirrors `Terms`. */
@@ -308,16 +307,16 @@ export interface SlotTerms {
 }
 
 /**
- * `definition()`, declared here rather than taken from a generated ABI.
+ * `uiMetadata()`, declared here rather than taken from a generated ABI.
  *
  * Optional surface that any module may implement, so borrowing one module's
  * ABI to call it on another would tie this to whichever module happened to be
  * generated.
  */
-const describedModuleAbi = [
+const moduleMetadataAbi = [
   {
     type: "function",
-    name: "definition",
+    name: "uiMetadata",
     stateMutability: "pure",
     inputs: [],
     outputs: [{ type: "string" }],
@@ -331,13 +330,13 @@ export interface ModuleSettingsParam {
 }
 
 /**
- * The configuration half of a module's definition: a JSON Schema 2020-12
+ * The configuration half of a module's metadata: a JSON Schema 2020-12
  * document, passable to `react-jsonschema-form` or AJV untouched, plus the
  * `x-` conventions the protocol adds.
  *
  * Every value is a string — a `uint64` bound does not survive `JSON.parse` as a
  * number — so ranges travel as `x-minimum` / `x-maximum` strings and the
- * module's own `checkSettings` remains the authority on what is accepted.
+ * module's own `validateSettings` remains the authority on what is accepted.
  */
 export interface ModuleSettingsSchema {
   $schema: string;
@@ -350,8 +349,8 @@ export interface ModuleSettingsSchema {
   "x-abi": ModuleSettingsParam[];
 }
 
-/** What a module says it is. `IDescribedModule.definition`, parsed. */
-export interface ModuleDefinition {
+/** What a module says it is. `IModuleMetadata.uiMetadata`, parsed. */
+export interface ModuleMetadata {
   version: number;
   title: string;
   description: string;
@@ -518,11 +517,6 @@ export interface SlotsClientConfig {
    * defaults to the book deployed on the wallet's chain.
    */
   offerBookAddress?: Address;
-  /**
-   * The `SlotLens`. {@link SlotsClient.moduleUpdate} asks it when there is one,
-   * and defaults to the lens deployed on the wallet's chain.
-   */
-  slotLensAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
@@ -571,14 +565,12 @@ export class SlotsClient {
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
   private readonly _offerBook?: Address;
-  private readonly _lens?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
     this._offerBook = config.offerBookAddress;
-    this._lens = config.slotLensAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -806,8 +798,8 @@ export class SlotsClient {
   }
 
   /** Owed to an address a push payment could not reach. Take it with {@link claim}. */
-  withdrawableOf(slot: Address, account?: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "withdrawableOf", [account ?? this.account]);
+  claimableOf(slot: Address, account?: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "claimableOf", [account ?? this.account]);
   }
 
   /**
@@ -914,12 +906,12 @@ export class SlotsClient {
    * module is proposed or attached. Resolves with the module's reason instead of
    * throwing, so a form can show it.
    */
-  async checkSettings(module: Address, settings: Hex): Promise<SettingsCheck> {
+  async validateSettings(module: Address, settings: Hex): Promise<SettingsCheck> {
     try {
       await this.publicClient.readContract({
         address: module,
         abi: minimumTenureModuleAbi,
-        functionName: "checkSettings",
+        functionName: "validateSettings",
         args: [settings],
       });
       return { ok: true };
@@ -935,7 +927,7 @@ export class SlotsClient {
   }
 
   /**
-   * What a module says it is (`IDescribedModule.definition`), parsed.
+   * What a module says it is (`IModuleMetadata.uiMetadata`), parsed.
    *
    * `null` for a module that does not describe itself, that reverts, or that
    * answers with something that is not JSON — all of which are legal. The
@@ -945,14 +937,14 @@ export class SlotsClient {
    * The answer is fixed by the module's code, so it can be cached by address
    * indefinitely.
    */
-  async moduleDefinition(module: Address): Promise<ModuleDefinition | null> {
+  async moduleMetadata(module: Address): Promise<ModuleMetadata | null> {
     try {
       const raw = await this.publicClient.readContract({
         address: module,
-        abi: describedModuleAbi,
-        functionName: "definition",
+        abi: moduleMetadataAbi,
+        functionName: "uiMetadata",
       });
-      return JSON.parse(raw) as ModuleDefinition;
+      return JSON.parse(raw) as ModuleMetadata;
     } catch {
       return null;
     }
@@ -1001,7 +993,7 @@ export class SlotsClient {
       mutableTax: i.mutableTax,
       mutableRecipient: i.mutableRecipient,
       mutableModule: i.mutableModule,
-      module: i.terms.moduleTerms.target,
+      module: i.terms.moduleTerms.module,
       settings: i.terms.moduleTerms.settings,
       scopes: i.scopes,
       fee: i.fee,
@@ -1102,14 +1094,14 @@ export class SlotsClient {
    * this is a gas convenience and not an authority.
    *
    * Each collection is isolated on chain. A slot that reverts —
-   * `NothingToCollect` on one already flushed, or a `strict` module that reverts
+   * `NothingToCollect` on one already flushed, or an `afterCallbacksMustSucceed` module that reverts
    * in `afterSettle` — leaves a zero in the result rather than failing the batch
    * for every other recipient. Addresses the factory did not create are skipped.
    *
    * ── Size it yourself ──────────────────────────────────────────────────────
    *
    * There is no cap here, and that is deliberate: the real limit is the block
-   * gas limit, which differs per chain and per slot — a slot with a `strict`
+   * gas limit, which differs per chain and per slot — a slot with an `afterCallbacksMustSucceed`
    * module costs far more to settle than a bare one. Call
    * {@link simulateCollectAll} first; it fails the same way the transaction
    * would, for free.
@@ -1642,15 +1634,15 @@ export class SlotsClient {
    * whether `acceptFee` / `acceptScopes` would change anything. Never throws
    * for a module that will not answer: `declared` is `null`.
    *
-   * Asks the chain's `SlotLens` when there is one, so the answer is the
-   * contract's own. Otherwise the same checks run here.
+   * Asks the factory, so the answer is the contract's own. Without a factory
+   * for the chain, the same checks run here.
    */
   async moduleUpdate(slot: Address): Promise<ModuleUpdate> {
-    const lens = this._lens ?? slotLensAddress[this.chain.id];
-    if (lens) {
+    const factory = this._factory ?? slotFactoryAddress[this.chain.id];
+    if (factory) {
       const u = (await this.publicClient.readContract({
-        address: lens,
-        abi: slotLensAbi,
+        address: factory,
+        abi: slotFactoryAbi,
         functionName: "moduleUpdate",
         args: [slot],
       })) as {
@@ -1672,7 +1664,7 @@ export class SlotsClient {
 
     const i = await this.read<SlotInfoResult>(slot, "getSlotInfo");
     const current = { scopes: packScopes(i.scopes), fee: i.fee };
-    const { target, settings } = i.terms.moduleTerms;
+    const { module: target, settings } = i.terms.moduleTerms;
     let declared: ModuleUpdate["declared"] = null;
     if (target !== zeroAddress) {
       try {
@@ -1695,7 +1687,7 @@ export class SlotsClient {
       feeChanged && (declared.fee.bps <= current.fee.bps || i.mutableRecipient);
     const p = i.pending;
     const moduleQueued = (p.mask & TERMS.MODULE) !== 0;
-    const alreadyQueued = (p.mask & TERMS.SCOPES) !== 0 && p.module.scopes === declared.scopes;
+    const alreadyQueued = (p.mask & TERMS.SCOPES) !== 0 && p.nextModule.scopes === declared.scopes;
     const scopesDiffer =
       i.mutableModule && !moduleQueued && !alreadyQueued && declared.scopes !== current.scopes;
     return { current, declared, feeDiffers, scopesDiffer };
@@ -2001,14 +1993,14 @@ export function createSlotsClient(config: SlotsClientConfig): SlotsClient {
 /** `pending()` as viem decodes it. */
 interface PendingResult {
   taxTerms: TaxTerms;
-  module: InstalledModuleResult;
+  nextModule: InstalledModuleResult;
   mask: number;
   proposedAt: bigint;
 }
 
 /** `InstalledModule` as viem decodes it. */
 interface InstalledModuleResult {
-  target: Address;
+  module: Address;
   scopes: number;
   fee: ModuleFee;
   settings: Hex;
@@ -2043,9 +2035,9 @@ function toPending(p: PendingResult, ripe: boolean): Pending {
   const isEmpty = p.mask === 0;
   return {
     taxTerms: p.taxTerms,
-    moduleTerms: { target: p.module.target, settings: p.module.settings },
-    scopes: p.module.scopes,
-    fee: p.module.fee,
+    moduleTerms: { module: p.nextModule.module, settings: p.nextModule.settings },
+    scopes: p.nextModule.scopes,
+    fee: p.nextModule.fee,
     mask: p.mask,
     hasTaxRate: (p.mask & TERMS.TAX_RATE) !== 0,
     hasRecipient: (p.mask & TERMS.RECIPIENT) !== 0,

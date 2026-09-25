@@ -191,7 +191,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
                         rateBps: uint16(taxRateBps),
                         minRunwaySeconds: uint32(minDeposit)
                     }),
-                    moduleTerms: ModuleTerms({target: adLandAddress, settings: settings})
+                    moduleTerms: ModuleTerms({module: adLandAddress, settings: settings})
                 })
             );
 

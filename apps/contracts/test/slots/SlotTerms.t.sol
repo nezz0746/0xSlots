@@ -22,7 +22,7 @@ contract AnyModule is AskModule {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external virtual {}
@@ -102,7 +102,7 @@ contract SlotTermsTest is Test, SlotConstants {
     // ── helpers ─────────────────────────────────────────────────────────────
 
     function _noModule() internal pure returns (ModuleTerms memory) {
-        return ModuleTerms({target: address(0), settings: ""});
+        return ModuleTerms({module: address(0), settings: ""});
     }
 
     function _taxTerms() internal view returns (TaxTerms memory) {
@@ -383,7 +383,7 @@ contract SlotTermsTest is Test, SlotConstants {
         address to
     ) internal returns (Slot s, ChangingModule h) {
         h = new ChangingModule(bps, to);
-        s = _slot(true, true, mutableModule, ModuleTerms({target: address(h), settings: ""}));
+        s = _slot(true, true, mutableModule, ModuleTerms({module: address(h), settings: ""}));
     }
 
     function test_TheSlotCopiesTheModulesScopesAndFee() public {
@@ -400,20 +400,20 @@ contract SlotTermsTest is Test, SlotConstants {
         ChangingModule noRecipient = new ChangingModule(100, address(0));
         vm.expectRevert(InvalidModuleFee.selector);
         factory.createSlot(
-            _init(true, true, true, ModuleTerms({target: address(noRecipient), settings: ""}))
+            _init(true, true, true, ModuleTerms({module: address(noRecipient), settings: ""}))
         );
 
         ChangingModule tooMuch = new ChangingModule(10_001, author);
         vm.expectRevert(InvalidModuleFee.selector);
         factory.createSlot(
-            _init(true, true, true, ModuleTerms({target: address(tooMuch), settings: ""}))
+            _init(true, true, true, ModuleTerms({module: address(tooMuch), settings: ""}))
         );
 
         ChangingModule noScopes = new ChangingModule(0, address(0));
         noScopes.setScopes(0);
         vm.expectRevert(InvalidModule.selector);
         factory.createSlot(
-            _init(true, true, true, ModuleTerms({target: address(noScopes), settings: ""}))
+            _init(true, true, true, ModuleTerms({module: address(noScopes), settings: ""}))
         );
     }
 
@@ -482,7 +482,7 @@ contract SlotTermsTest is Test, SlotConstants {
 
         Pending memory p = s.pending();
         assertEq(p.mask, SCOPES);
-        assertEq(p.module.scopes, SETTLE_AND_BUY);
+        assertEq(p.nextModule.scopes, SETTLE_AND_BUY);
         assertEq(ScopesLib.pack(s.scopes()), SETTLE, "not yet");
 
         _buy(s);
@@ -543,7 +543,7 @@ contract SlotTermsTest is Test, SlotConstants {
         s.cancelTerms(SCOPES);
         Pending memory p = s.pending();
         assertEq(p.mask, 0);
-        assertEq(p.module.scopes, 0);
+        assertEq(p.nextModule.scopes, 0);
     }
 
     function test_AQueuedModuleReplacesAcceptedScopes() public {
@@ -553,10 +553,10 @@ contract SlotTermsTest is Test, SlotConstants {
         s.acceptScopes(SETTLE_AND_BUY);
 
         AnyModule other = new AnyModule();
-        _propose(s, _taxTerms(), ModuleTerms({target: address(other), settings: ""}), MODULE);
+        _propose(s, _taxTerms(), ModuleTerms({module: address(other), settings: ""}), MODULE);
         Pending memory p = s.pending();
         assertEq(p.mask, MODULE, "the accepted scopes are gone from the queue");
-        assertEq(p.module.scopes, SETTLE, "replaced by what the new module declared");
+        assertEq(p.nextModule.scopes, SETTLE, "replaced by what the new module declared");
 
         skip(TERMS_DELAY);
         _buy(s);
@@ -569,7 +569,7 @@ contract SlotTermsTest is Test, SlotConstants {
     function test_ScopesCannotBeAcceptedWhileAModuleIsQueued() public {
         (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         _propose(
-            s, _taxTerms(), ModuleTerms({target: address(new AnyModule()), settings: ""}), MODULE
+            s, _taxTerms(), ModuleTerms({module: address(new AnyModule()), settings: ""}), MODULE
         );
 
         h.setScopes(SETTLE_AND_BUY);
@@ -590,7 +590,7 @@ contract SlotTermsTest is Test, SlotConstants {
 
         // And widens its subscriptions after the manager reviewed them.
         h.setScopes(SETTLE_AND_BUY);
-        h.setScopes(SETTLE | ScopesLib.STRICT);
+        h.setScopes(SETTLE | ScopesLib.AFTER_CALLBACKS_MUST_SUCCEED);
         vm.prank(manager);
         vm.expectRevert(ScopesChanged.selector);
         s.acceptScopes(SETTLE_AND_BUY);
@@ -644,7 +644,7 @@ contract SlotTermsTest is Test, SlotConstants {
         _buy(s);
 
         h.set(10_000, author);
-        _propose(s, _taxTerms(), ModuleTerms({target: address(h), settings: ""}), MODULE);
+        _propose(s, _taxTerms(), ModuleTerms({module: address(h), settings: ""}), MODULE);
         skip(10 days);
         _releaseAndApply(s);
 

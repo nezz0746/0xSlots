@@ -44,7 +44,7 @@ abstract contract SlotAccounting is SlotModules {
     event ScopesDropped(address indexed module, uint16 scopes);
 
     function _isNative() internal view returns (bool) {
-        return address(_settings().currency) == address(0);
+        return address(_governance().currency) == address(0);
     }
 
     /// @notice Tax owed since the last settlement, capped by nothing — this is
@@ -130,8 +130,8 @@ abstract contract SlotAccounting is SlotModules {
         emit TaxPaid(payer, owed, paid);
 
         SlotContext memory ctx = _ctx(msg.sender, payer, o.price, o.deposit);
-        ctx.owed = owed;
-        ctx.paid = paid;
+        ctx.taxOwed = owed;
+        ctx.taxPaid = paid;
         _after(F_AFTER_SETTLE, abi.encodeCall(ISlotModule.afterSettle, (ctx)));
     }
 
@@ -175,7 +175,7 @@ abstract contract SlotAccounting is SlotModules {
         // What the manager reviewed: the whole proposed module, or only the
         // scopes accepted from the current one. Copied out before the queue
         // is emptied.
-        InstalledModule memory next = q.module;
+        InstalledModule memory next = q.nextModule;
         InstalledModule storage live = _module();
 
         _flush();
@@ -190,7 +190,7 @@ abstract contract SlotAccounting is SlotModules {
         ModuleFee memory declaredFee;
         if (moduleChanges) {
             (ok, declaredScopes, declaredFee) =
-                _tryReadModule(ModuleTerms({target: next.target, settings: next.settings}));
+                _tryReadModule(ModuleTerms({module: next.module, settings: next.settings}));
         } else if (scopesChange) {
             (ok, declaredScopes,) = _tryReadModule(_module().terms());
         }
@@ -208,22 +208,22 @@ abstract contract SlotAccounting is SlotModules {
             // module honest; the comparison is what stops it being a second,
             // unreviewed proposal.
             if (
-                next.target != address(0)
+                next.module != address(0)
                     && (!ok
                         || declaredScopes != next.scopes
                         || !ModuleLib.sameFee(declaredFee, next.fee))
             ) {
-                emit ModuleDropped(next.target);
+                emit ModuleDropped(next.module);
                 delete next;
             }
             live.install(next);
-            attached = next.target != address(0);
+            attached = next.module != address(0);
         } else if (scopesChange) {
             if (ok && declaredScopes == next.scopes) {
                 live.scopes = next.scopes;
             } else {
                 applied &= ~TermsLib.SCOPES;
-                emit ScopesDropped(live.target, next.scopes);
+                emit ScopesDropped(live.module, next.scopes);
             }
         }
 
@@ -245,10 +245,10 @@ abstract contract SlotAccounting is SlotModules {
 
         uint256 unpaid = amount;
         if (_isNative()) {
-            (bool sent,) = to.call{value: amount, gas: PAYOUT_GAS}("");
+            (bool sent,) = to.call{value: amount, gas: NATIVE_PAYOUT_GAS_LIMIT}("");
             if (sent) unpaid = 0;
         } else {
-            address token = address(_settings().currency);
+            address token = address(_governance().currency);
             if (token.code.length > 0) {
                 // MEASURED, not decoded. What a token answers and what it did
                 // are two different facts, and trusting the answer fails in
@@ -281,7 +281,7 @@ abstract contract SlotAccounting is SlotModules {
         }
 
         if (unpaid != 0) {
-            _ledger().withdrawableOf[to] += unpaid;
+            _ledger().claimableOf[to] += unpaid;
             emit Credited(to, unpaid);
         }
     }
@@ -299,7 +299,7 @@ abstract contract SlotAccounting is SlotModules {
         o.occupant = address(0);
         o.price = 0;
         o.deposit = 0;
-        o.since = 0;
+        o.occupiedSince = 0;
         o.lastSettled = uint64(block.timestamp);
         o.taxCarry = 0;
     }
@@ -319,7 +319,7 @@ abstract contract SlotAccounting is SlotModules {
         uint256 fee = Math.mulDiv(amount, m.fee.bps, BASIS_POINTS);
         if (fee > 0) {
             _payOrCredit(m.fee.recipient, fee);
-            emit ModuleFeePaid(m.target, m.fee.recipient, fee);
+            emit ModuleFeePaid(m.module, m.fee.recipient, fee);
         }
 
         address recipient = _taxTerms().recipient;
@@ -348,7 +348,7 @@ abstract contract SlotAccounting is SlotModules {
     ///      next depositor's money.
     function _pull(address from, uint256 amount) internal {
         if (amount == 0) return;
-        IERC20 token = _settings().currency;
+        IERC20 token = _governance().currency;
         uint256 before = token.balanceOf(address(this));
         token.safeTransferFrom(from, address(this), amount);
         uint256 received = token.balanceOf(address(this)) - before;

@@ -32,7 +32,7 @@ library TermsLib {
     function propose(
         Pending storage p,
         TaxTerms calldata taxTerms,
-        ModuleTerms calldata module,
+        ModuleTerms calldata moduleTerms,
         uint16 mask
     ) internal {
         if (mask & TAX_RATE != 0) {
@@ -41,8 +41,8 @@ library TermsLib {
         if (mask & RECIPIENT != 0) p.taxTerms.recipient = taxTerms.recipient;
         if (mask & MIN_RUNWAY != 0) p.taxTerms.minRunwaySeconds = taxTerms.minRunwaySeconds;
         if (mask & MODULE != 0) {
-            p.module.target = module.target;
-            p.module.settings = module.settings;
+            p.nextModule.module = moduleTerms.module;
+            p.nextModule.settings = moduleTerms.settings;
             // A new module replaces scopes accepted from the one it replaces.
             // The slot writes the reviewed scopes and fee right after this.
             p.mask &= ~SCOPES;
@@ -53,7 +53,7 @@ library TermsLib {
 
     /// @dev Queue the attached module's scopes and restart the clock.
     function queueScopes(Pending storage p, uint16 scopes) internal {
-        p.module.scopes = scopes;
+        p.nextModule.scopes = scopes;
         p.mask |= SCOPES;
         p.proposedAt = uint64(block.timestamp);
     }
@@ -72,7 +72,7 @@ library TermsLib {
 
     /// @dev Copy the queued tax terms into the live ones and empty the queue.
     ///      Returns what was queued. The module is the slot's to install: it
-    ///      reads `p.module` before calling this, and checks it first.
+    ///      reads `p.nextModule` before calling this, and checks it first.
     function applyQueued(
         Pending storage p,
         TaxTerms storage liveTaxTerms
@@ -91,7 +91,7 @@ library TermsLib {
         if (mask & TAX_RATE != 0) p.taxTerms.rateBps = 0;
         if (mask & RECIPIENT != 0) p.taxTerms.recipient = address(0);
         if (mask & MIN_RUNWAY != 0) p.taxTerms.minRunwaySeconds = 0;
-        if (mask & MODULE != 0) delete p.module;
-        if (mask & SCOPES != 0) p.module.scopes = 0;
+        if (mask & MODULE != 0) delete p.nextModule;
+        if (mask & SCOPES != 0) p.nextModule.scopes = 0;
     }
 }

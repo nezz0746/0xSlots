@@ -49,7 +49,7 @@ struct WrapperInit {
  *
  *      A collection is a plain `new`, and permanently so. Behind a beacon,
  *      whoever held its key could rewrite what `ownerOf` means for tokens
- *      people already hold, and could make {_sync} revert, which under `strict`
+ *      people already hold, and could make {_sync} revert, which under `afterCallbacksMustSucceed`
  *      turns every slot in that collection into a permanent hold. Immutable,
  *      the code a minter read is the code that runs for as long as they hold.
  *

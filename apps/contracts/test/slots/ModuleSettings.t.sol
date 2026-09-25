@@ -21,7 +21,7 @@ contract Spy is AskModule {
     bytes public lastAfter;
     uint256 public afterCalls;
 
-    function checkSettings(bytes calldata) external pure virtual {}
+    function validateSettings(bytes calldata) external pure virtual {}
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
@@ -74,7 +74,7 @@ contract Picky is Spy {
 
     error WrongConfiguration();
 
-    function checkSettings(bytes calldata data) external pure override {
+    function validateSettings(bytes calldata data) external pure override {
         if (keccak256(data) != keccak256(ONLY)) revert WrongConfiguration();
     }
 }
@@ -119,7 +119,7 @@ contract ModuleDataTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(1 hours)
                         }),
-                        moduleTerms: ModuleTerms({target: module, settings: data})
+                        moduleTerms: ModuleTerms({module: module, settings: data})
                     })
                 ))
         );
@@ -180,7 +180,7 @@ contract ModuleDataTest is Test {
         vm.expectRevert(InvalidModule.selector);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: CONFIG}),
+            ModuleTerms({module: address(0), settings: CONFIG}),
             uint16(8)
         );
     }
@@ -191,7 +191,7 @@ contract ModuleDataTest is Test {
         Slot s = _slot(address(spy), CONFIG);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(8)
         );
         vm.warp(block.timestamp + 1 days + 1);
@@ -219,18 +219,18 @@ contract ModuleDataTest is Test {
         vm.expectRevert(Picky.WrongConfiguration.selector);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(picky), settings: CONFIG}),
+            ModuleTerms({module: address(picky), settings: CONFIG}),
             uint16(8)
         );
 
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(picky), settings: picky.ONLY()}),
+            ModuleTerms({module: address(picky), settings: picky.ONLY()}),
             uint16(8)
         );
         Pending memory __p1 = s.pending();
         TaxTerms memory __r1 = __p1.taxTerms;
-        ModuleTerms memory __h1 = ModuleTerms(__p1.module.target, __p1.module.settings);
+        ModuleTerms memory __h1 = ModuleTerms(__p1.nextModule.module, __p1.nextModule.settings);
         uint16 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
         bytes memory pendingData = __h1.settings;
@@ -242,17 +242,17 @@ contract ModuleDataTest is Test {
         Slot s = _slot(address(0), "");
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(spy), settings: CONFIG}),
+            ModuleTerms({module: address(spy), settings: CONFIG}),
             uint16(8)
         );
         s.cancelTerms(uint16(8));
 
         Pending memory __p2 = s.pending();
         TaxTerms memory __r2 = __p2.taxTerms;
-        ModuleTerms memory __h2 = ModuleTerms(__p2.module.target, __p2.module.settings);
+        ModuleTerms memory __h2 = ModuleTerms(__p2.nextModule.module, __p2.nextModule.settings);
         uint16 __m2 = __p2.mask;
         uint64 __at2 = __p2.proposedAt;
-        address module = __h2.target;
+        address module = __h2.module;
         bytes memory pendingData = __h2.settings;
         assertEq(module, address(0));
         assertEq(pendingData, bytes(""));
@@ -278,7 +278,7 @@ contract ModuleDataTest is Test {
         Spy successor = new Spy();
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(successor), settings: OTHER}),
+            ModuleTerms({module: address(successor), settings: OTHER}),
             uint16(8)
         );
         vm.warp(block.timestamp + 1 days + 1);

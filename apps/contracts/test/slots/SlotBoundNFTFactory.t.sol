@@ -125,7 +125,7 @@ contract SlotBoundNFTFactoryTest is Test {
     /// @notice The collection is a plain contract, not a proxy.
     /// @dev The whole point: nobody can rewrite what `ownerOf` means for tokens
     ///      people already hold, and nobody can make `_sync` revert — which
-    ///      under `strict` would freeze every slot in the collection.
+    ///      under `afterCallbacksMustSucceed` would freeze every slot in the collection.
     function test_ACollectionHasNoUpgradeKey() public {
         address c = factory.createCollection(_init());
         assertEq(

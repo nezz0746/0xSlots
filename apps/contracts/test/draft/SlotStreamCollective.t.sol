@@ -44,7 +44,7 @@ contract MockSlot {
     ///      set, so two roles can queue independently.
     function proposeTerms(
         TaxTerms calldata taxTerms,
-        ModuleTerms calldata module,
+        ModuleTerms calldata moduleTerms,
         uint16 mask
     ) external onlyManager {
         if (mask == 0) revert NoPendingTerms();
@@ -53,8 +53,8 @@ contract MockSlot {
             hasTax = true;
         }
         if (mask & 8 != 0) {
-            settings = module.settings;
-            moduleAddr = module.target;
+            settings = moduleTerms.settings;
+            moduleAddr = moduleTerms.module;
             hasModule = true;
         }
     }
@@ -408,13 +408,13 @@ contract SlotStreamCollectiveTest is Test {
         vm.prank(poolMgr);
         vm.expectRevert();
         collective.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xBEEF), settings: ""})
         );
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
         collective.proposeModule(
-            IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""})
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xBEEF), settings: ""})
         );
         assertEq(slot.moduleAddr(), address(0xBEEF));
 

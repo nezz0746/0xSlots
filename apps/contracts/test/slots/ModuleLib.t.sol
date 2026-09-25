@@ -43,7 +43,7 @@ contract ChattyModule is AskModule {
         }
     }
 
-    function checkSettings(bytes calldata) external pure {}
+    function validateSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -85,7 +85,7 @@ contract ModuleLibTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: address(this), rateBps: 1_000, minRunwaySeconds: 0
                         }),
-                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                        moduleTerms: ModuleTerms({module: module, settings: ""})
                     })
                 ))
         );
@@ -111,6 +111,6 @@ contract ModuleLibTest is Test, SlotConstants {
         // ~12.5k words: as much as the module can return inside its cap.
         uint256 loud = _liquidationGas(address(new ChattyModule(400_000)));
 
-        assertLt(loud - quiet, MODULE_GAS, "bounded by the cap");
+        assertLt(loud - quiet, MODULE_CALLBACK_GAS_LIMIT, "bounded by the cap");
     }
 }

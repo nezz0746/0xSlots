@@ -62,7 +62,7 @@ contract AdLandTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: ""})
                     })
                 ))
         );
@@ -115,7 +115,7 @@ contract AdLandTest is Test {
         // Detach the module, so no `afterBuy` can possibly run, then reseat.
         slot.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             uint16(8)
         );
         vm.warp(block.timestamp + 8 days);
@@ -298,7 +298,7 @@ contract AdLandTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
                     })
                 ))
         );
@@ -330,7 +330,7 @@ contract AdLandTest is Test {
                             rateBps: uint16(500),
                             minRunwaySeconds: uint32(7 days)
                         }),
-                        moduleTerms: ModuleTerms({target: address(adland), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(adland), settings: ""})
                     })
                 ))
         );

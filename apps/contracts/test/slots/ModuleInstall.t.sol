@@ -39,10 +39,10 @@ contract InstallSpy is AskModule {
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         uint16 p = ScopesLib.ON_INSTALL | ScopesLib.ON_UNINSTALL | ScopesLib.AFTER_SETTLE;
-        o.scopes = strictMode ? p | ScopesLib.STRICT : p;
+        o.scopes = strictMode ? p | ScopesLib.AFTER_CALLBACKS_MUST_SUCCEED : p;
     }
 
-    function checkSettings(bytes calldata) external view {}
+    function validateSettings(bytes calldata) external view {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -79,7 +79,7 @@ contract QuietModule is AskModule {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
-    function checkSettings(bytes calldata) external view {}
+    function validateSettings(bytes calldata) external view {}
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -135,7 +135,7 @@ contract ModuleInstallTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                        moduleTerms: ModuleTerms({module: module, settings: ""})
                     })
                 ))
         );
@@ -169,7 +169,7 @@ contract ModuleInstallTest is Test, SlotConstants {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
         assertEq(spy.attachments(), 0, "not while it is only queued");
 
@@ -191,7 +191,7 @@ contract ModuleInstallTest is Test, SlotConstants {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         _buy(s, bob);
@@ -207,7 +207,7 @@ contract ModuleInstallTest is Test, SlotConstants {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + 365 days);
         s.liquidate();
 
@@ -223,7 +223,7 @@ contract ModuleInstallTest is Test, SlotConstants {
         _slot(address(spy));
     }
 
-    /// @notice A module that is not `strict` cannot fail a creation with it.
+    /// @notice A module that is not `afterCallbacksMustSucceed` cannot fail a creation with it.
     function test_ALenientRefusalIsSwallowed() public {
         InstallSpy spy = new InstallSpy(false);
         spy.setRefuse(true);
@@ -244,7 +244,7 @@ contract ModuleInstallTest is Test, SlotConstants {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(spy), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(spy), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         vm.prank(alice);
@@ -272,7 +272,7 @@ contract ModuleInstallTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: address(going), settings: mine})
+                        moduleTerms: ModuleTerms({module: address(going), settings: mine})
                     })
                 ))
         );
@@ -281,7 +281,7 @@ contract ModuleInstallTest is Test, SlotConstants {
         InstallSpy coming = new InstallSpy(false);
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(coming), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(coming), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         _buy(s, alice);
@@ -294,7 +294,7 @@ contract ModuleInstallTest is Test, SlotConstants {
         assertEq(s.module(), address(coming));
     }
 
-    /// @notice A module cannot refuse its own removal, even declaring `strict`.
+    /// @notice A module cannot refuse its own removal, even declaring `afterCallbacksMustSucceed`.
     ///
     /// @dev The one asymmetry with every other callback it asked for. A module
     ///      able to revert here is a module a manager can never replace, and the
@@ -313,7 +313,7 @@ contract ModuleInstallTest is Test, SlotConstants {
                         taxTerms: TaxTerms({
                             recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days
                         }),
-                        moduleTerms: ModuleTerms({target: address(stubborn), settings: ""})
+                        moduleTerms: ModuleTerms({module: address(stubborn), settings: ""})
                     })
                 ))
         );
@@ -322,7 +322,7 @@ contract ModuleInstallTest is Test, SlotConstants {
 
         TaxTerms memory none;
         vm.prank(manager);
-        s.proposeTerms(none, ModuleTerms({target: address(0), settings: ""}), 8);
+        s.proposeTerms(none, ModuleTerms({module: address(0), settings: ""}), 8);
         vm.warp(block.timestamp + TERMS_DELAY + 1);
 
         vm.expectEmit(true, false, false, false);
@@ -342,7 +342,7 @@ contract ModuleInstallTest is Test, SlotConstants {
         vm.prank(manager);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(spy), settings: ""}),
+            ModuleTerms({module: address(spy), settings: ""}),
             8
         );
         skip(TERMS_DELAY);
@@ -359,7 +359,7 @@ contract ModuleInstallTest is Test, SlotConstants {
         vm.prank(manager);
         s.proposeTerms(
             TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0}),
-            ModuleTerms({target: address(0), settings: ""}),
+            ModuleTerms({module: address(0), settings: ""}),
             8
         );
         skip(TERMS_DELAY);

@@ -60,7 +60,7 @@ contract GovernanceBatchTest is Test {
                                 rateBps: uint16(1000),
                                 minRunwaySeconds: uint32(1 days)
                             }),
-                            moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                            moduleTerms: ModuleTerms({module: address(0), settings: ""})
                         })
                     )
                 )
@@ -108,7 +108,7 @@ contract GovernanceBatchTest is Test {
                         rateBps: uint16(1000),
                         minRunwaySeconds: uint32(1 days)
                     }),
-                    moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    moduleTerms: ModuleTerms({module: address(0), settings: ""})
                 })
             )
         );
@@ -123,7 +123,7 @@ contract GovernanceBatchTest is Test {
     }
 
     function test_AModuleBatchMovesEverySlot() public {
-        gov.proposeModuleBatch(slots, ModuleTerms({target: address(0), settings: ""}));
+        gov.proposeModuleBatch(slots, ModuleTerms({module: address(0), settings: ""}));
         for (uint256 i; i < slots.length; ++i) {
             assertTrue(Slot(payable(address(slots[i]))).getSlotInfo().pending.mask & 8 != 0);
         }
@@ -147,7 +147,7 @@ contract GovernanceBatchTest is Test {
 
     function test_ACancelAllBatchClearsBothDimensions() public {
         gov.proposeTax(slots[0], 2000);
-        gov.proposeModule(slots[0], ModuleTerms({target: address(0), settings: ""}));
+        gov.proposeModule(slots[0], ModuleTerms({module: address(0), settings: ""}));
         gov.cancelAllProposalsBatch(slots);
 
         assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pending.mask & 1 != 0);

@@ -11,7 +11,7 @@ import {ISlotModule} from "../interfaces/ISlotModule.sol";
 interface IManagedSlot {
     function proposeTerms(
         TaxTerms calldata taxTerms,
-        ModuleTerms calldata module,
+        ModuleTerms calldata terms,
         uint16 mask
     ) external;
 
@@ -215,29 +215,29 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     /// @notice Propose a new module on `slot`: its address, configuration and
     ///         fee, as one decision.
     ///
-    /// @dev A zero `module.target` detaches. The slot validates the terms with the
+    /// @dev A zero `terms.module` detaches. The slot validates the terms with the
     ///      module now, so this relay does not re-check. One validation, one
     ///      authority.
     function proposeModule(
         IManagedSlot slot,
-        ModuleTerms calldata module
+        ModuleTerms calldata terms
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
-        _proposeModule(slot, module);
+        _proposeModule(slot, terms);
     }
 
     /// @notice The same module terms across many slots.
     /// @dev All-or-nothing, for the reason given on {proposeTaxBatch}.
     function proposeModuleBatch(
         IManagedSlot[] calldata slots,
-        ModuleTerms calldata module
+        ModuleTerms calldata terms
     ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
-            _proposeModule(slots[i], module);
+            _proposeModule(slots[i], terms);
         }
     }
 
-    function _proposeModule(IManagedSlot slot, ModuleTerms calldata module) internal {
+    function _proposeModule(IManagedSlot slot, ModuleTerms calldata terms) internal {
         // A module that takes a fee takes it from the revenue this collective
         // exists to divide, so attaching one is the payout role's decision as
         // much as the policy role's. Without this the policy role could send
@@ -245,13 +245,13 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         // would receive nothing, with the split itself untouched.
         // Only a target with code can charge anything: the slot reads every
         // module's fee when it is proposed and refuses one it cannot read.
-        if (module.target.code.length != 0) {
-            ModuleFee memory f = ISlotModule(module.target).fee(module.settings);
+        if (terms.module.code.length != 0) {
+            ModuleFee memory f = ISlotModule(terms.module).fee(terms.settings);
             if (f.bps != 0) _requireRoleOrAdmin(_payoutRole());
         }
         TaxTerms memory none;
-        slot.proposeTerms(none, module, TermsLib.MODULE);
-        emit TermsRelayed(address(slot), msg.sender, Dimension.Module, _asValue(module.target));
+        slot.proposeTerms(none, terms, TermsLib.MODULE);
+        emit TermsRelayed(address(slot), msg.sender, Dimension.Module, _asValue(terms.module));
     }
 
     /// @notice Accept the attached module's current fee on `slot`. Applies at once.

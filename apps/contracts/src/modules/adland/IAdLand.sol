@@ -144,7 +144,7 @@ interface IAdLand {
     error NotKeyOwner(bytes32 key);
     error NothingPending();
     error TooEarly(uint64 readyAt);
-    /// @notice `primary` is the SDK's default render target: the owner's to set.
+    /// @notice `primary` is the SDK's default render module: the owner's to set.
     error ReservedKey(bytes32 key);
     /// @notice The owner's proposal for this key outranks the holder's.
     error OwnerProposalPending(bytes32 key);
