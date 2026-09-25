@@ -131,7 +131,7 @@
         <td class="field">currency</td><td class="type mono">IERC20</td><td>Payment token. Zero address = native ETH.</td><td class="when">initialize</td>
       </tr>
       <tr><td class="field">manager</td><td class="type mono">address</td><td>Proposes terms, accepts module updates, hands over. Set exactly when something is mutable.</td><td class="when">initialize · setManager</td></tr>
-      <tr><td class="field">mutableTax · mutableRecipient · mutableModule</td><td class="type mono">bool ×3</td><td>Which terms may ever change: tax rate and runway · recipient (and raising a module fee) · module and its scopes.</td><td class="when">initialize</td></tr>
+      <tr><td class="field">mutableTax · mutableRecipient · mutableModule</td><td class="type mono">bool ×3</td><td>Which terms may ever change: tax rate and runway · recipient (and raising or redirecting a module fee) · module and its scopes.</td><td class="when">initialize</td></tr>
     </tbody>
 
     <tbody>
@@ -182,7 +182,7 @@
         <td class="field">collectedTax</td><td class="type mono">uint256</td><td>Tax taken from deposits, not yet paid out.</td><td class="when">settle · collect · any payout</td>
       </tr>
       <tr><td class="field">claimableOf</td><td class="type mono">address → uint256</td><td>Payouts that could not be pushed. Taken with <code>claim</code>.</td><td class="when">failed payout · claim</td></tr>
-      <tr><td class="field">debtOf</td><td class="type mono">address → uint256</td><td>Tax owed beyond an emptied deposit. Repaid first by topUp or buy.</td><td class="when">settle · topUp · buy</td></tr>
+      <tr><td class="field">debtOf</td><td class="type mono">address → uint256</td><td>Tax the occupant owes beyond an emptied deposit. Repaid first by topUp or out of a buyout; ends with the tenure.</td><td class="when">settle · topUp · buy · exit</td></tr>
       <tr><td class="field">operatorOf</td><td class="type mono">tenure → addr → bool</td><td>Who may reprice for the occupant, for one tenure only.</td><td class="when">setOperator</td></tr>
     </tbody>
 
@@ -190,7 +190,7 @@
 
   <div class="foot">
     <span><b>Terms land</b> at the next <code>buy</code> or <code>applyTerms</code>, 1 hour after proposal.</span>
-    <span><b>Settle</b> runs first in almost every call: tax moves from deposit to <code>collectedTax</code>; a shortfall becomes debt.</span>
+    <span><b>Settle</b> runs first in almost every call: tax moves from deposit to <code>collectedTax</code>; a shortfall becomes debt until the seat changes hands.</span>
     <span><b>Upgrades</b> append fields only.</span>
   </div>
 </section>
@@ -218,7 +218,7 @@
       <tr><td class="sig"><b>withdraw</b><span class="args">(amount)</span></td><td>Take deposit back, keeping what the current terms require.</td></tr>
       <tr><td class="sig"><b>release</b><span class="args">()</span></td><td>Leave. The rest of the deposit is refunded.</td></tr>
       <tr><td class="sig"><b>setOperator</b><span class="args">(operator, allowed)</span></td><td>Let someone reprice on your behalf, for this tenure only.</td></tr>
-      <tr><td class="sig"><b>applyTerms</b><span class="args">()</span></td><td>Land ripe terms without waiting for a buy. Anyone’s call once the slot is vacant.</td></tr>
+      <tr><td class="sig"><b>applyTerms</b><span class="args">()</span></td><td>Land ripe terms without waiting for a buy. Anyone’s call once the slot is vacant. Waits while the occupant owes debt.</td></tr>
     </tbody>
 
     <tbody>
@@ -230,7 +230,7 @@
       <tr><td class="sig"><b>liquidate</b><span class="args">()</span></td><td>Evict an occupant whose deposit is empty. No bounty; the reward is a vacant slot.</td></tr>
       <tr><td class="sig"><b>collect</b><span class="args">()</span></td><td>Pay out collected tax: the module fee, then the recipient.</td></tr>
       <tr><td class="sig"><b>claim</b><span class="args">(account)</span></td><td>Send <code>account</code> a payout that could not be pushed to them.</td></tr>
-      <tr><td class="sig"><b>multicall</b><span class="args">(bytes[] data)</span></td><td>Several calls in one transaction, e.g. <code>liquidate</code> then <code>buy</code>.</td></tr>
+      <tr><td class="sig"><b>multicall</b><span class="args">(bytes[] data)</span></td><td>Several calls in one transaction, e.g. <code>liquidate</code> then <code>buy</code>. Not payable, so ERC-20 slots only for that.</td></tr>
     </tbody>
 
     <tbody>
@@ -239,7 +239,7 @@
         <td class="sig"><b>proposeTerms</b><span class="args">(taxTerms, moduleTerms, mask)</span></td><td>Queue changes; they wait 1 hour. Checks the module’s settings and keeps the scopes and fee it reviewed.</td>
       </tr>
       <tr><td class="sig"><b>cancelTerms</b><span class="args">(mask)</span></td><td>Drop the named queued changes, leaving the rest.</td></tr>
-      <tr><td class="sig"><b>acceptFee</b><span class="args">(ModuleFee expected)</span></td><td>Take the fee the module declares now. Applies at once; a rise needs <code>mutableRecipient</code>.</td></tr>
+      <tr><td class="sig"><b>acceptFee</b><span class="args">(ModuleFee expected)</span></td><td>Take the fee the module declares now. Applies at once; a rise or a new fee recipient needs <code>mutableRecipient</code>. Waits while the occupant owes debt.</td></tr>
       <tr><td class="sig"><b>acceptScopes</b><span class="args">(uint16 expected)</span></td><td>Take the scopes the module declares now. Queued for the next buy; needs <code>mutableModule</code>.</td></tr>
       <tr><td class="sig"><b>setManager</b><span class="args">(next)</span></td><td>Hand the slot to another manager, immediately.</td></tr>
     </tbody>
@@ -259,7 +259,7 @@
       <tr><td class="sig"><b>scopes</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>The callbacks it asks for. May depend on the settings. At proposal, install and acceptScopes.</td></tr>
       <tr><td class="sig"><b>fee</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>Its share of the tax and who receives it. At proposal, install and acceptFee.</td></tr>
       <tr><td class="sig"><b>beforeBuy</b> · <b>beforeSelfAssess</b><span class="args">(ctx)</span><span class="tag">view</span></td><td>Veto by reverting. Uncapped gas.</td></tr>
-      <tr><td class="sig"><b>afterBuy</b> · <b>afterRelease</b> · <b>afterLiquidate</b> · <b>afterSettle</b><span class="args">(ctx)</span></td><td>Told after the fact. 500k gas; a revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
+      <tr><td class="sig"><b>afterBuy</b> · <b>afterRelease</b> · <b>afterLiquidate</b> · <b>afterSettle</b><span class="args">(ctx)</span></td><td>Told after the fact. 500k gas, always in full (<code>ModuleGasTooLow</code> otherwise); a revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
       <tr><td class="sig"><b>onInstall</b><span class="args">(ctx)</span></td><td>Attached. A revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
       <tr><td class="sig"><b>onUninstall</b><span class="args">(ctx)</span></td><td>Being replaced or removed. Always capped, a revert always ignored.</td></tr>
       <tr><td class="sig"><b>uiMetadata</b><span class="args">()</span><span class="tag">optional</span></td><td>JSON for UIs (<code>IModuleMetadata</code>). The slot never calls it.</td></tr>
@@ -317,7 +317,7 @@
       </tr>
       <tr><td class="sig"><b>manager</b><span class="args">()</span></td><td class="type mono">address</td><td>Who proposes terms and accepts module updates.</td></tr>
       <tr><td class="sig"><b>mutableTax</b><span class="args">()</span></td><td class="type mono">bool</td><td>Tax rate and runway may change.</td></tr>
-      <tr><td class="sig"><b>mutableRecipient</b><span class="args">()</span></td><td class="type mono">bool</td><td>Recipient may change; a module fee may rise.</td></tr>
+      <tr><td class="sig"><b>mutableRecipient</b><span class="args">()</span></td><td class="type mono">bool</td><td>Recipient may change; a module fee may rise or move.</td></tr>
       <tr><td class="sig"><b>mutableModule</b><span class="args">()</span></td><td class="type mono">bool</td><td>Module may be replaced; new scopes may land.</td></tr>
     </tbody>
 
@@ -350,13 +350,13 @@
         <td class="sig"><b>collectedTax</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Tax taken, not yet paid out.</td>
       </tr>
       <tr><td class="sig"><b>claimableOf</b><span class="args">(account)</span></td><td class="type mono">uint256</td><td>Payouts waiting for <code>claim</code>.</td></tr>
-      <tr><td class="sig"><b>debtOf</b><span class="args">(account)</span></td><td class="type mono">uint256</td><td>Tax owed beyond an emptied deposit.</td></tr>
+      <tr><td class="sig"><b>debtOf</b><span class="args">(account)</span></td><td class="type mono">uint256</td><td>Tax the occupant owes beyond an emptied deposit. Zero for anyone not seated.</td></tr>
     </tbody>
 
     <tbody>
       <tr>
         <td class="group" rowspan="3"><span class="struct">Quotes</span></td>
-        <td class="sig"><b>quoteBuy</b><span class="args">(account, depositAmount)</span></td><td class="type mono">uint256</td><td>Exactly what <code>buy</code> charges: price + deposit + debt.</td>
+        <td class="sig"><b>quoteBuy</b><span class="args">(account, depositAmount)</span></td><td class="type mono">uint256</td><td>Exactly what <code>buy</code> charges: price + deposit. <code>account</code> is ignored.</td>
       </tr>
       <tr><td class="sig"><b>minDepositForBuy</b><span class="args">(price)</span></td><td class="type mono">uint256</td><td>Smallest deposit <code>buy</code> accepts, under ripe queued terms.</td></tr>
       <tr><td class="sig"><b>minDepositToHold</b><span class="args">(price)</span></td><td class="type mono">uint256</td><td>Deposit floor under the terms in force.</td></tr>
@@ -491,7 +491,7 @@
       <div class="row"><span class="k">currentFee</span><span class="t">ModuleFee</span><span class="d">The slot’s copy.</span></div>
       <div class="row"><span class="k">answered</span><span class="t">bool</span><span class="d">False: no module, a revert, or an answer out of range.</span></div>
       <div class="row"><span class="k">declaredScopes · declaredFee</span><span class="t">uint16 · ModuleFee</span><span class="d">What the module says now.</span></div>
-      <div class="row"><span class="k">feeDiffers</span><span class="t">bool</span><span class="d"><code>acceptFee</code> would change the fee.</span></div>
+      <div class="row"><span class="k">feeDiffers</span><span class="t">bool</span><span class="d"><code>acceptFee</code> would change the fee now.</span></div>
       <div class="row"><span class="k">scopesDiffer</span><span class="t">bool</span><span class="d"><code>acceptScopes</code> would queue new scopes.</span></div>
     </div>
     <div>
