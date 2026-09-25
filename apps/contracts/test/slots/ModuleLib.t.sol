@@ -15,7 +15,10 @@ import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 contract LibToken is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /// @dev Hears about evictions and answers `afterLiquidate` with `size` bytes,
@@ -55,23 +58,35 @@ contract ModuleLibTest is Test {
     address alice = makeAddr("alice");
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new LibToken();
         token.mint(alice, 1e24);
         vm.warp(1_000_000);
     }
 
     function _insolventSlot(address module) internal returns (Slot s) {
-        s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: 1_000, minRunwaySeconds: 0}),
-            moduleTerms: ModuleTerms({target: module, settings: ""})
-        }))));
+        s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: address(this), rateBps: 1_000, minRunwaySeconds: 0
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                    })
+                ))
+        );
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
         s.buy(alice, 100 ether, 1, 0);

@@ -7,7 +7,6 @@ import {ScopesLib} from "../libraries/ScopesLib.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
 import {ModuleTerms, ModuleFee, InstalledModule} from "../types/SlotTypes.sol";
 import {Occupancy} from "./SlotStorage.sol";
-import "../errors/SlotErrors.sol";
 
 /**
  * @title SlotModules
@@ -69,9 +68,11 @@ abstract contract SlotModules is SlotStorage {
     /// @dev What a module asks for, fail-open, under the cap the slot uses
     ///      wherever a module lands: a third of `MODULE_GAS` per read, so the
     ///      three reads together cost what one callback may.
-    function _tryReadModule(
-        ModuleTerms memory t
-    ) internal view returns (bool, uint16, ModuleFee memory) {
+    function _tryReadModule(ModuleTerms memory t)
+        internal
+        view
+        returns (bool, uint16, ModuleFee memory)
+    {
         return ModuleLib.tryRead(t.target, t.settings, MODULE_GAS / 3);
     }
 
@@ -89,21 +90,20 @@ abstract contract SlotModules is SlotStorage {
         uint256 depositAmount
     ) internal view returns (SlotContext memory) {
         Occupancy storage o = _occupancy();
-        return
-            SlotContext({
-                slot: address(this),
-                caller: caller,
-                account: account,
-                occupant: o.occupant,
-                occupiedSince: o.since,
-                taxRateBps: _taxTerms().rateBps,
-                currentPrice: o.price,
-                newPrice: newPrice,
-                depositAmount: depositAmount,
-                owed: 0,
-                paid: 0,
-                moduleTerms: _module().terms()
-            });
+        return SlotContext({
+            slot: address(this),
+            caller: caller,
+            account: account,
+            occupant: o.occupant,
+            occupiedSince: o.since,
+            taxRateBps: _taxTerms().rateBps,
+            currentPrice: o.price,
+            newPrice: newPrice,
+            depositAmount: depositAmount,
+            owed: 0,
+            paid: 0,
+            moduleTerms: _module().terms()
+        });
     }
 
     // ─── calling it ─────────────────────────────────────────────────────────
@@ -116,6 +116,8 @@ abstract contract SlotModules is SlotStorage {
     /// @dev An effect: capped and swallowed unless `strict`. See {ModuleLib-callAfter}.
     function _after(uint16 scope, bytes memory call) internal {
         InstalledModule storage m = _module();
+        // `call` is always an encoded call, so its first four bytes are a selector.
+        // forge-lint: disable-next-line(unsafe-typecast)
         if (m.callAfter(scope, call, MODULE_GAS)) emit ModuleCallFailed(m.target, bytes4(call));
     }
 
@@ -126,7 +128,9 @@ abstract contract SlotModules is SlotStorage {
     function _onInstall(address account, uint256 price_, uint256 depositAmount) internal {
         _after(
             F_ON_INSTALL,
-            abi.encodeCall(ISlotModule.onInstall, (_ctx(msg.sender, account, price_, depositAmount)))
+            abi.encodeCall(
+                ISlotModule.onInstall, (_ctx(msg.sender, account, price_, depositAmount))
+            )
         );
     }
 
@@ -144,8 +148,7 @@ abstract contract SlotModules is SlotStorage {
         InstalledModule storage m = _module();
         if (!m.has(F_ON_UNINSTALL)) return;
         bytes memory call = abi.encodeCall(
-            ISlotModule.onUninstall,
-            (_ctx(msg.sender, _occupancy().occupant, 0, 0))
+            ISlotModule.onUninstall, (_ctx(msg.sender, _occupancy().occupant, 0, 0))
         );
         if (!ModuleLib.callCapped(m.target, call, MODULE_GAS)) {
             emit ModuleCallFailed(m.target, ISlotModule.onUninstall.selector);

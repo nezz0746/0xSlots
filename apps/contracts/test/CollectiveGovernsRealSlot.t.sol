@@ -45,28 +45,46 @@ contract CollectiveGovernsRealSlotTest is Test {
 
     function setUp() public {
         warehouse = new SplitsWarehouse("Ether", "ETH");
-        SlotCollectiveFactory cf = SlotCollectiveFactory(address(new ERC1967Proxy(
-            address(new SlotCollectiveFactory()),
-            abi.encodeCall(
-                SlotCollectiveFactory.initialize,
-                (admin, address(new SlotCollective(address(warehouse))))
+        SlotCollectiveFactory cf = SlotCollectiveFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotCollectiveFactory()),
+                    abi.encodeCall(
+                        SlotCollectiveFactory.initialize,
+                        (admin, address(new SlotCollective(address(warehouse))))
+                    )
+                )
             )
-        )));
+        );
         collective = SlotCollective(payable(cf.createCollective(_split(), _roles())));
 
-        slotFactory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (admin, address(new Slot())))
-        )));
+        slotFactory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (admin, address(new Slot())))
+                )
+            )
+        );
 
         // The collective is both the manager and where the tax goes.
-        slot = Slot(payable(slotFactory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(collective),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        slot = Slot(
+            payable(slotFactory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(collective),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(collective),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
 
         moduleA = address(new MinimumTenureModule());
         vm.deal(buyer, 100 ether);
@@ -78,10 +96,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         uint256[] memory a = new uint256[](1);
         a[0] = 100;
         s = SplitV2Lib.Split({
-            recipients: r,
-            allocations: a,
-            totalAllocation: 100,
-            distributionIncentive: 0
+            recipients: r, allocations: a, totalAllocation: 100, distributionIncentive: 0
         });
     }
 
@@ -91,10 +106,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         address[] memory modules = new address[](1);
         modules[0] = policyMgr;
         r = SlotCollective.InitialRoles({
-            admin: admin,
-            taxManagers: tax,
-            policyManagers: modules,
-            splitManagers: new address[](0)
+            admin: admin, taxManagers: tax, policyManagers: modules, splitManagers: new address[](0)
         });
     }
 
@@ -138,7 +150,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(taxMgr);
         collective.proposeTax(IManagedSlot(address(slot)), 750);
 
-        (uint256 tax, , bool hasTax, ) = _pending();
+        (uint256 tax,, bool hasTax,) = _pending();
         assertTrue(hasTax);
         assertEq(tax, 750);
         assertEq(slot.taxRateBps(), 500, "deferred, not immediate");
@@ -160,21 +172,23 @@ contract CollectiveGovernsRealSlotTest is Test {
     ///         validates the module rather than trusting the relay.
     function test_TheModuleRelayReachesARealSlotAndTheSlotValidates() public {
         vm.prank(policyMgr);
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}));
+        collective.proposeModule(
+            IManagedSlot(address(slot)),
+            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))})
+        );
 
         _ripen();
         _seat(buyer);
         assertEq(slot.module(), moduleA);
 
-        assertTrue(
-            slot.scopes().beforeBuy,
-            "scopes were copied from the real module"
-        );
+        assertTrue(slot.scopes().beforeBuy, "scopes were copied from the real module");
 
         // A module that cannot answer `scopes` or `fee` is refused at the slot, not here.
         vm.prank(policyMgr);
         vm.expectRevert();
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: ""}));
+        collective.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: ""})
+        );
     }
 
     /// @notice The assertion the whole port turns on, against real contracts:
@@ -184,7 +198,10 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(taxMgr);
         collective.proposeTax(IManagedSlot(address(slot)), 750);
         vm.prank(policyMgr);
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}));
+        collective.proposeModule(
+            IManagedSlot(address(slot)),
+            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))})
+        );
 
         vm.prank(policyMgr);
         collective.cancelModuleProposal(IManagedSlot(address(slot)));
@@ -209,9 +226,12 @@ contract CollectiveGovernsRealSlotTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert();
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))}));
+        collective.proposeModule(
+            IManagedSlot(address(slot)),
+            ModuleTerms({target: moduleA, settings: abi.encode(uint256(7 days))})
+        );
 
-        (, , bool hasTax, bool hasModule) = _pending();
+        (,, bool hasTax, bool hasModule) = _pending();
         assertFalse(hasTax);
         assertFalse(hasModule);
     }
@@ -219,13 +239,23 @@ contract CollectiveGovernsRealSlotTest is Test {
     /// @notice And a slot that never named this collective as its manager is
     ///         refused on the far side — which is why no registry is kept.
     function test_ASlotThisCollectiveDoesNotManageRefusesIt() public {
-        Slot other = Slot(payable(slotFactory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(0xA11CE),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot other = Slot(
+            payable(slotFactory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(0xA11CE),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
 
         vm.prank(taxMgr);
         vm.expectRevert();
@@ -257,7 +287,7 @@ contract CollectiveGovernsRealSlotTest is Test {
         vm.prank(admin);
         collective.cancelAllProposals(IManagedSlot(address(slot)));
 
-        (, , bool hasTax, bool hasModule) = _pending();
+        (,, bool hasTax, bool hasModule) = _pending();
         assertFalse(hasTax);
         assertFalse(hasModule);
     }

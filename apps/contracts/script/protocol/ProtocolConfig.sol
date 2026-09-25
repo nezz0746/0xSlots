@@ -23,8 +23,7 @@ abstract contract ProtocolConfig is Script {
     /// @dev Forge routes `new X{salt: s}(...)` through this during broadcast,
     ///      which is what makes the deployer address — and therefore the
     ///      derived address — the same everywhere.
-    address internal constant CREATE2_DEPLOYER =
-        0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /**
      * @dev Namespaced so a salt of ours can never collide with another
@@ -57,10 +56,7 @@ abstract contract ProtocolConfig is Script {
 
     function chainConfig() internal view returns (ChainConfig memory c) {
         string memory path = string.concat(
-            vm.projectRoot(),
-            "/deployments/config/",
-            vm.toString(block.chainid),
-            ".json"
+            vm.projectRoot(), "/deployments/config/", vm.toString(block.chainid), ".json"
         );
         if (!vm.exists(path)) revert NoConfigForChain(block.chainid);
 
@@ -84,50 +80,30 @@ abstract contract ProtocolConfig is Script {
      *      address on every chain rather than colliding with the old one —
      *      and excludes the chain id, so that address is the same everywhere.
      */
-    function saltFor(
-        string memory contractName,
-        uint64 v
-    ) internal pure returns (bytes32) {
+    function saltFor(string memory contractName, uint64 v) internal pure returns (bytes32) {
         return keccak256(abi.encode(NAMESPACE, contractName, v));
     }
 
     /// @dev Where a `new X{salt: s}(args)` will land, given the canonical
     ///      deployer. Lets a script report an address before spending gas.
-    function predict(
-        bytes32 salt,
-        bytes memory initCode
-    ) internal pure returns (address) {
-        return
-            address(
-                uint160(
-                    uint256(
-                        keccak256(
-                            abi.encodePacked(
-                                bytes1(0xff),
-                                CREATE2_DEPLOYER,
-                                salt,
-                                keccak256(initCode)
-                            )
-                        )
+    function predict(bytes32 salt, bytes memory initCode) internal pure returns (address) {
+        return address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(bytes1(0xff), CREATE2_DEPLOYER, salt, keccak256(initCode))
                     )
                 )
-            );
+            )
+        );
     }
 
     // ── the address book ──────────────────────────────────────────────────
 
-    function recordPath(
-        string memory name
-    ) internal view returns (string memory) {
-        return
-            string.concat(
-                vm.projectRoot(),
-                "/deployments/",
-                vm.toString(block.chainid),
-                "/",
-                name,
-                ".json"
-            );
+    function recordPath(string memory name) internal view returns (string memory) {
+        return string.concat(
+            vm.projectRoot(), "/deployments/", vm.toString(block.chainid), "/", name, ".json"
+        );
     }
 
     /**
@@ -179,8 +155,7 @@ abstract contract ProtocolConfig is Script {
         }
 
         vm.createDir(
-            string.concat(vm.projectRoot(), "/deployments/", vm.toString(block.chainid)),
-            true
+            string.concat(vm.projectRoot(), "/deployments/", vm.toString(block.chainid)), true
         );
         vm.writeFile(path, json);
     }

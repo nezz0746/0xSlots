@@ -16,10 +16,7 @@ import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
-import {
-    SlotBoundNFTFactory,
-    CollectionInit
-} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
+import {SlotBoundNFTFactory, CollectionInit} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -73,27 +70,39 @@ contract CrossChainAddressesTest is Test {
     function setUp() public {
         token = new Tok();
 
-        slots = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(
-                SlotFactory.initialize, (address(this), address(new Slot()))
+        slots = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
             )
-        )));
+        );
 
         SlotsWarehouseHolder holder = new SlotsWarehouseHolder();
         holder.deploy();
-        collectives = SlotCollectiveFactory(address(new ERC1967Proxy(
-            address(new SlotCollectiveFactory()),
-            abi.encodeCall(
-                SlotCollectiveFactory.initialize,
-                (admin, address(holder.implementation()))
+        collectives = SlotCollectiveFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotCollectiveFactory()),
+                    abi.encodeCall(
+                        SlotCollectiveFactory.initialize, (admin, address(holder.implementation()))
+                    )
+                )
             )
-        )));
+        );
 
-        collections = SlotBoundNFTFactory(address(new ERC1967Proxy(
-            address(new SlotBoundNFTFactory()),
-            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots, address(new SlotBoundNFTWrapper())))
-        )));
+        collections = SlotBoundNFTFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotBoundNFTFactory()),
+                    abi.encodeCall(
+                        SlotBoundNFTFactory.initialize,
+                        (admin, slots, address(new SlotBoundNFTWrapper()))
+                    )
+                )
+            )
+        );
 
         vm.warp(1_000_000);
     }
@@ -104,8 +113,12 @@ contract CrossChainAddressesTest is Test {
         return SlotInit({
             currency: IERC20(address(token)),
             manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)}),
+            mutableTax: false,
+            mutableRecipient: false,
+            mutableModule: false,
+            taxTerms: TaxTerms({
+                recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)
+            }),
             moduleTerms: ModuleTerms({target: address(0), settings: ""})
         });
     }
@@ -118,18 +131,11 @@ contract CrossChainAddressesTest is Test {
         a[0] = 1;
         a[1] = 1;
         s = SplitV2Lib.Split({
-            recipients: r,
-            allocations: a,
-            totalAllocation: 2,
-            distributionIncentive: 0
+            recipients: r, allocations: a, totalAllocation: 2, distributionIncentive: 0
         });
     }
 
-    function _roles()
-        internal
-        view
-        returns (SlotCollective.InitialRoles memory r)
-    {
+    function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         r.admin = admin;
     }
 
@@ -163,10 +169,7 @@ contract CrossChainAddressesTest is Test {
         address onSepolia = slots.createSlot(_slotInit());
 
         assertEq(slots.slotCount(), 1, "both were slot #0");
-        assertTrue(
-            onBase != onSepolia,
-            "slot #0 must not be the same address on two chains"
-        );
+        assertTrue(onBase != onSepolia, "slot #0 must not be the same address on two chains");
     }
 
     /// @notice The same, for collectives.
@@ -246,7 +249,9 @@ contract CrossChainAddressesTest is Test {
 
         vm.chainId(BASE);
         address[3] memory base;
-        for (uint256 i = 0; i < 3; i++) base[i] = slots.createSlot(_slotInit());
+        for (uint256 i = 0; i < 3; i++) {
+            base[i] = slots.createSlot(_slotInit());
+        }
 
         vm.revertToState(snap);
 
@@ -269,7 +274,6 @@ contract SlotsWarehouseHolder {
     SlotCollective public implementation;
 
     function deploy() external {
-        implementation =
-            new SlotCollective(address(new SplitsWarehouse("Ether", "ETH")));
+        implementation = new SlotCollective(address(new SplitsWarehouse("Ether", "ETH")));
     }
 }

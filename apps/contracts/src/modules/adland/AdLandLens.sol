@@ -44,9 +44,8 @@ abstract contract AdLandLens is AdLandStorage {
 
             Creative storage c = _creative[slot];
             if (
-                bytes(c.uri).length != 0 &&
-                info.occupant != address(0) &&
-                c.tenureId == info.tenureId
+                bytes(c.uri).length != 0 && info.occupant != address(0)
+                    && c.tenureId == info.tenureId
             ) {
                 v.uri = c.uri;
             }
@@ -88,9 +87,11 @@ abstract contract AdLandLens is AdLandStorage {
     /// @notice The stored entry, stamp included, without resolving it.
     /// @dev For a client that wants to say "your creative ended when the slot
     ///      turned over" rather than show an empty box. Never for rendering.
-    function rawCreativeOf(
-        address slot
-    ) external view returns (string memory uri, uint64 tenureId) {
+    function rawCreativeOf(address slot)
+        external
+        view
+        returns (string memory uri, uint64 tenureId)
+    {
         Creative storage c = _creative[slot];
         return (c.uri, c.tenureId);
     }

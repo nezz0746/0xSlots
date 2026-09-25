@@ -11,7 +11,7 @@ import {TaxTerms, ModuleTerms, ModuleFee, Pending, InstalledModule} from "../typ
 import {ModuleLib} from "../libraries/ModuleLib.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
-import "../errors/SlotErrors.sol";
+import {InvalidDeposit, CurrencyTakesACut} from "../errors/SlotErrors.sol";
 
 /**
  * @title SlotAccounting
@@ -33,7 +33,9 @@ abstract contract SlotAccounting is SlotModules {
     event DebtRepaid(address indexed account, uint256 amount);
     /// @notice Queued terms took effect. `taxTerms`, `moduleTerms`, `scopes` and
     ///         `fee` are what is now in force; `mask` says which terms changed.
-    event TermsApplied(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 scopes, ModuleFee fee, uint16 mask);
+    event TermsApplied(
+        TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 scopes, ModuleFee fee, uint16 mask
+    );
     /// @notice A queued module could not be attached and was dropped instead of
     ///         being allowed to block the transition.
     event ModuleDropped(address indexed module);
@@ -50,11 +52,8 @@ abstract contract SlotAccounting is SlotModules {
     function taxOwed() public view returns (uint256) {
         Occupancy storage o = _occupancy();
         if (o.occupant == address(0)) return 0;
-        (uint256 owed, ) = SlotMath.accrue(
-            o.price,
-            _taxTerms().rateBps,
-            block.timestamp - o.lastSettled,
-            o.taxCarry
+        (uint256 owed,) = SlotMath.accrue(
+            o.price, _taxTerms().rateBps, block.timestamp - o.lastSettled, o.taxCarry
         );
         return owed;
     }
@@ -82,7 +81,8 @@ abstract contract SlotAccounting is SlotModules {
         if (upTo <= o.lastSettled) return;
 
         if (o.occupant == address(0)) {
-            o.lastSettled = uint64(upTo);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            o.lastSettled = uint64(upTo); // a timestamp
             return;
         }
 
@@ -92,14 +92,12 @@ abstract contract SlotAccounting is SlotModules {
         // fraction off each settle, because no fraction is ever discarded —
         // and no window is ever left open for a later price or rate to reach
         // back into, because there is none.
-        (uint256 owed, uint256 carry) = SlotMath.accrue(
-            o.price,
-            _taxTerms().rateBps,
-            upTo - o.lastSettled,
-            o.taxCarry
-        );
-        o.lastSettled = uint64(upTo);
-        o.taxCarry = uint64(carry);
+        (uint256 owed, uint256 carry) =
+            SlotMath.accrue(o.price, _taxTerms().rateBps, upTo - o.lastSettled, o.taxCarry);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        o.lastSettled = uint64(upTo); // a timestamp
+        // forge-lint: disable-next-line(unsafe-typecast)
+        o.taxCarry = uint64(carry); // < MONTH * BASIS_POINTS, see SlotMath.accrue
 
         uint256 paid;
         if (owed >= o.deposit) {
@@ -191,9 +189,10 @@ abstract contract SlotAccounting is SlotModules {
         uint16 declaredScopes;
         ModuleFee memory declaredFee;
         if (moduleChanges) {
-            (ok, declaredScopes, declaredFee) = _tryReadModule(ModuleTerms(next.target, next.settings));
+            (ok, declaredScopes, declaredFee) =
+                _tryReadModule(ModuleTerms({target: next.target, settings: next.settings}));
         } else if (scopesChange) {
-            (ok, declaredScopes, ) = _tryReadModule(_module().terms());
+            (ok, declaredScopes,) = _tryReadModule(_module().terms());
         }
 
         // The outgoing module is told BEFORE anything moves, while the record
@@ -209,8 +208,10 @@ abstract contract SlotAccounting is SlotModules {
             // module honest; the comparison is what stops it being a second,
             // unreviewed proposal.
             if (
-                next.target != address(0) &&
-                (!ok || declaredScopes != next.scopes || !ModuleLib.sameFee(declaredFee, next.fee))
+                next.target != address(0)
+                    && (!ok
+                        || declaredScopes != next.scopes
+                        || !ModuleLib.sameFee(declaredFee, next.fee))
             ) {
                 emit ModuleDropped(next.target);
                 delete next;
@@ -244,7 +245,7 @@ abstract contract SlotAccounting is SlotModules {
 
         uint256 unpaid = amount;
         if (_isNative()) {
-            (bool sent, ) = to.call{value: amount, gas: PAYOUT_GAS}("");
+            (bool sent,) = to.call{value: amount, gas: PAYOUT_GAS}("");
             if (sent) unpaid = 0;
         } else {
             address token = address(_settings().currency);
@@ -257,9 +258,8 @@ abstract contract SlotAccounting is SlotModules {
                 // moves nothing would be marked paid and the payee would lose
                 // it. The balance delta is the only answer both agree on.
                 (bool okBefore, uint256 before) = _selfBalance(token);
-                (bool ok, bytes memory data) = token.call(
-                    abi.encodeCall(IERC20.transfer, (to, amount))
-                );
+                (bool ok, bytes memory data) =
+                    token.call(abi.encodeCall(IERC20.transfer, (to, amount)));
                 (bool okAfter, uint256 afterward) = _selfBalance(token);
 
                 if (ok && okBefore && okAfter) {
@@ -271,8 +271,9 @@ abstract contract SlotAccounting is SlotModules {
                     // (bool))` reverts on any word that is not 0 or 1 — and it
                     // would revert HERE, in a function whose whole contract is
                     // that it never does.
-                    if (data.length == 0) unpaid = 0;
-                    else if (data.length >= 32 && abi.decode(data, (uint256)) == 1) {
+                    if (data.length == 0) {
+                        unpaid = 0;
+                    } else if (data.length >= 32 && abi.decode(data, (uint256)) == 1) {
                         unpaid = 0;
                     }
                 }

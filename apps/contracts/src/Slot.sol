@@ -5,7 +5,7 @@ import {SlotViews} from "./slot/SlotViews.sol";
 import {SlotOccupancy} from "./slot/SlotOccupancy.sol";
 import {SlotEscrow} from "./slot/SlotEscrow.sol";
 import {SlotAdmin} from "./slot/SlotAdmin.sol";
-import "./errors/SlotErrors.sol";
+import {InvalidManager, InvalidCurrency, InvalidValue} from "./errors/SlotErrors.sol";
 import {Versioned} from "./utils/Versioned.sol";
 import {SlotInit, ModuleFee, InstalledModule} from "./types/SlotTypes.sol";
 import {ISlotModule} from "./interfaces/ISlotModule.sol";
@@ -56,10 +56,9 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
     }
 
     function initialize(SlotInit calldata p) external initializer nonReentrant {
-        if (
-            address(p.currency) != address(0) &&
-            address(p.currency).code.length == 0
-        ) revert InvalidCurrency();
+        if (address(p.currency) != address(0) && address(p.currency).code.length == 0) {
+            revert InvalidCurrency();
+        }
 
         // A manager is required exactly when something is mutable, and
         // forbidden otherwise, so "immutable" is a fact about the slot rather

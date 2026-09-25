@@ -18,7 +18,10 @@ import "../../src/errors/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /// @dev A module that records everything and refuses nothing.
@@ -42,9 +45,19 @@ contract Recorder is AskModule {
 
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
-    function afterBuy(SlotContext calldata) external { buys++; }
-    function afterRelease(SlotContext calldata) external { releases++; }
-    function afterLiquidate(SlotContext calldata) external { liquidations++; }
+
+    function afterBuy(SlotContext calldata) external {
+        buys++;
+    }
+
+    function afterRelease(SlotContext calldata) external {
+        releases++;
+    }
+
+    function afterLiquidate(SlotContext calldata) external {
+        liquidations++;
+    }
+
     function afterSettle(SlotContext calldata c) external {
         settles++;
         lastPaid = c.paid;
@@ -53,8 +66,6 @@ contract Recorder is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata c) external {}
-
-
 }
 
 /// @dev Refuses every buy. The canonical `before` module.
@@ -67,7 +78,10 @@ contract DenyBuys is AskModule {
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
     }
-    function beforeBuy(SlotContext calldata) external view { revert Denied(); }
+
+    function beforeBuy(SlotContext calldata) external view {
+        revert Denied();
+    }
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
@@ -77,8 +91,6 @@ contract DenyBuys is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
@@ -95,17 +107,30 @@ contract Hostile is AskModule {
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
-    function afterBuy(SlotContext calldata) external pure { revert("no"); }
-    function afterSell(SlotContext calldata) external pure { revert("no"); }
-    function afterRelease(SlotContext calldata) external pure { revert("no"); }
-    function afterLiquidate(SlotContext calldata) external pure { revert("no"); }
-    function afterSettle(SlotContext calldata) external pure { revert("no"); }
+
+    function afterBuy(SlotContext calldata) external pure {
+        revert("no");
+    }
+
+    function afterSell(SlotContext calldata) external pure {
+        revert("no");
+    }
+
+    function afterRelease(SlotContext calldata) external pure {
+        revert("no");
+    }
+
+    function afterLiquidate(SlotContext calldata) external pure {
+        revert("no");
+    }
+
+    function afterSettle(SlotContext calldata) external pure {
+        revert("no");
+    }
 
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external pure {}
-
-
 }
 
 /// @dev Burns every unit of gas it is handed.
@@ -123,9 +148,11 @@ contract GasBurner is AskModule {
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
+
     function afterLiquidate(SlotContext calldata) external {
         while (true) sink++;
     }
+
     function afterSettle(SlotContext calldata) external {
         while (true) sink++;
     }
@@ -133,8 +160,6 @@ contract GasBurner is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 contract SlotsTest is Test {
@@ -159,10 +184,7 @@ contract SlotsTest is Test {
             address(
                 new ERC1967Proxy(
                     address(fImpl),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (address(this), address(impl))
-                    )
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
                 )
             )
         );
@@ -174,19 +196,18 @@ contract SlotsTest is Test {
         vm.warp(1_000_000);
     }
 
-    function _init(address module, uint256 minDep)
-        internal
-        view
-        returns (SlotInit memory)
-    {
-        return
-            SlotInit({
-                currency: IERC20(address(token)),
-                manager: manager,
-                mutableTax: true, mutableRecipient: true, mutableModule: true,
-                taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(minDep)}),
-                moduleTerms: ModuleTerms({target: module, settings: ""})
-            });
+    function _init(address module, uint256 minDep) internal view returns (SlotInit memory) {
+        return SlotInit({
+            currency: IERC20(address(token)),
+            manager: manager,
+            mutableTax: true,
+            mutableRecipient: true,
+            mutableModule: true,
+            taxTerms: TaxTerms({
+                recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(minDep)
+            }),
+            moduleTerms: ModuleTerms({target: module, settings: ""})
+        });
     }
 
     function _slot(address module) internal returns (Slot) {
@@ -229,9 +250,7 @@ contract SlotsTest is Test {
         vm.warp(block.timestamp + 3650 days);
 
         // A normal budget, not a generous one.
-        (bool ok, ) = address(s).call{gas: 2_000_000}(
-            abi.encodeWithSignature("liquidate()")
-        );
+        (bool ok,) = address(s).call{gas: 2_000_000}(abi.encodeWithSignature("liquidate()"));
         assertTrue(ok, "eviction completes on a normal budget");
         assertTrue(s.isVacant());
     }
@@ -242,7 +261,11 @@ contract SlotsTest is Test {
         _take(s, alice, 100 ether, 100 ether);
 
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            uint16(1)
+        );
 
         vm.warp(block.timestamp + 10 days);
         assertEq(s.taxRateBps(), 1000, "alice's rate is untouched mid-tenure");
@@ -310,7 +333,11 @@ contract SlotsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(InvalidModule.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: useless, settings: ""}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: useless, settings: ""}),
+            uint16(8)
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -344,14 +371,16 @@ contract SlotsTest is Test {
         s.collect();
         assertGt(token.balanceOf(recipient), 0, "recipient was paid");
     }
-
 }
 
 /// @dev Declares no subscriptions at all.
 contract Nothing is AskModule {
     function checkSettings(bytes calldata) external pure {}
 
-    function _ask(bytes calldata) internal pure override returns (Ask memory o) { Scopes memory f; o.scopes = ScopesLib.pack(f); }
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
+        Scopes memory f;
+        o.scopes = ScopesLib.pack(f);
+    }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
@@ -362,6 +391,4 @@ contract Nothing is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }

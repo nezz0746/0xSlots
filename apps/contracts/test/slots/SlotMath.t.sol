@@ -54,8 +54,8 @@ contract SlotMathTest is Test {
     /// @notice The bug this replaced: a per-second rate floors to zero and
     ///         reports "never" for a position that is genuinely draining.
     function test_ANaiveRateWouldSayNeverHereAndThisDoesNot() public pure {
-        uint256 price = 100e6;   // 100 USDC
-        uint256 taxRateBps = 100;    // 1%/month
+        uint256 price = 100e6; // 100 USDC
+        uint256 taxRateBps = 100; // 1%/month
         assertEq(Math.mulDiv(price, taxRateBps, DEN), 0, "per-second rate is zero");
 
         uint256 runway = SlotMath.secondsFor(1e6, price, taxRateBps);
@@ -74,9 +74,9 @@ contract SlotMathTest is Test {
     ///         stating, because it is why the old plain-multiply sites were a
     ///         latent asymmetry rather than a live bug.
     function test_TheNaiveProductIsFineAtRealisticBounds() public pure {
-        uint256 price = type(uint128).max;   // MAX_PRICE
-        uint256 taxRateBps = 10_000;             // MAX_TAX_BPS
-        uint256 window = 3650 days;          // ten years
+        uint256 price = type(uint128).max; // MAX_PRICE
+        uint256 taxRateBps = 10_000; // MAX_TAX_BPS
+        uint256 window = 3650 days; // ten years
 
         unchecked {
             uint256 naive = price * taxRateBps * window;
@@ -91,7 +91,7 @@ contract SlotMathTest is Test {
     function test_SurvivesAProductThatWouldOverflow() public pure {
         uint256 price = type(uint128).max;
         uint256 taxRateBps = 10_000;
-        uint256 window = 1e35;               // past 2^256 / (price * taxRateBps)
+        uint256 window = 1e35; // past 2^256 / (price * taxRateBps)
 
         unchecked {
             uint256 naive = price * taxRateBps * window;
@@ -101,5 +101,4 @@ contract SlotMathTest is Test {
         assertGt(SlotMath.depositFor(price, taxRateBps, window), 0, "mulDiv does not");
         assertGt(SlotMath.taxFor(price, taxRateBps, window), 0);
     }
-
 }

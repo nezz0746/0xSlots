@@ -4,7 +4,15 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISlotModule} from "../interfaces/ISlotModule.sol";
-import "../errors/SlotErrors.sol";
+import {
+    InvalidPrice,
+    InvalidValue,
+    Vacant,
+    NothingToWithdraw,
+    NothingToCollect,
+    NothingToClaim,
+    TransferFailed
+} from "../errors/SlotErrors.sol";
 import {SlotOccupancy} from "./SlotOccupancy.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 
@@ -23,11 +31,7 @@ abstract contract SlotEscrow is SlotOccupancy {
     // ─── holding ────────────────────────────────────────────────────────────
 
     /// @notice Restate what you think the slot is worth. Raises or lowers tax.
-    function selfAssess(uint256 newPrice)
-        external
-        nonReentrant
-        onlyOccupantOrOperator
-    {
+    function selfAssess(uint256 newPrice) external nonReentrant onlyOccupantOrOperator {
         if (newPrice == 0 || newPrice > MAX_PRICE) revert InvalidPrice();
         _settle();
 
@@ -35,8 +39,7 @@ abstract contract SlotEscrow is SlotOccupancy {
         _before(
             F_BEFORE_SELF_ASSESS,
             abi.encodeCall(
-                ISlotModule.beforeSelfAssess,
-                (_ctx(msg.sender, o.occupant, newPrice, o.deposit))
+                ISlotModule.beforeSelfAssess, (_ctx(msg.sender, o.occupant, newPrice, o.deposit))
             )
         );
 
@@ -90,10 +93,7 @@ abstract contract SlotEscrow is SlotOccupancy {
      *      Retaking a slot you once held starts a fresh tenure, which approves
      *      nobody.
      */
-    function setOperator(address operator, bool allowed)
-        external
-        onlyOccupant
-    {
+    function setOperator(address operator, bool allowed) external onlyOccupant {
         uint64 tenure = _occupancy().tenureId;
         _ledger().operatorOf[tenure][operator] = allowed;
         emit OperatorSet(operator, allowed, tenure);
@@ -118,7 +118,7 @@ abstract contract SlotEscrow is SlotOccupancy {
         l.withdrawableOf[account] = 0;
 
         if (_isNative()) {
-            (bool ok, ) = account.call{value: amount}("");
+            (bool ok,) = account.call{value: amount}("");
             if (!ok) revert TransferFailed();
         } else {
             _settings().currency.safeTransfer(account, amount);

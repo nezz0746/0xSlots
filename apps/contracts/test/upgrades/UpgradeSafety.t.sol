@@ -55,15 +55,13 @@ contract UpgradeSafetyTest is Test {
     ///      fail here rather than in an incident.
     function test_TheOfferBookIsNotUpgradeable() public {
         OfferBook book = new OfferBook();
-        (bool ok, ) = address(book).call(
-            abi.encodeWithSignature("initialize(address)", address(this))
-        );
+        (bool ok,) =
+            address(book).call(abi.encodeWithSignature("initialize(address)", address(this)));
         assertFalse(ok, "no initializer");
-        (ok, ) = address(book).call(
-            abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(1), "")
-        );
+        (ok,) = address(book)
+            .call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(1), ""));
         assertFalse(ok, "no upgrade path");
-        (ok, ) = address(book).call(abi.encodeWithSignature("admin()"));
+        (ok,) = address(book).call(abi.encodeWithSignature("admin()"));
         assertFalse(ok, "and no admin to hold either");
     }
 

@@ -90,10 +90,7 @@ abstract contract MinimumTenure {
     }
 
     /// @notice When `account` may take `slot` again, having vacated it.
-    function reentryAllowedAt(
-        address slot,
-        address account
-    ) public view returns (uint256) {
+    function reentryAllowedAt(address slot, address account) public view returns (uint256) {
         return _tenure().reentryAllowedAt[slot][account];
     }
 
@@ -137,11 +134,9 @@ abstract contract MinimumTenure {
         string memory name,
         string memory abiType
     ) internal pure returns (ModuleSchemaLib.Field memory) {
-        return
-            ModuleSchemaLib
-                .number(name, abiType, "Minimum tenure", "seconds", 1, MAX_TENURE)
-                .explain("How long an occupant is protected from being bought out.")
-                .means("minimum-tenure");
+        return ModuleSchemaLib.number(name, abiType, "Minimum tenure", "seconds", 1, MAX_TENURE)
+            .explain("How long an occupant is protected from being bought out.")
+            .means("minimum-tenure");
     }
 
     /// @notice The escrow a buy must post to fund a whole window at `price`.
@@ -194,19 +189,13 @@ abstract contract MinimumTenure {
         // Inside it: only at the premium. `mulDiv` rather than `*`, so a price
         // near the top of the range cannot overflow the requirement into a
         // revert that reads as protection.
-        uint256 required = Math.mulDiv(
-            ctx.currentPrice,
-            BUYOUT_PREMIUM_BPS,
-            10_000
-        );
+        uint256 required = Math.mulDiv(ctx.currentPrice, BUYOUT_PREMIUM_BPS, 10_000);
         if (ctx.newPrice < required) revert BuyoutBelowPremium(required);
     }
 
     /// @dev No cutting your price while nobody is allowed to take it. Call
     ///      from `beforeSelfAssess`.
-    function _enforceTenureOnSelfAssess(
-        SlotContext calldata ctx
-    ) internal view {
+    function _enforceTenureOnSelfAssess(SlotContext calldata ctx) internal view {
         uint256 window = _windowOf(ctx.moduleTerms.settings);
         if (ctx.occupiedSince == 0) return;
         if (block.timestamp >= ctx.occupiedSince + window) return;
@@ -228,17 +217,11 @@ abstract contract MinimumTenure {
     function _barReentry(SlotContext calldata ctx) internal {
         if (msg.sender != ctx.slot) revert NotTheSlot();
         _tenure().reentryAllowedAt[ctx.slot][ctx.account] =
-            block.timestamp +
-            _windowOf(ctx.moduleTerms.settings);
+            block.timestamp + _windowOf(ctx.moduleTerms.settings);
     }
 
-    function _requireFunded(
-        SlotContext calldata ctx,
-        uint256 window
-    ) internal pure {
-        uint256 basis = ctx.newPrice > ctx.currentPrice
-            ? ctx.newPrice
-            : ctx.currentPrice;
+    function _requireFunded(SlotContext calldata ctx, uint256 window) internal pure {
+        uint256 basis = ctx.newPrice > ctx.currentPrice ? ctx.newPrice : ctx.currentPrice;
         uint256 required = requiredDeposit(basis, ctx.taxRateBps, window);
         if (ctx.depositAmount < required) revert TenureUnderfunded(required);
     }

@@ -15,19 +15,30 @@ import {ISlotModule, SlotContext, Scopes} from "../../src/interfaces/ISlotModule
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 
-interface IFlippable { function flip() external; }
+interface IFlippable {
+    function flip() external;
+}
 
 /// @dev 2 decimals, like GUSD — small units make truncation reachable.
 contract Small is ERC20 {
     constructor() ERC20("S", "S") {}
-    function decimals() public pure override returns (uint8) { return 2; }
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function decimals() public pure override returns (uint8) {
+        return 2;
+    }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /// @dev Answers honestly until flipped, then stops answering.
 contract FlipModule is AskModule {
     bool public broken;
-    function flip() external { broken = true; }
+
+    function flip() external {
+        broken = true;
+    }
     function checkSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
@@ -46,8 +57,6 @@ contract FlipModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Honest until flipped, then answers with one word, where `fee` needs
@@ -57,12 +66,21 @@ contract FlipModule is AskModule {
 ///      decode sits outside `try`'s catch, which is why the read is raw.
 contract ShortAnswerModule is AskModule {
     bool public broken;
-    function flip() external { broken = true; }
+
+    function flip() external {
+        broken = true;
+    }
     function checkSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
-        if (broken) assembly { mstore(0, 1) return(0, 32) } // 1 word, 256 wanted
+        // 1 word, where `fee` needs 2.
+        if (broken) {
+            assembly {
+                mstore(0, 1)
+                return(0, 32)
+            }
+        }
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
     }
@@ -76,8 +94,6 @@ contract ShortAnswerModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Honest until flipped, then answers with eight all-ones words: scope
@@ -85,7 +101,10 @@ contract ShortAnswerModule is AskModule {
 ///      the catch.
 contract DirtyBoolModule is AskModule {
     bool public broken;
-    function flip() external { broken = true; }
+
+    function flip() external {
+        broken = true;
+    }
     function checkSettings(bytes calldata) external pure {}
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
@@ -111,8 +130,6 @@ contract DirtyBoolModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Honest until flipped, then refuses every configuration. The one failure
@@ -120,11 +137,15 @@ contract DirtyBoolModule is AskModule {
 contract RejectingModule is AskModule {
     error No();
     bool public broken;
-    function flip() external { broken = true; }
+
+    function flip() external {
+        broken = true;
+    }
 
     function checkSettings(bytes calldata) external view {
         if (broken) revert No();
     }
+
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.beforeBuy = true;
@@ -140,14 +161,13 @@ contract RejectingModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
 contract Counter is AskModule {
     uint256 public buys;
     function checkSettings(bytes calldata) external pure {}
+
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true;
@@ -155,7 +175,10 @@ contract Counter is AskModule {
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
-    function afterBuy(SlotContext calldata) external { buys++; }
+
+    function afterBuy(SlotContext calldata) external {
+        buys++;
+    }
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -163,18 +186,26 @@ contract Counter is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev `transfer` succeeds but answers with a word that is neither 0 nor 1.
 contract WeirdTok is ERC20 {
     address public trap;
-    constructor(address t) ERC20("W", "W") { trap = t; }
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    constructor(address t) ERC20("W", "W") {
+        trap = t;
+    }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
+
     function transfer(address to, uint256 a) public override returns (bool) {
         if (to == trap) {
-            assembly { mstore(0, 2) return(0, 32) }
+            assembly {
+                mstore(0, 2)
+                return(0, 32)
+            }
         }
         return super.transfer(to, a);
     }
@@ -184,10 +215,17 @@ contract WeirdTok is ERC20 {
 ///      nor 1: paid, and must not be credited on top.
 contract MovingWeirdTok is ERC20 {
     constructor() ERC20("M", "M") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
+
     function transfer(address to, uint256 a) public override returns (bool) {
         super.transfer(to, a);
-        assembly { mstore(0, 2) return(0, 32) }
+        assembly {
+            mstore(0, 2)
+            return(0, 32)
+        }
     }
 }
 
@@ -203,26 +241,40 @@ contract AuditRegressionsTest is Test {
     address recipient = address(0xF00D);
 
     uint256 constant PRICE = 50_000; // 500.00 at 2dp
-    uint256 constant TAX_RATE = 200;      // 2%/month
+    uint256 constant TAX_RATE = 200; // 2%/month
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new Small();
         token.mint(occ, 10_000_000);
         token.mint(grinder, 10_000_000);
     }
 
     function _slot(address currency, uint256 minDep) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(currency),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(minDep)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(currency),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(minDep)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
     }
 
     // ── 1. tax evasion by grinding the settle clock ────────────────────────
@@ -252,11 +304,7 @@ contract AuditRegressionsTest is Test {
         emit log_named_uint("grinding calls", 1_080);
         emit log_named_uint("collected", s.collectedTax());
         emit log_named_uint("still owed", s.taxOwed());
-        assertGt(
-            s.collectedTax() + s.taxOwed(),
-            0,
-            "a month of tax must survive being ground at"
-        );
+        assertGt(s.collectedTax() + s.taxOwed(), 0, "a month of tax must survive being ground at");
     }
 
     // ── 2. a hostile queued module must stop nothing ─────────────────────────
@@ -271,7 +319,11 @@ contract AuditRegressionsTest is Test {
         vm.stopPrank();
 
         FlipModule h = new FlipModule();
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(h), settings: ""}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(h), settings: ""}),
+            uint16(8)
+        );
 
         vm.warp(block.timestamp + 3650 days);
         assertTrue(s.isInsolvent());
@@ -304,7 +356,11 @@ contract AuditRegressionsTest is Test {
         // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
         // and would refuse it otherwise. The break happens afterwards, which is
         // the whole point: the apply path cannot re-verify what it accepted.
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: pending, settings: ""}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: pending, settings: ""}),
+            uint16(8)
+        );
         if (etchAway) vm.etch(pending, "");
         else IFlippable(pending).flip();
 
@@ -350,16 +406,25 @@ contract AuditRegressionsTest is Test {
         _buyThroughAPendingModule(address(new RejectingModule()), false);
     }
 
-
     function test_AWeirdTokenReturnCannotBlockABuy() public {
         WeirdTok w = new WeirdTok(recipient);
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(w)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(w)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
         w.mint(occ, 1_000_000);
         vm.startPrank(occ);
         w.approve(address(s), type(uint256).max);
@@ -391,7 +456,11 @@ contract AuditRegressionsTest is Test {
 
     function test_QueuedTermsCannotBindTheNextBlocksBuyer() public {
         Slot s = _slot(address(token), 0);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            uint16(1)
+        );
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);
@@ -405,8 +474,6 @@ contract AuditRegressionsTest is Test {
         assertTrue(s.hasRipeTerms(), "and it does apply once it has");
     }
 
-
-
     // ── 6. the offer book must survive a hostile posting ───────────────────
 
     function test_AnOverflowingOfferCannotBrickTheBoard() public {
@@ -418,12 +485,7 @@ contract AuditRegressionsTest is Test {
 
         OfferBook book = new OfferBook();
         vm.prank(address(0xBAD));
-        book.offer(
-            address(s),
-            type(uint256).max,
-            1,
-            uint64(block.timestamp + 3650 days)
-        );
+        book.offer(address(s), type(uint256).max, 1, uint64(block.timestamp + 3650 days));
 
         // All read paths must still answer.
         book.best(address(s));
@@ -436,13 +498,23 @@ contract AuditRegressionsTest is Test {
     ///         credited — a credit on top would pay twice, out of escrow.
     function test_APayingTokenWithAnOddAnswerIsNotCreditedTwice() public {
         MovingWeirdTok w = new MovingWeirdTok();
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(w)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(w)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
         w.mint(occ, 1_000_000);
         vm.startPrank(occ);
         w.approve(address(s), type(uint256).max);
@@ -454,5 +526,4 @@ contract AuditRegressionsTest is Test {
         assertEq(s.withdrawableOf(recipient), 0, "paid, so not credited");
         assertGt(w.balanceOf(recipient), 0, "and the recipient holds it");
     }
-
 }

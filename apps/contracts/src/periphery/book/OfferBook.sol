@@ -6,7 +6,21 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
 import {Versioned} from "../../utils/Versioned.sol";
-import "./OfferBookErrors.sol";
+import {
+    NotBidder,
+    AlreadyCancelled,
+    BadExpiry,
+    ZeroPrice,
+    NoSuchOffer,
+    NotOccupant,
+    NotOperator,
+    OfferNotLive,
+    NativeSlotNotSupported,
+    TopUpRequired,
+    FillFailed,
+    PriceBelowMinimum,
+    QuoteAboveOffer
+} from "./OfferBookErrors.sol";
 
 /// @title OfferBook — standing bids, and the fill that settles them
 ///
@@ -68,7 +82,6 @@ import "./OfferBookErrors.sol";
 contract OfferBook is OfferBookInternals {
     using SafeERC20 for IERC20;
 
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
@@ -98,7 +111,8 @@ contract OfferBook is OfferBookInternals {
             o.filled = false;
         } else {
             id = _offers[slot].length;
-            _offers[slot].push(
+            _offers[slot]
+            .push(
                 Offer({
                     bidder: msg.sender,
                     price: price,
@@ -151,8 +165,9 @@ contract OfferBook is OfferBookInternals {
 
         address seller = ISellableSlot(slot).occupant();
         if (msg.sender != seller) revert NotOccupant();
-        if (!ISellableSlot(slot).isOperator(address(this)))
+        if (!ISellableSlot(slot).isOperator(address(this))) {
             revert NotOperator();
+        }
         if (!_live(slot, o, seller)) revert OfferNotLive();
 
         address currency = ISellableSlot(slot).currency();
@@ -222,11 +237,10 @@ contract OfferBook is OfferBookInternals {
     /// @dev The client needs this to say "replace your 70" rather than "make an
     ///      offer" — otherwise replacement looks like a bug the first time it
     ///      happens.
-    function offerOf(address slot, address bidder)
-        external
-        view
-        returns (bool has, uint256 id, Offer memory o)
-    {
+    function offerOf(
+        address slot,
+        address bidder
+    ) external view returns (bool has, uint256 id, Offer memory o) {
         uint256 stored = _offerIdOf[slot][bidder];
         if (stored == 0) return (false, 0, o);
         id = stored - 1;
@@ -248,7 +262,6 @@ contract OfferBook is OfferBookInternals {
         emit Cancelled(slot, msg.sender, id);
     }
 
-
     // ═══════════════════════════════════════════════════════════
     // READS
     // ═══════════════════════════════════════════════════════════
@@ -263,11 +276,7 @@ contract OfferBook is OfferBookInternals {
     ///
     ///      Returns `found == false` rather than reverting on an empty board —
     ///      no offers is an ordinary state, not an error.
-    function best(address slot)
-        public
-        view
-        returns (bool found, uint256 id, Offer memory o)
-    {
+    function best(address slot) public view returns (bool found, uint256 id, Offer memory o) {
         return bestIn(slot, 0, type(uint256).max);
     }
 
@@ -279,11 +288,11 @@ contract OfferBook is OfferBookInternals {
     ///      reads past any `eth_call` budget, permanently, on a contract with no
     ///      admin to prune it. Every whole-board read therefore has a bounded
     ///      twin, and a client that pages never meets the limit.
-    function bestIn(address slot, uint256 start, uint256 count)
-        public
-        view
-        returns (bool found, uint256 id, Offer memory o)
-    {
+    function bestIn(
+        address slot,
+        uint256 start,
+        uint256 count
+    ) public view returns (bool found, uint256 id, Offer memory o) {
         Offer[] storage list = _offers[slot];
         (uint256 from, uint256 to) = _window(list.length, start, count);
         address occupant = ISellableSlot(slot).occupant();
@@ -342,11 +351,11 @@ contract OfferBook is OfferBookInternals {
     }
 
     /// @notice `liveCount`, over the entries `[start, start + count)` only.
-    function liveCountIn(address slot, uint256 start, uint256 count)
-        public
-        view
-        returns (uint256 n)
-    {
+    function liveCountIn(
+        address slot,
+        uint256 start,
+        uint256 count
+    ) public view returns (uint256 n) {
         Offer[] storage list = _offers[slot];
         (uint256 from, uint256 to) = _window(list.length, start, count);
         address occupant = ISellableSlot(slot).occupant();
@@ -373,21 +382,17 @@ contract OfferBook is OfferBookInternals {
     ///      live one, because being filled sets no flag — the bidder simply
     ///      became the occupant. One predicate, one answer, used by `best` and
     ///      by the board alike.
-    function board(address slot)
-        external
-        view
-        returns (Offer[] memory list, bool[] memory live)
-    {
+    function board(address slot) external view returns (Offer[] memory list, bool[] memory live) {
         return boardPage(slot, 0, type(uint256).max);
     }
 
     /// @notice `board`, over the entries `[start, start + count)` only. Entry
     ///         `i` of the result is offer id `start + i`.
-    function boardPage(address slot, uint256 start, uint256 count)
-        public
-        view
-        returns (Offer[] memory list, bool[] memory live)
-    {
+    function boardPage(
+        address slot,
+        uint256 start,
+        uint256 count
+    ) public view returns (Offer[] memory list, bool[] memory live) {
         Offer[] storage stored = _offers[slot];
         (uint256 from, uint256 to) = _window(stored.length, start, count);
         list = new Offer[](to - from);
@@ -401,11 +406,11 @@ contract OfferBook is OfferBookInternals {
 
     /// @dev `[start, start + count)` clipped to `[0, length)`, without the
     ///      addition overflowing on the "everything" count.
-    function _window(uint256 length, uint256 start, uint256 count)
-        private
-        pure
-        returns (uint256 from, uint256 to)
-    {
+    function _window(
+        uint256 length,
+        uint256 start,
+        uint256 count
+    ) private pure returns (uint256 from, uint256 to) {
         if (start >= length) return (length, length);
         from = start;
         to = count > length - start ? length : start + count;

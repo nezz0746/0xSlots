@@ -59,21 +59,9 @@ contract DeployProtocol is ProtocolConfig {
         vm.startBroadcast();
 
         // ── implementations ───────────────────────────────────────────────
-        address slotImpl = _deploy2(
-            "Slot",
-            v.slot,
-            type(Slot).creationCode
-        );
-        address factoryImpl = _deploy2(
-            "SlotFactoryImpl",
-            v.factory,
-            type(SlotFactory).creationCode
-        );
-        address bookImpl = _deploy2(
-            "OfferBook",
-            v.book,
-            type(OfferBook).creationCode
-        );
+        address slotImpl = _deploy2("Slot", v.slot, type(Slot).creationCode);
+        address factoryImpl = _deploy2("SlotFactoryImpl", v.factory, type(SlotFactory).creationCode);
+        address bookImpl = _deploy2("OfferBook", v.book, type(OfferBook).creationCode);
         // The collectives sit on 0xSplits, which is an external dependency
         // and therefore per-chain configuration rather than something this
         // script knows. On a local chain there is none, so one is deployed.
@@ -88,10 +76,7 @@ contract DeployProtocol is ProtocolConfig {
             warehouse = _deploy2Raw(
                 "SplitsWarehouse",
                 saltFor("SplitsWarehouse", 1),
-                abi.encodePacked(
-                    type(SplitsWarehouse).creationCode,
-                    abi.encode("Ether", "ETH")
-                )
+                abi.encodePacked(type(SplitsWarehouse).creationCode, abi.encode("Ether", "ETH"))
             );
         }
 
@@ -106,10 +91,7 @@ contract DeployProtocol is ProtocolConfig {
         address collectiveImpl = _deploy2Raw(
             "SlotCollective",
             saltFor("SlotCollective", v.collective),
-            abi.encodePacked(
-                type(SlotCollective).creationCode,
-                abi.encode(warehouse)
-            )
+            abi.encodePacked(type(SlotCollective).creationCode, abi.encode(warehouse))
         );
         address collectiveFactoryImpl = _deploy2(
             "SlotCollectiveFactoryImpl",
@@ -117,17 +99,12 @@ contract DeployProtocol is ProtocolConfig {
             type(SlotCollectiveFactory).creationCode
         );
         address nftFactoryImpl = _deploy2(
-            "SlotBoundNFTFactoryImpl",
-            v.nftFactory,
-            type(SlotBoundNFTFactory).creationCode
+            "SlotBoundNFTFactoryImpl", v.nftFactory, type(SlotBoundNFTFactory).creationCode
         );
         // A BEACON implementation, so it is named plainly like `Slot` and
         // `SlotCollective` rather than suffixed `Impl` like the proxies above.
-        address wrapperImpl = _deploy2(
-            "SlotBoundNFTWrapper",
-            v.wrapper,
-            type(SlotBoundNFTWrapper).creationCode
-        );
+        address wrapperImpl =
+            _deploy2("SlotBoundNFTWrapper", v.wrapper, type(SlotBoundNFTWrapper).creationCode);
 
         // ── proxies ───────────────────────────────────────────────────────
         address factory = _proxy(
@@ -144,10 +121,7 @@ contract DeployProtocol is ProtocolConfig {
         address collectiveFactory = _proxy(
             "SlotCollectiveFactory",
             collectiveFactoryImpl,
-            abi.encodeCall(
-                SlotCollectiveFactory.initialize,
-                (cfg.admin, collectiveImpl)
-            )
+            abi.encodeCall(SlotCollectiveFactory.initialize, (cfg.admin, collectiveImpl))
         );
 
         // Deployed AFTER the slot factory, which it takes as an initializer
@@ -162,8 +136,7 @@ contract DeployProtocol is ProtocolConfig {
             "SlotBoundNFTFactory",
             nftFactoryImpl,
             abi.encodeCall(
-                SlotBoundNFTFactory.initialize,
-                (cfg.admin, SlotFactory(factory), wrapperImpl)
+                SlotBoundNFTFactory.initialize, (cfg.admin, SlotFactory(factory), wrapperImpl)
             )
         );
 
@@ -188,16 +161,9 @@ contract DeployProtocol is ProtocolConfig {
         );
 
         // ── modules ─────────────────────────────────────────────────────────
-        address adLandImpl = _deploy2(
-            "AdLandImpl",
-            v.adLand,
-            type(AdLand).creationCode
-        );
-        address adLand = _proxy(
-            "AdLand",
-            adLandImpl,
-            abi.encodeCall(AdLand.initialize, (cfg.admin))
-        );
+        address adLandImpl = _deploy2("AdLandImpl", v.adLand, type(AdLand).creationCode);
+        address adLand =
+            _proxy("AdLand", adLandImpl, abi.encodeCall(AdLand.initialize, (cfg.admin)));
 
         // Deployed here, once per chain, rather than per configuration. The
         // window a slot enforces is its own `settings`, so one contract serves
@@ -208,9 +174,7 @@ contract DeployProtocol is ProtocolConfig {
         // history, and a module the whole protocol can be pointed at is a poor
         // thing to make upgradeable by a single key.
         address tenureModule = _deploy2(
-            "MinimumTenureModule",
-            TENURE_MODULE_VERSION,
-            type(MinimumTenureModule).creationCode
+            "MinimumTenureModule", TENURE_MODULE_VERSION, type(MinimumTenureModule).creationCode
         );
 
         vm.stopBroadcast();
@@ -226,16 +190,8 @@ contract DeployProtocol is ProtocolConfig {
         );
         record("AdLand", adLand, AdLand(adLand).version());
         record("MinimumTenureModule", tenureModule, TENURE_MODULE_VERSION);
-        record(
-            "SlotBoundNFTFactory",
-            nftFactory,
-            SlotBoundNFTFactory(nftFactory).version()
-        );
-        record(
-            "SlotBoundNFTWrapper",
-            wrapperImpl,
-            SlotBoundNFTWrapper(wrapperImpl).version()
-        );
+        record("SlotBoundNFTFactory", nftFactory, SlotBoundNFTFactory(nftFactory).version());
+        record("SlotBoundNFTWrapper", wrapperImpl, SlotBoundNFTWrapper(wrapperImpl).version());
 
         console2.log("");
         console2.log("SlotFactory          ", factory);
@@ -332,11 +288,7 @@ contract DeployProtocol is ProtocolConfig {
      * going through the public surface means this cannot drift from what the
      * contracts actually do.
      */
-    function _beacon(
-        string memory name,
-        address factory_,
-        address impl
-    ) internal {
+    function _beacon(string memory name, address factory_, address impl) internal {
         _beacon(name, factory_, impl, "beacon()", "upgradeBeacon(address)");
     }
 
@@ -351,9 +303,8 @@ contract DeployProtocol is ProtocolConfig {
         string memory getter,
         string memory upgradeFn
     ) internal {
-        (bool ok, bytes memory data) = factory_.staticcall(
-            abi.encodeWithSignature("implementation()")
-        );
+        (bool ok, bytes memory data) =
+            factory_.staticcall(abi.encodeWithSignature("implementation()"));
         if (!ok || data.length < 32) {
             (ok, data) = factory_.staticcall(abi.encodeWithSignature(getter));
             require(ok && data.length >= 32, "no beacon on factory");
@@ -367,7 +318,7 @@ contract DeployProtocol is ProtocolConfig {
             console2.log("current  ", name, impl);
             return;
         }
-        (ok, ) = factory_.call(abi.encodeWithSignature(upgradeFn, impl));
+        (ok,) = factory_.call(abi.encodeWithSignature(upgradeFn, impl));
         require(ok, "upgradeBeacon failed");
         console2.log("beacon   ", name, impl);
     }
@@ -399,9 +350,7 @@ contract DeployProtocol is ProtocolConfig {
         address rec = deployed(name);
 
         if (rec != address(0) && rec.code.length != 0) {
-            address current = address(
-                uint160(uint256(vm.load(rec, _IMPL_SLOT)))
-            );
+            address current = address(uint160(uint256(vm.load(rec, _IMPL_SLOT))));
             if (current == impl) {
                 console2.log("current  ", name, rec);
                 return rec;
@@ -423,10 +372,8 @@ contract DeployProtocol is ProtocolConfig {
             revert("record names an address with no code");
         }
 
-        bytes memory code = abi.encodePacked(
-            type(ERC1967Proxy).creationCode,
-            abi.encode(impl, initData)
-        );
+        bytes memory code =
+            abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
         return _deploy2Raw(name, saltFor(name, 0), code);
     }
 
@@ -446,5 +393,4 @@ contract DeployProtocol is ProtocolConfig {
         require(at != address(0), "create2 failed");
         console2.log("deployed ", name, at);
     }
-
 }

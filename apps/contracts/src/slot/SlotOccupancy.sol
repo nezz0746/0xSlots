@@ -2,7 +2,15 @@
 pragma solidity ^0.8.24;
 
 import {ISlotModule} from "../interfaces/ISlotModule.sol";
-import "../errors/SlotErrors.sol";
+import {
+    InvalidPrice,
+    InvalidRecipient,
+    InvalidValue,
+    Vacant,
+    NotInsolvent,
+    CannotBuyFromYourself,
+    PaymentAboveMax
+} from "../errors/SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
@@ -18,6 +26,7 @@ import {Pending} from "../types/SlotTypes.sol";
  */
 abstract contract SlotOccupancy is SlotViews {
     using TermsLib for Pending;
+
     // ─── occupancy ──────────────────────────────────────────────────────────
 
     /**
@@ -45,8 +54,9 @@ abstract contract SlotOccupancy is SlotViews {
         uint256 depositAmount,
         uint256 maxPayment
     ) internal {
-        if (selfAssessedPrice == 0 || selfAssessedPrice > MAX_PRICE)
+        if (selfAssessedPrice == 0 || selfAssessedPrice > MAX_PRICE) {
             revert InvalidPrice();
+        }
         if (account == address(0)) revert InvalidRecipient();
 
         _settle();
@@ -96,23 +106,12 @@ abstract contract SlotOccupancy is SlotViews {
         // window with one day's notice by queueing a detach. Only when somebody
         // is being displaced; a vacant slot has nobody to protect.
         Pending storage q = _pending();
-        if (
-            prev != address(0) &&
-            q.mask & TermsLib.MODULE != 0 &&
-            q.isRipe(TERMS_DELAY)
-        ) {
+        if (prev != address(0) && q.mask & TermsLib.MODULE != 0 && q.isRipe(TERMS_DELAY)) {
             _before(
                 F_BEFORE_BUY,
                 abi.encodeCall(
                     ISlotModule.beforeBuy,
-                    (
-                        _ctx(
-                            msg.sender,
-                            account,
-                            selfAssessedPrice,
-                            depositAmount
-                        )
-                    )
+                    (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
                 )
             );
         }
@@ -127,8 +126,7 @@ abstract contract SlotOccupancy is SlotViews {
         _before(
             F_BEFORE_BUY,
             abi.encodeCall(
-                ISlotModule.beforeBuy,
-                (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
+                ISlotModule.beforeBuy, (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
             )
         );
 
@@ -145,13 +143,7 @@ abstract contract SlotOccupancy is SlotViews {
 
         if (prev != address(0)) _payOrCredit(prev, refund);
 
-        emit Bought(
-            account,
-            prev,
-            selfAssessedPrice,
-            depositAmount,
-            owedToPrev
-        );
+        emit Bought(account, prev, selfAssessedPrice, depositAmount, owedToPrev);
 
         // A module that landed above meets the seat it inherited before it hears
         // about the buy that filled it.
@@ -160,8 +152,7 @@ abstract contract SlotOccupancy is SlotViews {
         _after(
             F_AFTER_BUY,
             abi.encodeCall(
-                ISlotModule.afterBuy,
-                (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
+                ISlotModule.afterBuy, (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
             )
         );
     }
@@ -182,10 +173,7 @@ abstract contract SlotOccupancy is SlotViews {
         emit Released(prev, refund);
         _after(
             F_AFTER_RELEASE,
-            abi.encodeCall(
-                ISlotModule.afterRelease,
-                (_ctx(msg.sender, prev, 0, 0))
-            )
+            abi.encodeCall(ISlotModule.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 
@@ -214,10 +202,7 @@ abstract contract SlotOccupancy is SlotViews {
         emit Liquidated(msg.sender, prev);
         _after(
             F_AFTER_LIQUIDATE,
-            abi.encodeCall(
-                ISlotModule.afterLiquidate,
-                (_ctx(msg.sender, prev, 0, 0))
-            )
+            abi.encodeCall(ISlotModule.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
         );
     }
 }

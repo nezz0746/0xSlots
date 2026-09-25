@@ -156,15 +156,17 @@ abstract contract AdLandModeration is AdLandStorage {
 
     /// @dev The mode a buyer would be seated under: a queued module change is
     ///      about to land, so it is the one to show before buying.
-    function _queuedModeOf(address slot, ModerationMode live)
-        internal
-        view
-        virtual
-        returns (ModerationMode);
+    function _queuedModeOf(
+        address slot,
+        ModerationMode live
+    ) internal view virtual returns (ModerationMode);
 
     /// @dev The live submission, matching `uriHash`, or a revert that says which
     ///      of those failed.
-    function _waiting(address slot, bytes32 uriHash) internal view returns (Creative memory waiting) {
+    function _waiting(
+        address slot,
+        bytes32 uriHash
+    ) internal view returns (Creative memory waiting) {
         waiting = _pendingCreative[slot];
         if (
             bytes(waiting.uri).length == 0 || ISlotAd(slot).occupant() == address(0)

@@ -15,7 +15,10 @@ import "../../src/periphery/book/OfferBookErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /**
@@ -39,20 +42,34 @@ contract OfferBookSlotsTest is Test {
     uint256 constant PRICE = 100e18;
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new Tok();
         book = new OfferBook();
 
-        slot = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        slot = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
 
         address[3] memory who = [alice, bob, carol];
         for (uint256 i; i < 3; ++i) {
@@ -110,7 +127,7 @@ contract OfferBookSlotsTest is Test {
         token.approve(address(book), 0);
 
         assertFalse(book.isFundable(address(slot), rich));
-        (bool found, , OfferBook.Offer memory o) = book.best(address(slot));
+        (bool found,, OfferBook.Offer memory o) = book.best(address(slot));
         assertTrue(found);
         assertEq(o.bidder, bob, "falls back to the funded bid");
     }
@@ -132,8 +149,7 @@ contract OfferBookSlotsTest is Test {
         uint256 best_ = _post(carol, 90e18);
         _approveBook();
 
-        (bool found, uint256 id, OfferBook.Offer memory o) =
-            book.best(address(slot));
+        (bool found, uint256 id, OfferBook.Offer memory o) = book.best(address(slot));
         assertTrue(found);
         assertEq(o.bidder, carol, "the higher funded bid wins");
         assertEq(id, best_);
@@ -187,7 +203,11 @@ contract OfferBookSlotsTest is Test {
         t.rateBps = 10_000;
         slot.proposeTerms(t, ModuleTerms({target: address(0), settings: ""}), 1);
         vm.warp(block.timestamp + 1 days + 1);
-        assertGt(slot.minDepositForBuy(90e18), slot.deposit(), "under the queued rate alice would be short");
+        assertGt(
+            slot.minDepositForBuy(90e18),
+            slot.deposit(),
+            "under the queued rate alice would be short"
+        );
 
         uint256 id = _post(bob, 90e18);
         _approveBook();
@@ -266,8 +286,7 @@ contract OfferBookSlotsTest is Test {
 
         assertEq(slot.occupant(), bob);
         assertFalse(
-            slot.isOperator(address(book)),
-            "the book's authority ended with alice's tenure"
+            slot.isOperator(address(book)), "the book's authority ended with alice's tenure"
         );
 
         uint256 next = _post(carol, 120e18);
@@ -301,9 +320,7 @@ contract OfferBookSlotsTest is Test {
         assertGt(floor_, held, "the floor really is above what she holds");
 
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(TopUpRequired.selector, floor_ - held)
-        );
+        vm.expectRevert(abi.encodeWithSelector(TopUpRequired.selector, floor_ - held));
         book.acceptOffer(address(slot), id, 0);
 
         // Topping up clears it, and the top-up comes back in the sale proceeds.
@@ -317,13 +334,23 @@ contract OfferBookSlotsTest is Test {
     /// @notice Native slots are out of scope: the occupant sends the
     ///         transaction, so there is no way to reach the bidder's ETH.
     function test_ANativeSlotCannotBeFilled() public {
-        Slot native_ = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot native_ = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
         vm.deal(alice, 100 ether);
         uint256 dep = native_.minDepositForBuy(1 ether);
         vm.prank(alice);
@@ -350,7 +377,7 @@ contract OfferBookSlotsTest is Test {
         vm.prank(bob);
         uint256 id = book.offer(address(slot), 500e18, 0, expiry);
         assertFalse(book.isLive(address(slot), id), "a zero deposit cannot be seated");
-        (bool found, , ) = book.best(address(slot));
+        (bool found,,) = book.best(address(slot));
         assertFalse(found, "so it cannot top the book either");
     }
 
@@ -359,21 +386,20 @@ contract OfferBookSlotsTest is Test {
         _post(bob, 70e18);
         _post(carol, 90e18);
 
-        (OfferBookStorage.Offer[] memory first, ) = book.boardPage(address(slot), 0, 1);
-        (OfferBookStorage.Offer[] memory rest, ) = book.boardPage(address(slot), 1, 10);
+        (OfferBookStorage.Offer[] memory first,) = book.boardPage(address(slot), 0, 1);
+        (OfferBookStorage.Offer[] memory rest,) = book.boardPage(address(slot), 1, 10);
         assertEq(first.length, 1);
         assertEq(rest.length, 1);
         assertEq(first[0].bidder, bob);
         assertEq(rest[0].bidder, carol);
 
-        (bool found, uint256 id, ) = book.bestIn(address(slot), 1, 1);
+        (bool found, uint256 id,) = book.bestIn(address(slot), 1, 1);
         assertTrue(found);
         assertEq(id, 1);
 
-        (OfferBookStorage.Offer[] memory none, ) = book.boardPage(address(slot), 5, 10);
+        (OfferBookStorage.Offer[] memory none,) = book.boardPage(address(slot), 5, 10);
         assertEq(none.length, 0, "past the end is empty, not a revert");
         assertEq(book.liveCountIn(address(slot), 0, 1), 1);
         assertEq(book.liveCount(address(slot)), 2);
     }
-
 }

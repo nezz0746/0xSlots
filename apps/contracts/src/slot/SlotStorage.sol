@@ -8,7 +8,7 @@ import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {SlotConstants} from "./SlotConstants.sol";
 import {ISlotEvents} from "../interfaces/ISlotEvents.sol";
 import {TaxTerms, InstalledModule, Pending} from "../types/SlotTypes.sol";
-import "../errors/SlotErrors.sol";
+import {NotManager, NotOccupant, NotOccupantOrOperator} from "../errors/SlotErrors.sol";
 
 /// @notice How the slot is governed. Fixed at birth except `manager`.
 struct Settings {
@@ -120,13 +120,21 @@ abstract contract SlotStorage is
     }
 
     modifier onlyManager() {
-        if (msg.sender != _settings().manager) revert NotManager();
+        _checkManager();
         _;
     }
 
     modifier onlyOccupant() {
-        if (msg.sender != _occupancy().occupant) revert NotOccupant();
+        _checkOccupant();
         _;
+    }
+
+    function _checkManager() internal view {
+        if (msg.sender != _settings().manager) revert NotManager();
+    }
+
+    function _checkOccupant() internal view {
+        if (msg.sender != _occupancy().occupant) revert NotOccupant();
     }
 
     /// @notice Whether `operator` may act for the CURRENT occupant.
@@ -136,9 +144,13 @@ abstract contract SlotStorage is
     }
 
     modifier onlyOccupantOrOperator() {
+        _checkOccupantOrOperator();
+        _;
+    }
+
+    function _checkOccupantOrOperator() internal view {
         if (msg.sender != _occupancy().occupant && !isOperator(msg.sender)) {
             revert NotOccupantOrOperator();
         }
-        _;
     }
 }

@@ -59,11 +59,8 @@ contract ReenteringManager {
 
     receive() external payable {
         if (address(slot) == address(0)) return;
-        TaxTerms memory t = TaxTerms({
-            recipient: address(this),
-            rateBps: 10_000,
-            minRunwaySeconds: 0
-        });
+        TaxTerms memory t =
+            TaxTerms({recipient: address(this), rateBps: 10_000, minRunwaySeconds: 0});
         ModuleTerms memory none;
         // Lands terms inside somebody else's buy if the guard is missing.
         try slot.proposeTerms(t, none, 1) {
@@ -87,10 +84,7 @@ contract AuditFixesTest is Test {
             address(
                 new ERC1967Proxy(
                     address(new SlotFactory()),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (address(this), address(new Slot()))
-                    )
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
                 )
             )
         );
@@ -105,26 +99,21 @@ contract AuditFixesTest is Test {
         bool mutableRecipient,
         ModuleTerms memory module
     ) internal returns (Slot) {
-        return
-            Slot(
-                payable(
-                    factory.createSlot(
-                        SlotInit({
-                            currency: IERC20(address(0)),
-                            manager: manager_,
-                            mutableTax: true,
-                            mutableRecipient: mutableRecipient,
-                            mutableModule: true,
-                            taxTerms: TaxTerms({
-                                recipient: recipient_,
-                                rateBps: rateBps,
-                                minRunwaySeconds: minRunway
-                            }),
-                            moduleTerms: module
-                        })
-                    )
-                )
-            );
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager_,
+                        mutableTax: true,
+                        mutableRecipient: mutableRecipient,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient_, rateBps: rateBps, minRunwaySeconds: minRunway
+                        }),
+                        moduleTerms: module
+                    })
+                ))
+        );
     }
 
     function _noModule() internal pure returns (ModuleTerms memory) {
@@ -206,12 +195,7 @@ contract AuditFixesTest is Test {
     function test_AFeeRiseCannotBeAcceptedOnAFixedRecipientSlot() public {
         FlipModule m = new FlipModule();
         Slot s = _slot(
-            manager,
-            recipient,
-            500,
-            0,
-            false,
-            ModuleTerms({target: address(m), settings: ""})
+            manager, recipient, 500, 0, false, ModuleTerms({target: address(m), settings: ""})
         );
 
         m.set(2_000, author);
@@ -259,20 +243,12 @@ contract AuditFixesTest is Test {
         vm.prank(alice);
         s.selfAssess(1 ether);
 
-        assertEq(
-            s.taxOwed(),
-            0,
-            "and the month is not re-billed at the new price"
-        );
+        assertEq(s.taxOwed(), 0, "and the month is not re-billed at the new price");
 
         // From here the new price is charged, as it should be.
         skip(30 days);
         assertGt(s.taxOwed(), 0, "the new price accrues from now on");
-        assertLt(
-            s.taxOwed(),
-            1 ether,
-            "one month's worth, not two"
-        );
+        assertLt(s.taxOwed(), 1 ether, "one month's worth, not two");
     }
 }
 
@@ -364,9 +340,7 @@ contract OfferBookCeilingTest is Test {
         vm.stopPrank();
 
         vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(QuoteAboveOffer.selector, 500_000e6, 105e6)
-        );
+        vm.expectRevert(abi.encodeWithSelector(QuoteAboveOffer.selector, 500_000e6, 105e6));
         book.acceptOffer(address(fake), id, 0);
 
         assertEq(token.balanceOf(bidder), 1_000_000e6, "the bidder keeps their funds");

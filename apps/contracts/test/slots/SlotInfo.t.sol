@@ -16,7 +16,10 @@ import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /// @notice The bundled read must never disagree with the individual ones —
@@ -28,18 +31,35 @@ contract SlotInfoTest is Test {
     address occ = address(0xA11CE);
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new Tok();
-        slot = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(new MinimumTenureModule()), settings: abi.encode(uint256(7 days))})
-        }))));
+        slot = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({
+                            target: address(new MinimumTenureModule()),
+                            settings: abi.encode(uint256(7 days))
+                        })
+                    })
+                ))
+        );
         token.mint(occ, 1e24);
     }
 
@@ -102,12 +122,16 @@ contract SlotInfoTest is Test {
         slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
 
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
-        _assertAgrees();                     // queued, not ripe
+        slot.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            uint16(1)
+        );
+        _assertAgrees(); // queued, not ripe
         assertFalse(slot.getSlotInfo().hasRipeTerms);
 
         vm.warp(block.timestamp + 1 days + 1);
-        _assertAgrees();                     // ripe
+        _assertAgrees(); // ripe
         assertTrue(slot.getSlotInfo().hasRipeTerms);
     }
 
@@ -142,11 +166,17 @@ contract SlotInfoTest is Test {
         SlotConstantsInfo memory c = slot.getSlotConstants();
         vm.startPrank(occ);
         token.approve(address(slot), type(uint256).max);
-        vm.expectRevert();                       // price above MAX_PRICE
+        vm.expectRevert(); // price above MAX_PRICE
         slot.buy(occ, c.maxPrice + 1, 1, 0);
         vm.stopPrank();
 
-        vm.expectRevert();                       // tax above MAX_TAX_BPS
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
+        vm.expectRevert(); // tax above MAX_TAX_BPS
+        slot.proposeTerms(
+            TaxTerms({
+                recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0
+            }),
+            ModuleTerms({target: address(0), settings: ""}),
+            uint16(1)
+        );
     }
 }

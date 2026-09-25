@@ -38,22 +38,14 @@ contract AdLandEventsTest is Test {
             address(
                 new ERC1967Proxy(
                     address(factoryImpl),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (address(this), address(slotImpl))
-                    )
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)))
                 )
             )
         );
 
         AdLand impl = new AdLand();
         adland = AdLand(
-            address(
-                new ERC1967Proxy(
-                    address(impl),
-                    abi.encodeCall(AdLand.initialize, (owner))
-                )
-            )
+            address(new ERC1967Proxy(address(impl), abi.encodeCall(AdLand.initialize, (owner))))
         );
 
         vm.deal(alice, 100 ether);
@@ -62,20 +54,23 @@ contract AdLandEventsTest is Test {
     }
 
     function _slot() internal returns (Slot s) {
-        return
-            Slot(
-                payable(
-                    factory.createSlot(
-                        SlotInit({
-                            currency: IERC20(address(0)),
-                            manager: address(this),
-                            mutableTax: true, mutableRecipient: true, mutableModule: true,
-                            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(1 days)}),
-                            moduleTerms: ModuleTerms({target: address(adland), settings: ""})
-                        })
-                    )
-                )
-            );
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(adland), settings: ""})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, address who, uint256 price) internal {
@@ -119,15 +114,9 @@ contract AdLandEventsTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool sawCleared;
         for (uint256 i; i < logs.length; i++) {
-            if (
-                logs[i].emitter == address(adland) &&
-                logs[i].topics[0] == Cleared.selector
-            ) {
+            if (logs[i].emitter == address(adland) && logs[i].topics[0] == Cleared.selector) {
                 sawCleared = true;
-                (uint64 f, uint64 t) = abi.decode(
-                    logs[i].data,
-                    (uint64, uint64)
-                );
+                (uint64 f, uint64 t) = abi.decode(logs[i].data, (uint64, uint64));
                 assertEq(f, from, "the tenure that lost its creative");
                 assertEq(t, s.tenureId(), "and the one that replaced it");
             }
@@ -152,10 +141,9 @@ contract AdLandEventsTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 published;
         for (uint256 i; i < logs.length; i++) {
-            if (
-                logs[i].emitter == address(adland) &&
-                logs[i].topics[0] == Published.selector
-            ) published++;
+            if (logs[i].emitter == address(adland) && logs[i].topics[0] == Published.selector) {
+                published++;
+            }
         }
         assertEq(published, 2, "one event per publish, not per tenure");
         assertEq(adland.creativeOf(address(s)), "data:text/plain,two");

@@ -7,8 +7,11 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFTFactory, CollectionInit, WrapperInit}
-    from "../../src/modules/nft/SlotBoundNFTFactory.sol";
+import {
+    SlotBoundNFTFactory,
+    CollectionInit,
+    WrapperInit
+} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
 import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
 
 contract SlotBoundNFTWrapperFactoryTest is Test {
@@ -20,12 +23,27 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
     function setUp() public {
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        slots = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
+        slots = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
 
         SlotBoundNFTFactory fImpl = new SlotBoundNFTFactory();
-        nftFactory = SlotBoundNFTFactory(address(new ERC1967Proxy(address(fImpl),
-            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots, address(new SlotBoundNFTWrapper()))))));
+        nftFactory = SlotBoundNFTFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fImpl),
+                    abi.encodeCall(
+                        SlotBoundNFTFactory.initialize,
+                        (admin, slots, address(new SlotBoundNFTWrapper()))
+                    )
+                )
+            )
+        );
     }
 
     function test_TheVersionAnnouncesTheNewCode() public view {
@@ -35,12 +53,16 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
     function test_AWrapperImplementationIsRequired() public {
         SlotBoundNFTFactory fImpl = new SlotBoundNFTFactory();
         vm.expectRevert();
-        new ERC1967Proxy(address(fImpl),
-            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots, address(0))));
+        new ERC1967Proxy(
+            address(fImpl),
+            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots, address(0)))
+        );
     }
 
     function test_TheFactoryDeploysAWorkingWrapper() public {
-        address w = nftFactory.createWrapper(WrapperInit({name: "Wrapped", symbol: "WRP", owner: admin, wrapFeeWei: 0}));
+        address w = nftFactory.createWrapper(
+            WrapperInit({name: "Wrapped", symbol: "WRP", owner: admin, wrapFeeWei: 0})
+        );
 
         assertTrue(nftFactory.isWrapper(w));
         assertEq(nftFactory.wrapperCount(), 1);
@@ -52,9 +74,9 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
 
     /// @notice The fee settings reaches the wrapper through the factory.
     function test_TheFactorySetsTheWrapperOwnerAndFee() public {
-        address w = nftFactory.createWrapper(WrapperInit({
-            name: "Paid", symbol: "PAID", owner: admin, wrapFeeWei: 0.02 ether
-        }));
+        address w = nftFactory.createWrapper(
+            WrapperInit({name: "Paid", symbol: "PAID", owner: admin, wrapFeeWei: 0.02 ether})
+        );
 
         assertEq(SlotBoundNFTWrapper(w).owner(), admin);
         assertEq(SlotBoundNFTWrapper(w).wrapFeeWei(), 0.02 ether);
@@ -64,14 +86,18 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
     ///         wrapper refuses the combination at construction.
     function test_AFeeWithNoOwnerIsRefused() public {
         vm.expectRevert();
-        nftFactory.createWrapper(WrapperInit({
-            name: "Bad", symbol: "BAD", owner: address(0), wrapFeeWei: 1 ether
-        }));
+        nftFactory.createWrapper(
+            WrapperInit({name: "Bad", symbol: "BAD", owner: address(0), wrapFeeWei: 1 ether})
+        );
     }
 
     function test_TwoWrappersGetTwoAddresses() public {
-        address a = nftFactory.createWrapper(WrapperInit({name: "A", symbol: "A", owner: admin, wrapFeeWei: 0}));
-        address b = nftFactory.createWrapper(WrapperInit({name: "B", symbol: "B", owner: admin, wrapFeeWei: 0}));
+        address a = nftFactory.createWrapper(
+            WrapperInit({name: "A", symbol: "A", owner: admin, wrapFeeWei: 0})
+        );
+        address b = nftFactory.createWrapper(
+            WrapperInit({name: "B", symbol: "B", owner: admin, wrapFeeWei: 0})
+        );
         assertTrue(a != b);
     }
 
@@ -89,11 +115,19 @@ contract SlotBoundNFTWrapperFactoryTest is Test {
 
     /// @notice Collections are untouched: still a plain `new`, still immutable.
     function test_CollectionsStillWork() public {
-        address c = nftFactory.createCollection(CollectionInit({
-            name: "Coll", symbol: "C", maxSupply: 3,
-            currency: IERC20(address(0)), taxRateBps: 1000, minRunwaySeconds: 7 days,
-            recipient: makeAddr("r"), manager: address(0), owner: makeAddr("o")
-        }));
+        address c = nftFactory.createCollection(
+            CollectionInit({
+                name: "Coll",
+                symbol: "C",
+                maxSupply: 3,
+                currency: IERC20(address(0)),
+                taxRateBps: 1000,
+                minRunwaySeconds: 7 days,
+                recipient: makeAddr("r"),
+                manager: address(0),
+                owner: makeAddr("o")
+            })
+        );
         assertTrue(nftFactory.isCollection(c));
         assertFalse(nftFactory.isWrapper(c), "the two registries are separate");
     }

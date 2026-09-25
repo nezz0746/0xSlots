@@ -57,3 +57,18 @@ optimism = { key = "${API_KEY_OPSCAN}" }
 
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Formatting: `forge fmt`, and VS Code runs the same on save
+# (.vscode/settings.json sets "solidity.formatter": "forge").
+[fmt]
+line_length = 100
+tab_width = 4
+multiline_func_header = "params_first_multi"
+quote_style = "double"
+number_underscore = "preserve"
+
+# Linting: `forge lint`. `src/` is kept clean; a finding that is safe on
+# purpose carries a `forge-lint: disable-next-line(...)` with the reason.
+# Tests and scripts cast literals and use cheatcodes by design.
+[lint]
+ignore = ["test/**/*.sol", "script/**/*.sol"]

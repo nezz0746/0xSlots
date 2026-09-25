@@ -23,26 +23,48 @@ contract GovernanceBatchTest is Test {
     function setUp() public {
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize,(address(this),address(impl))))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
 
         SplitsWarehouse warehouse = new SplitsWarehouse("Ether", "ETH");
         SlotCollective c = new SlotCollective(address(warehouse));
         SlotCollective.InitialRoles memory roles;
         roles.admin = address(this);
-        gov = SlotCollective(payable(address(new ERC1967Proxy(address(c),
-            abi.encodeCall(
-                SlotCollective.initializeCollective, (_split(), roles)
-            )))));
+        gov = SlotCollective(
+            payable(address(
+                    new ERC1967Proxy(
+                        address(c),
+                        abi.encodeCall(SlotCollective.initializeCollective, (_split(), roles))
+                    )
+                ))
+        );
 
         for (uint256 i; i < 3; ++i) {
-            slots.push(IManagedSlot(factory.createSlot(SlotInit({
-                currency: IERC20(address(0)),
-                manager: address(gov),
-                mutableTax: true, mutableRecipient: true, mutableModule: true,
-                taxTerms: TaxTerms({recipient: address(gov), rateBps: uint16(1000), minRunwaySeconds: uint32(1 days)}),
-                moduleTerms: ModuleTerms({target: address(0), settings: ""})
-            }))));
+            slots.push(
+                IManagedSlot(
+                    factory.createSlot(
+                        SlotInit({
+                            currency: IERC20(address(0)),
+                            manager: address(gov),
+                            mutableTax: true,
+                            mutableRecipient: true,
+                            mutableModule: true,
+                            taxTerms: TaxTerms({
+                                recipient: address(gov),
+                                rateBps: uint16(1000),
+                                minRunwaySeconds: uint32(1 days)
+                            }),
+                            moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        })
+                    )
+                )
+            );
         }
         vm.warp(1_000_000);
     }
@@ -53,10 +75,7 @@ contract GovernanceBatchTest is Test {
         uint256[] memory alloc = new uint256[](1);
         alloc[0] = 100;
         sp = SplitV2Lib.Split({
-            recipients: to,
-            allocations: alloc,
-            totalAllocation: 100,
-            distributionIncentive: 0
+            recipients: to, allocations: alloc, totalAllocation: 100, distributionIncentive: 0
         });
     }
 
@@ -76,13 +95,23 @@ contract GovernanceBatchTest is Test {
     function test_ATaxBatchIsAllOrNothing() public {
         IManagedSlot[] memory withStranger = new IManagedSlot[](2);
         withStranger[0] = slots[0];
-        withStranger[1] = IManagedSlot(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: false,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(1000), minRunwaySeconds: uint32(1 days)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        })));
+        withStranger[1] = IManagedSlot(
+            factory.createSlot(
+                SlotInit({
+                    currency: IERC20(address(0)),
+                    manager: address(this),
+                    mutableTax: true,
+                    mutableRecipient: true,
+                    mutableModule: false,
+                    taxTerms: TaxTerms({
+                        recipient: address(this),
+                        rateBps: uint16(1000),
+                        minRunwaySeconds: uint32(1 days)
+                    }),
+                    moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                })
+            )
+        );
 
         vm.expectRevert();
         gov.proposeTaxBatch(withStranger, 2000);

@@ -10,11 +10,20 @@ import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
 
 contract GuardTest is Test {
     SlotFactory factory;
+
     function setUp() public {
-        Slot impl = new Slot(); SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize,(address(this),address(impl))))));
+        Slot impl = new Slot();
+        SlotFactory fi = new SlotFactory();
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
     }
+
     /// @notice A collection with no funded window is refused at DEPLOY.
     /// @dev `minRunwaySeconds == 0` means a mint escrows nothing, and
     ///      `liquidate` refuses only while the deposit is non-zero — so every
@@ -22,8 +31,16 @@ contract GuardTest is Test {
     function test_AZeroWindowIsRefusedAtDeploy() public {
         vm.expectRevert(ISlotBoundNFT.TermsCannotBeMinted.selector);
         new SlotBoundNFT(
-            factory, "X", "X", 1, IERC20(address(0)),
-            1000, 0, address(this), address(this), address(this)
+            factory,
+            "X",
+            "X",
+            1,
+            IERC20(address(0)),
+            1000,
+            0,
+            address(this),
+            address(this),
+            address(this)
         );
     }
 }

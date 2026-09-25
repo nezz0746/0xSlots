@@ -104,17 +104,9 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration {
         // What matters is whether the allowance is THERE, which the transfer
         // below decides; a permit that failed for any other reason fails again
         // there, with the token's own error rather than a signature one.
-        try
-            IERC20Permit(currency).permit(
-                msg.sender,
-                address(this),
-                permitValue,
-                deadline,
-                v,
-                r,
-                s
-            )
-        {} catch {}
+        try IERC20Permit(currency)
+            .permit(msg.sender, address(this), permitValue, deadline, v, r, s) {}
+            catch {}
 
         _buy(slot, selfAssessedPrice, depositAmount, maxPayment);
         _publish(slot, uri);
@@ -163,12 +155,8 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration {
             // itself — after settling, after the module has run — and reverts
             // loudly when the value is wrong. Recomputing it here would be a
             // second copy of that arithmetic, free to drift from the first.
-            ISlotAd(slot).buy{value: msg.value}(
-                msg.sender,
-                selfAssessedPrice,
-                depositAmount,
-                maxPayment
-            );
+            ISlotAd(slot)
+            .buy{value: msg.value}(msg.sender, selfAssessedPrice, depositAmount, maxPayment);
             return;
         }
 
@@ -190,12 +178,7 @@ abstract contract AdLandCreatives is AdLandStorage, AdLandModeration {
             IERC20(currency).forceApprove(slot, owed);
         }
 
-        ISlotAd(slot).buy(
-            msg.sender,
-            selfAssessedPrice,
-            depositAmount,
-            maxPayment
-        );
+        ISlotAd(slot).buy(msg.sender, selfAssessedPrice, depositAmount, maxPayment);
 
         if (owed > 0) {
             // Leave no allowance standing between calls.

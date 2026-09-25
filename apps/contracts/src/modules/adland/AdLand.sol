@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
+import {
+    MulticallUpgradeable
+} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import {Versioned} from "../../utils/Versioned.sol";
-import {AdLandCreatives} from "./AdLandCreatives.sol";
 import {AdLandLens} from "./AdLandLens.sol";
 import {AdLandRegistry} from "./AdLandRegistry.sol";
 
@@ -24,11 +25,7 @@ import {AdLandRegistry} from "./AdLandRegistry.sol";
  *      Everything here is what is left once the three concerns are elsewhere:
  *      construction, identity, and who may replace the code.
  */
-contract AdLand is
-    AdLandLens,
-    AdLandRegistry,
-    MulticallUpgradeable
-{
+contract AdLand is AdLandLens, AdLandRegistry, MulticallUpgradeable {
     function initialize(address initialOwner) external initializer {
         __Ownable_init(initialOwner);
     }

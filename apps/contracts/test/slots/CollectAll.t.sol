@@ -18,7 +18,10 @@ import "../../src/errors/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /**
@@ -29,6 +32,7 @@ contract Tok is ERC20 {
  */
 contract StrictBreaker is AskModule {
     function checkSettings(bytes calldata) external pure {}
+
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterSettle = true;
@@ -40,13 +44,14 @@ contract StrictBreaker is AskModule {
     function afterBuy(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
-    function afterSettle(SlotContext calldata) external pure { revert("nope"); }
+
+    function afterSettle(SlotContext calldata) external pure {
+        revert("nope");
+    }
 
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external pure {}
-
-
 }
 
 /**
@@ -68,27 +73,41 @@ contract CollectAllTest is Test {
     address recipientA = makeAddr("recipientA");
     address recipientB = makeAddr("recipientB");
 
-    uint256 constant TAX_RATE = 1000;      // 10% / 30 days
+    uint256 constant TAX_RATE = 1000; // 10% / 30 days
     uint256 constant MIN_DEP = 1 days;
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new Tok();
         token.mint(alice, 1_000_000 ether);
         vm.warp(1_000_000);
     }
 
     function _slot(address recipient_, address module) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: recipient_, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(MIN_DEP)}),
-            moduleTerms: ModuleTerms({target: module, settings: ""})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient_,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(MIN_DEP)
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, uint256 price) internal {

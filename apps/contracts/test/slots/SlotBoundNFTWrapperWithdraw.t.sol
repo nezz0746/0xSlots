@@ -16,7 +16,10 @@ import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
 
 contract MockNFT is ERC721 {
     constructor() ERC721("Mock", "MOCK") {}
-    function mint(address to, uint256 id) external { _mint(to, id); }
+
+    function mint(address to, uint256 id) external {
+        _mint(to, id);
+    }
 }
 
 /// @dev Re-enters `withdraw` from inside the underlying's own transfer.
@@ -26,8 +29,15 @@ contract ReentrantNFT is ERC721 {
     bool public tried;
 
     constructor() ERC721("Re", "RE") {}
-    function mint(address to, uint256 id) external { _mint(to, id); }
-    function arm(SlotBoundNFTWrapper t, uint256 id) external { target = t; reenterOn = id; }
+
+    function mint(address to, uint256 id) external {
+        _mint(to, id);
+    }
+
+    function arm(SlotBoundNFTWrapper t, uint256 id) external {
+        target = t;
+        reenterOn = id;
+    }
 
     function transferFrom(address from, address to, uint256 id) public override {
         super.transferFrom(from, to, id);
@@ -52,17 +62,33 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     function setUp() public {
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
 
         SlotBoundNFTWrapper wImpl = new SlotBoundNFTWrapper();
         UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
-        wrapper = SlotBoundNFTWrapper(address(new BeaconProxy(address(beacon),
-            abi.encodeCall(SlotBoundNFTWrapper.initialize,
-                ("Wrapped Slots", "WSLOT", factory, address(0), uint256(0))))));
+        wrapper = SlotBoundNFTWrapper(
+            address(
+                new BeaconProxy(
+                    address(beacon),
+                    abi.encodeCall(
+                        SlotBoundNFTWrapper.initialize,
+                        ("Wrapped Slots", "WSLOT", factory, address(0), uint256(0))
+                    )
+                )
+            )
+        );
 
         nft = new MockNFT();
-        for (uint256 i = 1; i <= 5; ++i) nft.mint(alice, i);
+        for (uint256 i = 1; i <= 5; ++i) {
+            nft.mint(alice, i);
+        }
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
         vm.warp(1_000_000);
@@ -70,16 +96,16 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
 
     /// @dev This wrapper is feeless, so total and deposit are the same number.
     function _dep(uint256 v) internal view returns (uint256 deposit) {
-        (, deposit, ) = wrapper.quoteWrap(v, TAX_RATE);
+        (, deposit,) = wrapper.quoteWrap(v, TAX_RATE);
     }
 
     function _wrap(uint256 id, Mode mode) internal returns (uint256 tokenId, Slot slot) {
         vm.startPrank(alice);
         nft.approve(address(wrapper), id);
         address s;
-        (tokenId, s) = wrapper.wrap{value: _dep(VALUATION)}(
-            IERC721(address(nft)), id, TAX_RATE, VALUATION, mode, type(uint256).max
-        );
+        (tokenId, s) = wrapper.wrap{
+            value: _dep(VALUATION)
+        }(IERC721(address(nft)), id, TAX_RATE, VALUATION, mode, type(uint256).max);
         vm.stopPrank();
         slot = Slot(payable(s));
     }
@@ -118,7 +144,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     /// @notice Closes the snipe race: release-then-withdraw in two transactions
     ///         lets anyone take the vacant slot in between.
     function test_TheDepositorMayWithdrawWhileTheyThemselvesOccupy() public {
-        (uint256 id, ) = _wrap(1, Mode.Reclaimable);
+        (uint256 id,) = _wrap(1, Mode.Reclaimable);
 
         vm.prank(alice);
         wrapper.withdraw(id);
@@ -165,7 +191,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     }
 
     function test_WithdrawingTwiceIsRefused() public {
-        (uint256 id, ) = _wrap(1, Mode.Reclaimable);
+        (uint256 id,) = _wrap(1, Mode.Reclaimable);
         vm.prank(alice);
         wrapper.withdraw(id);
 
@@ -224,7 +250,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     }
 
     function test_ARetiredTokenIsBurned() public {
-        (uint256 id, ) = _wrap(1, Mode.Reclaimable);
+        (uint256 id,) = _wrap(1, Mode.Reclaimable);
         vm.prank(alice);
         wrapper.withdraw(id);
 
@@ -233,7 +259,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     }
 
     function test_ARetiredTokenHasNoMetadata() public {
-        (uint256 id, ) = _wrap(1, Mode.Reclaimable);
+        (uint256 id,) = _wrap(1, Mode.Reclaimable);
         vm.prank(alice);
         wrapper.withdraw(id);
 
@@ -244,7 +270,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     // ── the underlying lookup ───────────────────────────────────────────────
 
     function test_WithdrawingClearsTheLookup() public {
-        (uint256 id, ) = _wrap(1, Mode.Reclaimable);
+        (uint256 id,) = _wrap(1, Mode.Reclaimable);
         assertEq(wrapper.tokenIdOf(IERC721(address(nft)), 1), id);
 
         vm.prank(alice);
@@ -313,9 +339,9 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     function test_AnOverfundedWrapLeavesNothingBehind() public {
         vm.startPrank(alice);
         nft.approve(address(wrapper), 1);
-        (, address s) = wrapper.wrap{value: _dep(VALUATION) * 3}(
-            IERC721(address(nft)), 1, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max
-        );
+        (, address s) = wrapper.wrap{
+            value: _dep(VALUATION) * 3
+        }(IERC721(address(nft)), 1, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
         vm.stopPrank();
 
         assertEq(Slot(payable(s)).deposit(), _dep(VALUATION) * 3, "all of it is runway");
@@ -327,7 +353,7 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
     function test_APlainTransferToTheWrapperReverts() public {
         vm.deal(bob, 1 ether);
         vm.prank(bob);
-        (bool ok, ) = address(wrapper).call{value: 1 ether}("");
+        (bool ok,) = address(wrapper).call{value: 1 ether}("");
         assertFalse(ok, "no receive, no fallback");
         assertEq(address(wrapper).balance, 0);
     }
@@ -340,9 +366,9 @@ contract SlotBoundNFTWrapperWithdrawTest is Test {
 
         vm.startPrank(alice);
         bad.approve(address(wrapper), 1);
-        (uint256 id, ) = wrapper.wrap{value: _dep(VALUATION)}(
-            IERC721(address(bad)), 1, TAX_RATE, VALUATION, Mode.Reclaimable, type(uint256).max
-        );
+        (uint256 id,) = wrapper.wrap{
+            value: _dep(VALUATION)
+        }(IERC721(address(bad)), 1, TAX_RATE, VALUATION, Mode.Reclaimable, type(uint256).max);
         vm.stopPrank();
 
         bad.arm(wrapper, id);

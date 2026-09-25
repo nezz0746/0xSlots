@@ -41,7 +41,6 @@ contract Spy is AskModule {
         afterCalls++;
     }
 
-
     function afterRelease(SlotContext calldata c) external {
         lastAfter = c.moduleTerms.settings;
         afterCalls++;
@@ -57,8 +56,6 @@ contract Spy is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Reports what the DECISION side was handed. `before` is a staticcall
@@ -96,22 +93,36 @@ contract ModuleDataTest is Test {
     address alice = makeAddr("alice");
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         spy = new Spy();
         vm.deal(alice, 100 ether);
     }
 
     function _slot(address module, bytes memory data) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 hours)}),
-            moduleTerms: ModuleTerms({target: module, settings: data})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 hours)
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: data})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, address who) internal {
@@ -140,9 +151,7 @@ contract ModuleDataTest is Test {
         uint256 pay = s.quoteBuy(alice, need);
 
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(Loud.SawConfiguration.selector, CONFIG)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Loud.SawConfiguration.selector, CONFIG));
         s.buy{value: pay}(alice, 1 ether, need, type(uint256).max);
     }
 
@@ -169,14 +178,22 @@ contract ModuleDataTest is Test {
     function test_ConfigurationWithoutAModuleIsRefusedAtProposal() public {
         Slot s = _slot(address(0), "");
         vm.expectRevert(InvalidModule.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: CONFIG}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: CONFIG}),
+            uint16(8)
+        );
     }
 
     /// @notice Detaching takes the configuration with it. Left behind, it would
     ///         become live again the day a module is attached without its own.
     function test_DetachingTheModuleClearsTheConfiguration() public {
         Slot s = _slot(address(spy), CONFIG);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            uint16(8)
+        );
         vm.warp(block.timestamp + 1 days + 1);
 
         _take(s, alice); // a transition, which is where terms land
@@ -200,9 +217,17 @@ contract ModuleDataTest is Test {
         Picky picky = new Picky();
 
         vm.expectRevert(Picky.WrongConfiguration.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(picky), settings: CONFIG}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(picky), settings: CONFIG}),
+            uint16(8)
+        );
 
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(picky), settings: picky.ONLY()}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(picky), settings: picky.ONLY()}),
+            uint16(8)
+        );
         Pending memory __p1 = s.pending();
         TaxTerms memory __r1 = __p1.taxTerms;
         ModuleTerms memory __h1 = ModuleTerms(__p1.module.target, __p1.module.settings);
@@ -215,7 +240,11 @@ contract ModuleDataTest is Test {
     /// @notice Cancelling clears the queued configuration along with the module.
     function test_CancellingClearsTheQueuedConfiguration() public {
         Slot s = _slot(address(0), "");
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(spy), settings: CONFIG}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(spy), settings: CONFIG}),
+            uint16(8)
+        );
         s.cancelTerms(uint16(8));
 
         Pending memory __p2 = s.pending();
@@ -247,7 +276,11 @@ contract ModuleDataTest is Test {
         _take(s, alice);
 
         Spy successor = new Spy();
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(successor), settings: OTHER}), uint16(8));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(successor), settings: OTHER}),
+            uint16(8)
+        );
         vm.warp(block.timestamp + 1 days + 1);
 
         vm.prank(alice);

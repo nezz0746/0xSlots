@@ -18,10 +18,7 @@ import {SlotsTest} from "./Slots.t.sol";
  */
 contract SettlementClockTest is SlotsTest {
     /// @dev A native slot whose per-second tax is deliberately fractional.
-    function _fractional(
-        uint256 taxRateBps,
-        uint256 window
-    ) internal returns (Slot s) {
+    function _fractional(uint256 taxRateBps, uint256 window) internal returns (Slot s) {
         SlotInit memory init = _init(address(0), 0);
         init.currency = IERC20(address(0));
         init.taxTerms.rateBps = uint16(taxRateBps);
@@ -51,7 +48,9 @@ contract SettlementClockTest is SlotsTest {
         vm.startPrank(bob);
         s.topUp(0);
         uint256 afterFirst = s.deposit();
-        for (uint256 i; i < 99; ++i) s.topUp(0);
+        for (uint256 i; i < 99; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         assertEq(block.timestamp, start + 1, "no time passed");
@@ -78,7 +77,9 @@ contract SettlementClockTest is SlotsTest {
         assertGt(oneSecond, 0, "a second is worth something here");
 
         vm.startPrank(bob);
-        for (uint256 i; i < 500; ++i) s.topUp(0);
+        for (uint256 i; i < 500; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         // Exactly one second, however many times it was asked for. A tolerance
@@ -107,7 +108,9 @@ contract SettlementClockTest is SlotsTest {
         assertEq(s.taxOwed(), 0, "a second is worth nothing here");
 
         vm.startPrank(bob);
-        for (uint256 i; i < 50; ++i) s.topUp(0);
+        for (uint256 i; i < 50; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         assertEq(s.deposit(), dep, "nothing taken");

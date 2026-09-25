@@ -35,7 +35,9 @@ library TermsLib {
         ModuleTerms calldata module,
         uint16 mask
     ) internal {
-        if (mask & TAX_RATE != 0) p.taxTerms.rateBps = taxTerms.rateBps;
+        if (mask & TAX_RATE != 0) {
+            p.taxTerms.rateBps = taxTerms.rateBps;
+        }
         if (mask & RECIPIENT != 0) p.taxTerms.recipient = taxTerms.recipient;
         if (mask & MIN_RUNWAY != 0) p.taxTerms.minRunwaySeconds = taxTerms.minRunwaySeconds;
         if (mask & MODULE != 0) {

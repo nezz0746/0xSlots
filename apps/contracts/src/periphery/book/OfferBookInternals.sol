@@ -20,11 +20,7 @@ import {OfferBookStorage} from "./OfferBookStorage.sol";
  *      that can disagree with the terms beside it.
  */
 abstract contract OfferBookInternals is OfferBookStorage {
-    function _live(address slot, Offer storage o, address occupant)
-        internal
-        view
-        returns (bool)
-    {
+    function _live(address slot, Offer storage o, address occupant) internal view returns (bool) {
         if (o.cancelled || o.filled) return false;
         if (o.expiry <= block.timestamp) return false;
         // Unusable: `buy` refuses `CannotBuyFromYourself`. Offered as an exit
@@ -42,11 +38,7 @@ abstract contract OfferBookInternals is OfferBookStorage {
      *      the bidder. A bidder who approved the slot instead reads as unfunded
      *      here, which is the correct answer: the fill would revert.
      */
-    function _fundable(address slot, Offer storage o)
-        internal
-        view
-        returns (bool)
-    {
+    function _fundable(address slot, Offer storage o) internal view returns (bool) {
         address currency = ISellableSlot(slot).currency();
         // Native slots cannot be filled: the occupant sends the transaction, so
         // there is no way to reach the bidder's ETH.
@@ -69,13 +61,16 @@ abstract contract OfferBookInternals is OfferBookStorage {
 
         uint256 debt = ISellableSlot(slot).debtOf(o.bidder);
         uint256 owed;
-        unchecked { owed = o.price + o.deposit; }
+        unchecked {
+            owed = o.price + o.deposit;
+        }
         if (owed < o.price) return false;
-        unchecked { owed += debt; }
+        unchecked {
+            owed += debt;
+        }
         if (owed < debt) return false;
 
-        return
-            IERC20(currency).balanceOf(o.bidder) >= owed &&
-            IERC20(currency).allowance(o.bidder, address(this)) >= owed;
+        return IERC20(currency).balanceOf(o.bidder) >= owed
+            && IERC20(currency).allowance(o.bidder, address(this)) >= owed;
     }
 }

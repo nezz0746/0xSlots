@@ -22,10 +22,7 @@ interface ISellableSlot {
 
     /// @dev What `buy` will charge `account` for `depositAmount` of escrow:
     ///      the sitting price, the escrow, and any debt that account owes.
-    function quoteBuy(address account, uint256 depositAmount)
-        external
-        view
-        returns (uint256);
+    function quoteBuy(address account, uint256 depositAmount) external view returns (uint256);
 
     /// @dev The escrow floor at `price_` under the terms in force. `selfAssess`
     ///      enforces it, so raising a price can require a top-up first.

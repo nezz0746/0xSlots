@@ -25,12 +25,7 @@ import {AdConfig, ISlotAd, ModerationMode} from "./IAdLand.sol";
  *      tenure cannot attach both — which is why the rule is inherited here from
  *      {MinimumTenure} rather than standing behind a second contract.
  */
-abstract contract AdLandModule is
-    AdLandCreatives,
-    MinimumTenure,
-    ISlotModule,
-    IDescribedModule
-{
+abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, IDescribedModule {
     using ModuleSchemaLib for ModuleSchemaLib.Field;
 
     function scopes(bytes calldata settings) external pure returns (uint16) {
@@ -101,12 +96,10 @@ abstract contract AdLandModule is
     }
 
     /// @inheritdoc AdLandModeration
-    function _queuedModeOf(address slot, ModerationMode live)
-        internal
-        view
-        override
-        returns (ModerationMode)
-    {
+    function _queuedModeOf(
+        address slot,
+        ModerationMode live
+    ) internal view override returns (ModerationMode) {
         try ISlotAd(slot).pending() returns (Pending memory p) {
             if (p.mask & TermsLib.MODULE == 0) return live;
             if (p.module.target != address(this)) return ModerationMode.Open;
@@ -120,7 +113,6 @@ abstract contract AdLandModule is
     function _windowOf(bytes memory settings) internal pure override returns (uint256) {
         return adConfigOf(settings).tenureWindow;
     }
-
 
     /// @notice Refuse a buy that lands inside a protected window, when this
     ///         slot configured one.
@@ -182,31 +174,27 @@ abstract contract AdLandModule is
      *      configured with is `Slot.moduleTerms().settings`.
      */
     function definition() external pure returns (string memory) {
-        return
-            ModuleSchemaLib.describe(
-                "AdLand",
-                "An advertising space: the occupant publishes a creative, the manager may screen it, and a minimum tenure can protect them while it runs.",
-                "https://adland.xyz",
-                ModuleSchemaLib.list(
-                    // Optional HERE, where the rule is one of several things a
-                    // slot configures, so zero is a legitimate "no window"
-                    // rather than the unconfigured word {tenureOf} refuses.
-                    tenureField("tenureWindow", "uint64").from(0),
-                    ModuleSchemaLib
-                        .choice(
-                            "moderation",
-                            "uint8",
-                            "Moderation",
-                            ModuleSchemaLib.labels("Open", "First per tenure", "Every")
-                        )
-                        .explain("Which creatives wait for the manager to approve them."),
-                    ModuleSchemaLib
-                        .value("key", "bytes32", "Key")
-                        .explain("A registry name this slot asks for. Claimed first come, with claimKey.")
-                        .means("adland-key")
-                ),
-                true // a slot may configure none of them
-            );
+        return ModuleSchemaLib.describe(
+            "AdLand",
+            "An advertising space: the occupant publishes a creative, the manager may screen it, and a minimum tenure can protect them while it runs.",
+            "https://adland.xyz",
+            ModuleSchemaLib.list(
+                // Optional HERE, where the rule is one of several things a
+                // slot configures, so zero is a legitimate "no window"
+                // rather than the unconfigured word {tenureOf} refuses.
+                tenureField("tenureWindow", "uint64").from(0),
+                ModuleSchemaLib.choice(
+                        "moderation",
+                        "uint8",
+                        "Moderation",
+                        ModuleSchemaLib.labels("Open", "First per tenure", "Every")
+                    ).explain("Which creatives wait for the manager to approve them."),
+                ModuleSchemaLib.value("key", "bytes32", "Key")
+                    .explain(
+                        "A registry name this slot asks for. Claimed first come, with claimKey."
+                    ).means("adland-key")
+            ),
+            true // a slot may configure none of them
+        );
     }
-
 }

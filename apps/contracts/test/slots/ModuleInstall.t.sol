@@ -36,9 +36,7 @@ contract InstallSpy is AskModule {
     }
 
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
-        uint16 p = ScopesLib.ON_INSTALL |
-            ScopesLib.ON_UNINSTALL |
-            ScopesLib.AFTER_SETTLE;
+        uint16 p = ScopesLib.ON_INSTALL | ScopesLib.ON_UNINSTALL | ScopesLib.AFTER_SETTLE;
         o.scopes = strictMode ? p | ScopesLib.STRICT : p;
     }
 
@@ -69,7 +67,6 @@ contract InstallSpy is AskModule {
         lastPrice = ctx.currentPrice;
         lastDeposit = ctx.depositAmount;
     }
-
 }
 
 /// @dev Asks for nothing but a harmless callback: never told about attachment.
@@ -112,22 +109,34 @@ contract ModuleInstallTest is Test {
     event ModuleCallFailed(address indexed module, bytes4 selector);
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
     }
 
     function _slot(address module) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: module, settings: ""})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                    })
+                ))
+        );
     }
 
     function _buy(Slot s, address who) internal {
@@ -250,13 +259,21 @@ contract ModuleInstallTest is Test {
         InstallSpy going = new InstallSpy(false);
         bytes memory mine = abi.encode(uint256(7));
 
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(going), settings: mine})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: address(going), settings: mine})
+                    })
+                ))
+        );
         assertEq(going.removals(), 0, "not while it is still attached");
 
         InstallSpy coming = new InstallSpy(false);
@@ -269,9 +286,7 @@ contract ModuleInstallTest is Test {
 
         assertEq(going.removals(), 1, "told exactly once");
         assertEq(
-            going.lastRemovedConfig(),
-            mine,
-            "and handed its OWN configuration, not its successor's"
+            going.lastRemovedConfig(), mine, "and handed its OWN configuration, not its successor's"
         );
         assertEq(coming.attachments(), 1, "while the incoming module is installed");
         assertEq(s.module(), address(coming));
@@ -285,13 +300,21 @@ contract ModuleInstallTest is Test {
     function test_AStrictModuleCannotRefuseItsOwnRemoval() public {
         InstallSpy stubborn = new InstallSpy(true);
 
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(stubborn), settings: ""})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient, rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: address(stubborn), settings: ""})
+                    })
+                ))
+        );
 
         stubborn.setRefuse(true);
 
@@ -341,5 +364,4 @@ contract ModuleInstallTest is Test {
         s.applyTerms();
         assertEq(spy.removals(), 1, "and it is told when it is removed");
     }
-
 }

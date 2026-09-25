@@ -42,10 +42,11 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint16 mask)
-        external
-        onlyManager
-    {
+    function proposeTerms(
+        TaxTerms calldata taxTerms,
+        ModuleTerms calldata module,
+        uint16 mask
+    ) external onlyManager {
         if (mask == 0) revert NoPendingTerms();
         if (mask & 1 != 0) {
             taxPct = taxTerms.rateBps;
@@ -157,8 +158,7 @@ contract SlotStreamCollectiveTest is Test {
     }
 
     function _deploy(uint128 aliceUnits, uint128 bobUnits) internal {
-        SlotStreamCollective impl =
-            new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
+        SlotStreamCollective impl = new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
 
         address[] memory members = new address[](2);
         members[0] = alice;
@@ -173,8 +173,7 @@ contract SlotStreamCollectiveTest is Test {
         address[] memory poolManagers = new address[](1);
         poolManagers[0] = poolMgr;
 
-        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective
-            .InitialRoles({
+        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective.InitialRoles({
             admin: admin,
             taxManagers: taxManagers,
             policyManagers: new address[](0),
@@ -182,17 +181,14 @@ contract SlotStreamCollectiveTest is Test {
         });
 
         collective = SlotStreamCollective(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(impl),
                         abi.encodeCall(
-                            SlotStreamCollective.initializeStreamCollective,
-                            (members, units, roles)
+                            SlotStreamCollective.initializeStreamCollective, (members, units, roles)
                         )
                     )
-                )
-            )
+                ))
         );
 
         slot = new MockSlot(address(collective));
@@ -248,9 +244,7 @@ contract SlotStreamCollectiveTest is Test {
 
         // 60:40. Exact, because instant distribution divides once by total units.
         assertEq(
-            uint256(aliceClaim) * 40,
-            uint256(bobClaim) * 60,
-            "payout must follow the unit ratio"
+            uint256(aliceClaim) * 40, uint256(bobClaim) * 60, "payout must follow the unit ratio"
         );
 
         // And it is really theirs — claim moves it to the wallet.
@@ -344,9 +338,7 @@ contract SlotStreamCollectiveTest is Test {
         collective.pool().claimAll(alice);
 
         assertEq(
-            ISuperToken(ETHX).balanceOf(alice),
-            afterClose,
-            "a closed stream must not keep paying"
+            ISuperToken(ETHX).balanceOf(alice), afterClose, "a closed stream must not keep paying"
         );
     }
 
@@ -366,9 +358,7 @@ contract SlotStreamCollectiveTest is Test {
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector,
-                stranger,
-                role
+                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, role
             )
         );
         collective.setMemberUnits(stranger, 1000);
@@ -417,11 +407,15 @@ contract SlotStreamCollectiveTest is Test {
         // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""}));
+        collective.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""})
+        );
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""}));
+        collective.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xBEEF), settings: ""})
+        );
         assertEq(slot.moduleAddr(), address(0xBEEF));
 
         // Retracting one dimension leaves the other standing, on this engine
@@ -435,16 +429,14 @@ contract SlotStreamCollectiveTest is Test {
     function test_Fork_RejectsEmptyPool() public {
         if (!_fork()) return;
 
-        SlotStreamCollective impl =
-            new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
+        SlotStreamCollective impl = new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
 
         address[] memory members = new address[](1);
         members[0] = alice;
         uint128[] memory units = new uint128[](1);
         units[0] = 0; // totals zero — a recipient that could never pay anyone
 
-        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective
-            .InitialRoles({
+        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective.InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
             policyManagers: new address[](0),
@@ -454,26 +446,21 @@ contract SlotStreamCollectiveTest is Test {
         vm.expectRevert(SlotStreamCollective.EmptyPool.selector);
         new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(
-                SlotStreamCollective.initializeStreamCollective,
-                (members, units, roles)
-            )
+            abi.encodeCall(SlotStreamCollective.initializeStreamCollective, (members, units, roles))
         );
     }
 
     function test_Fork_RejectsZeroAdmin() public {
         if (!_fork()) return;
 
-        SlotStreamCollective impl =
-            new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
+        SlotStreamCollective impl = new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
 
         address[] memory members = new address[](1);
         members[0] = alice;
         uint128[] memory units = new uint128[](1);
         units[0] = 100;
 
-        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective
-            .InitialRoles({
+        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective.InitialRoles({
             admin: address(0),
             taxManagers: new address[](0),
             policyManagers: new address[](0),
@@ -483,10 +470,7 @@ contract SlotStreamCollectiveTest is Test {
         vm.expectRevert(SlotGovernance.AdminRequired.selector);
         new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(
-                SlotStreamCollective.initializeStreamCollective,
-                (members, units, roles)
-            )
+            abi.encodeCall(SlotStreamCollective.initializeStreamCollective, (members, units, roles))
         );
     }
 }

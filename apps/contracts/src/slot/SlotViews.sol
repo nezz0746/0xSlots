@@ -2,11 +2,17 @@
 pragma solidity ^0.8.24;
 
 import {SlotMath} from "../libraries/SlotMath.sol";
-import "../errors/SlotErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Scopes} from "../interfaces/ISlotModule.sol";
 import {SlotAccounting} from "./SlotAccounting.sol";
-import {TaxTerms, ModuleTerms, ModuleFee, Terms, Pending, InstalledModule} from "../types/SlotTypes.sol";
+import {
+    TaxTerms,
+    ModuleTerms,
+    ModuleFee,
+    Terms,
+    Pending,
+    InstalledModule
+} from "../types/SlotTypes.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
 import {Settings, Occupancy} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
@@ -106,11 +112,7 @@ abstract contract SlotViews is SlotAccounting {
     }
 
     /// @notice Every protocol constant, in one call.
-    function getSlotConstants()
-        external
-        pure
-        returns (SlotConstantsInfo memory c)
-    {
+    function getSlotConstants() external pure returns (SlotConstantsInfo memory c) {
         c.maxPrice = MAX_PRICE;
         c.maxTaxBps = MAX_TAX_BPS;
         c.basisPoints = BASIS_POINTS;
@@ -147,7 +149,7 @@ abstract contract SlotViews is SlotAccounting {
 
     /// @notice Every term in force.
     function terms() public view returns (Terms memory) {
-        return Terms(_taxTerms(), _module().terms());
+        return Terms({taxTerms: _taxTerms(), moduleTerms: _module().terms()});
     }
 
     function taxTerms() external view returns (TaxTerms memory) {
@@ -269,7 +271,9 @@ abstract contract SlotViews is SlotAccounting {
         Pending storage q = _pending();
         if (q.isRipe(TERMS_DELAY)) {
             if (q.mask & TermsLib.TAX_RATE != 0) r.rateBps = q.taxTerms.rateBps;
-            if (q.mask & TermsLib.MIN_RUNWAY != 0) r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;
+            if (q.mask & TermsLib.MIN_RUNWAY != 0) {
+                r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;
+            }
         }
         return SlotMath.depositFor(price_, r.rateBps, r.minRunwaySeconds);
     }
@@ -281,15 +285,8 @@ abstract contract SlotViews is SlotAccounting {
      *      any debt; a taker of a vacant slot pays only the deposit. For a
      *      native slot this is exactly the `msg.value` to send.
      */
-    function quoteBuy(address account, uint256 depositAmount)
-        public
-        view
-        returns (uint256)
-    {
+    function quoteBuy(address account, uint256 depositAmount) public view returns (uint256) {
         Occupancy storage o = _occupancy();
-        return
-            (o.occupant == address(0) ? 0 : o.price) +
-            depositAmount +
-            _ledger().debtOf[account];
+        return (o.occupant == address(0) ? 0 : o.price) + depositAmount + _ledger().debtOf[account];
     }
 }

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC721Upgradeable} from
-    "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
+import {
+    ERC721Upgradeable
+} from "@openzeppelin-upgradeable/contracts/token/ERC721/ERC721Upgradeable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC721Metadata} from
-    "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
+import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -96,10 +96,14 @@ contract SlotBoundNFTWrapper is
     }
 
     modifier onlyOwner() {
+        _checkOwner();
+        _;
+    }
+
+    function _checkOwner() internal view {
         // A zero owner is nobody, so this closes rather than opening: a
         // feeless wrapper stays feeless even to `address(0)` callers.
         if (msg.sender != owner || owner == address(0)) revert NotOwner();
-        _;
     }
 
     /// @inheritdoc Versioned
@@ -196,9 +200,7 @@ contract SlotBoundNFTWrapper is
                 // A detachable module strands the token.
                 mutableModule: false,
                 taxTerms: TaxTerms({
-                    recipient: msg.sender,
-                    rateBps: taxRateBps,
-                    minRunwaySeconds: MIN_RUNWAY_SECONDS
+                    recipient: msg.sender, rateBps: taxRateBps, minRunwaySeconds: MIN_RUNWAY_SECONDS
                 }),
                 moduleTerms: ModuleTerms({target: address(this), settings: ""})
             })
@@ -223,22 +225,10 @@ contract SlotBoundNFTWrapper is
 
         _mint(address(this), tokenId);
         emit Wrapped(
-            tokenId,
-            slot,
-            msg.sender,
-            address(underlying),
-            underlyingId,
-            mode,
-            taxRateBps,
-            wrapFee
+            tokenId, slot, msg.sender, address(underlying), underlyingId, mode, taxRateBps, wrapFee
         );
 
-        ISlotOccupancy(slot).buy{value: deposit}(
-            msg.sender,
-            valuation,
-            deposit,
-            0
-        );
+        ISlotOccupancy(slot).buy{value: deposit}(msg.sender, valuation, deposit, 0);
 
         // Last, and forwarded rather than kept: this contract holds no ETH, so
         // there is nothing here to rescue and no rescue function to abuse.
@@ -292,28 +282,19 @@ contract SlotBoundNFTWrapper is
 
         emit Withdrawn(tokenId, slot, w.depositor, w.underlying, w.underlyingId);
 
-        IERC721(w.underlying).transferFrom(
-            address(this),
-            w.depositor,
-            w.underlyingId
-        );
+        IERC721(w.underlying).transferFrom(address(this), w.depositor, w.underlyingId);
     }
 
     /// @notice The live wrapper token backed by `underlyingId` of
     ///         `underlying`, or zero if this wrapper does not hold it.
     /// @dev Zero is unambiguous because ids start at one — the same sentinel
     ///      `tokenOf` relies on.
-    function tokenIdOf(
-        IERC721 underlying,
-        uint256 underlyingId
-    ) external view returns (uint256) {
+    function tokenIdOf(IERC721 underlying, uint256 underlyingId) external view returns (uint256) {
         return _byUnderlying[_key(address(underlying), underlyingId)];
     }
 
-    function _key(
-        address underlying,
-        uint256 underlyingId
-    ) internal pure returns (bytes32) {
+    function _key(address underlying, uint256 underlyingId) internal pure returns (bytes32) {
+        // forge-lint: disable-next-line(asm-keccak256)
         return keccak256(abi.encode(underlying, underlyingId));
     }
 
@@ -327,15 +308,11 @@ contract SlotBoundNFTWrapper is
     ///         it wraps.
     /// @dev `try`/`catch` because the underlying is arbitrary: a reverting
     ///      `tokenURI` must not make the wrapper token unreadable.
-    function tokenURI(
-        uint256 tokenId
-    ) public view override returns (string memory) {
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
         Wrap memory w = _wrapped[tokenId];
         if (w.underlying == address(0) || w.retired) revert ISlotBoundNFT.NoSuchToken(tokenId);
 
-        try IERC721Metadata(w.underlying).tokenURI(w.underlyingId) returns (
-            string memory uri
-        ) {
+        try IERC721Metadata(w.underlying).tokenURI(w.underlyingId) returns (string memory uri) {
             return uri;
         } catch {
             return "";
@@ -364,7 +341,6 @@ contract SlotBoundNFTWrapper is
     function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
     function checkSettings(bytes calldata) external view {}
-
 
     /// @dev The one thing that stops a retired slot being sold. Merely clearing
     ///      `tokenOf` would send {_sync} down its "not ours" path and let the
@@ -397,7 +373,6 @@ contract SlotBoundNFTWrapper is
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
 
     /// @dev Reads `occupant()` live, never `ctx`: the `after` entry points are
     ///      world-callable, so a forged context must be able to change nothing.

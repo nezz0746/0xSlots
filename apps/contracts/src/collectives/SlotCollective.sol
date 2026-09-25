@@ -8,7 +8,7 @@ import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {PushSplit} from "splits-v2/splitters/push/PushSplit.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {SlotGovernance, IManagedSlot} from "./SlotGovernance.sol";
+import {SlotGovernance} from "./SlotGovernance.sol";
 import {Versioned} from "../utils/Versioned.sol";
 
 /// @title SlotCollective — a collective that pays out through a 0xSplits split
@@ -74,7 +74,6 @@ import {Versioned} from "../utils/Versioned.sol";
 ///      `msg.sender`, so every call in a batch passes the same role check it
 ///      would alone. It cannot reach another contract and is not payable.
 contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
@@ -206,11 +205,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
 
         // Reverts on a zero admin, so the ordering below matches the original:
         // validation of the split first, then of the roles.
-        _initGovernance(
-            roles.admin,
-            roles.taxManagers,
-            roles.policyManagers
-        );
+        _initGovernance(roles.admin, roles.taxManagers, roles.policyManagers);
         _grantRoleBatch(SPLIT_MANAGER_ROLE, roles.splitManagers);
     }
 
@@ -250,11 +245,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     /// @dev Reimplemented rather than delegating to `super`: the inherited body
     ///      is `onlyOwner`, and the caller here is a role holder, not this
     ///      contract. The two lines are the whole function upstream.
-    function setPaused(bool _paused)
-        public
-        override
-        onlyRoleOrAdmin(SPLIT_MANAGER_ROLE)
-    {
+    function setPaused(bool _paused) public override onlyRoleOrAdmin(SPLIT_MANAGER_ROLE) {
         paused = _paused;
         emit SetPaused(_paused);
     }

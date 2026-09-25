@@ -43,7 +43,8 @@ abstract contract AdLandRegistry is AdLandModule {
 
         if (!byOwner && pendingOf[key].byOwner) revert OwnerProposalPending(key);
 
-        uint64 readyAt = uint64(block.timestamp + CHANGE_DELAY);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint64 readyAt = uint64(block.timestamp + CHANGE_DELAY); // a timestamp
         pendingOf[key] = PendingKey({slot: slot, readyAt: readyAt, byOwner: byOwner});
         emit SlotProposed(key, slot, readyAt);
     }

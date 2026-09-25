@@ -45,8 +45,9 @@ contract SetPrimarySlot is ProtocolConfig {
 
     function run(address slot) external {
         address adLandAddress = deployed("AdLand");
-        if (adLandAddress == address(0))
+        if (adLandAddress == address(0)) {
             revert NoAdLandOnThisChain(block.chainid);
+        }
 
         AdLand adLand = AdLand(adLandAddress);
 
@@ -64,14 +65,13 @@ contract SetPrimarySlot is ProtocolConfig {
         // the typed call reverts with nothing in it — an `EvmError: Revert` and
         // a stack trace, for what is almost always somebody pasting the address
         // they have been using for a year.
-        (bool ok, bytes memory ret) = slot.staticcall(
-            abi.encodeWithSignature("module()")
-        );
+        (bool ok, bytes memory ret) = slot.staticcall(abi.encodeWithSignature("module()"));
         if (!ok || ret.length != 32) revert NotASlot(slot);
 
         address module = abi.decode(ret, (address));
-        if (module != adLandAddress)
+        if (module != adLandAddress) {
             revert SlotPointsElsewhere(adLandAddress, module);
+        }
 
         address current = adLand.primary();
         if (current == slot) revert AlreadyPrimary(slot);

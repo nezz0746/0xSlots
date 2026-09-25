@@ -7,10 +7,13 @@ import {TaxTerms, ModuleTerms, ModuleFee} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 import {ISlotModule} from "../interfaces/ISlotModule.sol";
 
-
 /// @notice The subset of `Slot` a collective drives.
 interface IManagedSlot {
-    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint16 mask) external;
+    function proposeTerms(
+        TaxTerms calldata taxTerms,
+        ModuleTerms calldata module,
+        uint16 mask
+    ) external;
 
     function cancelTerms(uint16 mask) external;
 
@@ -84,18 +87,11 @@ abstract contract SlotGovernance is AccessControl, Initializable {
 
     /// @notice A role holder relayed a pending-update proposal to `slot`.
     event TermsRelayed(
-        address indexed slot,
-        address indexed by,
-        Dimension indexed kind,
-        bytes32 value
+        address indexed slot, address indexed by, Dimension indexed kind, bytes32 value
     );
 
     /// @notice A role holder retracted `slot`'s pending update for one dimension.
-    event TermsCancelRelayed(
-        address indexed slot,
-        address indexed by,
-        Dimension indexed kind
-    );
+    event TermsCancelRelayed(address indexed slot, address indexed by, Dimension indexed kind);
 
     /// @notice A policy manager accepted the attached module's current fee on `slot`.
     event FeeAcceptRelayed(address indexed slot, address indexed by, ModuleFee fee);
@@ -184,10 +180,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
 
     /// @notice Propose a new tax rate on `slot`. Applies at its next buy, not
     ///         immediately.
-    function proposeTax(IManagedSlot slot, uint16 newTaxRateBps)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
+    function proposeTax(
+        IManagedSlot slot,
+        uint16 newTaxRateBps
+    ) external onlyRoleOrAdmin(TAX_MANAGER_ROLE) {
         _proposeTax(slot, newTaxRateBps);
     }
 
@@ -198,12 +194,14 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      mistakes, not ordinary states — and swallowing them would report
     ///      success for a portfolio that half moved. The cancels below tolerate
     ///      failure because "nothing queued" IS an ordinary state.
-    function proposeTaxBatch(IManagedSlot[] calldata slots, uint16 newTaxRateBps)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
+    function proposeTaxBatch(
+        IManagedSlot[] calldata slots,
+        uint16 newTaxRateBps
+    ) external onlyRoleOrAdmin(TAX_MANAGER_ROLE) {
         uint256 length = slots.length;
-        for (uint256 i; i < length; ++i) _proposeTax(slots[i], newTaxRateBps);
+        for (uint256 i; i < length; ++i) {
+            _proposeTax(slots[i], newTaxRateBps);
+        }
     }
 
     function _proposeTax(IManagedSlot slot, uint16 newTaxRateBps) internal {
@@ -253,12 +251,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         }
         TaxTerms memory none;
         slot.proposeTerms(none, module, TermsLib.MODULE);
-        emit TermsRelayed(
-            address(slot),
-            msg.sender,
-            Dimension.Module,
-            _asValue(module.target)
-        );
+        emit TermsRelayed(address(slot), msg.sender, Dimension.Module, _asValue(module.target));
     }
 
     /// @notice Accept the attached module's current fee on `slot`. Applies at once.
@@ -266,10 +259,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     /// @dev The policy manager's decision, like proposing a module — and, for a
     ///      higher fee, the payout role's as well. `expected` is the fee they
     ///      reviewed; the slot reverts if the module now declares anything else.
-    function acceptFee(IManagedSlot slot, ModuleFee calldata expected)
-        external
-        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
-    {
+    function acceptFee(
+        IManagedSlot slot,
+        ModuleFee calldata expected
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         // Raising the fee is the payout role's call too, for the reason given
         // in {_proposeModule}. Lowering it is not.
         if (expected.bps > slot.fee().bps) {
@@ -281,10 +274,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
 
     /// @notice Accept the attached module's current scopes on `slot`. They
     ///         land at the next buy.
-    function acceptScopes(IManagedSlot slot, uint16 expected)
-        external
-        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
-    {
+    function acceptScopes(
+        IManagedSlot slot,
+        uint16 expected
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         slot.acceptScopes(expected);
         emit ScopesAcceptRelayed(address(slot), msg.sender, expected);
     }
@@ -294,10 +287,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      slot's cancel takes a mask like its propose, so a tax
     ///      manager retracting their own work cannot destroy the module
     ///      manager's queued change as a side effect.
-    function cancelTaxProposal(IManagedSlot slot)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
+    function cancelTaxProposal(IManagedSlot slot) external onlyRoleOrAdmin(TAX_MANAGER_ROLE) {
         slot.cancelTerms(TermsLib.TAX_RATE);
         emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Tax);
     }
@@ -321,10 +311,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     }
 
     /// @notice Retract this role's own queued module proposal on `slot`.
-    function cancelModuleProposal(IManagedSlot slot)
-        external
-        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
-    {
+    function cancelModuleProposal(IManagedSlot slot) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
         slot.cancelTerms(TermsLib.MODULE);
         emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Module);
     }
@@ -353,10 +340,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      proposal.
     ///
     ///      Clears whatever is queued, of any term.
-    function cancelAllProposals(IManagedSlot slot)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function cancelAllProposals(IManagedSlot slot) external onlyRole(DEFAULT_ADMIN_ROLE) {
         // solhint-disable-next-line no-empty-blocks
         try slot.cancelTerms(TermsLib.ALL) {} catch {}
         emit AllTermsCancelled(address(slot), msg.sender);

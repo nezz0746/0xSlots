@@ -5,7 +5,7 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {Slot} from "./Slot.sol";
 import {SlotInit} from "./types/SlotTypes.sol";
-import "./errors/SlotErrors.sol";
+import {NotManager, InvalidRecipient, NotASlot} from "./errors/SlotErrors.sol";
 import {VersionedUUPS} from "./utils/VersionedUUPS.sol";
 import {Versioned} from "./utils/Versioned.sol";
 
@@ -22,7 +22,6 @@ import {Versioned} from "./utils/Versioned.sol";
  *      every handler twice to cover both eras.
  */
 contract SlotFactory is VersionedUUPS {
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
@@ -58,14 +57,15 @@ contract SlotFactory is VersionedUUPS {
     event BeaconUpgraded(address indexed implementation);
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotManager();
+        _checkAdmin();
         _;
     }
 
-    function initialize(address admin_, address implementation_)
-        external
-        initializer
-    {
+    function _checkAdmin() internal view {
+        if (msg.sender != admin) revert NotManager();
+    }
+
+    function initialize(address admin_, address implementation_) external initializer {
         if (admin_ == address(0)) revert InvalidRecipient();
         admin = admin_;
         // The FACTORY owns the beacon, not the admin EOA. Handing beacon
@@ -168,10 +168,7 @@ contract SlotFactory is VersionedUUPS {
      *         all three. Simulate this call to price the button before showing
      *         it; the per-slot `TaxCollected` events carry the recipients.
      */
-    function collectAll(address[] calldata slots)
-        external
-        returns (uint256[] memory collected)
-    {
+    function collectAll(address[] calldata slots) external returns (uint256[] memory collected) {
         collected = new uint256[](slots.length);
         for (uint256 i; i < slots.length; ++i) {
             // Through an external self-call, which is the only way to isolate

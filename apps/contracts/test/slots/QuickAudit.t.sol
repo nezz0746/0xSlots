@@ -46,7 +46,9 @@ contract QuickAuditTest is SlotsTest {
         assertEq(s.taxOwed(), 1);
 
         vm.startPrank(bob);
-        for (uint256 i; i < 100; ++i) s.topUp(0);
+        for (uint256 i; i < 100; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         assertEq(block.timestamp, start + 1, "no time passed");
@@ -73,7 +75,11 @@ contract QuickAuditTest is SlotsTest {
         Slot s = _slot(address(0));
         DenyBuys deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(deny), settings: ""}), uint16(9));
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(deny), settings: ""}),
+            uint16(9)
+        );
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms());
 
@@ -86,5 +92,4 @@ contract QuickAuditTest is SlotsTest {
         assertEq(s.occupant(), address(0), "nobody bought under the old terms");
         assertTrue(s.hasRipeTerms(), "and the change is still waiting");
     }
-
 }

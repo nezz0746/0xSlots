@@ -45,8 +45,6 @@ contract FloorModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @notice A module can take configuration of any size: the slot stores the bytes
@@ -57,10 +55,14 @@ contract LargeSettingsTest is Test {
     address alice = makeAddr("alice");
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         module = new FloorModule();
         vm.deal(alice, 100 ether);
     }
@@ -70,17 +72,29 @@ contract LargeSettingsTest is Test {
         allow[0] = address(1);
         allow[1] = address(2);
         allow[2] = address(3);
-        return abi.encode(FloorModule.Config({floor: floor, label: "a label well past thirty-two bytes", allowlist: allow}));
+        return abi.encode(
+            FloorModule.Config({
+                floor: floor, label: "a label well past thirty-two bytes", allowlist: allow
+            })
+        );
     }
 
     function _slot(bytes memory settings) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(module), settings: settings})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: address(module), settings: settings})
+                    })
+                ))
+        );
     }
 
     function test_TheSlotStoresTheBytesAsGiven() public {
@@ -112,13 +126,23 @@ contract LargeSettingsTest is Test {
     /// @notice Queued settings sit in `pendingTerms`, whole; a cancel empties
     ///         them, and landing copies them to the live terms.
     function test_QueuedSettingsLandWholeAndCancelClearsThem() public {
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(this),
-            mutableTax: false, mutableRecipient: false, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(module), settings: _config(1 ether)})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({
+                            target: address(module), settings: _config(1 ether)
+                        })
+                    })
+                ))
+        );
         TaxTerms memory none;
         ModuleTerms memory next = ModuleTerms({target: address(module), settings: _config(2 ether)});
 

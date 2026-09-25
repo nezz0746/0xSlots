@@ -17,7 +17,10 @@ import "../../src/errors/SlotErrors.sol";
 
 contract T is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 contract MinimumTenureModuleTest is Test {
@@ -37,8 +40,14 @@ contract MinimumTenureModuleTest is Test {
         (bob, bobKey) = makeAddrAndKey("bob");
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
         token = new T();
         token.mint(alice, 1_000_000 ether);
         token.mint(bob, 1_000_000 ether);
@@ -51,13 +60,23 @@ contract MinimumTenureModuleTest is Test {
     }
 
     function _slot(bytes memory settings) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(module), settings: settings})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(module), settings: settings})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
@@ -76,9 +95,7 @@ contract MinimumTenureModuleTest is Test {
 
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
-        vm.expectRevert(
-            abi.encodeWithSelector(MinimumTenure.TenureUnderfunded.selector, need)
-        );
+        vm.expectRevert(abi.encodeWithSelector(MinimumTenure.TenureUnderfunded.selector, need));
         s.buy(alice, 100 ether, need - 1, 0);
 
         s.buy(alice, 100 ether, need, 0); // exactly enough
@@ -176,9 +193,7 @@ contract MinimumTenureModuleTest is Test {
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MinimumTenure.BuyoutBelowPremium.selector, 1000 ether
-            )
+            abi.encodeWithSelector(MinimumTenure.BuyoutBelowPremium.selector, 1000 ether)
         );
         s.buy(bob, 1000 ether - 1, dep, 0);
         vm.stopPrank();
@@ -225,6 +240,7 @@ contract MinimumTenureModuleTest is Test {
         s.buy(bob, 100 ether, dep, 0);
         assertEq(s.occupant(), bob);
     }
+
     /// @notice Only the slot can bar an account. The `after` entry points are
     ///         world-callable, so a forged context must not lock anyone out.
     function test_NobodyButTheSlotCanBarAnAccount() public {
@@ -232,7 +248,8 @@ contract MinimumTenureModuleTest is Test {
         SlotContext memory forged;
         forged.slot = address(s);
         forged.account = bob;
-        forged.moduleTerms = ModuleTerms({target: address(module), settings: abi.encode(uint256(365 days))});
+        forged.moduleTerms =
+            ModuleTerms({target: address(module), settings: abi.encode(uint256(365 days))});
 
         vm.expectRevert(MinimumTenure.NotTheSlot.selector);
         module.afterRelease(forged);
@@ -272,8 +289,15 @@ contract MinimumTenureModuleTest is Test {
         Slot long_ = _slot(abi.encode(uint256(30 days)));
         assertEq(short_.module(), long_.module(), "the same contract governs both");
 
-        _take(short_, alice, module.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether, 100 ether);
-        _take(long_, alice, module.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether, 100 ether);
+        _take(
+            short_,
+            alice,
+            module.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether,
+            100 ether
+        );
+        _take(
+            long_, alice, module.requiredDeposit(100 ether, TAX_RATE, 30 days) + 10 ether, 100 ether
+        );
 
         // A week in: the one-day window is long over, the thirty-day one is not.
         vm.warp(block.timestamp + 7 days);
@@ -287,10 +311,7 @@ contract MinimumTenureModuleTest is Test {
         assertEq(short_.occupant(), bob, "one day elapsed six days ago");
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MinimumTenure.BuyoutBelowPremium.selector,
-                1000 ether
-            )
+            abi.encodeWithSelector(MinimumTenure.BuyoutBelowPremium.selector, 1000 ether)
         );
         long_.buy(bob, 100 ether, need, type(uint256).max);
         vm.stopPrank();
@@ -306,11 +327,7 @@ contract MinimumTenureModuleTest is Test {
 
         vm.startPrank(alice);
         token.approve(address(short_), type(uint256).max);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MinimumTenure.TenureUnderfunded.selector, cheap
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(MinimumTenure.TenureUnderfunded.selector, cheap));
         short_.buy(alice, 100 ether, cheap - 1, 0);
         short_.buy(alice, 100 ether, cheap, 0);
         vm.stopPrank();
@@ -339,10 +356,7 @@ contract MinimumTenureModuleTest is Test {
     ///      slot cannot ignore, vetoing every buy on the slot for ever.
     function test_ASlotCannotAttachAWordThatIsNotADuration() public {
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MinimumTenure.TenureTooLong.selector,
-                module.MAX_TENURE()
-            )
+            abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, module.MAX_TENURE())
         );
         _slot(abi.encode(bytes32("7 days")));
 
@@ -361,18 +375,24 @@ contract MinimumTenureModuleTest is Test {
         assertEq(module.tenureOf(abi.encode(TENURE)), TENURE);
     }
 
-
-
-
-
     function _slotWith(address h) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: h, settings: abi.encode(TENURE)})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({target: h, settings: abi.encode(TENURE)})
+                    })
+                ))
+        );
     }
 
     // ─── a queued detach cannot strip a funded window ───────────────────────
@@ -381,13 +401,25 @@ contract MinimumTenureModuleTest is Test {
     ///         even when a detach has been queued to land at that buy.
     function test_AQueuedDetachCannotStripAFundedWindow() public {
         address mgr = makeAddr("mgr");
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: mgr,
-            mutableTax: false, mutableRecipient: false, mutableModule: true,
-            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(module), settings: abi.encode(TENURE)})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: mgr,
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({
+                            target: address(module), settings: abi.encode(TENURE)
+                        })
+                    })
+                ))
+        );
         uint256 dep = module.requiredDeposit(100 ether, TAX_RATE, TENURE);
         _take(s, alice, dep, 100 ether);
 
@@ -414,5 +446,4 @@ contract MinimumTenureModuleTest is Test {
         assertEq(s.occupant(), bob);
         assertEq(s.module(), address(0), "the detach landed once the window ran");
     }
-
 }

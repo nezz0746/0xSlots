@@ -42,18 +42,13 @@ contract AdLandTenureTest is Test {
         Slot slotImpl = new Slot();
         ERC1967Proxy fProxy = new ERC1967Proxy(
             address(factoryImpl),
-            abi.encodeCall(
-                SlotFactory.initialize,
-                (address(this), address(slotImpl))
-            )
+            abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)))
         );
         factory = SlotFactory(address(fProxy));
 
         AdLand adImpl = new AdLand();
-        ERC1967Proxy aProxy = new ERC1967Proxy(
-            address(adImpl),
-            abi.encodeCall(AdLand.initialize, (owner))
-        );
+        ERC1967Proxy aProxy =
+            new ERC1967Proxy(address(adImpl), abi.encodeCall(AdLand.initialize, (owner)));
         adland = AdLand(address(aProxy));
 
         vm.deal(alice, 1000 ether);
@@ -67,9 +62,7 @@ contract AdLandTenureTest is Test {
         if (window == 0) return "";
         return abi.encode(
             AdConfig({
-                tenureWindow: uint64(window),
-                moderation: ModerationMode.Open,
-                key: bytes32(0)
+                tenureWindow: uint64(window), moderation: ModerationMode.Open, key: bytes32(0)
             })
         );
     }
@@ -79,20 +72,23 @@ contract AdLandTenureTest is Test {
     }
 
     function _slotWithSettings(bytes memory settings) internal returns (Slot s) {
-        return
-            Slot(
-                payable(
-                    factory.createSlot(
-                        SlotInit({
-                            currency: IERC20(address(0)),
-                            manager: address(this),
-                            mutableTax: true, mutableRecipient: true, mutableModule: true,
-                            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-                            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
-                        })
-                    )
-                )
-            );
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                    })
+                ))
+        );
     }
 
     /// @dev Funds the whole window, so the tenure rule's own funding check
@@ -119,12 +115,7 @@ contract AdLandTenureTest is Test {
 
         // Double the price is not enough; the rule asks ten times.
         vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MinimumTenure.BuyoutBelowPremium.selector,
-                10 ether
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(MinimumTenure.BuyoutBelowPremium.selector, 10 ether));
         s.buy{value: owed}(bob, 2 ether, dep, type(uint256).max);
 
         assertEq(s.occupant(), alice, "alice keeps the wall");
@@ -174,11 +165,7 @@ contract AdLandTenureTest is Test {
         // Out of the window, bob takes it — and the wall goes blank.
         vm.warp(block.timestamp + WINDOW + 1);
         _take(s, bob, 1.1 ether);
-        assertEq(
-            adland.creativeOf(address(s)),
-            "",
-            "the previous advertiser's creative is gone"
-        );
+        assertEq(adland.creativeOf(address(s)), "", "the previous advertiser's creative is gone");
     }
 
     /// @notice Whoever leaves cannot buy the vacant slot straight back and
@@ -254,7 +241,8 @@ contract AdLandTenureTest is Test {
     }
 
     uint16 constant VETO = ScopesLib.BEFORE_BUY | ScopesLib.BEFORE_SELF_ASSESS;
-    uint16 constant EXITS = ScopesLib.AFTER_BUY | ScopesLib.AFTER_RELEASE | ScopesLib.AFTER_LIQUIDATE;
+    uint16 constant EXITS =
+        ScopesLib.AFTER_BUY | ScopesLib.AFTER_RELEASE | ScopesLib.AFTER_LIQUIDATE;
 
     /// @notice Its scopes read the configuration: a veto is asked for only
     ///         where a window gives it something to veto.
@@ -263,9 +251,14 @@ contract AdLandTenureTest is Test {
         assertEq(ScopesLib.pack(_slot(WINDOW).scopes()) & VETO, VETO, "a window, a veto");
 
         // A registered configuration without a window is no different from zero.
-        bytes memory moderatedOnly =
-            abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Every, key: bytes32(0)}));
-        assertEq(ScopesLib.pack(_slotWithSettings(moderatedOnly).scopes()) & VETO, 0, "moderation alone, no veto");
+        bytes memory moderatedOnly = abi.encode(
+            AdConfig({tenureWindow: 0, moderation: ModerationMode.Every, key: bytes32(0)})
+        );
+        assertEq(
+            ScopesLib.pack(_slotWithSettings(moderatedOnly).scopes()) & VETO,
+            0,
+            "moderation alone, no veto"
+        );
 
         // Every configuration still hears a tenure end: that is what clears the creative.
         assertEq(ScopesLib.pack(_slot(0).scopes()) & EXITS, EXITS, "exits, without a window");
@@ -278,9 +271,7 @@ contract AdLandTenureTest is Test {
         Slot s = _slot(0);
         TaxTerms memory none;
         s.proposeTerms(
-            none,
-            ModuleTerms({target: address(adland), settings: _config(WINDOW)}),
-            s.TERM_MODULE()
+            none, ModuleTerms({target: address(adland), settings: _config(WINDOW)}), s.TERM_MODULE()
         );
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
         s.applyTerms();
@@ -342,10 +333,7 @@ contract AdLandTenureTest is Test {
         string memory d = adland.definition();
         assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.type"), "string");
         assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.pattern"), "^[0-9]+$");
-        assertEq(
-            vm.parseJsonString(d, ".settings.properties.key.pattern"),
-            "^0x[0-9a-fA-F]{64}$"
-        );
+        assertEq(vm.parseJsonString(d, ".settings.properties.key.pattern"), "^0x[0-9a-fA-F]{64}$");
     }
 
     /**
@@ -359,11 +347,15 @@ contract AdLandTenureTest is Test {
         MinimumTenureModule standalone = new MinimumTenureModule();
 
         assertEq(
-            vm.parseJsonString(adland.definition(), ".settings.properties.tenureWindow[\'x-semantic\']"),
+            vm.parseJsonString(
+                adland.definition(), ".settings.properties.tenureWindow[\'x-semantic\']"
+            ),
             "minimum-tenure"
         );
         assertEq(
-            vm.parseJsonString(standalone.definition(), ".settings.properties.window[\'x-semantic\']"),
+            vm.parseJsonString(
+                standalone.definition(), ".settings.properties.window[\'x-semantic\']"
+            ),
             "minimum-tenure"
         );
         assertFalse(vm.keyExistsJson(standalone.definition(), '.settings["x-settings-encoding"]'));
@@ -378,7 +370,9 @@ contract AdLandTenureTest is Test {
      */
     function test_TheSchemaCannotDriftFromTheCheck() public {
         uint256 max = vm.parseUint(
-            vm.parseJsonString(adland.definition(), ".settings.properties.tenureWindow[\'x-maximum\']")
+            vm.parseJsonString(
+                adland.definition(), ".settings.properties.tenureWindow[\'x-maximum\']"
+            )
         );
         assertEq(max, adland.MAX_TENURE());
 
@@ -387,9 +381,7 @@ contract AdLandTenureTest is Test {
 
         // One past it is not, and the revert names the same number.
         bytes memory tooLong = _config(max + 1);
-        vm.expectRevert(
-            abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, max)
-        );
+        vm.expectRevert(abi.encodeWithSelector(MinimumTenure.TenureTooLong.selector, max));
         adland.checkSettings(tooLong);
     }
 }

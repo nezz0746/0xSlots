@@ -31,11 +31,7 @@ interface ISlotBoundNFT {
     // ─── events ─────────────────────────────────────────────────────────────
 
     event BaseURISet(string uri);
-    event SlotMinted(
-        uint256 indexed tokenId,
-        address indexed slot,
-        address indexed creator
-    );
+    event SlotMinted(uint256 indexed tokenId, address indexed slot, address indexed creator);
 
     // ─── errors ─────────────────────────────────────────────────────────────
 

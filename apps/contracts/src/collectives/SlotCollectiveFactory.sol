@@ -52,7 +52,6 @@ import {VersionedUUPS} from "../utils/VersionedUUPS.sol";
 ///      that can never call — the deterministic CREATE2 deployer, as
 ///      `DeployProtocol` does. See the constructor note in `SlotCollective`.
 contract SlotCollectiveFactory is VersionedUUPS {
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
@@ -76,9 +75,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
     ///      address govern" is the question a UI actually asks, and it cannot be
     ///      answered from the split or from role events alone.
     event SlotCollectiveDeployed(
-        address indexed collective,
-        address indexed admin,
-        address indexed deployer
+        address indexed collective, address indexed admin, address indexed deployer
     );
     event BeaconUpgraded(address indexed newImplementation);
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
@@ -93,7 +90,6 @@ contract SlotCollectiveFactory is VersionedUUPS {
     /// @notice Can upgrade this factory and the beacon.
     address public admin;
 
-
     /// @notice Managers deployed here. The provenance check a slot creator needs
     ///         before naming an address as both `recipient` and `manager`.
     mapping(address => bool) public isSlotCollective;
@@ -106,19 +102,15 @@ contract SlotCollectiveFactory is VersionedUUPS {
     // INITIALIZATION
     // ═══════════════════════════════════════════════════════════
 
-
-
     /// @notice Initialize the factory (called once, through its proxy).
     /// @param _admin Upgrades this factory and the beacon.
     /// @param _collectiveImplementation A deployed `SlotCollective`, constructed with
     ///        this chain's canonical `SplitsWarehouse`.
-    function initialize(
-        address _admin,
-        address _collectiveImplementation
-    ) external initializer {
+    function initialize(address _admin, address _collectiveImplementation) external initializer {
         if (_admin == address(0)) revert AdminRequired();
-        if (_collectiveImplementation.code.length == 0)
+        if (_collectiveImplementation.code.length == 0) {
             revert ImplementationRequired();
+        }
 
         admin = _admin;
         // The genesis admin, emitted so an indexer can build the whole custody
@@ -130,14 +122,17 @@ contract SlotCollectiveFactory is VersionedUUPS {
         beacon = new UpgradeableBeacon(_collectiveImplementation, address(this));
     }
 
-
     // ═══════════════════════════════════════════════════════════
     // MODIFIERS
     // ═══════════════════════════════════════════════════════════
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotAdmin();
+        _checkAdmin();
         _;
+    }
+
+    function _checkAdmin() internal view {
+        if (msg.sender != admin) revert NotAdmin();
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -198,10 +193,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
         SplitV2Lib.Split calldata split,
         SlotCollective.InitialRoles calldata roles
     ) internal returns (address collective) {
-        bytes memory initData = abi.encodeCall(
-            SlotCollective.initializeCollective,
-            (split, roles)
-        );
+        bytes memory initData = abi.encodeCall(SlotCollective.initializeCollective, (split, roles));
         // CREATE2, salted with the chain id and the collective's index. Plain
         // `new` derives the address from `keccak(rlp(factory, nonce))` alone,
         // and this factory sits at ONE address across chains — so collective

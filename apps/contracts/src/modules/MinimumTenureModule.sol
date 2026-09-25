@@ -67,7 +67,6 @@ import {MinimumTenure} from "./MinimumTenure.sol";
  *      buy that follows clears the floor and the check never bites.
  */
 contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
-
     /**
      * @notice The longest window this module will accept. Ten years.
      *
@@ -116,7 +115,6 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
      * module worth writing as its own contract rather than a flag on this one, so
      * a slot picks the curve it wants by picking its module.
      */
-
     /// @inheritdoc ISlotModule
     /// @dev The whole of this module's configuration is one number, so
     ///      validation is {tenureOf} run for its revert.
@@ -135,14 +133,13 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
      *      a module that does nothing, and {tenureOf} refuses empty settings.
      */
     function definition() external pure returns (string memory) {
-        return
-            ModuleSchemaLib.describe(
-                "Minimum tenure",
-                "Protects an occupant from being bought out for a fixed window after they take the slot.",
-                "",
-                ModuleSchemaLib.list(tenureField("window", "uint256")),
-                false // a tenure module with no window does nothing
-            );
+        return ModuleSchemaLib.describe(
+            "Minimum tenure",
+            "Protects an occupant from being bought out for a fixed window after they take the slot.",
+            "",
+            ModuleSchemaLib.list(tenureField("window", "uint256")),
+            false // a tenure module with no window does nothing
+        );
     }
 
     function scopes(bytes calldata) external pure returns (uint16) {
@@ -196,6 +193,4 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-
 import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -71,10 +70,11 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint16 mask)
-        external
-        onlyManager
-    {
+    function proposeTerms(
+        TaxTerms calldata taxTerms,
+        ModuleTerms calldata module,
+        uint16 mask
+    ) external onlyManager {
         if (mask == 0) revert NoPendingTerms();
         if (mask & 1 != 0) {
             taxPct = taxTerms.rateBps;
@@ -138,10 +138,7 @@ contract SlotCollectiveTest is Test {
             address(
                 new ERC1967Proxy(
                     address(factoryImpl),
-                    abi.encodeCall(
-                        SlotCollectiveFactory.initialize,
-                        (factoryAdmin, address(impl))
-                    )
+                    abi.encodeCall(SlotCollectiveFactory.initialize, (factoryAdmin, address(impl)))
                 )
             )
         );
@@ -198,7 +195,14 @@ contract SlotCollectiveTest is Test {
         calls[0] = Wallet.Call({
             to: address(slot),
             value: 0,
-            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1)))
+            data: abi.encodeCall(
+                MockSlot.proposeTerms,
+                (
+                    TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}),
+                    ModuleTerms({target: address(0), settings: ""}),
+                    uint16(1)
+                )
+            )
         });
 
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -223,7 +227,9 @@ contract SlotCollectiveTest is Test {
     function test_adminCanRelayBoth() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 250);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+        );
         vm.stopPrank();
 
         assertEq(slot.taxPct(), 250);
@@ -234,11 +240,15 @@ contract SlotCollectiveTest is Test {
     ///      has to be able to express it.
     function test_thePolicyManagerCanDetachTheModule() public {
         vm.prank(policyMgr);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+        );
         assertTrue(slot.hasModule());
 
         vm.prank(policyMgr);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0), settings: ""})
+        );
         assertTrue(slot.hasModule(), "still queued, now queued as a detach");
         assertEq(slot.moduleAddr(), address(0));
     }
@@ -256,19 +266,21 @@ contract SlotCollectiveTest is Test {
 
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(1), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(1), settings: ""})
+        );
     }
 
     /// @dev The gap the per-dimension cancel closed, and the reason the new
     ///      slot had to grow the same two scopes on cancel that it has on
     ///      propose: retracting your own work must not destroy anybody else's.
-    function test_eachRoleCancelsItsOwnDimensionAndLeavesTheOtherStanding()
-        public
-    {
+    function test_eachRoleCancelsItsOwnDimensionAndLeavesTheOtherStanding() public {
         vm.prank(taxMgr);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(policyMgr);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+        );
 
         vm.prank(policyMgr);
         mgr.cancelModuleProposal(IManagedSlot(address(slot)));
@@ -305,7 +317,9 @@ contract SlotCollectiveTest is Test {
     function test_adminCanCancelEitherDimension() public {
         vm.startPrank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+        );
         mgr.cancelTaxProposal(IManagedSlot(address(slot)));
         mgr.cancelModuleProposal(IManagedSlot(address(slot)));
         vm.stopPrank();
@@ -333,7 +347,9 @@ contract SlotCollectiveTest is Test {
         vm.prank(admin);
         mgr.proposeTax(IManagedSlot(address(slot)), 500);
         vm.prank(admin);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(0xCAFE), settings: ""})
+        );
         vm.prank(admin);
         mgr.cancelAllProposals(IManagedSlot(address(slot)));
         assertEq(slot.taxCancels(), 1);
@@ -438,11 +454,15 @@ contract SlotCollectiveTest is Test {
 
         vm.prank(policyMgr);
         vm.expectRevert(_unauthorized(policyMgr, splitRole));
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""})
+        );
         assertFalse(slot.hasModule(), "nothing queued");
 
         vm.prank(admin);
-        mgr.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""}));
+        mgr.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({target: address(charging), settings: ""})
+        );
         assertEq(slot.moduleAddr(), address(charging), "the admin holds every role");
     }
 
@@ -583,5 +603,4 @@ contract SlotCollectiveTest is Test {
         vm.expectRevert(SlotCollective.DeployedByAnAccount.selector);
         new SlotCollective(address(warehouse));
     }
-
 }

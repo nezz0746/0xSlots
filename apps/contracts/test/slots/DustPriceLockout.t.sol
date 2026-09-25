@@ -13,7 +13,10 @@ import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 
 contract TT is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /// @dev C-01: a slot could be held out of forced sale for ever, for the cost of
@@ -26,30 +29,53 @@ contract TT is ERC20 {
 ///      {MinimumTenureModule-BUYOUT_PREMIUM_BPS}. Protection now scales with the
 ///      price the occupant declared, so a dust price buys dust protection.
 contract C01Test is Test {
-    SlotFactory factory; TT token; MinimumTenureModule module; Slot s;
+    SlotFactory factory;
+    TT token;
+    MinimumTenureModule module;
+    Slot s;
     uint256 constant TENURE = 7 days;
     uint256 constant TAX_RATE = 1000;
-    address a = makeAddr("a");   // both controlled by
-    address b = makeAddr("b");   // the same attacker
+    address a = makeAddr("a"); // both controlled by
+    address b = makeAddr("b"); // the same attacker
     address victim = makeAddr("victim");
 
     function setUp() public {
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
         token = new TT();
         module = new MinimumTenureModule();
         for (uint256 i; i < 3; ++i) {}
-        token.mint(a, 1e24); token.mint(b, 1e24); token.mint(victim, 1e24);
+        token.mint(a, 1e24);
+        token.mint(b, 1e24);
+        token.mint(victim, 1e24);
         vm.warp(1_000_000);
-        s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: address(module), settings: abi.encode(TENURE)})
-        }))));
+        s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({
+                            target: address(module), settings: abi.encode(TENURE)
+                        })
+                    })
+                ))
+        );
     }
 
     function _take(address who, uint256 dep, uint256 price) internal {

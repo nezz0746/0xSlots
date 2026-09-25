@@ -71,16 +71,14 @@ import {SlotFactory} from "../../src/SlotFactory.sol";
 contract DeployAndDriveCollective is Script {
     // Anvil's default accounts. Fixed, funded, and public — the point is that
     // each role is a different address, not that the keys are secret.
-    uint256 constant PK_ADMIN =
-        0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    uint256 constant PK_ADMIN = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
     uint256 constant PK_TAX_MGR =
         0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
     uint256 constant PK_POLICY_MGR =
         0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
     uint256 constant PK_SPLIT_MGR =
         0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6;
-    uint256 constant PK_BUYER =
-        0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e;
+    uint256 constant PK_BUYER = 0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e;
 
     address constant PAYEE_A = 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65;
     address constant PAYEE_B = 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc;
@@ -133,25 +131,27 @@ contract DeployAndDriveCollective is Script {
         );
 
         // ── 2. a collective with two payees and one holder per role ─────────
-        collective = SlotCollective(
-            payable(collectiveFactory.createCollective(_twoPayees(), _roles()))
-        );
+        collective =
+            SlotCollective(payable(collectiveFactory.createCollective(_twoPayees(), _roles())));
 
         // ── 3. a slot that names it BOTH manager and recipient ─────────────
         slot = Slot(
-            payable(
-                SlotFactory(slotFactoryAddr).createSlot(
-                    SlotInit({
-                        currency: IERC20(address(0)),
-                        manager: address(collective),
-                        mutableTax: true,
-                        mutableRecipient: true,
-                        mutableModule: true,
-                        taxTerms: TaxTerms({recipient: address(collective), rateBps: uint16(TAX_AT_BIRTH), minRunwaySeconds: uint32(1 days)}),
-                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
-                    })
-                )
-            )
+            payable(SlotFactory(slotFactoryAddr)
+                    .createSlot(
+                        SlotInit({
+                            currency: IERC20(address(0)),
+                            manager: address(collective),
+                            mutableTax: true,
+                            mutableRecipient: true,
+                            mutableModule: true,
+                            taxTerms: TaxTerms({
+                                recipient: address(collective),
+                                rateBps: uint16(TAX_AT_BIRTH),
+                                minRunwaySeconds: uint32(1 days)
+                            }),
+                            moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                        })
+                    ))
         );
 
         vm.stopBroadcast();
@@ -187,10 +187,7 @@ contract DeployAndDriveCollective is Script {
         uint256 cost = slot.quoteBuy(address(this), need);
         vm.broadcast(PK_BUYER);
         slot.buy{value: cost}(buyer, PRICE, need, 0);
-        require(
-            slot.taxRateBps() == TAX_PROPOSED,
-            "TermsApplied did not land the surviving tax"
-        );
+        require(slot.taxRateBps() == TAX_PROPOSED, "TermsApplied did not land the surviving tax");
 
         // ── 8-9. propose again, then the admin's blanket cancel ────────────
         vm.broadcast(PK_TAX_MGR);
@@ -251,10 +248,7 @@ contract DeployAndDriveCollective is Script {
         a[0] = 70;
         a[1] = 30;
         s = SplitV2Lib.Split({
-            recipients: r,
-            allocations: a,
-            totalAllocation: 100,
-            distributionIncentive: 0
+            recipients: r, allocations: a, totalAllocation: 100, distributionIncentive: 0
         });
     }
 
@@ -264,18 +258,11 @@ contract DeployAndDriveCollective is Script {
         uint256[] memory a = new uint256[](1);
         a[0] = 100;
         s = SplitV2Lib.Split({
-            recipients: r,
-            allocations: a,
-            totalAllocation: 100,
-            distributionIncentive: 0
+            recipients: r, allocations: a, totalAllocation: 100, distributionIncentive: 0
         });
     }
 
-    function _roles()
-        internal
-        view
-        returns (SlotCollective.InitialRoles memory r)
-    {
+    function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         address[] memory tax = new address[](1);
         tax[0] = taxMgr;
         // `policyManagers`, which the initializer grants POLICY_MANAGER_ROLE.
@@ -285,33 +272,19 @@ contract DeployAndDriveCollective is Script {
         address[] memory splits = new address[](1);
         splits[0] = splitMgr;
         r = SlotCollective.InitialRoles({
-            admin: admin,
-            taxManagers: tax,
-            policyManagers: modules,
-            splitManagers: splits
+            admin: admin, taxManagers: tax, policyManagers: modules, splitManagers: splits
         });
     }
 
     /// @dev Same shape `DeployProtocol` writes, and what the indexer's local
     ///      settings reads to find the collective factory — its address is a
     ///      function of when this ran, so it cannot be a constant anywhere.
-    function _record(
-        string memory name,
-        address addr,
-        uint256 startBlock
-    ) internal {
+    function _record(string memory name, address addr, uint256 startBlock) internal {
         string memory obj = name;
         vm.serializeAddress(obj, "address", addr);
         string memory json = vm.serializeUint(obj, "startBlock", startBlock);
         vm.writeFile(
-            string.concat(
-                "./deployments/",
-                vm.toString(block.chainid),
-                "/",
-                name,
-                ".json"
-            ),
-            json
+            string.concat("./deployments/", vm.toString(block.chainid), "/", name, ".json"), json
         );
     }
 }

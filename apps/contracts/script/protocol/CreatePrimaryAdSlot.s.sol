@@ -143,9 +143,12 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         // as "unset". A chain with no previous primary must be told.
         address currency = vm.envOr("AD_CURRENCY", prev.currency);
         uint256 taxRateBps = vm.envOr("AD_TAX_BPS", prev.found ? prev.taxRateBps : DEFAULT_TAX_BPS);
-        uint256 minDeposit =
-            vm.envOr("AD_MIN_DEPOSIT_SECONDS", prev.found ? prev.minRunwaySeconds : DEFAULT_MIN_DEPOSIT_SECONDS);
-        uint256 tenure = vm.envOr("AD_TENURE_WINDOW", prev.found ? prev.tenureWindow : DEFAULT_TENURE_WINDOW);
+        uint256 minDeposit = vm.envOr(
+            "AD_MIN_DEPOSIT_SECONDS",
+            prev.found ? prev.minRunwaySeconds : DEFAULT_MIN_DEPOSIT_SECONDS
+        );
+        uint256 tenure =
+            vm.envOr("AD_TENURE_WINDOW", prev.found ? prev.tenureWindow : DEFAULT_TENURE_WINDOW);
         uint256 moderation = vm.envOr("AD_MODERATION", uint256(0));
 
         // No default worth having: a guessed owner would receive the rent and
@@ -175,21 +178,22 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         );
 
         // An ordinary slot from the ordinary factory, with AdLand as its module.
-        address slot = SlotFactory(factory).createSlot(
-            SlotInit({
-                currency: IERC20(currency),
-                manager: slotOwner,
-                mutableTax: true,
-                mutableRecipient: true,
-                mutableModule: false,
-                taxTerms: TaxTerms({
-                    recipient: slotOwner,
-                    rateBps: uint16(taxRateBps),
-                    minRunwaySeconds: uint32(minDeposit)
-                }),
-                moduleTerms: ModuleTerms({target: adLandAddress, settings: settings})
-            })
-        );
+        address slot = SlotFactory(factory)
+            .createSlot(
+                SlotInit({
+                    currency: IERC20(currency),
+                    manager: slotOwner,
+                    mutableTax: true,
+                    mutableRecipient: true,
+                    mutableModule: false,
+                    taxTerms: TaxTerms({
+                        recipient: slotOwner,
+                        rateBps: uint16(taxRateBps),
+                        minRunwaySeconds: uint32(minDeposit)
+                    }),
+                    moduleTerms: ModuleTerms({target: adLandAddress, settings: settings})
+                })
+            );
 
         address current = adLand.primary();
         adLand.setSlot(adLand.PRIMARY(), slot);

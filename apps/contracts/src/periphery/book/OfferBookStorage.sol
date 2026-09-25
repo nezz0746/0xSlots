@@ -58,11 +58,7 @@ abstract contract OfferBookStorage is Versioned {
         uint256 deposit,
         uint64 expiry
     );
-    event Cancelled(
-        address indexed slot,
-        address indexed bidder,
-        uint256 indexed id
-    );
+    event Cancelled(address indexed slot, address indexed bidder, uint256 indexed id);
 
     /// @notice A bid was accepted: the occupant repriced to it and the bidder
     ///         was seated.

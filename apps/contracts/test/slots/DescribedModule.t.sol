@@ -35,8 +35,6 @@ contract SilentModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev A module whose `definition()` reverts. It must still be usable — the
@@ -54,10 +52,14 @@ contract DescribedModuleTest is Test {
     uint256 constant TENURE = 7 days;
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         tenure = new MinimumTenureModule();
     }
 
@@ -66,13 +68,23 @@ contract DescribedModuleTest is Test {
     }
 
     function _slot(address module, bytes memory data) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(500), minRunwaySeconds: uint32(1 hours)}),
-            moduleTerms: ModuleTerms({target: module, settings: data})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 hours)
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: data})
+                    })
+                ))
+        );
     }
 
     // ── the definition itself ───────────────────────────────────────────────
@@ -100,9 +112,7 @@ contract DescribedModuleTest is Test {
 
         assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].name"), "window");
         assertEq(
-            vm.parseJsonString(d, ".settings[\'x-abi\'][0].type"),
-            "uint256",
-            "a type, not a value"
+            vm.parseJsonString(d, ".settings[\'x-abi\'][0].type"), "uint256", "a type, not a value"
         );
 
         assertEq(
@@ -171,9 +181,7 @@ contract DescribedModuleTest is Test {
         SilentModule quiet = new SilentModule();
         Slot s = _slot(address(quiet));
 
-        (bool ok, ) = address(quiet).staticcall(
-            abi.encodeCall(IDescribedModule.definition, ())
-        );
+        (bool ok,) = address(quiet).staticcall(abi.encodeCall(IDescribedModule.definition, ()));
         assertFalse(ok, "no such function; the client falls back to scopes");
 
         address buyer = address(0xB0B);
@@ -201,9 +209,10 @@ contract DescribedModuleTest is Test {
         bool found;
         for (uint256 i; i + 4 <= code.length; ++i) {
             if (
-                code[i] == sel[0] && code[i + 1] == sel[1] &&
-                code[i + 2] == sel[2] && code[i + 3] == sel[3]
-            ) { found = true; break; }
+                code[i] == sel[0] && code[i + 1] == sel[1] && code[i + 2] == sel[2]
+                    && code[i + 3] == sel[3]
+            ) found = true;
+            break;
         }
         assertFalse(found, "the protocol must not know this selector exists");
     }

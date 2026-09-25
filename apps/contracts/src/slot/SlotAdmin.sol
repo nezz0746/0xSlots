@@ -1,7 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "../errors/SlotErrors.sol";
+import {
+    NotOccupant,
+    InvalidTax,
+    InvalidRecipient,
+    InvalidRunway,
+    InvalidManager,
+    InvalidModule,
+    ModuleTooExpensive,
+    ScopesChanged,
+    FeeChanged,
+    NothingToAccept,
+    ModuleChangeQueued,
+    NotMutable,
+    NoPendingTerms,
+    NothingProposed,
+    UnknownTerms
+} from "../errors/SlotErrors.sol";
 import {SlotEscrow} from "./SlotEscrow.sol";
 import {TaxTerms, ModuleTerms, ModuleFee, Pending, InstalledModule} from "../types/SlotTypes.sol";
 import {ModuleLib} from "../libraries/ModuleLib.sol";
@@ -130,7 +146,7 @@ abstract contract SlotAdmin is SlotEscrow {
         Pending storage p = _pending();
         if (p.mask & TermsLib.MODULE != 0) revert ModuleChangeQueued();
 
-        (uint16 offered, ) = _readModule(m.terms());
+        (uint16 offered,) = _readModule(m.terms());
         if (offered != expected) revert ScopesChanged();
         if (offered == m.scopes) revert NothingToAccept();
         if (p.mask & TermsLib.SCOPES != 0 && p.module.scopes == offered) revert NothingToAccept();
@@ -158,11 +174,7 @@ abstract contract SlotAdmin is SlotEscrow {
 
         _settle();
         if (_applyPending()) {
-            _onInstall(
-                _occupancy().occupant,
-                _occupancy().price,
-                _occupancy().deposit
-            );
+            _onInstall(_occupancy().occupant, _occupancy().price, _occupancy().deposit);
         }
     }
 
@@ -194,7 +206,9 @@ abstract contract SlotAdmin is SlotEscrow {
     /// @dev Each term moves only if the slot was born able to move it.
     function _requireMutable(uint16 mask) internal view {
         Settings storage st = _settings();
-        if (mask & (TermsLib.TAX_RATE | TermsLib.MIN_RUNWAY) != 0 && !st.mutableTax) revert NotMutable();
+        if (mask & (TermsLib.TAX_RATE | TermsLib.MIN_RUNWAY) != 0 && !st.mutableTax) {
+            revert NotMutable();
+        }
         if (mask & TermsLib.RECIPIENT != 0 && !st.mutableRecipient) revert NotMutable();
         if (mask & TermsLib.MODULE != 0 && !st.mutableModule) revert NotMutable();
     }
@@ -207,9 +221,11 @@ abstract contract SlotAdmin is SlotEscrow {
     ///      when the module attaches: a module too expensive to answer under
     ///      that stipend is attached as nothing, silently and later, so it is
     ///      refused here instead.
-    function _validateModule(
-        ModuleTerms memory h
-    ) internal view returns (uint16 scopes_, ModuleFee memory fee_) {
+    function _validateModule(ModuleTerms memory h)
+        internal
+        view
+        returns (uint16 scopes_, ModuleFee memory fee_)
+    {
         if (h.target == address(0)) {
             // Settings for a module that is not there. Nothing would read them,
             // and they would silently go live the day a module attaches without its own.
@@ -217,7 +233,7 @@ abstract contract SlotAdmin is SlotEscrow {
             return (0, fee_);
         }
         (scopes_, fee_) = _readModule(h);
-        (bool affordable, , ) = _tryReadModule(h);
+        (bool affordable,,) = _tryReadModule(h);
         if (!affordable) revert ModuleTooExpensive();
     }
 }

@@ -31,8 +31,6 @@ contract AnyModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Scopes and a fee its owner can change at any time, and a count of the
@@ -109,7 +107,12 @@ contract SlotTermsTest is Test {
         return TaxTerms({recipient: recipient, rateBps: 500, minRunwaySeconds: 1 hours});
     }
 
-    function _init(bool tax, bool rec, bool module, ModuleTerms memory h) internal view returns (SlotInit memory) {
+    function _init(
+        bool tax,
+        bool rec,
+        bool module,
+        ModuleTerms memory h
+    ) internal view returns (SlotInit memory) {
         return SlotInit({
             currency: IERC20(address(0)),
             manager: (tax || rec || module) ? manager : address(0),
@@ -125,7 +128,12 @@ contract SlotTermsTest is Test {
         return Slot(payable(factory.createSlot(_init(tax, rec, module, h))));
     }
 
-    function _propose(Slot s, TaxTerms memory taxTerms, ModuleTerms memory module, uint16 mask) internal {
+    function _propose(
+        Slot s,
+        TaxTerms memory taxTerms,
+        ModuleTerms memory module,
+        uint16 mask
+    ) internal {
         vm.prank(manager);
         s.proposeTerms(taxTerms, module, mask);
     }
@@ -152,7 +160,8 @@ contract SlotTermsTest is Test {
 
     function test_EachTermMovesOnlyIfMutable() public {
         Slot taxOnly = _slot(true, false, false, _noModule());
-        TaxTerms memory taxTerms = TaxTerms({recipient: next, rateBps: 700, minRunwaySeconds: 2 hours});
+        TaxTerms memory taxTerms =
+            TaxTerms({recipient: next, rateBps: 700, minRunwaySeconds: 2 hours});
 
         _propose(taxOnly, taxTerms, _noModule(), TAX_RATE | MIN_RUNWAY);
 
@@ -186,7 +195,8 @@ contract SlotTermsTest is Test {
     // ── queueing ────────────────────────────────────────────────────────────
 
     function test_ProposalQueuesOnlyTheMaskedFields() public {
-        TaxTerms memory taxTerms = TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 2 days});
+        TaxTerms memory taxTerms =
+            TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 2 days});
         _propose(slot, taxTerms, _noModule(), RECIPIENT);
 
         assertEq(slot.recipient(), recipient, "nothing moves on proposal");
@@ -199,8 +209,18 @@ contract SlotTermsTest is Test {
     }
 
     function test_ProposalsAccumulateAcrossTerms() public {
-        _propose(slot, TaxTerms({recipient: address(0), rateBps: 900, minRunwaySeconds: 0}), _noModule(), TAX_RATE);
-        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
+        _propose(
+            slot,
+            TaxTerms({recipient: address(0), rateBps: 900, minRunwaySeconds: 0}),
+            _noModule(),
+            TAX_RATE
+        );
+        _propose(
+            slot,
+            TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}),
+            _noModule(),
+            RECIPIENT
+        );
 
         Pending memory __p2 = slot.pending();
         TaxTerms memory queued = __p2.taxTerms;
@@ -222,7 +242,8 @@ contract SlotTermsTest is Test {
     }
 
     function test_OnlyTheMaskedFieldsAreValidated() public {
-        TaxTerms memory taxTerms = TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0});
+        TaxTerms memory taxTerms =
+            TaxTerms({recipient: address(0), rateBps: 0, minRunwaySeconds: 0});
         _propose(slot, taxTerms, _noModule(), MIN_RUNWAY);
 
         vm.prank(manager);
@@ -241,7 +262,12 @@ contract SlotTermsTest is Test {
     }
 
     function test_CancelClearsOnlyWhatIsQueued() public {
-        _propose(slot, TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 0}), _noModule(), TAX_RATE | RECIPIENT);
+        _propose(
+            slot,
+            TaxTerms({recipient: next, rateBps: 900, minRunwaySeconds: 0}),
+            _noModule(),
+            TAX_RATE | RECIPIENT
+        );
 
         vm.prank(manager);
         slot.cancelTerms(RECIPIENT | MODULE);
@@ -293,7 +319,12 @@ contract SlotTermsTest is Test {
 
     function test_UnripeTermsWaitThroughATransition() public {
         _buy(slot);
-        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
+        _propose(
+            slot,
+            TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}),
+            _noModule(),
+            RECIPIENT
+        );
 
         _release(slot);
 
@@ -305,7 +336,12 @@ contract SlotTermsTest is Test {
 
     function test_RentEarnedBeforeTheChangeGoesToTheOutgoingRecipient() public {
         _buy(slot);
-        _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
+        _propose(
+            slot,
+            TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}),
+            _noModule(),
+            RECIPIENT
+        );
         skip(10 days);
 
         _release(slot);
@@ -339,13 +375,17 @@ contract SlotTermsTest is Test {
 
     // ── module scopes and fee ────────────────────────────────────────────────
 
-    function _changingSlot(bool mutableModule, uint16 bps, address to) internal returns (Slot s, ChangingModule h) {
+    function _changingSlot(
+        bool mutableModule,
+        uint16 bps,
+        address to
+    ) internal returns (Slot s, ChangingModule h) {
         h = new ChangingModule(bps, to);
         s = _slot(true, true, mutableModule, ModuleTerms({target: address(h), settings: ""}));
     }
 
     function test_TheSlotCopiesTheModulesScopesAndFee() public {
-        (Slot s, ) = _changingSlot(true, 2_500, author);
+        (Slot s,) = _changingSlot(true, 2_500, author);
 
         ModuleFee memory f = s.fee();
         assertEq(f.bps, 2_500);
@@ -357,20 +397,26 @@ contract SlotTermsTest is Test {
     function test_AModuleWithBadScopesOrFeeIsRefused() public {
         ChangingModule noRecipient = new ChangingModule(100, address(0));
         vm.expectRevert(InvalidModuleFee.selector);
-        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noRecipient), settings: ""})));
+        factory.createSlot(
+            _init(true, true, true, ModuleTerms({target: address(noRecipient), settings: ""}))
+        );
 
         ChangingModule tooMuch = new ChangingModule(10_001, author);
         vm.expectRevert(InvalidModuleFee.selector);
-        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(tooMuch), settings: ""})));
+        factory.createSlot(
+            _init(true, true, true, ModuleTerms({target: address(tooMuch), settings: ""}))
+        );
 
         ChangingModule noScopes = new ChangingModule(0, address(0));
         noScopes.setScopes(0);
         vm.expectRevert(InvalidModule.selector);
-        factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noScopes), settings: ""})));
+        factory.createSlot(
+            _init(true, true, true, ModuleTerms({target: address(noScopes), settings: ""}))
+        );
     }
 
     function test_TheFeeIsSplitFromCollectedRent() public {
-        (Slot s, ) = _changingSlot(true, 2_500, author);
+        (Slot s,) = _changingSlot(true, 2_500, author);
         _buy(s);
         skip(10 days);
 
@@ -479,7 +525,7 @@ contract SlotTermsTest is Test {
     }
 
     function test_AcceptingTheSameFeeIsNothing() public {
-        (Slot s, ) = _changingSlot(true, 1_000, author);
+        (Slot s,) = _changingSlot(true, 1_000, author);
         vm.prank(manager);
         vm.expectRevert(NothingToAccept.selector);
         s.acceptFee(ModuleFee(1_000, author));
@@ -520,7 +566,9 @@ contract SlotTermsTest is Test {
 
     function test_ScopesCannotBeAcceptedWhileAModuleIsQueued() public {
         (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
-        _propose(s, _taxTerms(), ModuleTerms({target: address(new AnyModule()), settings: ""}), MODULE);
+        _propose(
+            s, _taxTerms(), ModuleTerms({target: address(new AnyModule()), settings: ""}), MODULE
+        );
 
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
@@ -604,7 +652,7 @@ contract SlotTermsTest is Test {
     }
 
     function test_DetachingClearsTheModuleItsScopesAndItsFee() public {
-        (Slot s, ) = _changingSlot(true, 2_500, author);
+        (Slot s,) = _changingSlot(true, 2_500, author);
         _buy(s);
         _propose(s, _taxTerms(), _noModule(), MODULE);
         skip(s.TERMS_DELAY());
@@ -640,5 +688,4 @@ contract SlotTermsTest is Test {
         t.minRunwaySeconds = uint32(365 days);
         _propose(slot, t, _noModule(), MIN_RUNWAY);
     }
-
 }

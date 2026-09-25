@@ -32,7 +32,8 @@ contract AdLandModerationTest is Test {
     function setUp() public {
         SlotFactory factoryImpl = new SlotFactory();
         Slot slotImpl = new Slot();
-        bytes memory fInit = abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)));
+        bytes memory fInit =
+            abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)));
         factory = SlotFactory(address(new ERC1967Proxy(address(factoryImpl), fInit)));
 
         AdLand adImpl = new AdLand();
@@ -71,8 +72,14 @@ contract AdLandModerationTest is Test {
                     SlotInit({
                         currency: IERC20(address(0)),
                         manager: manager,
-                        mutableTax: mutable_, mutableRecipient: mutable_, mutableModule: mutable_,
-                        taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
+                        mutableTax: mutable_,
+                        mutableRecipient: mutable_,
+                        mutableModule: mutable_,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
                         moduleTerms: ModuleTerms({target: address(adland), settings: settings})
                     })
                 ))
@@ -108,7 +115,8 @@ contract AdLandModerationTest is Test {
     /// @notice Every slot that existed before moderation reads `Open` and
     ///         publishes exactly as it did.
     function test_OpenIsTheDefaultAndPublishesImmediately() public {
-        (ModerationMode current, ModerationMode next, string memory waiting) = adland.moderationOf(address(slot));
+        (ModerationMode current, ModerationMode next, string memory waiting) =
+            adland.moderationOf(address(slot));
         assertEq(uint8(current), uint8(ModerationMode.Open));
         assertEq(uint8(next), uint8(ModerationMode.Open));
         assertEq(waiting, "");
@@ -289,9 +297,7 @@ contract AdLandModerationTest is Test {
 
         TaxTerms memory none;
         slot.proposeTerms(
-            none,
-            ModuleTerms({target: address(adland), settings: _config(ModerationMode.Every)}),
-            8
+            none, ModuleTerms({target: address(adland), settings: _config(ModerationMode.Every)}), 8
         );
 
         (ModerationMode current, ModerationMode next,) = adland.moderationOf(address(slot));
@@ -350,14 +356,25 @@ contract AdLandModerationTest is Test {
 
     /// @notice A key is claimed from the slot that asks for it, first come.
     function test_AKeyIsClaimedFromTheSlotThatAsksForIt() public {
-        bytes memory settings = abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: "spot"}));
-        Slot keyed = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
-        }))));
+        bytes memory settings =
+            abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: "spot"}));
+        Slot keyed = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                    })
+                ))
+        );
 
         // Anyone may press it; what it trusts is the slot.
         vm.prank(alice);
@@ -366,13 +383,23 @@ contract AdLandModerationTest is Test {
         assertEq(adland.keyOwner("spot"), address(this), "the slot's manager holds it");
 
         // A second slot asking the same name loses.
-        Slot other = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: address(this),
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
-        }))));
+        Slot other = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                    })
+                ))
+        );
         vm.expectRevert(abi.encodeWithSelector(IAdLand.KeyTaken.selector, bytes32("spot")));
         adland.claimKey(address(other));
     }
@@ -386,14 +413,25 @@ contract AdLandModerationTest is Test {
     // ─── registry authority ─────────────────────────────────────────────────
 
     function _keyedSlot(address manager_, bytes32 key) internal returns (Slot) {
-        bytes memory settings = abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: key}));
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: manager_,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: manager_, rateBps: uint16(500), minRunwaySeconds: uint32(7 days)}),
-            moduleTerms: ModuleTerms({target: address(adland), settings: settings})
-        }))));
+        bytes memory settings =
+            abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Open, key: key}));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager_,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: manager_,
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(adland), settings: settings})
+                    })
+                ))
+        );
     }
 
     /// @notice The SDK's default render target is not a first-come name.
@@ -432,9 +470,13 @@ contract AdLandModerationTest is Test {
         adland.setSlot("acme", address(good));
 
         vm.startPrank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IAdLand.OwnerProposalPending.selector, bytes32("acme")));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdLand.OwnerProposalPending.selector, bytes32("acme"))
+        );
         adland.setSlot("acme", address(bad));
-        vm.expectRevert(abi.encodeWithSelector(IAdLand.OwnerProposalPending.selector, bytes32("acme")));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdLand.OwnerProposalPending.selector, bytes32("acme"))
+        );
         adland.cancelSlot("acme");
         vm.stopPrank();
 
@@ -442,5 +484,4 @@ contract AdLandModerationTest is Test {
         adland.commitSlot("acme");
         assertEq(adland.slotOf("acme"), address(good), "the owner's recovery lands");
     }
-
 }

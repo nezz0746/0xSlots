@@ -27,13 +27,7 @@ import {ISlotBoundNFT, ISlotOccupancy} from "./ISlotBoundNFT.sol";
  *
  *      Soulbound: occupancy is the only market for the position.
  */
-contract SlotBoundNFT is
-    ERC721,
-    Ownable,
-    ReentrancyGuard,
-    ISlotModule,
-    ISlotBoundNFT
-{
+contract SlotBoundNFT is ERC721, Ownable, ReentrancyGuard, ISlotModule, ISlotBoundNFT {
     using SafeERC20 for IERC20;
 
     SlotFactory public immutable FACTORY;
@@ -79,9 +73,7 @@ contract SlotBoundNFT is
             // A detachable module strands the token.
             mutableModule: false,
             taxTerms: TaxTerms({
-                recipient: recipient_,
-                rateBps: taxRateBps_,
-                minRunwaySeconds: minRunwaySeconds_
+                recipient: recipient_, rateBps: taxRateBps_, minRunwaySeconds: minRunwaySeconds_
             }),
             moduleTerms: ModuleTerms({target: address(this), settings: ""})
         });
@@ -99,9 +91,12 @@ contract SlotBoundNFT is
     }
 
     /// @notice Mint at your own valuation. Costs {quoteMint}'s `total`.
-    function mint(
-        uint256 valuation
-    ) external payable nonReentrant returns (uint256 tokenId, address slot) {
+    function mint(uint256 valuation)
+        external
+        payable
+        nonReentrant
+        returns (uint256 tokenId, address slot)
+    {
         if (totalMinted >= MAX_SUPPLY) revert SoldOut();
 
         slot = FACTORY.createSlot(_terms);
@@ -128,12 +123,7 @@ contract SlotBoundNFT is
 
         if (address(_terms.currency) == address(0)) {
             if (msg.value != total) revert WrongValue(total);
-            ISlotOccupancy(slot).buy{value: deposit}(
-                msg.sender,
-                valuation,
-                deposit,
-                0
-            );
+            ISlotOccupancy(slot).buy{value: deposit}(msg.sender, valuation, deposit, 0);
             // After the seating, so a recipient cannot reenter a half-built mint.
             if (valuation > 0) Address.sendValue(payable(to), valuation);
             return;
@@ -158,20 +148,18 @@ contract SlotBoundNFT is
 
     /// @notice What a mint costs and how it splits. For a UI only — {mint}
     ///         asks the slot rather than trusting this.
-    function quoteMint(
-        uint256 valuation
-    ) external view returns (uint256 total, uint256 price, uint256 deposit) {
+    function quoteMint(uint256 valuation)
+        external
+        view
+        returns (uint256 total, uint256 price, uint256 deposit)
+    {
         deposit = SlotMath.depositFor(
-            valuation,
-            _terms.taxTerms.rateBps,
-            _terms.taxTerms.minRunwaySeconds
+            valuation, _terms.taxTerms.rateBps, _terms.taxTerms.minRunwaySeconds
         );
         return (valuation + deposit, valuation, deposit);
     }
 
-    function getSlotInfoOf(
-        uint256 tokenId
-    ) external view returns (SlotInfo memory) {
+    function getSlotInfoOf(uint256 tokenId) external view returns (SlotInfo memory) {
         address slot = slotOf[tokenId];
         if (slot == address(0)) revert NoSuchToken(tokenId);
         return ISlotOccupancy(slot).getSlotInfo();
@@ -188,6 +176,7 @@ contract SlotBoundNFT is
         return _uri;
     }
 
+    // forge-lint: disable-next-line(mixed-case-function)
     function _baseURI() internal view override returns (string memory) {
         return _uri;
     }
@@ -206,7 +195,6 @@ contract SlotBoundNFT is
     function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
     function checkSettings(bytes calldata) external view {}
-
 
     function beforeBuy(SlotContext calldata) external view {}
 
@@ -229,7 +217,6 @@ contract SlotBoundNFT is
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
 
     /// @dev Reads `occupant()` live, never `ctx`: the `after` entry points are
     ///      world-callable, so a forged context must be able to change nothing.
@@ -255,8 +242,9 @@ contract SlotBoundNFT is
         uint256 tokenId,
         address auth
     ) internal override returns (address) {
-        if (_ownerOf(tokenId) != address(0) && !_syncing)
+        if (_ownerOf(tokenId) != address(0) && !_syncing) {
             revert NotTransferable();
+        }
         return super._update(to, tokenId, auth);
     }
 }

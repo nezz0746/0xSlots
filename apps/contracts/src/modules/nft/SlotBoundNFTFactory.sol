@@ -85,8 +85,12 @@ contract SlotBoundNFTFactory is VersionedUUPS {
     event AdminTransferred(address indexed from, address indexed to);
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotAdmin();
+        _checkAdmin();
         _;
+    }
+
+    function _checkAdmin() internal view {
+        if (msg.sender != admin) revert NotAdmin();
     }
 
     function initialize(
@@ -114,10 +118,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
      *      The collection validates its own terms in its constructor, so this
      *      re-checks nothing. One validation, one authority.
      */
-    function createCollection(CollectionInit calldata init)
-        external
-        returns (address collection)
-    {
+    function createCollection(CollectionInit calldata init) external returns (address collection) {
         // CREATE2, salted with the chain id and the collection's index — the
         // same reasoning as `SlotFactory.createSlot`, written out in full
         // there. The constructor arguments below do NOT make the address
@@ -146,11 +147,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
             ++collectionCount;
         }
         emit CollectionCreated(
-            collection,
-            msg.sender,
-            init.recipient,
-            address(init.currency),
-            init.maxSupply
+            collection, msg.sender, init.recipient, address(init.currency), init.maxSupply
         );
     }
 
@@ -182,9 +179,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
     event WrapperBeaconUpgraded(address indexed newImplementation);
 
     /// @notice Deploy a wrapper. Anyone may; it has no privileged party.
-    function createWrapper(
-        WrapperInit calldata init
-    ) external returns (address wrapper) {
+    function createWrapper(WrapperInit calldata init) external returns (address wrapper) {
         bytes memory initData = abi.encodeCall(
             SlotBoundNFTWrapper.initialize,
             (init.name, init.symbol, slotFactory, init.owner, init.wrapFeeWei)
@@ -196,9 +191,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
         // the two addresses, a reader should not have to derive that.
         wrapper = address(
             new BeaconProxy{
-                salt: keccak256(
-                    abi.encode(block.chainid, "wrapper", wrapperCount)
-                )
+                salt: keccak256(abi.encode(block.chainid, "wrapper", wrapperCount))
             }(address(wrapperBeacon), initData)
         );
 
@@ -207,12 +200,7 @@ contract SlotBoundNFTFactory is VersionedUUPS {
             ++wrapperCount;
         }
         emit WrapperCreated(
-            wrapper,
-            msg.sender,
-            init.owner,
-            init.name,
-            init.symbol,
-            init.wrapFeeWei
+            wrapper, msg.sender, init.owner, init.name, init.symbol, init.wrapFeeWei
         );
     }
 

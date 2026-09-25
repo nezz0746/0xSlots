@@ -31,7 +31,9 @@ contract GasHog is ERC20 {
     function _update(address from, address to, uint256 value) internal override {
         if (to == sink) {
             uint256 x;
-            for (uint256 i; i < 2_000; ++i) x = uint256(keccak256(abi.encode(x, i)));
+            for (uint256 i; i < 2_000; ++i) {
+                x = uint256(keccak256(abi.encode(x, i)));
+            }
         }
         super._update(from, to, value);
     }
@@ -42,7 +44,9 @@ contract GasHog is ERC20 {
 contract HeavyModule is AskModule {
     function checkSettings(bytes calldata) external pure {
         uint256 x;
-        for (uint256 i; i < 700; ++i) x = uint256(keccak256(abi.encode(x, i)));
+        for (uint256 i; i < 700; ++i) {
+            x = uint256(keccak256(abi.encode(x, i)));
+        }
     }
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
@@ -59,8 +63,6 @@ contract HeavyModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @notice A queued module must never be erased by a caller tuning gas.
@@ -73,20 +75,32 @@ contract ModuleReadGasTest is Test {
     ///      so whatever gas it is given, the queued module is neither attached nor
     ///      erased — there is no read on this path to starve.
     function test_AnEvictionNeitherAttachesNorErasesAQueuedModule() public {
-        SlotFactory factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        SlotFactory factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         GasHog token = new GasHog(sink);
         HeavyModule heavy = new HeavyModule();
 
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(this),
-            mutableTax: false, mutableRecipient: false, mutableModule: true,
-            taxTerms: TaxTerms({recipient: sink, rateBps: 1000, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(this),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: sink, rateBps: 1000, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
 
         token.mint(alice, 1_000 ether);
         vm.startPrank(alice);
@@ -102,7 +116,7 @@ contract ModuleReadGasTest is Test {
         uint256 evicted;
         for (uint256 g = 400_000; g <= 1_600_000; g += 5_000) {
             uint256 snap = vm.snapshotState();
-            (bool ok, ) = address(s).call{gas: g}(abi.encodeWithSignature("liquidate()"));
+            (bool ok,) = address(s).call{gas: g}(abi.encodeWithSignature("liquidate()"));
             if (ok) {
                 assertEq(s.module(), address(0), "an eviction attaches nothing");
                 assertEq(s.pending().mask & 8, 8, "and erases nothing");
@@ -129,19 +143,31 @@ contract BuyGasStarvationTest is Test {
     address manager = makeAddr("manager");
 
     function test_ABuyerCannotStarveTheModuleReadAndBeSeatedUnguarded() public {
-        SlotFactory factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        SlotFactory factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         VetoModule veto = new VetoModule();
 
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
 
         TaxTerms memory none;
         vm.prank(manager);
@@ -155,8 +181,13 @@ contract BuyGasStarvationTest is Test {
         for (uint256 g = 100_000; g <= 3_000_000; g += 20_000) {
             uint256 snap = vm.snapshotState();
             vm.prank(alice);
-            (bool ok, ) = address(s).call{value: dep, gas: g}(
-                abi.encodeWithSignature("buy(address,uint256,uint256,uint256)", alice, 1 ether, dep, 0)
+            (bool ok,) = address(s)
+            .call{
+                value: dep, gas: g
+            }(
+                abi.encodeWithSignature(
+                    "buy(address,uint256,uint256,uint256)", alice, 1 ether, dep, 0
+                )
             );
             if (ok) {
                 ++seated;
@@ -178,6 +209,7 @@ contract VetoModule is AskModule {
     }
 
     function checkSettings(bytes calldata) external view {}
+
     function beforeBuy(SlotContext calldata) external view {
         revert Vetoed();
     }
@@ -189,7 +221,6 @@ contract VetoModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
 }
 
 /// @dev Healthy, and expensive to read: the costlier the read, the wider the
@@ -197,12 +228,16 @@ contract VetoModule is AskModule {
 contract PricyModule is AskModule {
     function checkSettings(bytes calldata) external pure {
         uint256 x;
-        for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
+        for (uint256 i; i < 500; ++i) {
+            x = uint256(keccak256(abi.encode(x, i)));
+        }
     }
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         uint256 x;
-        for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
+        for (uint256 i; i < 500; ++i) {
+            x = uint256(keccak256(abi.encode(x, i)));
+        }
         o.scopes = ScopesLib.BEFORE_BUY;
     }
 
@@ -215,7 +250,6 @@ contract PricyModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
 }
 
 /**
@@ -232,19 +266,31 @@ contract QueuedModuleStarvationTest is Test {
     address manager = makeAddr("manager");
 
     function test_ABuyerCannotStarveTheReadThatAttachesAQueuedModule() public {
-        SlotFactory factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        SlotFactory factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         PricyModule pricy = new PricyModule();
 
-        Slot s = Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: manager,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
 
         TaxTerms memory none;
         vm.prank(manager);
@@ -258,8 +304,13 @@ contract QueuedModuleStarvationTest is Test {
         for (uint256 g = 100_000; g <= 4_000_000; g += 10_000) {
             uint256 snap = vm.snapshotState();
             vm.prank(alice);
-            (bool ok, ) = address(s).call{value: dep, gas: g}(
-                abi.encodeWithSignature("buy(address,uint256,uint256,uint256)", alice, 1 ether, dep, 0)
+            (bool ok,) = address(s)
+            .call{
+                value: dep, gas: g
+            }(
+                abi.encodeWithSignature(
+                    "buy(address,uint256,uint256,uint256)", alice, 1 ether, dep, 0
+                )
             );
             if (ok) {
                 ++seated;
@@ -277,12 +328,16 @@ contract QueuedModuleStarvationTest is Test {
 contract GluttonModule is AskModule {
     function checkSettings(bytes calldata) external pure {
         uint256 x;
-        for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
+        for (uint256 i; i < 1_500; ++i) {
+            x = uint256(keccak256(abi.encode(x, i)));
+        }
     }
 
     function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         uint256 x;
-        for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
+        for (uint256 i; i < 1_500; ++i) {
+            x = uint256(keccak256(abi.encode(x, i)));
+        }
         o.scopes = ScopesLib.BEFORE_BUY;
     }
 
@@ -295,7 +350,6 @@ contract GluttonModule is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
 }
 
 /**
@@ -310,17 +364,23 @@ contract ModuleStipendTest is Test {
     address manager = makeAddr("manager");
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
     }
 
     function _init(address module) internal view returns (SlotInit memory) {
         return SlotInit({
             currency: IERC20(address(0)),
             manager: manager,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
+            mutableTax: true,
+            mutableRecipient: true,
+            mutableModule: true,
             taxTerms: TaxTerms({recipient: address(this), rateBps: 500, minRunwaySeconds: 1 days}),
             moduleTerms: ModuleTerms({target: module, settings: ""})
         });

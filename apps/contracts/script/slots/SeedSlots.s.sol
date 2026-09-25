@@ -27,7 +27,6 @@ import {SlotMath} from "../../src/libraries/SlotMath.sol";
  *      which is the state that is effectively untestable against a testnet.
  */
 contract SeedSlots is Script {
-
     SlotFactory internal factory;
 
     /// @dev Takes only the factory now. The module and the test token are
@@ -58,9 +57,7 @@ contract SeedSlots is Script {
         address module = _deployed("MinimumTenureModule");
 
         // Salted `new` makes the address a function of the bytecode alone.
-        SlotsTestToken token = new SlotsTestToken{
-            salt: "slots.seed.test-token"
-        }();
+        SlotsTestToken token = new SlotsTestToken{salt: "slots.seed.test-token"}();
         token.mint(me, 1_000_000e18);
 
         // Both are plain CREATE, so their addresses are a function of the seed's
@@ -83,7 +80,8 @@ contract SeedSlots is Script {
 
         // 3. Native, tenure module, occupied — inside its protection window, so
         //    the UI has a slot that renders as "not available yet".
-        Slot c = _create(me, address(0), module, abi.encode(uint256(7 days)), 500, 7 days, true, true);
+        Slot c =
+            _create(me, address(0), module, abi.encode(uint256(7 days)), 500, 7 days, true, true);
         uint256 depC = _minDeposit(0.1 ether, 500, 7 days);
         c.buy{value: depC}(me, 0.1 ether, depC, 0);
 
@@ -99,7 +97,11 @@ contract SeedSlots is Script {
         Slot f = _create(me, address(0), address(0), "", 500, 1 days, true, true);
         uint256 depF = _minDeposit(0.02 ether, 500, 1 days);
         f.buy{value: depF}(me, 0.02 ether, depF, 0);
-        f.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        f.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}),
+            ModuleTerms({target: address(0), settings: ""}),
+            uint8(1)
+        );
 
         // 7. Funded to the exact minimum. `minRunwaySeconds` is 1 hour, so an
         //    hour of warp — or an hour of anvil — makes this liquidatable by
@@ -122,9 +124,8 @@ contract SeedSlots is Script {
         // 9. Tenure module on a VACANT slot: a rule with nobody to protect yet.
         //    The module column has something to show on an empty slot, and the
         //    buy form has to price a window before anyone is inside one.
-        Slot i = _create(
-            me, address(0), module, abi.encode(uint256(1 days)), 600, 1 days, true, true
-        );
+        Slot i =
+            _create(me, address(0), module, abi.encode(uint256(1 days)), 600, 1 days, true, true);
 
         vm.stopBroadcast();
 
@@ -152,31 +153,30 @@ contract SeedSlots is Script {
     ) internal returns (Slot) {
         // A manager is required exactly when something is mutable and
         // forbidden otherwise — `initialize` enforces both halves.
-        return
-            Slot(
-                payable(
-                    factory.createSlot(
-                        SlotInit({
-                            currency: IERC20(currency),
-                            manager: (mutableTax || mutableModule)
-                                ? recipient
-                                : address(0),
-                            mutableTax: mutableTax,
-                            mutableRecipient: mutableTax || mutableModule,
-                            mutableModule: mutableModule,
-                            taxTerms: TaxTerms({recipient: recipient, rateBps: uint16(tax), minRunwaySeconds: uint32(minRunwaySeconds)}),
-                            moduleTerms: ModuleTerms({target: module, settings: settings})
-                        })
-                    )
-                )
-            );
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(currency),
+                        manager: (mutableTax || mutableModule) ? recipient : address(0),
+                        mutableTax: mutableTax,
+                        mutableRecipient: mutableTax || mutableModule,
+                        mutableModule: mutableModule,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(tax),
+                            minRunwaySeconds: uint32(minRunwaySeconds)
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: settings})
+                    })
+                ))
+        );
     }
 
-    function _minDeposit(uint256 price, uint256 tax, uint256 window)
-        internal
-        pure
-        returns (uint256)
-    {
+    function _minDeposit(
+        uint256 price,
+        uint256 tax,
+        uint256 window
+    ) internal pure returns (uint256) {
         // The slot's own formula, not a copy of it. This hand-wrote
         // `ceilDiv(price * tax * window, MONTH * BASIS_POINTS)` against its own
         // local constants — the plain product being exactly the overflow
@@ -193,13 +193,7 @@ contract SeedSlots is Script {
     ///      whose module has no code.
     function _deployed(string memory name) internal view returns (address) {
         string memory raw = vm.readFile(
-            string.concat(
-                "./deployments/",
-                vm.toString(block.chainid),
-                "/",
-                name,
-                ".json"
-            )
+            string.concat("./deployments/", vm.toString(block.chainid), "/", name, ".json")
         );
         return vm.parseJsonAddress(raw, ".address");
     }
@@ -215,14 +209,7 @@ contract SeedSlots is Script {
         vm.serializeUint(obj, "version", 1);
         string memory json = vm.serializeAddress(obj, "address", addr);
         vm.writeFile(
-            string.concat(
-                "./deployments/",
-                vm.toString(block.chainid),
-                "/",
-                name,
-                ".json"
-            ),
-            json
+            string.concat("./deployments/", vm.toString(block.chainid), "/", name, ".json"), json
         );
     }
 }

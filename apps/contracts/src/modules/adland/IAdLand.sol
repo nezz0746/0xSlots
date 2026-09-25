@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-
 import {SlotInfo} from "../../slot/SlotViews.sol";
 import {ModuleTerms, Pending} from "../../types/SlotTypes.sol";
 
@@ -122,16 +121,8 @@ interface IAdLand {
     event Published(address indexed slot, string uri, uint64 tenureId);
     event Cleared(address indexed slot, uint64 fromTenure, uint64 toTenure);
 
-    event SlotSet(
-        bytes32 indexed key,
-        address indexed previous,
-        address indexed slot
-    );
-    event SlotProposed(
-        bytes32 indexed key,
-        address indexed slot,
-        uint64 readyAt
-    );
+    event SlotSet(bytes32 indexed key, address indexed previous, address indexed slot);
+    event SlotProposed(bytes32 indexed key, address indexed slot, uint64 readyAt);
     event SlotProposalCancelled(bytes32 indexed key, address indexed slot);
 
     /// @notice `mode` applies to `slot` from `fromTenure` on. Equal to the

@@ -24,7 +24,7 @@ library ModuleLib {
 
     /// @dev The record's `ModuleTerms`: which module, configured how.
     function terms(InstalledModule storage m) internal view returns (ModuleTerms memory) {
-        return ModuleTerms(m.target, m.settings);
+        return ModuleTerms({target: m.target, settings: m.settings});
     }
 
     /// @dev Whether the slot calls this module for `scope`.
@@ -67,7 +67,9 @@ library ModuleLib {
 
         if (scopes == 0 || scopes & ~ScopesLib.ALL != 0) revert InvalidModule();
         if (fee.bps > SlotMath.BASIS_POINTS) revert InvalidModuleFee();
-        if (fee.bps != 0 && fee.recipient == address(0)) revert InvalidModuleFee();
+        if (fee.bps != 0 && fee.recipient == address(0)) {
+            revert InvalidModuleFee();
+        }
     }
 
     /**
@@ -112,7 +114,9 @@ library ModuleLib {
             scopesWord := mload(out)
         }
         if (!answered || got < 0x20) return (false, 0, fee);
-        if (scopesWord == 0 || scopesWord > ScopesLib.ALL) return (false, 0, fee);
+        if (scopesWord == 0 || scopesWord > ScopesLib.ALL) {
+            return (false, 0, fee);
+        }
 
         cd = abi.encodeCall(ISlotModule.fee, (settings));
         uint256 bpsWord;
@@ -125,11 +129,17 @@ library ModuleLib {
             recipientWord := mload(add(out, 0x20))
         }
         if (!answered || got < 0x40) return (false, 0, fee);
-        if (bpsWord > SlotMath.BASIS_POINTS || recipientWord >> 160 != 0) return (false, 0, fee);
+        if (bpsWord > SlotMath.BASIS_POINTS || recipientWord >> 160 != 0) {
+            return (false, 0, fee);
+        }
         if (bpsWord != 0 && recipientWord == 0) return (false, 0, fee);
 
+        // Each narrowed only after the range checks above.
+        // forge-lint: disable-next-line(unsafe-typecast)
         scopes = uint16(scopesWord);
+        // forge-lint: disable-next-line(unsafe-typecast)
         fee.bps = uint16(bpsWord);
+        // forge-lint: disable-next-line(unsafe-typecast)
         fee.recipient = address(uint160(recipientWord));
         ok = true;
     }
@@ -190,7 +200,11 @@ library ModuleLib {
      *      huge payload cannot spend the caller's gas on the copy — the path
      *      evictions run through stays bounded by `gasCap` alone.
      */
-    function callCapped(address target, bytes memory data, uint256 gasCap) internal returns (bool ok) {
+    function callCapped(
+        address target,
+        bytes memory data,
+        uint256 gasCap
+    ) internal returns (bool ok) {
         assembly ("memory-safe") {
             ok := call(gasCap, target, 0, add(data, 0x20), mload(data), 0, 0)
         }

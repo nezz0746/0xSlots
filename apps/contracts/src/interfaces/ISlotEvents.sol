@@ -22,11 +22,7 @@ interface ISlotEvents {
         ModuleTerms moduleTerms
     );
     event Bought(
-        address indexed buyer,
-        address indexed from,
-        uint256 price,
-        uint256 deposit,
-        uint256 paid
+        address indexed buyer, address indexed from, uint256 price, uint256 deposit, uint256 paid
     );
     event Released(address indexed occupant, uint256 refund);
     event Liquidated(address indexed by, address indexed occupant);
@@ -36,11 +32,7 @@ interface ISlotEvents {
     /// @dev `tenureId` is not decoration. An approval is keyed by the tenure
     ///      and dies silently when somebody else is seated, so a log without it
     ///      cannot be replayed into `isOperator`.
-    event OperatorSet(
-        address indexed operator,
-        bool allowed,
-        uint64 indexed tenureId
-    );
+    event OperatorSet(address indexed operator, bool allowed, uint64 indexed tenureId);
     /// @dev `taxTerms` and `moduleTerms` carry only the fields named by `mask`; the
     ///      rest are zero.
     event TermsProposed(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 mask);

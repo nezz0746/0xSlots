@@ -35,23 +35,30 @@ contract BeaconUpgradeTest is Test {
             address(
                 new ERC1967Proxy(
                     address(new SlotFactory()),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (admin, address(new Slot()))
-                    )
+                    abi.encodeCall(SlotFactory.initialize, (admin, address(new Slot())))
                 )
             )
         );
     }
 
     function _slot() internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(0)),
-            manager: admin,
-            mutableTax: true, mutableRecipient: true, mutableModule: true,
-            taxTerms: TaxTerms({recipient: address(0xF00D), rateBps: uint16(1_000), minRunwaySeconds: uint32(1 hours)}),
-            moduleTerms: ModuleTerms({target: address(0), settings: ""})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: admin,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(1_000),
+                            minRunwaySeconds: uint32(1 hours)
+                        }),
+                        moduleTerms: ModuleTerms({target: address(0), settings: ""})
+                    })
+                ))
+        );
     }
 
     /// @notice The admin can upgrade every slot at once.

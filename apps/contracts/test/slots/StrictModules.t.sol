@@ -15,13 +15,22 @@ import {SlotInfo} from "../../src/slot/SlotViews.sol";
 import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
-contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,uint256 a) external {_mint(t,a);} }
+contract TT is ERC20 {
+    constructor() ERC20("T", "T") {}
+
+    function mint(address t, uint256 a) external {
+        _mint(t, a);
+    }
+}
 
 /// @dev Base for the fixtures: `strict` is a constructor argument so the same
 ///      behaviour can be tested under both modes without duplicating a module.
 abstract contract Modal is AskModule {
     bool internal immutable _strict;
-    constructor(bool strict_) { _strict = strict_; }
+
+    constructor(bool strict_) {
+        _strict = strict_;
+    }
     function checkSettings(bytes calldata) external pure {}
     function beforeBuy(SlotContext calldata) external view virtual {}
     function beforeSelfAssess(SlotContext calldata) external view {}
@@ -30,37 +39,53 @@ abstract contract Modal is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }
 
 /// @dev Reverts in every `after`.
 contract FailingAfter is Modal {
     error Nope();
     constructor(bool s) Modal(s) {}
+
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
-        f.afterBuy = true; f.afterRelease = true; f.afterLiquidate = true;
+        f.afterBuy = true;
+        f.afterRelease = true;
+        f.afterLiquidate = true;
         f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
     }
-    function afterBuy(SlotContext calldata) external pure { revert Nope(); }
-    function afterRelease(SlotContext calldata) external pure { revert Nope(); }
-    function afterLiquidate(SlotContext calldata) external pure { revert Nope(); }
+
+    function afterBuy(SlotContext calldata) external pure {
+        revert Nope();
+    }
+
+    function afterRelease(SlotContext calldata) external pure {
+        revert Nope();
+    }
+
+    function afterLiquidate(SlotContext calldata) external pure {
+        revert Nope();
+    }
 }
 
 /// @dev Accepts a buy, refuses an eviction.
 contract BlocksEviction is Modal {
     error Stuck();
     constructor(bool s) Modal(s) {}
+
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
-        f.afterBuy = true; f.afterLiquidate = true; f.strict = _strict;
+        f.afterBuy = true;
+        f.afterLiquidate = true;
+        f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
     }
     function afterBuy(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
-    function afterLiquidate(SlotContext calldata) external pure { revert Stuck(); }
+
+    function afterLiquidate(SlotContext calldata) external pure {
+        revert Stuck();
+    }
 }
 
 /// @dev Writes 40 fresh storage slots in `afterBuy` — ~800k, past MODULE_GAS.
@@ -68,13 +93,18 @@ contract HungryAfter is Modal {
     mapping(uint256 => uint256) public junk;
     uint256 public runs;
     constructor(bool s) Modal(s) {}
+
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
-        f.afterBuy = true; f.strict = _strict;
+        f.afterBuy = true;
+        f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
     }
+
     function afterBuy(SlotContext calldata) external {
-        for (uint256 i; i < 40; ++i) junk[runs * 1000 + i] = i + 1;
+        for (uint256 i; i < 40; ++i) {
+            junk[runs * 1000 + i] = i + 1;
+        }
         ++runs;
     }
     function afterRelease(SlotContext calldata) external {}
@@ -82,25 +112,46 @@ contract HungryAfter is Modal {
 }
 
 contract StrictModulesTest is Test {
-    SlotFactory factory; TT token;
-    address alice = makeAddr("alice"); address bob = makeAddr("bob");
+    SlotFactory factory;
+    TT token;
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
 
     function setUp() public {
-        Slot impl = new Slot(); SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize,(address(this),address(impl))))));
-        token = new TT(); token.mint(alice,1e24); token.mint(bob,1e24);
+        Slot impl = new Slot();
+        SlotFactory fi = new SlotFactory();
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
+        token = new TT();
+        token.mint(alice, 1e24);
+        token.mint(bob, 1e24);
         vm.warp(1_000_000);
     }
 
     function _slot(address module) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            currency: IERC20(address(token)),
-            manager: address(0),
-            mutableTax: false, mutableRecipient: false, mutableModule: false,
-            taxTerms: TaxTerms({recipient: address(this), rateBps: uint16(1000), minRunwaySeconds: uint32(0)}),
-            moduleTerms: ModuleTerms({target: module, settings: ""})
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(1000),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({target: module, settings: ""})
+                    })
+                ))
+        );
     }
 
     function _buy(Slot s, address who, uint256 price, uint256 dep) internal {
@@ -202,16 +253,24 @@ contract StrictModulesTest is Test {
 contract Flipper is AskModule {
     error Nope();
     bool public flipped;
-    function flip() external { flipped = true; }
+
+    function flip() external {
+        flipped = true;
+    }
     function checkSettings(bytes calldata) external pure {}
+
     function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
-        f.afterBuy = true; f.strict = flipped;
+        f.afterBuy = true;
+        f.strict = flipped;
         o.scopes = ScopesLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
-    function afterBuy(SlotContext calldata) external view { revert Nope(); }
+
+    function afterBuy(SlotContext calldata) external view {
+        revert Nope();
+    }
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
@@ -219,6 +278,4 @@ contract Flipper is AskModule {
     function onUninstall(SlotContext calldata) external {}
 
     function onInstall(SlotContext calldata) external {}
-
-
 }

@@ -142,10 +142,7 @@ library ModuleSchemaLib {
     /// @notice Tag a behaviour a client may recognise — `"minimum-tenure"`.
     /// @dev How an application finds a value it understands in a module it does
     ///      not, whatever that module chose to call the field.
-    function means(
-        Field memory f,
-        string memory semantic
-    ) internal pure returns (Field memory) {
+    function means(Field memory f, string memory semantic) internal pure returns (Field memory) {
         f.semantic = semantic;
         return f;
     }
@@ -160,10 +157,7 @@ library ModuleSchemaLib {
     /// @notice Labels for a {choice}, in value order.
     /// @dev Solidity has no literal for a `string[] memory`, and writing one out
     ///      costs four lines that say nothing.
-    function labels(
-        string memory a,
-        string memory b
-    ) internal pure returns (string[] memory out) {
+    function labels(string memory a, string memory b) internal pure returns (string[] memory out) {
         out = new string[](2);
         out[0] = a;
         out[1] = b;
@@ -203,10 +197,7 @@ library ModuleSchemaLib {
         out[0] = a;
     }
 
-    function list(
-        Field memory a,
-        Field memory b
-    ) internal pure returns (Field[] memory out) {
+    function list(Field memory a, Field memory b) internal pure returns (Field[] memory out) {
         out = new Field[](2);
         out[0] = a;
         out[1] = b;
@@ -242,20 +233,18 @@ library ModuleSchemaLib {
         Field[] memory fields,
         bool optional
     ) internal pure returns (string memory) {
-        return
-            string.concat(
-                '{"version":1',
-                ',"title":', title.escapeJSON(true),
-                ',"description":', description.escapeJSON(true),
-                bytes(docs).length == 0 ? "" : string.concat(',"docs":', docs.escapeJSON(true)),
-                fields.length == 0
-                    ? ""
-                    : string.concat(
-                        ',"settings":',
-                        _configSchema(title, fields, optional)
-                    ),
-                "}"
-            );
+        return string.concat(
+            '{"version":1',
+            ',"title":',
+            title.escapeJSON(true),
+            ',"description":',
+            description.escapeJSON(true),
+            bytes(docs).length == 0 ? "" : string.concat(',"docs":', docs.escapeJSON(true)),
+            fields.length == 0
+                ? ""
+                : string.concat(',"settings":', _configSchema(title, fields, optional)),
+            "}"
+        );
     }
 
     /// @notice A module that takes no configuration at all.
@@ -282,7 +271,8 @@ library ModuleSchemaLib {
     ) private pure returns (string memory out) {
         out = string.concat(
             '{"$schema":"https://json-schema.org/draft/2020-12/schema"',
-            ',"title":', title.escapeJSON(true),
+            ',"title":',
+            title.escapeJSON(true),
             ',"type":"object"'
         );
         if (optional) out = string.concat(out, ',"x-optional":true');
@@ -302,8 +292,11 @@ library ModuleSchemaLib {
             out = string.concat(
                 out,
                 i == 0 ? "" : ",",
-                '{"name":', fields[i].name.escapeJSON(true),
-                ',"type":', fields[i].abiType.escapeJSON(true), "}"
+                '{"name":',
+                fields[i].name.escapeJSON(true),
+                ',"type":',
+                fields[i].abiType.escapeJSON(true),
+                "}"
             );
         }
         out = string.concat(out, "]}");
@@ -311,20 +304,29 @@ library ModuleSchemaLib {
 
     function _property(Field memory f) private pure returns (string memory out) {
         out = string.concat(
-            f.name.escapeJSON(true), ':{"type":"string"',
-            ',"pattern":"', _pattern(f.abiType), '"',
-            ',"title":', f.title.escapeJSON(true)
+            f.name.escapeJSON(true),
+            ':{"type":"string"',
+            ',"pattern":"',
+            _pattern(f.abiType),
+            '"',
+            ',"title":',
+            f.title.escapeJSON(true)
         );
-        if (bytes(f.description).length != 0)
+        if (bytes(f.description).length != 0) {
             out = string.concat(out, ',"description":', f.description.escapeJSON(true));
-        if (bytes(f.unit).length != 0)
+        }
+        if (bytes(f.unit).length != 0) {
             out = string.concat(out, ',"x-unit":', f.unit.escapeJSON(true));
-        if (bytes(f.min).length != 0)
+        }
+        if (bytes(f.min).length != 0) {
             out = string.concat(out, ',"x-minimum":', f.min.escapeJSON(true));
-        if (bytes(f.max).length != 0)
+        }
+        if (bytes(f.max).length != 0) {
             out = string.concat(out, ',"x-maximum":', f.max.escapeJSON(true));
-        if (bytes(f.semantic).length != 0)
+        }
+        if (bytes(f.semantic).length != 0) {
             out = string.concat(out, ',"x-semantic":', f.semantic.escapeJSON(true));
+        }
         if (f.enumLabels.length != 0) {
             out = string.concat(out, ',"x-enum-labels":[');
             for (uint256 i; i < f.enumLabels.length; ++i) {
