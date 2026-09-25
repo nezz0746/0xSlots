@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 import {ISlotModule, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 /// @dev Records the slots it is attached to, and can be told to refuse.
-contract InstallSpy is ISlotModule {
+contract InstallSpy is AskModule {
     error RefusedAttachment();
 
     bool public immutable strictMode;
@@ -33,7 +35,7 @@ contract InstallSpy is ISlotModule {
         refuse = v;
     }
 
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         uint16 p = ScopesLib.ON_INSTALL |
             ScopesLib.ON_UNINSTALL |
             ScopesLib.AFTER_SETTLE;
@@ -71,10 +73,10 @@ contract InstallSpy is ISlotModule {
 }
 
 /// @dev Asks for nothing but a harmless callback: never told about attachment.
-contract QuietModule is ISlotModule {
+contract QuietModule is AskModule {
     uint256 public attachments;
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
@@ -323,7 +325,7 @@ contract ModuleInstallTest is Test {
 
         assertEq(s.module(), address(spy));
         assertEq(
-            s.manifest().scopes,
+            ScopesLib.pack(s.scopes()),
             ScopesLib.ON_INSTALL | ScopesLib.ON_UNINSTALL | ScopesLib.AFTER_SETTLE,
             "bit 8 survives the queued attach"
         );

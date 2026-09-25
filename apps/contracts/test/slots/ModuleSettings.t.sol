@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -14,14 +16,14 @@ import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import "../../src/errors/SlotErrors.sol";
 
 /// @dev Records the configuration it is handed, on every side.
-contract Spy is ISlotModule {
+contract Spy is AskModule {
     bytes public lastBefore;
     bytes public lastAfter;
     uint256 public afterCalls;
 
     function checkSettings(bytes calldata) external pure virtual {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         f.afterBuy = true;
@@ -167,14 +169,14 @@ contract ModuleDataTest is Test {
     function test_ConfigurationWithoutAModuleIsRefusedAtProposal() public {
         Slot s = _slot(address(0), "");
         vm.expectRevert(InvalidModule.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: CONFIG}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: CONFIG}), uint16(8));
     }
 
     /// @notice Detaching takes the configuration with it. Left behind, it would
     ///         become live again the day a module is attached without its own.
     function test_DetachingTheModuleClearsTheConfiguration() public {
         Slot s = _slot(address(spy), CONFIG);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(8));
         vm.warp(block.timestamp + 1 days + 1);
 
         _take(s, alice); // a transition, which is where terms land
@@ -198,13 +200,13 @@ contract ModuleDataTest is Test {
         Picky picky = new Picky();
 
         vm.expectRevert(Picky.WrongConfiguration.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(picky), settings: CONFIG}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(picky), settings: CONFIG}), uint16(8));
 
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(picky), settings: picky.ONLY()}), uint8(8));
-        PendingTerms memory __p1 = s.pendingTerms();
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(picky), settings: picky.ONLY()}), uint16(8));
+        Pending memory __p1 = s.pending();
         TaxTerms memory __r1 = __p1.taxTerms;
-        ModuleTerms memory __h1 = __p1.moduleTerms;
-        uint8 __m1 = __p1.mask;
+        ModuleTerms memory __h1 = ModuleTerms(__p1.module.target, __p1.module.settings);
+        uint16 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
         bytes memory pendingData = __h1.settings;
         assertEq(pendingData, picky.ONLY());
@@ -213,13 +215,13 @@ contract ModuleDataTest is Test {
     /// @notice Cancelling clears the queued configuration along with the module.
     function test_CancellingClearsTheQueuedConfiguration() public {
         Slot s = _slot(address(0), "");
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(spy), settings: CONFIG}), uint8(8));
-        s.cancelTerms(uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(spy), settings: CONFIG}), uint16(8));
+        s.cancelTerms(uint16(8));
 
-        PendingTerms memory __p2 = s.pendingTerms();
+        Pending memory __p2 = s.pending();
         TaxTerms memory __r2 = __p2.taxTerms;
-        ModuleTerms memory __h2 = __p2.moduleTerms;
-        uint8 __m2 = __p2.mask;
+        ModuleTerms memory __h2 = ModuleTerms(__p2.module.target, __p2.module.settings);
+        uint16 __m2 = __p2.mask;
         uint64 __at2 = __p2.proposedAt;
         address module = __h2.target;
         bytes memory pendingData = __h2.settings;
@@ -245,7 +247,7 @@ contract ModuleDataTest is Test {
         _take(s, alice);
 
         Spy successor = new Spy();
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(successor), settings: OTHER}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(successor), settings: OTHER}), uint16(8));
         vm.warp(block.timestamp + 1 days + 1);
 
         vm.prank(alice);

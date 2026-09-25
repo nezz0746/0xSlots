@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ISlotModule, Scopes, SlotContext} from "../interfaces/ISlotModule.sol";
 import {ScopesLib} from "../libraries/ScopesLib.sol";
-import {Manifest} from "../types/SlotTypes.sol";
+import {ModuleFee} from "../types/SlotTypes.sol";
 import {IDescribedModule} from "../interfaces/IDescribedModule.sol";
 import {ModuleSchemaLib} from "../libraries/ModuleSchemaLib.sol";
 import {MinimumTenure} from "./MinimumTenure.sol";
@@ -145,7 +145,7 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
             );
     }
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function scopes(bytes calldata) external pure returns (uint16) {
         Scopes memory f;
         f.beforeBuy = true;
         f.beforeSelfAssess = true;
@@ -154,8 +154,12 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IDescribedModule {
         // single transaction and the window renews for ever.
         f.afterRelease = true;
         f.afterLiquidate = true;
-        o.scopes = ScopesLib.pack(f);
+        return ScopesLib.pack(f);
     }
+
+    /// @inheritdoc ISlotModule
+    /// @dev Takes nothing.
+    function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
     // ─── the rule, which lives in {MinimumTenure} ───────────────────────────
     //

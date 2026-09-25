@@ -14,7 +14,7 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ISlotModule, Scopes, SlotContext} from "../../interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../libraries/ScopesLib.sol";
 import {SlotFactory} from "../../SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../types/SlotTypes.sol";
 import {SlotMath} from "../../libraries/SlotMath.sol";
 import {Versioned} from "../../utils/Versioned.sol";
 import {ISlotOccupancy, ISlotBoundNFT} from "./ISlotBoundNFT.sol";
@@ -157,16 +157,16 @@ contract SlotBoundNFTWrapper is
     ) external payable nonReentrant returns (uint256 tokenId, address slot) {
         // Read once: the owner could change it between quote and execution, and
         // a wrap should pay the fee it was priced at within this frame.
-        uint256 fee = wrapFeeWei;
-        if (msg.value < fee) revert FeeUnpaid(fee);
+        uint256 wrapFee = wrapFeeWei;
+        if (msg.value < wrapFee) revert FeeUnpaid(wrapFee);
         // And bounded by the caller. `msg.value` is fee plus escrow, so a fee
         // raised between the quote and this transaction would otherwise be paid
         // out of the depositor's runway — silently, not as a revert.
-        if (fee > maxFee) revert FeeAboveMax(fee, maxFee);
+        if (wrapFee > maxFee) revert FeeAboveMax(wrapFee, maxFee);
         // Everything above the fee is escrow. The slot enforces its own floor
         // on that remainder, and anything past the floor is simply longer
         // runway — the same latitude a feeless wrap has.
-        uint256 deposit = msg.value - fee;
+        uint256 deposit = msg.value - wrapFee;
 
         // One live wrap per token. The index is the only thing that ties a
         // wrapper token back to what it escrows, and two live entries for one
@@ -230,7 +230,7 @@ contract SlotBoundNFTWrapper is
             underlyingId,
             mode,
             taxRateBps,
-            fee
+            wrapFee
         );
 
         ISlotOccupancy(slot).buy{value: deposit}(
@@ -244,7 +244,7 @@ contract SlotBoundNFTWrapper is
         // there is nothing here to rescue and no rescue function to abuse.
         // `sendValue` reverts on a recipient that refuses — loudly, and only
         // for an owner who set a fee they cannot receive.
-        if (fee > 0) Address.sendValue(payable(owner), fee);
+        if (wrapFee > 0) Address.sendValue(payable(owner), wrapFee);
     }
 
     /// @notice What a wrap costs and how it splits. For a UI: {wrap} asks the
@@ -253,10 +253,10 @@ contract SlotBoundNFTWrapper is
     function quoteWrap(
         uint256 valuation,
         uint256 taxRateBps
-    ) external view returns (uint256 total, uint256 deposit, uint256 fee) {
+    ) external view returns (uint256 total, uint256 deposit, uint256 wrapFee) {
         deposit = SlotMath.depositFor(valuation, taxRateBps, MIN_RUNWAY_SECONDS);
-        fee = wrapFeeWei;
-        return (deposit + fee, deposit, fee);
+        wrapFee = wrapFeeWei;
+        return (deposit + wrapFee, deposit, wrapFee);
     }
 
     /// @notice Take your underlying back. `Reclaimable` wraps only, and only
@@ -349,15 +349,19 @@ contract SlotBoundNFTWrapper is
     ///      the bit thereafter, so a beacon upgrade could never retrofit the
     ///      retirement veto onto slots already created. Without it,
     ///      {beforeBuy} is never called and a retired slot stays buyable.
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function scopes(bytes calldata) external pure returns (uint16) {
         Scopes memory f;
         f.beforeBuy = true; // the retirement veto
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.strict = true; // why this contract can hold real ownership state
-        o.scopes = ScopesLib.pack(f);
+        return ScopesLib.pack(f);
     }
+
+    /// @inheritdoc ISlotModule
+    /// @dev Takes nothing.
+    function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
     function checkSettings(bytes calldata) external view {}
 

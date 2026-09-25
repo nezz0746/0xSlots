@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  packScopes,
   type SlotState,
   unpackScopes,
   NO_SETTINGS,
@@ -102,7 +103,7 @@ export function ManageTermsPanel({
           a manager has to see what they are about to replace. */}
       <QueuedTermsControls slot={slot} state={state} actions={actions} />
 
-      <ModuleGrantRow slot={slot} state={state} actions={actions} />
+      <ModuleUpdateRow slot={slot} state={state} actions={actions} />
 
       {state.mutableTax ? (
         <Toggle label="Change the tax rate" on={changeTax} set={setChangeTax}>
@@ -296,7 +297,7 @@ function ModuleEditor({
             ? "No contract at this address on this chain."
             : check.data.status === "inert"
               ? "This module asks for no scopes and cannot be attached."
-              : "Not a module — no manifest()."}
+              : "Not a module — no scopes()."}
         </p>
       )}
 
@@ -396,11 +397,11 @@ export function OwnershipPanel({
 }
 
 /**
- * The module's current manifest, when granting it would change something. A new
- * fee applies at once; new scopes wait for the next buy. The button pins
- * exactly the manifest shown here.
+ * What the module declares today, when accepting it would change something. A
+ * new fee applies at once; new scopes wait for the next buy. Each button pins
+ * exactly the value shown beside it.
  */
-function ModuleGrantRow({
+function ModuleUpdateRow({
   slot,
   state,
   actions,
@@ -409,55 +410,65 @@ function ModuleGrantRow({
   state: SlotState;
   actions: Actions;
 }) {
-  const { data: status } = useQuery({
+  const { data: update } = useQuery({
     queryKey: [
-      "module-grant-status",
+      "module-update",
       slot,
       state.module,
-      state.manifest.feeBps,
-      state.manifest.scopes,
+      state.fee.bps,
+      state.fee.recipient,
+      packScopes(state.scopes),
       state.pending.mask,
     ],
-    queryFn: () => actions.client.grantStatus(slot),
+    queryFn: () => actions.client.moduleUpdate(slot),
     enabled: state.module !== zeroAddress,
   });
 
-  if (!status || (!status.feeDiffers && !status.scopesDiffer)) return null;
-  const { accepted, declared } = status;
+  if (!update?.declared || (!update.feeDiffers && !update.scopesDiffer)) return null;
+  const { current, declared } = update;
   const callbacks = (scopes: number) =>
     describeScopes(unpackScopes(scopes)).granted.join(", ") || "none";
 
   return (
-    <div className="space-y-1.5 border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs">
+    <div className="space-y-2 border border-amber-500/30 bg-amber-500/[0.06] p-3 text-xs">
       <p className="font-medium">The module has new terms</p>
-      {status.feeDiffers ? (
-        <p className="text-muted-foreground">
-          Fee: {formatBps(accepted.feeBps)} → {formatBps(declared.feeBps)} of
-          rent
-          {declared.feeBps > 0
-            ? `, paid to ${declared.feeRecipient.slice(0, 6)}…${declared.feeRecipient.slice(-4)}`
-            : ""}
-          . Applies immediately; rent collected so far is paid under the
-          current fee.
-        </p>
+      {update.feeDiffers ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-muted-foreground">
+            Fee: {formatBps(current.fee.bps)} → {formatBps(declared.fee.bps)} of
+            rent
+            {declared.fee.bps > 0
+              ? `, paid to ${declared.fee.recipient.slice(0, 6)}…${declared.fee.recipient.slice(-4)}`
+              : ""}
+            . Applies immediately; rent collected so far is paid under the
+            current fee.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={actions.busy}
+            onClick={() => actions.acceptFee(slot, declared.fee)}
+          >
+            Accept fee
+          </Button>
+        </div>
       ) : null}
-      {status.scopesDiffer ? (
-        <p className="text-muted-foreground">
-          Scopes: {callbacks(accepted.scopes)} → {callbacks(declared.scopes)}.
-          Applies at the next buy.
-        </p>
+      {update.scopesDiffer ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-muted-foreground">
+            Scopes: {callbacks(current.scopes)} → {callbacks(declared.scopes)}.
+            Applies at the next buy.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={actions.busy}
+            onClick={() => actions.acceptScopes(slot, declared.scopes)}
+          >
+            Accept scopes
+          </Button>
+        </div>
       ) : null}
-      <p className="text-muted-foreground">
-        A module whose update is ignored may refuse service.
-      </p>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={actions.busy}
-        onClick={() => actions.grant(slot, declared)}
-      >
-        Accept update
-      </Button>
     </div>
   );
 }

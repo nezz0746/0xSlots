@@ -48,8 +48,8 @@ struct ModuleTerms {
 - a manager on a fully immutable slot, or none on a mutable one (`InvalidManager`);
 - a `rateBps` outside 1..10,000 (`InvalidTax`) or a zero recipient (`InvalidRecipient`);
 - `settings` without a module, or a module that rejects its settings, declares
-  an invalid manifest, or cannot answer within its gas allowance
-  (`InvalidModule`, `InvalidModuleFee`, `ManifestTooExpensive`, or the module's
+  invalid scopes or fee, or cannot answer within its gas allowance
+  (`InvalidModule`, `InvalidModuleFee`, `ModuleTooExpensive`, or the module's
   own error from `checkSettings`).
 
 If the module declares `onInstall`, it is called at creation.

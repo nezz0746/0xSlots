@@ -42,7 +42,7 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint8 mask)
+    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint16 mask)
         external
         onlyManager
     {
@@ -60,7 +60,7 @@ contract MockSlot {
 
     /// @dev Clears whichever of `mask` is queued, and reverts only when none
     ///      was, as the real slot does.
-    function cancelTerms(uint8 mask) external onlyManager {
+    function cancelTerms(uint16 mask) external onlyManager {
         bool cancelTax = mask & 1 != 0 && hasTax;
         bool cancelModule = mask & 8 != 0 && hasModule;
         if (!cancelTax && !cancelModule) revert NoPendingTerms();

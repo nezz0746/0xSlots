@@ -24,8 +24,8 @@ export {
   type ModuleSettingsParam,
   type ModuleSettingsSchema,
   type ModuleDefinition,
-  type Manifest,
-  type GrantStatus,
+  type ModuleFee,
+  type ModuleUpdate,
   type Scopes,
   type ModuleTerms,
   NO_MODULE,
@@ -34,7 +34,7 @@ export {
   MAX_TAX_BPS,
   MAX_MIN_RUNWAY_SECONDS,
   MONTH_SECONDS,
-  type PendingTerms,
+  type Pending,
   type PostOfferParams,
   type ProposeTermsParams,
   type TaxTerms,
@@ -46,6 +46,7 @@ export {
   TERMS,
   TERMS_DELAY_SECONDS,
   unpackScopes,
+  packScopes,
   NO_SETTINGS,
 } from "./client";
 

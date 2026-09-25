@@ -34,7 +34,7 @@ import {
  * what somebody already chose.
  *
  * Everything on a card is read from the chain at the address, not from this
- * module: the callbacks from `manifest()`, the configuration from
+ * module: the callbacks from `scopes()`, the fee from `fee()`, the configuration from
  * `definition()`, and whether that configuration is optional from
  * `checkSettings` itself. The name and the sentence are the only editorial
  * content, and they are the only part that could ever be out of date.
@@ -220,7 +220,7 @@ function ModuleCard({
           Scopes
         </h3>
         {/* The same row the create form and the slot page draw, from the same
-            `manifest()` call — so a module looks identical here, while it is
+            `scopes()` and `fee()` calls — so a module looks identical here, while it is
             being attached, and after it is attached. */}
         <ModuleScopeRow scopes={check.data?.scopes} fee={check.data?.fee} />
       </div>

@@ -58,7 +58,7 @@
   tbody + tbody tr:first-child td { border-top: 0.8pt solid var(--rule-strong); }
   td {
     vertical-align: top;
-    padding: 1.5pt 6pt 1.5pt 0;
+    padding: 1.3pt 6pt 1.3pt 0;
     border-top: 0.4pt solid var(--rule);
   }
   td.group {
@@ -88,18 +88,20 @@
     vertical-align: 1pt; margin-left: 3pt;
   }
   .foot {
-    margin-top: 5pt; padding-top: 3pt;
+    margin-top: 3pt; padding-top: 2pt;
     border-top: 0.4pt solid var(--rule);
     color: var(--muted); font-size: 7pt; line-height: 1.45;
     display: flex; gap: 3pt 14pt; flex-wrap: wrap;
   }
   .foot b { color: var(--ink); font-weight: 500; }
-  .consts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2pt 14pt; margin-top: 6pt; font-size: 7.3pt; }
+  .consts { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2pt 14pt; margin-top: 6pt; font-size: 7.3pt; }
   .consts div { display: flex; justify-content: space-between; gap: 6pt; border-bottom: 0.4pt solid var(--rule); padding: 1.6pt 0; }
   .consts .k { font-family: "IBM Plex Mono", Menlo, monospace; font-weight: 500; font-size: 7pt; }
   .consts .v { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
   .consts .v .prop { font-size: 6.6pt; display: block; }
   h2 { margin: 8pt 0 0; font: 500 6.6pt/1.2 "IBM Plex Mono", Menlo, monospace; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  .reads td { padding-top: 0.9pt; padding-bottom: 0.9pt; }
+  .consts .wide { grid-column: span 4; }
 </style>
 </head>
 <body>
@@ -108,7 +110,7 @@
 <section class="sheet">
   <div class="head">
     <h1>Slot storage</h1>
-    <div class="meta">0xSlots protocol v1 · <code>Slot.sol</code> behind a <code>BeaconProxy</code> · v1 branch, 24 Sept 2026<br>
+    <div class="meta">0xSlots protocol v1 · <code>Slot.sol</code> behind a <code>BeaconProxy</code> · v1 branch, 25 Sept 2026<br>
       Each group below, plus OZ <code>Initializable</code> and <code>ReentrancyGuard</code>, has its own ERC-7201 location. <span class="p">Blue = proposed rename, not in code.</span></div>
   </div>
 
@@ -122,13 +124,11 @@
 
     <tbody>
       <tr>
-        <td class="group" rowspan="5"><span class="ns">slots.settings</span><span class="struct">Settings <span class="prop">→ Governance</span></span><span class="role">How the slot is governed. Fixed at creation except <code>manager</code>. Renamed so “settings” means only the module’s config.</span></td>
+        <td class="group" rowspan="3"><span class="ns">slots.settings</span><span class="struct">Settings <span class="prop">→ Governance</span></span><span class="role">How the slot is governed. Fixed at creation except <code>manager</code>. Renamed so “settings” means only the module’s config.</span></td>
         <td class="field">currency</td><td class="type mono">IERC20</td><td>Payment token. Zero address = native ETH.</td><td class="when">initialize</td><td></td>
       </tr>
-      <tr><td class="field">manager</td><td class="type mono">address</td><td>Proposes terms, grants, hands over. Set exactly when something is mutable.</td><td class="when">initialize · setManager</td><td></td></tr>
-      <tr><td class="field">mutableTax</td><td class="type mono">bool</td><td>Tax rate and minimum runway may change.</td><td class="when">initialize</td><td></td></tr>
-      <tr><td class="field">mutableRecipient</td><td class="type mono">bool</td><td>Recipient may change. Also required to add or raise a module fee.</td><td class="when">initialize</td><td></td></tr>
-      <tr><td class="field">mutableModule</td><td class="type mono">bool</td><td>Module may be replaced or removed; new scopes may be granted.</td><td class="when">initialize</td><td></td></tr>
+      <tr><td class="field">manager</td><td class="type mono">address</td><td>Proposes terms, accepts module updates, hands over. Set exactly when something is mutable.</td><td class="when">initialize · setManager</td><td></td></tr>
+      <tr><td class="field">mutableTax · mutableRecipient · mutableModule</td><td class="type mono">bool ×3</td><td>Which terms may ever change: tax rate and runway · recipient (and raising a module fee) · module and its scopes.</td><td class="when">initialize</td><td></td></tr>
     </tbody>
 
     <tbody>
@@ -142,31 +142,22 @@
 
     <tbody>
       <tr>
-        <td class="group" rowspan="2"><span class="ns">slots.terms.module</span><span class="struct">ModuleTerms · live</span></td>
-        <td class="field">target</td><td class="type mono">address</td><td>The installed module. Zero = none.</td><td class="when">initialize · terms land</td><td class="prop">module</td>
+        <td class="group" rowspan="4"><span class="ns">slots.module</span><span class="struct">InstalledModule</span><span class="role">One record. Installing copies one in; removing deletes it. Same shape in <code>Pending.module</code>.</span></td>
+        <td class="field">target</td><td class="type mono">address</td><td>The installed module. Zero = none.</td><td class="when">initialize · module lands</td><td class="prop">module</td>
       </tr>
-      <tr><td class="field">settings</td><td class="type mono">bytes</td><td><code>abi.encode</code> of the fields the module’s definition lists. Handed to every callback. Empty = none.</td><td class="when">initialize · terms land</td><td></td></tr>
+      <tr><td class="field">scopes</td><td class="type mono">uint16</td><td>Copied from the module. beforeBuy 1 · beforeSelfAssess 2 · afterBuy 4 · afterRelease 8 · afterLiquidate 16 · afterSettle 32 · strict 64 · onInstall 128 · onUninstall 256.</td><td class="when">initialize · module or scopes land</td><td class="prop">strict → afterCallbacks&shy;MustSucceed</td></tr>
+      <tr><td class="field">fee</td><td class="type mono">ModuleFee</td><td>Copied from the module: <code>bps</code> (0–10,000 of collected tax) and <code>recipient</code>. Payouts use it.</td><td class="when">initialize · acceptFee · module lands</td><td></td></tr>
+      <tr><td class="field">settings</td><td class="type mono">bytes</td><td><code>abi.encode</code> of the fields the module’s definition lists. Handed to every callback.</td><td class="when">initialize · module lands</td><td></td></tr>
     </tbody>
 
     <tbody>
       <tr>
-        <td class="group" rowspan="3"><span class="ns">slots.module.manifest</span><span class="struct">Manifest <span class="prop">→ ModuleGrant</span></span><span class="role">The slot’s copy. Payouts and callbacks use it; never re-read from the module.</span></td>
-        <td class="field">scopes</td><td class="type mono">uint16</td><td>Bits: beforeBuy 1 · beforeSelfAssess 2 · afterBuy 4 · afterRelease 8 · afterLiquidate 16 · afterSettle 32 · strict 64 · onInstall 128 · onUninstall 256.</td><td class="when">install · scopes land</td><td class="prop">strict → afterCallbacks&shy;MustSucceed</td>
-      </tr>
-      <tr><td class="field">feeBps</td><td class="type mono">uint16</td><td>Module’s share of collected tax. 0–10,000.</td><td class="when">install · grant</td><td></td></tr>
-      <tr><td class="field">feeRecipient</td><td class="type mono">address</td><td>Where that share is paid.</td><td class="when">install · grant</td><td></td></tr>
-    </tbody>
-
-    <tbody>
-      <tr>
-        <td class="group" rowspan="6"><span class="ns">slots.pending</span><span class="struct">PendingTerms</span><span class="role">Stored exactly as <code>pendingTerms()</code> returns it. Lands at the next buy or <code>applyTerms</code>, 1 hour after proposal.</span></td>
+        <td class="group" rowspan="4"><span class="ns">slots.pending</span><span class="struct">Pending</span><span class="role">Stored exactly as <code>pending()</code> returns it. Lands at the next buy or <code>applyTerms</code>, 1 hour after proposal.</span></td>
         <td class="field">taxTerms</td><td class="type mono">TaxTerms</td><td>Proposed tax values. Only the fields named in <code>mask</code> count.</td><td class="when">proposeTerms · cancel · land</td><td></td>
       </tr>
-      <tr><td class="field">moduleTerms</td><td class="type mono">ModuleTerms</td><td>Proposed module and its settings, whole.</td><td class="when">proposeTerms · cancel · land</td><td></td></tr>
-      <tr><td class="field">scopes</td><td class="type mono">uint16</td><td>New scopes accepted with <code>grant</code>, waiting for the next buy.</td><td class="when">grant · land</td><td></td></tr>
-      <tr><td class="field">mask</td><td class="type mono">uint8</td><td>Queued terms: TAX_RATE 1 · RECIPIENT 2 · MIN_RUNWAY 4 · MODULE 8 · SCOPES 16.</td><td class="when">propose · grant · cancel · land</td><td></td></tr>
-      <tr><td class="field">proposedAt</td><td class="type mono">uint64</td><td>Start of the delay. Any new proposal restarts it.</td><td class="when">proposeTerms · grant</td><td></td></tr>
-      <tr><td class="field">reviewedManifest</td><td class="type mono">bytes32</td><td>Hash of the manifest reviewed at proposal. Differs when it lands → module dropped.</td><td class="when">proposeTerms · cancel · land</td><td class="prop">reviewedGrantHash</td></tr>
+      <tr><td class="field">module</td><td class="type mono">InstalledModule</td><td>A proposed module with the scopes and fee reviewed for it, or only newly accepted <code>scopes</code>. Checked again when it lands.</td><td class="when">proposeTerms · acceptScopes · cancel · land</td><td></td></tr>
+      <tr><td class="field">mask</td><td class="type mono">uint16</td><td>TAX_RATE 1 · RECIPIENT 2 · MIN_RUNWAY 4 · MODULE 8 · SCOPES 16 (never with MODULE).</td><td class="when">propose · acceptScopes · cancel · land</td><td></td></tr>
+      <tr><td class="field">proposedAt</td><td class="type mono">uint64</td><td>Start of the delay. Any new proposal restarts it.</td><td class="when">proposeTerms · acceptScopes</td><td></td></tr>
     </tbody>
 
     <tbody>
@@ -242,27 +233,29 @@
 
     <tbody>
       <tr>
-        <td class="group" rowspan="4"><span class="struct">Manager</span><span class="role">Only on a slot created with something mutable.</span></td>
-        <td class="sig"><b>proposeTerms</b><span class="args">(taxTerms, moduleTerms, mask)</span></td><td>Queue changes; they wait 1 hour. Checks the module’s settings and pins the manifest it reviewed.</td><td></td>
+        <td class="group" rowspan="5"><span class="struct">Manager</span><span class="role">Only on a slot created with something mutable.</span></td>
+        <td class="sig"><b>proposeTerms</b><span class="args">(taxTerms, moduleTerms, mask)</span></td><td>Queue changes; they wait 1 hour. Checks the module’s settings and keeps the scopes and fee it reviewed.</td><td></td>
       </tr>
       <tr><td class="sig"><b>cancelTerms</b><span class="args">(mask)</span></td><td>Drop the named queued changes, leaving the rest.</td><td></td></tr>
-      <tr><td class="sig"><b>grant</b><span class="args">(Manifest expected)</span></td><td>Accept what the module declares now. A fee change applies at once; new scopes wait for the next buy.</td><td class="prop">grantModuleRequest<small>(reviewedRequest)</small></td></tr>
+      <tr><td class="sig"><b>acceptFee</b><span class="args">(ModuleFee expected)</span></td><td>Take the fee the module declares now. Applies at once; a rise needs <code>mutableRecipient</code>.</td><td></td></tr>
+      <tr><td class="sig"><b>acceptScopes</b><span class="args">(uint16 expected)</span></td><td>Take the scopes the module declares now. Queued for the next buy; needs <code>mutableModule</code>.</td><td></td></tr>
       <tr><td class="sig"><b>setManager</b><span class="args">(next)</span></td><td>Hand the slot to another manager, immediately.</td><td></td></tr>
     </tbody>
 
     <tbody>
       <tr>
         <td class="group"><span class="struct">Factory</span><span class="role">Once.</span></td>
-        <td class="sig"><b>initialize</b><span class="args">(SlotInit)</span></td><td>Set governance and terms, check the module’s settings, copy its manifest, call <code>onInstall</code>.</td><td></td>
+        <td class="sig"><b>initialize</b><span class="args">(SlotInit)</span></td><td>Set governance and terms, check the module’s settings, copy its scopes and fee, call <code>onInstall</code>.</td><td></td>
       </tr>
     </tbody>
 
     <tbody>
       <tr>
-        <td class="group" rowspan="7"><span class="struct">Slot → module</span><span class="role"><code>ISlotModule</code>. Only callbacks named in the slot’s scopes are called.</span></td>
+        <td class="group" rowspan="8"><span class="struct">Slot → module</span><span class="role"><code>ISlotModule</code>. Only callbacks named in the slot’s scopes are called.</span></td>
         <td class="sig"><b>checkSettings</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>Revert if the settings are invalid. At proposal and install.</td><td class="prop">validateSettings</td>
       </tr>
-      <tr><td class="sig"><b>manifest</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>The scopes and fee the module asks for. May depend on the settings. At proposal, install and grant.</td><td class="prop">requestedGrant</td></tr>
+      <tr><td class="sig"><b>scopes</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>The callbacks it asks for. May depend on the settings. At proposal, install and acceptScopes.</td><td></td></tr>
+      <tr><td class="sig"><b>fee</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>Its share of the tax and who receives it. At proposal, install and acceptFee.</td><td></td></tr>
       <tr><td class="sig"><b>beforeBuy</b> · <b>beforeSelfAssess</b><span class="args">(ctx)</span><span class="tag">view</span></td><td>Veto by reverting. Uncapped gas.</td><td></td></tr>
       <tr><td class="sig"><b>afterBuy</b> · <b>afterRelease</b> · <b>afterLiquidate</b> · <b>afterSettle</b><span class="args">(ctx)</span></td><td>Told after the fact. 500k gas; a revert is ignored unless <code>strict</code>.</td><td class="prop">ctx.owed/paid → taxOwed/taxPaid</td></tr>
       <tr><td class="sig"><b>onInstall</b><span class="args">(ctx)</span></td><td>Attached. A revert is ignored unless <code>strict</code>.</td><td></td></tr>
@@ -279,47 +272,103 @@
       <span class="p">Blue = proposed rename, not in code.</span></div>
   </div>
 
-  <table>
+  <table class="reads">
     <colgroup>
-      <col style="width:11%"><col style="width:31%"><col style="width:42%"><col style="width:16%">
+      <col style="width:10%"><col style="width:25%"><col style="width:13%"><col style="width:40%"><col style="width:12%">
     </colgroup>
     <thead>
-      <tr><th>Reads</th><th>Method</th><th>Does</th><th class="p">Proposed</th></tr>
+      <tr><th>Reads</th><th>Method</th><th>Returns</th><th>Does</th><th class="p">Proposed</th></tr>
     </thead>
 
     <tbody>
       <tr>
-        <td class="group" rowspan="7"><span class="struct">Read · terms</span></td>
-        <td class="sig"><b>terms</b> · <b>taxTerms</b> · <b>moduleTerms</b></td><td>Live terms: all together, or one group.</td><td></td>
+        <td class="group" rowspan="6"><span class="struct">Terms</span></td>
+        <td class="sig"><b>terms</b><span class="args">()</span></td><td class="type mono">Terms</td><td>Tax terms and module terms in force, together.</td><td></td>
       </tr>
-      <tr><td class="sig"><b>recipient</b> · <b>taxRateBps</b> · <b>minRunwaySeconds</b> · <b>module</b></td><td>One live field each.</td><td></td></tr>
-      <tr><td class="sig"><b>pendingTerms</b> · <b>hasRipeTerms</b></td><td>The stored <code>PendingTerms</code> · whether it lands at the next buy.</td><td></td></tr>
-      <tr><td class="sig"><b>manifest</b><span class="args">()</span></td><td>The slot’s copy of the module’s manifest.</td><td class="prop">moduleGrant</td></tr>
-      <tr><td class="sig"><b>scopes</b><span class="args">()</span></td><td>That copy’s scopes, unpacked to booleans.</td><td class="prop">moduleScopes</td></tr>
-      <tr><td class="sig"><b>grantStatus</b><span class="args">()</span></td><td>The copy beside what the module declares today: <code>(accepted, declared, feeDiffers, scopesDiffer)</code>.</td><td class="prop">moduleGrantStatus<small>(granted, requested, …)</small></td></tr>
-      <tr><td class="sig"><b>currency</b> · <b>manager</b> · <b>mutableTax</b> · <b>mutableRecipient</b> · <b>mutableModule</b></td><td>Governance, one field each.</td><td></td></tr>
+      <tr><td class="sig"><b>taxTerms</b><span class="args">()</span></td><td class="type mono">TaxTerms</td><td>Recipient, rate and runway in force.</td><td></td></tr>
+      <tr><td class="sig"><b>moduleTerms</b><span class="args">()</span></td><td class="type mono">ModuleTerms</td><td>Installed module and its settings.</td><td></td></tr>
+      <tr><td class="sig"><b>recipient</b><span class="args">()</span></td><td class="type mono">address</td><td>Who receives collected tax, minus the module fee.</td><td></td></tr>
+      <tr><td class="sig"><b>taxRateBps</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Tax per 30 days, in basis points of the price.</td><td></td></tr>
+      <tr><td class="sig"><b>minRunwaySeconds</b><span class="args">()</span></td><td class="type mono">uint256</td><td>How long a buyer’s deposit must last at their price.</td><td></td></tr>
     </tbody>
 
     <tbody>
       <tr>
-        <td class="group" rowspan="5"><span class="struct">Read · occupancy &amp; money</span></td>
-        <td class="sig"><b>occupant</b> · <b>price</b> · <b>deposit</b> · <b>occupiedSince</b> · <b>tenureId</b> · <b>lastSettled</b></td><td>One occupancy field each.</td><td></td>
+        <td class="group" rowspan="3"><span class="struct">Module</span></td>
+        <td class="sig"><b>module</b><span class="args">()</span></td><td class="type mono">address</td><td>Installed module. Zero = none.</td><td></td>
       </tr>
-      <tr><td class="sig"><b>isVacant</b> · <b>isInsolvent</b> · <b>isOperator</b><span class="args">(operator)</span></td><td>Nobody seated · deposit can no longer cover what is owed · may act for the current occupant.</td><td></td></tr>
-      <tr><td class="sig"><b>taxOwed</b> · <b>secondsUntilLiquidation</b></td><td>Tax accrued since the last settle · time until the deposit runs out (max if never).</td><td></td></tr>
-      <tr><td class="sig"><b>collectedTax</b> · <b>withdrawableOf</b><span class="args">(account)</span> · <b>debtOf</b><span class="args">(account)</span></td><td>The ledger, one entry each.</td><td class="prop">claimableOf</td></tr>
-      <tr><td class="sig"><b>quoteBuy</b><span class="args">(account, depositAmount)</span></td><td>Exactly what <code>buy</code> will charge: sitting price + deposit + the account’s debt.</td><td></td></tr>
+      <tr><td class="sig"><b>scopes</b><span class="args">()</span></td><td class="type mono">Scopes</td><td>The slot’s copy of its scopes, unpacked to booleans.</td><td></td></tr>
+      <tr><td class="sig"><b>fee</b><span class="args">()</span></td><td class="type mono">ModuleFee</td><td>The slot’s copy of its fee: bps and recipient.</td><td></td></tr>
     </tbody>
 
     <tbody>
       <tr>
-        <td class="group" rowspan="3"><span class="struct">Read · floors &amp; bundles</span></td>
-        <td class="sig"><b>minDepositForBuy</b><span class="args">(price)</span> · <b>minDepositToHold</b><span class="args">(price)</span></td><td>Smallest deposit <code>buy</code> accepts, under the terms that will apply · floor under the terms in force.</td><td></td>
+        <td class="group" rowspan="2"><span class="struct">Queue</span></td>
+        <td class="sig"><b>pending</b><span class="args">()</span></td><td class="type mono">Pending</td><td>Everything queued for the next buy, as stored.</td><td></td>
       </tr>
-      <tr><td class="sig"><b>getSlotInfo</b> · <b>getSlotConstants</b></td><td>Everything above in one struct, including <code>hasRipeTerms</code> · the constants below in one struct (currently missing <code>MAX_MIN_RUNWAY</code>).</td><td></td></tr>
-      <tr><td class="sig"><b>version</b><span class="args">()</span></td><td>Implementation version: 1.</td><td></td></tr>
+      <tr><td class="sig"><b>hasRipeTerms</b><span class="args">()</span></td><td class="type mono">bool</td><td>Whether the queue lands at the next buy.</td><td></td></tr>
     </tbody>
 
+    <tbody>
+      <tr>
+        <td class="group" rowspan="5"><span class="struct">Governance</span></td>
+        <td class="sig"><b>currency</b><span class="args">()</span></td><td class="type mono">IERC20</td><td>Payment token. Zero = native ETH.</td><td></td>
+      </tr>
+      <tr><td class="sig"><b>manager</b><span class="args">()</span></td><td class="type mono">address</td><td>Who proposes terms and accepts module updates.</td><td></td></tr>
+      <tr><td class="sig"><b>mutableTax</b><span class="args">()</span></td><td class="type mono">bool</td><td>Tax rate and runway may change.</td><td></td></tr>
+      <tr><td class="sig"><b>mutableRecipient</b><span class="args">()</span></td><td class="type mono">bool</td><td>Recipient may change; a module fee may rise.</td><td></td></tr>
+      <tr><td class="sig"><b>mutableModule</b><span class="args">()</span></td><td class="type mono">bool</td><td>Module may be replaced; new scopes may land.</td><td></td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="6"><span class="struct">Occupancy</span></td>
+        <td class="sig"><b>occupant</b><span class="args">()</span></td><td class="type mono">address</td><td>Current holder. Zero = vacant.</td><td></td>
+      </tr>
+      <tr><td class="sig"><b>price</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Self-assessed price.</td><td></td></tr>
+      <tr><td class="sig"><b>deposit</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Escrow that tax is drawn from.</td><td></td></tr>
+      <tr><td class="sig"><b>occupiedSince</b><span class="args">()</span></td><td class="type mono">uint64</td><td>When the current tenure began.</td><td></td></tr>
+      <tr><td class="sig"><b>tenureId</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Counts tenures; operator approvals are scoped to one.</td><td></td></tr>
+      <tr><td class="sig"><b>lastSettled</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Tax is accounted up to this timestamp.</td><td></td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="5"><span class="struct">Health</span></td>
+        <td class="sig"><b>isVacant</b><span class="args">()</span></td><td class="type mono">bool</td><td>Nobody is seated.</td><td></td>
+      </tr>
+      <tr><td class="sig"><b>isInsolvent</b><span class="args">()</span></td><td class="type mono">bool</td><td>The deposit can no longer cover what is owed.</td><td></td></tr>
+      <tr><td class="sig"><b>taxOwed</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Tax accrued since the last settle.</td><td></td></tr>
+      <tr><td class="sig"><b>secondsUntilLiquidation</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Until the deposit runs out. Max if never.</td><td></td></tr>
+      <tr><td class="sig"><b>isOperator</b><span class="args">(operator)</span></td><td class="type mono">bool</td><td>May act for the current occupant.</td><td></td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Ledger</span></td>
+        <td class="sig"><b>collectedTax</b><span class="args">()</span></td><td class="type mono">uint256</td><td>Tax taken, not yet paid out.</td><td></td>
+      </tr>
+      <tr><td class="sig"><b>withdrawableOf</b><span class="args">(account)</span></td><td class="type mono">uint256</td><td>Payouts waiting for <code>claim</code>.</td><td class="prop">claimableOf</td></tr>
+      <tr><td class="sig"><b>debtOf</b><span class="args">(account)</span></td><td class="type mono">uint256</td><td>Tax owed beyond an emptied deposit.</td><td></td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Quotes</span></td>
+        <td class="sig"><b>quoteBuy</b><span class="args">(account, depositAmount)</span></td><td class="type mono">uint256</td><td>Exactly what <code>buy</code> charges: price + deposit + debt.</td><td></td>
+      </tr>
+      <tr><td class="sig"><b>minDepositForBuy</b><span class="args">(price)</span></td><td class="type mono">uint256</td><td>Smallest deposit <code>buy</code> accepts, under ripe queued terms.</td><td></td></tr>
+      <tr><td class="sig"><b>minDepositToHold</b><span class="args">(price)</span></td><td class="type mono">uint256</td><td>Deposit floor under the terms in force.</td><td></td></tr>
+    </tbody>
+
+    <tbody>
+      <tr>
+        <td class="group" rowspan="3"><span class="struct">Bundles</span></td>
+        <td class="sig"><b>getSlotInfo</b><span class="args">()</span></td><td class="type mono">SlotInfo</td><td>Everything above, in one call.</td><td></td>
+      </tr>
+      <tr><td class="sig"><b>getSlotConstants</b><span class="args">()</span></td><td class="type mono">SlotConstantsInfo</td><td>The constants below, in one call.</td><td></td></tr>
+      <tr><td class="sig"><b>version</b><span class="args">()</span></td><td class="type mono">uint64</td><td>Implementation version.</td><td></td></tr>
+    </tbody>
   </table>
 
   <h2>Public constants</h2>
@@ -332,10 +381,7 @@
     <div><span class="k">MONTH</span><span class="v">30 days</span></div>
     <div><span class="k">MODULE_GAS</span><span class="v">500,000<span class="prop">MODULE_CALLBACK_GAS_LIMIT</span></span></div>
     <div><span class="k">PAYOUT_GAS</span><span class="v">30,000<span class="prop">NATIVE_PAYOUT_GAS_LIMIT</span></span></div>
-    <div><span class="k">TERM_TAX_RATE</span><span class="v">1</span></div>
-    <div><span class="k">TERM_RECIPIENT</span><span class="v">2</span></div>
-    <div><span class="k">TERM_MIN_RUNWAY</span><span class="v">4</span></div>
-    <div><span class="k">TERM_MODULE · TERM_SCOPES</span><span class="v">8 · 16</span></div>
+    <div class="wide"><span class="k">TERM_* bits</span><span class="v">TAX_RATE 1 · RECIPIENT 2 · MIN_RUNWAY 4 · MODULE 8 · SCOPES 16</span></div>
   </div>
 </section>
 

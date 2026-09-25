@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -8,11 +10,11 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 import {ISlotModule, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {SlotMath} from "../../src/libraries/SlotMath.sol";
-import {ManifestTooExpensive} from "../../src/errors/SlotErrors.sol";
+import {ModuleTooExpensive} from "../../src/errors/SlotErrors.sol";
 
 /// @dev Burns a lot of gas on every transfer to `sink`.
 contract GasHog is ERC20 {
@@ -37,13 +39,13 @@ contract GasHog is ERC20 {
 
 /// @dev A healthy module whose configuration check is expensive but well inside
 ///      its stipend.
-contract HeavyModule is ISlotModule {
+contract HeavyModule is AskModule {
     function checkSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 700; ++i) x = uint256(keccak256(abi.encode(x, i)));
     }
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
@@ -103,7 +105,7 @@ contract ModuleReadGasTest is Test {
             (bool ok, ) = address(s).call{gas: g}(abi.encodeWithSignature("liquidate()"));
             if (ok) {
                 assertEq(s.module(), address(0), "an eviction attaches nothing");
-                assertEq(s.pendingTerms().mask & 8, 8, "and erases nothing");
+                assertEq(s.pending().mask & 8, 8, "and erases nothing");
                 ++evicted;
             }
             vm.revertToState(snap);
@@ -168,10 +170,10 @@ contract BuyGasStarvationTest is Test {
 }
 
 /// @dev Refuses every buy, and costs little to read.
-contract VetoModule is ISlotModule {
+contract VetoModule is AskModule {
     error Vetoed();
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         o.scopes = ScopesLib.BEFORE_BUY;
     }
 
@@ -192,13 +194,13 @@ contract VetoModule is ISlotModule {
 
 /// @dev Healthy, and expensive to read: the costlier the read, the wider the
 ///      window a caller tuning gas would have to aim at.
-contract PricyModule is ISlotModule {
+contract PricyModule is AskModule {
     function checkSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
     }
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         uint256 x;
         for (uint256 i; i < 500; ++i) x = uint256(keccak256(abi.encode(x, i)));
         o.scopes = ScopesLib.BEFORE_BUY;
@@ -272,13 +274,13 @@ contract QueuedModuleStarvationTest is Test {
 
 /// @dev Answers honestly, but costs more than the stipend the slot reads it
 ///      under.
-contract GluttonModule is ISlotModule {
+contract GluttonModule is AskModule {
     function checkSettings(bytes calldata) external pure {
         uint256 x;
         for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
     }
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         uint256 x;
         for (uint256 i; i < 1_500; ++i) x = uint256(keccak256(abi.encode(x, i)));
         o.scopes = ScopesLib.BEFORE_BUY;
@@ -326,7 +328,7 @@ contract ModuleStipendTest is Test {
 
     function test_ASlotCannotBeCreatedWithOne() public {
         GluttonModule glutton = new GluttonModule();
-        vm.expectRevert(ManifestTooExpensive.selector);
+        vm.expectRevert(ModuleTooExpensive.selector);
         factory.createSlot(_init(address(glutton)));
     }
 
@@ -336,7 +338,7 @@ contract ModuleStipendTest is Test {
 
         TaxTerms memory none;
         vm.prank(manager);
-        vm.expectRevert(ManifestTooExpensive.selector);
+        vm.expectRevert(ModuleTooExpensive.selector);
         s.proposeTerms(none, ModuleTerms({target: address(glutton), settings: ""}), 8);
     }
 

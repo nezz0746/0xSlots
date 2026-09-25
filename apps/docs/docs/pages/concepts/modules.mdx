@@ -89,36 +89,37 @@ There is no sell callback. A sale through the [OfferBook](/reference/book) is
 `selfAssess` then `buy`, so it runs `beforeSelfAssess` and `beforeBuy` like any
 other seating — one seating path, one set of checks.
 
-## The manifest: scopes and a fee
+## Scopes and fee
 
-A module says what it wants from a slot in its **manifest** —
-`manifest(settings)` returns the callbacks it needs (its **scopes**, as bits)
-and an optional share of collected tax (`feeBps`, paid to `feeRecipient`).
-It takes the slot's `settings` so the answer can depend on them: AdLand asks
+A module says what it wants from a slot in two reads:
+
+- `scopes(settings)` — the callbacks it needs, as bits.
+- `fee(settings)` — an optional share of collected tax (`bps`, paid to `recipient`).
+
+Both take the slot's `settings`, so the answer can depend on them: AdLand asks
 for its `before` scopes only when the config sets a tenure window.
 
-The slot **copies** the manifest when the module is installed and never re-reads
-it on a callback or a payout. The slot only calls the callbacks the copy lists —
+The slot **copies** both when the module is installed and never re-reads them on
+a callback or a payout. The slot only calls the callbacks the copy lists —
 which matters for the `before` side: calling one on a contract that does not
 implement it would revert, and a reverting `before` vetoes every buy.
 
-A module may later declare something different. That is an update to grant, not a change:
-the manager compares the two with `grantStatus()` and accepts with
-`grant(expected)`.
+A module may later declare something different. The slot keeps its copy until
+the manager accepts the new value, and the two follow different rules:
 
-- A new **fee** applies at once. It only changes how collected tax is split
-  between the module and the recipient, never what an occupant pays, and tax
-  collected so far is paid out under the old fee first. A fee can be anything up
-  to all of the rent, but **raising** one — or attaching a module that charges at
-  all — needs a slot whose recipient is mutable: the fee sends rent somewhere the
-  recipient is not, and a slot that promised a fixed recipient keeps that promise.
-- New **scopes** change what the module may do to an occupant, so they queue and
-  land at the next buy — and only on a slot whose module is mutable.
+- **`acceptFee(expected)`** applies at once. It only changes how collected tax
+  is split between the module and the recipient, never what an occupant pays,
+  and tax collected so far is paid out under the old fee first. A fee can be
+  anything up to all of the rent, but **raising** one — or attaching a module
+  that charges at all — needs a slot whose recipient is mutable.
+- **`acceptScopes(expected)`** queues: new scopes change what the module may do
+  to an occupant, so they land at the next buy, and only on a slot whose module
+  is mutable.
 
-A module **proposed** as a replacement is pinned the same way. The slot keeps
-the manifest it read at proposal, reads the module again when it lands, and
-drops it instead of installing it if the two differ — so the delay cannot be
-used to raise a fee or add `strict` after the manager looked.
+A module **proposed** as a replacement is checked the same way. The slot keeps
+the scopes and fee it read at proposal in `pending()`, reads the module again
+when it lands, and drops it instead of installing it if either differs — so the
+delay cannot be used to raise a fee or add `strict` after the manager looked.
 
 ## Settings
 
@@ -212,7 +213,7 @@ Only on a slot created with `mutableModule`, and only by its manager. The new
 land at the next buy (or earlier, through `applyTerms`):
 
 1. the outgoing module gets `onUninstall`;
-2. the incoming module's manifest is read afresh — one that no longer answers is
+2. the incoming module's scopes and fee are read afresh — one that no longer answers is
    dropped (`ModuleDropped`) rather than allowed to block the buy;
 3. the incoming module gets `onInstall` — on a buy, once the buyer is seated and
    before `afterBuy`.
@@ -231,7 +232,7 @@ for.
 The slot never reads `definition()`. It is self-reported and unbounded, and the
 moment the protocol trusted it a label would become an attack surface on the
 path liquidation depends on. A UI may say "this module *says* it takes a 7-day
-window"; authority is always the slot's copy of the manifest and the module's
+window"; authority is always the slot's copy of the scopes and fee, and the module's
 own `checkSettings`.
 </Callout>
 
@@ -241,5 +242,5 @@ To name the modules it knows, a client uses the catalogue in
 ## Next
 
 - [How a slot works](/concepts/slots) — the position the module extends
-- [Module reference](/reference/modules) — `ISlotModule`, `SlotContext`, the manifest, the shipped modules
+- [Module reference](/reference/modules) — `ISlotModule`, `SlotContext`, scopes and fee, the shipped modules
 - [Slot reference](/reference/slot) — the full contract API

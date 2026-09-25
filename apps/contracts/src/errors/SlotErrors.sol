@@ -24,11 +24,15 @@ error InvalidModule();
 error InvalidModuleFee();
 /// @dev The module answers, but not within the stipend the slot reads it under,
 ///      so attaching it would attach nothing.
-error ManifestTooExpensive();
-/// @dev The module's manifest is not the one the manager reviewed.
-error ManifestChanged();
+error ModuleTooExpensive();
+/// @dev The module's scopes are not the ones the manager reviewed.
+error ScopesChanged();
+/// @dev The module's fee is not the one the manager reviewed.
+error FeeChanged();
 /// @dev The module declares nothing this slot could take.
 error NothingToAccept();
+/// @dev A new module is queued, so the current one's scopes are moot.
+error ModuleChangeQueued();
 
 error Vacant();
 error NotInsolvent();

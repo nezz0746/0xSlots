@@ -1,7 +1,7 @@
 "use client";
 
 import { findKnownModule } from "@0xslots/contracts/slots";
-import { type SlotState, TERMS, unpackScopes } from "@0xslots/sdk/slots";
+import { packScopes, type SlotState, TERMS, unpackScopes } from "@0xslots/sdk/slots";
 import { Info, Loader2 } from "lucide-react";
 import { type Address, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
@@ -122,7 +122,7 @@ export function pendingChanges(
     rows.push({
       dimension: "scopes",
       label: "Module scopes",
-      current: callbacks(state.manifest.scopes),
+      current: callbacks(packScopes(state.scopes)),
       next: callbacks(pending.scopes),
     });
   }

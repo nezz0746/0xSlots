@@ -296,7 +296,7 @@ contract SlotBoundNFTWrapperTest is Test {
         slot.buy{value: VALUATION + _deposit(2 ether)}(bob, 2 ether, _deposit(2 ether), 0);
 
         vm.prank(alice);
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
 
         vm.warp(block.timestamp + 2 days); // well past TERMS_DELAY
         assertEq(slot.taxRateBps(), TAX_RATE, "still the rate bob bought under");
@@ -313,15 +313,15 @@ contract SlotBoundNFTWrapperTest is Test {
     ///         every slot it ever creates permanently unable to refuse a buy —
     ///         and no beacon upgrade can retrofit it.
     function test_TheRetirementVetoIsSubscribedFromTheFirstWrap() public view {
-        assertTrue(ScopesLib.unpack(wrapper.manifest("").scopes).beforeBuy, "or the veto is dead code");
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).beforeBuy, "or the veto is dead code");
         assertTrue(slot.scopes().beforeBuy, "and the slot cached it at creation");
     }
 
     function test_TheModuleIsStrict() public view {
-        assertTrue(ScopesLib.unpack(wrapper.manifest("").scopes).strict, "so the move cannot be starved");
-        assertTrue(ScopesLib.unpack(wrapper.manifest("").scopes).afterBuy);
-        assertTrue(ScopesLib.unpack(wrapper.manifest("").scopes).afterRelease);
-        assertTrue(ScopesLib.unpack(wrapper.manifest("").scopes).afterLiquidate);
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).strict, "so the move cannot be starved");
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterBuy);
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterRelease);
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterLiquidate);
     }
 
     // ── finding a wrapper token from its underlying ─────────────────────────

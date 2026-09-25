@@ -423,7 +423,7 @@ contract SlotBoundNFTTest is Test {
     function test_TheOwnerHasNoPowerOverTheSlots() public {
         vm.startPrank(owner);
         vm.expectRevert();
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
         vm.expectRevert();
         slot.selfAssess(1 ether);
         vm.stopPrank();
@@ -528,7 +528,7 @@ contract SlotBoundNFTTest is Test {
         vm.stopPrank();
 
         Slot managed = Slot(payable(s));
-        managed.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        managed.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
         assertEq(managed.taxRateBps(), 1000, "alice keeps what she bought");
 
         vm.warp(block.timestamp + 1 hours + 1); // TERMS_DELAY
@@ -548,7 +548,7 @@ contract SlotBoundNFTTest is Test {
 
         vm.prank(carol);
         vm.expectRevert();
-        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
     }
 
     /// @notice The collection holds no privileged role of its own.
@@ -561,7 +561,7 @@ contract SlotBoundNFTTest is Test {
 
         vm.prank(address(m));
         vm.expectRevert();
-        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        Slot(payable(s)).proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
     }
 
     /// @notice One relay, and it is the slot's own answer.

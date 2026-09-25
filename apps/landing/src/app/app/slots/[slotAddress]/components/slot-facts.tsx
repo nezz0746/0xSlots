@@ -343,7 +343,7 @@ export function SlotDetails({
             what this slot obeys rather than what the module currently claims. */}
         {attached && (
           <div className="w-full space-y-1">
-            <ModuleScopeRow scopes={state.scopes} fee={state.manifest} />
+            <ModuleScopeRow scopes={state.scopes} fee={state.fee} />
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
                 Unrecognised module — read its code before buying.

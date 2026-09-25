@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, ModuleFee} from "../types/SlotTypes.sol";
 
 /**
  * @title ISlotEvents
@@ -43,10 +43,11 @@ interface ISlotEvents {
     );
     /// @dev `taxTerms` and `moduleTerms` carry only the fields named by `mask`; the
     ///      rest are zero.
-    event TermsProposed(TaxTerms taxTerms, ModuleTerms moduleTerms, uint8 mask);
-    event TermsCancelled(uint8 mask);
+    event TermsProposed(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 mask);
+    event TermsCancelled(uint16 mask);
     event ManagerSet(address indexed previous, address indexed next);
-    /// @dev `feeApplied`: the fee changed now. `scopesQueued`: the scopes wait
-    ///      queued under `TERM_SCOPES` for the next buy.
-    event ScopesGranted(Manifest manifest, bool feeApplied, bool scopesQueued);
+    /// @dev The fee applies from now on.
+    event FeeAccepted(ModuleFee fee);
+    /// @dev Queued under `TERM_SCOPES` for the next buy.
+    event ScopesAccepted(uint16 scopes);
 }

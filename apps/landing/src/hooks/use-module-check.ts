@@ -1,7 +1,7 @@
 "use client";
 
 import { minimumTenureModuleAbi } from "@0xslots/contracts/slots";
-import { unpackScopes, NO_SETTINGS } from "@0xslots/sdk/slots";
+import { type ModuleFee, unpackScopes, NO_SETTINGS } from "@0xslots/sdk/slots";
 import { type Address, getAddress, isAddress } from "viem";
 import { useBytecode, useReadContracts } from "wagmi";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
@@ -16,7 +16,7 @@ import {
  * Modules advertised themselves through ERC-165, so probing one meant asking
  * whether it claimed an interface id — and that id rotted every time the
  * interface changed, silently downgrading every genuine module to "probable".
- * A module declares itself differently and better: `manifest()` returns the exact
+ * A module declares itself differently and better: `scopes()` returns the exact
  * set of callbacks it wants, which is data rather than a claim, and the slot
  * snapshots that set once at attach time. So the probe here asks the same
  * question the slot will ask, and there is no constant to keep in sync.
@@ -26,7 +26,7 @@ import {
  *
  *  - `no-code`   — nothing deployed at this address ON THIS CHAIN. Overwhelmingly
  *                  a module address copied from another network.
- *  - `not-a-app`— has code, but `manifest()` does not answer. An ERC-20, a proxy
+ *  - `not-a-app`— has code, but `scopes()` or `fee()` does not answer. An ERC-20, a proxy
  *                  pointing nowhere, the wrong contract entirely.
  *  - `inert`     — answers, but asks for no scopes. The slot REJECTS this
  *                  outright rather than attaching a module that can never fire,
@@ -40,8 +40,8 @@ import {
 /**
  * Any module, read through one module's generated ABI.
  *
- * `manifest` is `ISlotModule`, so every module answers it with the same selector
- * and the same `Manifest` — which is why the probe works on an address this
+ * `scopes` and `fee` are `ISlotModule`, so every module answers them with the
+ * same selectors and shapes — which is why the probe works on an address this
  * module has never heard of. Taken from the package rather than written here so
  * the tuple cannot drift from the struct the slot decodes.
  */
@@ -55,7 +55,7 @@ export interface ModuleCheckData {
   /** The raw declared set, for rendering. */
   scopes: ScopeSet;
   /** The fee it declares for an empty configuration. Null when it did not answer. */
-  fee: { feeBps: number; feeRecipient: Address } | null;
+  fee: ModuleFee | null;
   /** Declared `strict`: its `after` calls are uncapped and may revert. */
   strict: boolean;
   /** The callbacks it declared, in the order `Scopes` declares them. */
@@ -85,8 +85,8 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
     // not an address — nothing to probe
   }
 
-  // Asked separately from `manifest()` because a revert cannot tell the two apart:
-  // an address with no code and an address whose `manifest()` reverts both come
+  // Asked separately from `scopes()` because a revert cannot tell the two apart:
+  // an address with no code and an address whose `scopes()` reverts both come
   // back as a failed call, and they call for opposite advice.
   const bytecode = useBytecode({
     address: checksummed ?? undefined,
@@ -101,7 +101,14 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
             {
               address: checksummed,
               abi: moduleProbeAbi,
-              functionName: "manifest",
+              functionName: "scopes",
+              args: [NO_SETTINGS],
+              chainId,
+            } as const,
+            {
+              address: checksummed,
+              abi: moduleProbeAbi,
+              functionName: "fee",
               args: [NO_SETTINGS],
               chainId,
             } as const,
@@ -116,7 +123,7 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
 
   const result: ModuleCheckData | null = (() => {
     if (!checksummed) return null;
-    if (bytecode.isLoading || !data || data.length < 1) return null;
+    if (bytecode.isLoading || !data || data.length < 2) return null;
 
     const hasCode = !!bytecode.data && bytecode.data !== "0x";
 
@@ -128,8 +135,8 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
         ...describeScopes(null),
       };
 
-    const offerRes = data[0];
-    if (!offerRes || offerRes.status !== "success")
+    const [scopesRes, feeRes] = data;
+    if (scopesRes?.status !== "success" || feeRes?.status !== "success")
       return {
         address: checksummed,
         status: "not-a-app",
@@ -137,19 +144,12 @@ export function useModuleCheck(rawAddress: string, chainId?: number) {
         ...describeScopes(null),
       };
 
-    const offer = offerRes.result as {
-      scopes: number;
-      feeBps: number;
-      feeRecipient: Address;
-    };
-    const described = describeScopes(
-      unpackScopes(offer.scopes),
-    );
+    const described = describeScopes(unpackScopes(scopesRes.result as number));
 
     return {
       address: checksummed,
       status: described.granted.length === 0 ? "inert" : "ok",
-      fee: { feeBps: offer.feeBps, feeRecipient: offer.feeRecipient },
+      fee: feeRes.result as ModuleFee,
       ...described,
     };
   })();

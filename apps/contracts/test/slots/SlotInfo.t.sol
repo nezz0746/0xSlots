@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, Pending} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -49,8 +51,8 @@ contract SlotInfoTest is Test {
         assertEq(i.mutableTax, slot.mutableTax());
         assertEq(i.mutableRecipient, slot.mutableRecipient());
         assertEq(i.mutableModule, slot.mutableModule());
-        assertEq(i.terms.manifest.feeBps, slot.manifest().feeBps);
-        assertEq(i.terms.manifest.scopes, slot.manifest().scopes);
+        assertEq(i.fee.bps, slot.fee().bps);
+        assertEq(ScopesLib.pack(i.scopes), ScopesLib.pack(slot.scopes()));
         assertEq(i.terms.taxTerms.rateBps, slot.taxRateBps());
         assertEq(i.terms.taxTerms.minRunwaySeconds, slot.minRunwaySeconds());
         assertEq(i.terms.moduleTerms.target, slot.module());
@@ -68,14 +70,14 @@ contract SlotInfoTest is Test {
         assertEq(i.isInsolvent, slot.isInsolvent());
         assertEq(i.secondsUntilLiquidation, slot.secondsUntilLiquidation());
         assertEq(i.hasRipeTerms, slot.hasRipeTerms());
-        PendingTerms memory __p1 = slot.pendingTerms();
+        Pending memory __p1 = slot.pending();
         TaxTerms memory taxTerms = __p1.taxTerms;
-        ModuleTerms memory module = __p1.moduleTerms;
-        uint8 mask = __p1.mask;
+        ModuleTerms memory module = ModuleTerms(__p1.module.target, __p1.module.settings);
+        uint16 mask = __p1.mask;
         uint64 at = __p1.proposedAt;
         assertEq(i.pending.taxTerms.rateBps, taxTerms.rateBps);
         assertEq(i.pending.taxTerms.recipient, taxTerms.recipient);
-        assertEq(i.pending.moduleTerms.target, module.target);
+        assertEq(i.pending.module.target, module.target);
         assertEq(i.pending.mask, mask);
         assertEq(i.pending.proposedAt, at);
     }
@@ -100,7 +102,7 @@ contract SlotInfoTest is Test {
         slot.buy(occ, 100e18, dep, 0);
         vm.stopPrank();
 
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(750), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
         _assertAgrees();                     // queued, not ripe
         assertFalse(slot.getSlotInfo().hasRipeTerms);
 
@@ -132,6 +134,7 @@ contract SlotInfoTest is Test {
         assertEq(c.moduleGas, slot.MODULE_GAS());
         assertEq(c.payoutGas, slot.PAYOUT_GAS());
         assertEq(c.termsDelay, slot.TERMS_DELAY());
+        assertEq(c.maxMinRunway, slot.MAX_MIN_RUNWAY());
     }
 
     /// @notice And they are the numbers the contract actually enforces.
@@ -144,6 +147,6 @@ contract SlotInfoTest is Test {
         vm.stopPrank();
 
         vm.expectRevert();                       // tax above MAX_TAX_BPS
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(c.maxTaxBps + 1), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
     }
 }

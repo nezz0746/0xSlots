@@ -5,7 +5,7 @@ import {ISlotModule, Scopes, SlotContext} from "../../interfaces/ISlotModule.sol
 import {IDescribedModule} from "../../interfaces/IDescribedModule.sol";
 import {ScopesLib} from "../../libraries/ScopesLib.sol";
 import {ModuleSchemaLib} from "../../libraries/ModuleSchemaLib.sol";
-import {Manifest, ModuleTerms, PendingTerms} from "../../types/SlotTypes.sol";
+import {ModuleFee, ModuleTerms, Pending} from "../../types/SlotTypes.sol";
 import {TermsLib} from "../../libraries/TermsLib.sol";
 import {MinimumTenure} from "../MinimumTenure.sol";
 import {AdLandCreatives} from "./AdLandCreatives.sol";
@@ -33,7 +33,7 @@ abstract contract AdLandModule is
 {
     using ModuleSchemaLib for ModuleSchemaLib.Field;
 
-    function manifest(bytes calldata settings) external pure returns (Manifest memory o) {
+    function scopes(bytes calldata settings) external pure returns (uint16) {
         Scopes memory f;
         // Every path that ends a tenure. `afterSettle` is tax moving under a
         // tenure that has not ended.
@@ -55,8 +55,12 @@ abstract contract AdLandModule is
             f.beforeBuy = true;
             f.beforeSelfAssess = true;
         }
-        o.scopes = ScopesLib.pack(f);
+        return ScopesLib.pack(f);
     }
+
+    /// @inheritdoc ISlotModule
+    /// @dev Takes nothing.
+    function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
     /**
      * @dev The settings are `abi.encode(AdConfig)`: window, moderation mode
@@ -103,10 +107,10 @@ abstract contract AdLandModule is
         override
         returns (ModerationMode)
     {
-        try ISlotAd(slot).pendingTerms() returns (PendingTerms memory p) {
+        try ISlotAd(slot).pending() returns (Pending memory p) {
             if (p.mask & TermsLib.MODULE == 0) return live;
-            if (p.moduleTerms.target != address(this)) return ModerationMode.Open;
-            return adConfigOf(p.moduleTerms.settings).moderation;
+            if (p.module.target != address(this)) return ModerationMode.Open;
+            return adConfigOf(p.module.settings).moderation;
         } catch {
             return live;
         }

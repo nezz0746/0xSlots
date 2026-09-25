@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {VersionedUUPS} from "../../utils/VersionedUUPS.sol";
-import {IAdLand, Creative, Pending} from "./IAdLand.sol";
+import {IAdLand, Creative, PendingKey} from "./IAdLand.sol";
 
 /**
  * @title AdLandStorage
@@ -37,7 +37,7 @@ abstract contract AdLandStorage is VersionedUUPS, OwnableUpgradeable, IAdLand {
     mapping(bytes32 key => address slot) public slotOf;
 
     /// @notice Changes waiting out `CHANGE_DELAY`.
-    mapping(bytes32 key => Pending) public pendingOf;
+    mapping(bytes32 key => PendingKey) public pendingOf;
 
     /**
      * @dev The slot a key was CLAIMED for through {AdLandRegistry-claimKey};

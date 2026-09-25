@@ -45,13 +45,13 @@ for querying it directly — see [Indexer](https://docs.0xslots.org/indexer).
 
 | Area | Methods |
 | --- | --- |
-| Reads | `slotState`, `quoteBuy`, `minDepositForBuy`, `minDepositToHold`, `pending`, `hasRipeTerms`, `terms`, `module`, `manifest`, `scopes`, `grantStatus`, `debtOf`, `withdrawableOf`, `isOperator`, and getters for the common fields |
+| Reads | `slotState`, `quoteBuy`, `minDepositForBuy`, `minDepositToHold`, `pending`, `hasRipeTerms`, `terms`, `module`, `scopes`, `fee`, `moduleUpdate`, `debtOf`, `withdrawableOf`, `isOperator`, and getters for the common fields |
 | Create | `createSlot`, `simulateCreateSlot` |
 | Occupancy | `buy`, `simulateBuy`, `liquidateAndBuy`, `release`, `liquidate` |
 | Holding | `selfAssess`, `topUp`, `withdraw`, `manageTerms`, `setOperator` |
 | Money out | `collect`, `collectAll`, `simulateCollectAll`, `collectFrom`, `claim` |
-| Manager | `proposeTerms`, `cancelTerms`, `grant`, `setManager` |
-| Modules | `checkSettings`, `readManifest`, `moduleDefinition`, `moduleSettings` |
+| Manager | `proposeTerms`, `cancelTerms`, `acceptFee`, `acceptScopes`, `setManager` |
+| Modules | `checkSettings`, `readScopes`, `readFee`, `moduleDefinition`, `moduleSettings` |
 | OfferBook | `offerBoard`, `offerAt`, `isOfferFundable`, `offerCost`, `postOffer`, `cancelOffer`, `approveOfferBook`, `authorizeOfferBook`, `acceptOffer` |
 
 `buy` sends the quote it just read as `maxPayment`, so it pays what it was

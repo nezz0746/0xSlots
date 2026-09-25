@@ -205,9 +205,9 @@ with `applyTerms`. The terms an occupant bought into hold for their whole tenure
   word meant for someone else.
 - Check `mutableTax` / `mutableRecipient` / `mutableModule` before offering a
   control at all. A slot with all three false has no manager.
-- When the module declares a new fee or new scopes, `grantStatus(slot)` shows
-  the difference and `grant(slot, status.declared)` accepts it. The fee changes
-  at once; scopes queue like any other term.
+- When the module declares a new fee or new scopes, `moduleUpdate(slot)` shows
+  the difference; `acceptFee(slot, fee)` and `acceptScopes(slot, scopes)` accept
+  each. The fee changes at once; scopes queue like any other term.
 - `hasRipeTerms(slot)` is the chain's answer to "will the next transition
   actually land this". `pending.appliesAt` is derived locally and is the right
   thing to *render* and the wrong thing to branch on.

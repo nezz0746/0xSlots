@@ -3,11 +3,10 @@ pragma solidity ^0.8.24;
 
 import {Scopes} from "../interfaces/ISlotModule.sol";
 
-/// @notice `Scopes` as the bits of `Manifest.scopes`.
+/// @notice `Scopes` as the bits a module declares and a slot stores.
 ///
 /// @dev Bits follow `Scopes` field order and are permanent. Packed rather than
-///      a struct of bools so a new callback is a new bit in the same word, and
-///      `Manifest` keeps its shape.
+///      a struct of bools so a new callback is a new bit in the same word.
 ///
 ///      A `uint16` with seven bits spare: {ALL} is the mask of bits that MEAN
 ///      something, not the type's maximum, because a module declaring a bit this

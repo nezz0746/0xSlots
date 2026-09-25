@@ -6,7 +6,7 @@ import "../errors/SlotErrors.sol";
 import {SlotViews} from "./SlotViews.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
-import {PendingTerms} from "../types/SlotTypes.sol";
+import {Pending} from "../types/SlotTypes.sol";
 
 /**
  * @title SlotOccupancy
@@ -17,7 +17,7 @@ import {PendingTerms} from "../types/SlotTypes.sol";
  *      terms, ask the module, take the money, seat, notify.
  */
 abstract contract SlotOccupancy is SlotViews {
-    using TermsLib for PendingTerms;
+    using TermsLib for Pending;
     // ─── occupancy ──────────────────────────────────────────────────────────
 
     /**
@@ -95,7 +95,7 @@ abstract contract SlotOccupancy is SlotViews {
         // Judged only by the incoming module, a manager could strip a paid-for
         // window with one day's notice by queueing a detach. Only when somebody
         // is being displaced; a vacant slot has nobody to protect.
-        PendingTerms storage q = _pending();
+        Pending storage q = _pending();
         if (
             prev != address(0) &&
             q.mask & TermsLib.MODULE != 0 &&
@@ -105,7 +105,14 @@ abstract contract SlotOccupancy is SlotViews {
                 F_BEFORE_BUY,
                 abi.encodeCall(
                     ISlotModule.beforeBuy,
-                    (_ctx(msg.sender, account, selfAssessedPrice, depositAmount))
+                    (
+                        _ctx(
+                            msg.sender,
+                            account,
+                            selfAssessedPrice,
+                            depositAmount
+                        )
+                    )
                 )
             );
         }
@@ -126,7 +133,9 @@ abstract contract SlotOccupancy is SlotViews {
         );
 
         o.occupant = account;
-        unchecked { ++o.tenureId; }
+        unchecked {
+            ++o.tenureId;
+        }
         o.price = selfAssessedPrice;
         o.deposit = depositAmount;
         o.since = uint64(block.timestamp);
@@ -136,7 +145,13 @@ abstract contract SlotOccupancy is SlotViews {
 
         if (prev != address(0)) _payOrCredit(prev, refund);
 
-        emit Bought(account, prev, selfAssessedPrice, depositAmount, owedToPrev);
+        emit Bought(
+            account,
+            prev,
+            selfAssessedPrice,
+            depositAmount,
+            owedToPrev
+        );
 
         // A module that landed above meets the seat it inherited before it hears
         // about the buy that filled it.
@@ -167,7 +182,10 @@ abstract contract SlotOccupancy is SlotViews {
         emit Released(prev, refund);
         _after(
             F_AFTER_RELEASE,
-            abi.encodeCall(ISlotModule.afterRelease, (_ctx(msg.sender, prev, 0, 0)))
+            abi.encodeCall(
+                ISlotModule.afterRelease,
+                (_ctx(msg.sender, prev, 0, 0))
+            )
         );
     }
 
@@ -196,7 +214,10 @@ abstract contract SlotOccupancy is SlotViews {
         emit Liquidated(msg.sender, prev);
         _after(
             F_AFTER_LIQUIDATE,
-            abi.encodeCall(ISlotModule.afterLiquidate, (_ctx(msg.sender, prev, 0, 0)))
+            abi.encodeCall(
+                ISlotModule.afterLiquidate,
+                (_ctx(msg.sender, prev, 0, 0))
+            )
         );
     }
 }

@@ -112,28 +112,6 @@ export const adLandAbi = [
                       },
                     ],
                   },
-                  {
-                    name: 'manifest',
-                    internalType: 'struct Manifest',
-                    type: 'tuple',
-                    components: [
-                      {
-                        name: 'scopes',
-                        internalType: 'uint16',
-                        type: 'uint16',
-                      },
-                      {
-                        name: 'feeBps',
-                        internalType: 'uint16',
-                        type: 'uint16',
-                      },
-                      {
-                        name: 'feeRecipient',
-                        internalType: 'address',
-                        type: 'address',
-                      },
-                    ],
-                  },
                 ],
               },
               {
@@ -160,6 +138,19 @@ export const adLandAbi = [
                   { name: 'onUninstall', internalType: 'bool', type: 'bool' },
                 ],
               },
+              {
+                name: 'fee',
+                internalType: 'struct ModuleFee',
+                type: 'tuple',
+                components: [
+                  { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                ],
+              },
               { name: 'occupant', internalType: 'address', type: 'address' },
               { name: 'price', internalType: 'uint256', type: 'uint256' },
               { name: 'deposit', internalType: 'uint256', type: 'uint256' },
@@ -181,7 +172,7 @@ export const adLandAbi = [
               },
               {
                 name: 'pending',
-                internalType: 'struct PendingTerms',
+                internalType: 'struct Pending',
                 type: 'tuple',
                 components: [
                   {
@@ -207,8 +198,8 @@ export const adLandAbi = [
                     ],
                   },
                   {
-                    name: 'moduleTerms',
-                    internalType: 'struct ModuleTerms',
+                    name: 'module',
+                    internalType: 'struct InstalledModule',
                     type: 'tuple',
                     components: [
                       {
@@ -217,23 +208,39 @@ export const adLandAbi = [
                         type: 'address',
                       },
                       {
+                        name: 'scopes',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'fee',
+                        internalType: 'struct ModuleFee',
+                        type: 'tuple',
+                        components: [
+                          {
+                            name: 'bps',
+                            internalType: 'uint16',
+                            type: 'uint16',
+                          },
+                          {
+                            name: 'recipient',
+                            internalType: 'address',
+                            type: 'address',
+                          },
+                        ],
+                      },
+                      {
                         name: 'settings',
                         internalType: 'bytes',
                         type: 'bytes',
                       },
                     ],
                   },
-                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-                  { name: 'mask', internalType: 'uint8', type: 'uint8' },
+                  { name: 'mask', internalType: 'uint16', type: 'uint16' },
                   {
                     name: 'proposedAt',
                     internalType: 'uint64',
                     type: 'uint64',
-                  },
-                  {
-                    name: 'reviewedManifest',
-                    internalType: 'bytes32',
-                    type: 'bytes32',
                   },
                 ],
               },
@@ -316,28 +323,6 @@ export const adLandAbi = [
                       },
                     ],
                   },
-                  {
-                    name: 'manifest',
-                    internalType: 'struct Manifest',
-                    type: 'tuple',
-                    components: [
-                      {
-                        name: 'scopes',
-                        internalType: 'uint16',
-                        type: 'uint16',
-                      },
-                      {
-                        name: 'feeBps',
-                        internalType: 'uint16',
-                        type: 'uint16',
-                      },
-                      {
-                        name: 'feeRecipient',
-                        internalType: 'address',
-                        type: 'address',
-                      },
-                    ],
-                  },
                 ],
               },
               {
@@ -364,6 +349,19 @@ export const adLandAbi = [
                   { name: 'onUninstall', internalType: 'bool', type: 'bool' },
                 ],
               },
+              {
+                name: 'fee',
+                internalType: 'struct ModuleFee',
+                type: 'tuple',
+                components: [
+                  { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                ],
+              },
               { name: 'occupant', internalType: 'address', type: 'address' },
               { name: 'price', internalType: 'uint256', type: 'uint256' },
               { name: 'deposit', internalType: 'uint256', type: 'uint256' },
@@ -385,7 +383,7 @@ export const adLandAbi = [
               },
               {
                 name: 'pending',
-                internalType: 'struct PendingTerms',
+                internalType: 'struct Pending',
                 type: 'tuple',
                 components: [
                   {
@@ -411,8 +409,8 @@ export const adLandAbi = [
                     ],
                   },
                   {
-                    name: 'moduleTerms',
-                    internalType: 'struct ModuleTerms',
+                    name: 'module',
+                    internalType: 'struct InstalledModule',
                     type: 'tuple',
                     components: [
                       {
@@ -421,23 +419,39 @@ export const adLandAbi = [
                         type: 'address',
                       },
                       {
+                        name: 'scopes',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'fee',
+                        internalType: 'struct ModuleFee',
+                        type: 'tuple',
+                        components: [
+                          {
+                            name: 'bps',
+                            internalType: 'uint16',
+                            type: 'uint16',
+                          },
+                          {
+                            name: 'recipient',
+                            internalType: 'address',
+                            type: 'address',
+                          },
+                        ],
+                      },
+                      {
                         name: 'settings',
                         internalType: 'bytes',
                         type: 'bytes',
                       },
                     ],
                   },
-                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-                  { name: 'mask', internalType: 'uint8', type: 'uint8' },
+                  { name: 'mask', internalType: 'uint16', type: 'uint16' },
                   {
                     name: 'proposedAt',
                     internalType: 'uint64',
                     type: 'uint64',
-                  },
-                  {
-                    name: 'reviewedManifest',
-                    internalType: 'bytes32',
-                    type: 'bytes32',
                   },
                 ],
               },
@@ -788,6 +802,23 @@ export const adLandAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [
       { name: 'initialOwner', internalType: 'address', type: 'address' },
     ],
@@ -808,24 +839,6 @@ export const adLandAbi = [
     name: 'keyOwner',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
-    name: 'manifest',
-    outputs: [
-      {
-        name: 'o',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -1007,6 +1020,13 @@ export const adLandAbi = [
     ],
     name: 'requiredDeposit',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'pure',
   },
   {
@@ -1578,16 +1598,15 @@ export const minimumTenureModuleAbi = [
   {
     type: 'function',
     inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
-    name: 'manifest',
+    name: 'fee',
     outputs: [
       {
-        name: 'o',
-        internalType: 'struct Manifest',
+        name: '',
+        internalType: 'struct ModuleFee',
         type: 'tuple',
         components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
         ],
       },
     ],
@@ -1682,6 +1701,13 @@ export const minimumTenureModuleAbi = [
     ],
     name: 'requiredDeposit',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'pure',
   },
   {
@@ -2197,36 +2223,60 @@ export const slotAbi = [
     type: 'function',
     inputs: [],
     name: 'TERM_MIN_RUNWAY',
-    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     inputs: [],
     name: 'TERM_MODULE',
-    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     inputs: [],
     name: 'TERM_RECIPIENT',
-    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     inputs: [],
     name: 'TERM_SCOPES',
-    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
   },
   {
     type: 'function',
     inputs: [],
     name: 'TERM_TAX_RATE',
-    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'expected',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    name: 'acceptFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'expected', internalType: 'uint16', type: 'uint16' }],
+    name: 'acceptScopes',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -2249,7 +2299,7 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'mask', internalType: 'uint8', type: 'uint8' }],
+    inputs: [{ name: 'mask', internalType: 'uint16', type: 'uint16' }],
     name: 'cancelTerms',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -2299,6 +2349,23 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'fee',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'getSlotConstants',
     outputs: [
       {
@@ -2313,6 +2380,7 @@ export const slotAbi = [
           { name: 'moduleGas', internalType: 'uint256', type: 'uint256' },
           { name: 'payoutGas', internalType: 'uint256', type: 'uint256' },
           { name: 'termsDelay', internalType: 'uint64', type: 'uint64' },
+          { name: 'maxMinRunway', internalType: 'uint256', type: 'uint256' },
         ],
       },
     ],
@@ -2369,20 +2437,6 @@ export const slotAbi = [
                   { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
-              {
-                name: 'manifest',
-                internalType: 'struct Manifest',
-                type: 'tuple',
-                components: [
-                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-                  { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-                  {
-                    name: 'feeRecipient',
-                    internalType: 'address',
-                    type: 'address',
-                  },
-                ],
-              },
             ],
           },
           {
@@ -2399,6 +2453,15 @@ export const slotAbi = [
               { name: 'strict', internalType: 'bool', type: 'bool' },
               { name: 'onInstall', internalType: 'bool', type: 'bool' },
               { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+            ],
+          },
+          {
+            name: 'fee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
             ],
           },
           { name: 'occupant', internalType: 'address', type: 'address' },
@@ -2418,7 +2481,7 @@ export const slotAbi = [
           },
           {
             name: 'pending',
-            internalType: 'struct PendingTerms',
+            internalType: 'struct Pending',
             type: 'tuple',
             components: [
               {
@@ -2440,75 +2503,35 @@ export const slotAbi = [
                 ],
               },
               {
-                name: 'moduleTerms',
-                internalType: 'struct ModuleTerms',
+                name: 'module',
+                internalType: 'struct InstalledModule',
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
+                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'fee',
+                    internalType: 'struct ModuleFee',
+                    type: 'tuple',
+                    components: [
+                      { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                    ],
+                  },
                   { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
-              { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-              { name: 'mask', internalType: 'uint8', type: 'uint8' },
+              { name: 'mask', internalType: 'uint16', type: 'uint16' },
               { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-              {
-                name: 'reviewedManifest',
-                internalType: 'bytes32',
-                type: 'bytes32',
-              },
             ],
           },
           { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
         ],
       },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: 'expected',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-    ],
-    name: 'grant',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'grantStatus',
-    outputs: [
-      {
-        name: 'accepted',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-      {
-        name: 'declared',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-      { name: 'feeDiffers', internalType: 'bool', type: 'bool' },
-      { name: 'scopesDiffer', internalType: 'bool', type: 'bool' },
     ],
     stateMutability: 'view',
   },
@@ -2610,24 +2633,6 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'manifest',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'price_', internalType: 'uint256', type: 'uint256' }],
     name: 'minDepositForBuy',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
@@ -2716,11 +2721,11 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'pendingTerms',
+    name: 'pending',
     outputs: [
       {
         name: '',
-        internalType: 'struct PendingTerms',
+        internalType: 'struct Pending',
         type: 'tuple',
         components: [
           {
@@ -2738,22 +2743,30 @@ export const slotAbi = [
             ],
           },
           {
-            name: 'moduleTerms',
-            internalType: 'struct ModuleTerms',
+            name: 'module',
+            internalType: 'struct InstalledModule',
             type: 'tuple',
             components: [
               { name: 'target', internalType: 'address', type: 'address' },
+              { name: 'scopes', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'fee',
+                internalType: 'struct ModuleFee',
+                type: 'tuple',
+                components: [
+                  { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                ],
+              },
               { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'mask', internalType: 'uint8', type: 'uint8' },
+          { name: 'mask', internalType: 'uint16', type: 'uint16' },
           { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-          {
-            name: 'reviewedManifest',
-            internalType: 'bytes32',
-            type: 'bytes32',
-          },
         ],
       },
     ],
@@ -2788,7 +2801,7 @@ export const slotAbi = [
           { name: 'settings', internalType: 'bytes', type: 'bytes' },
         ],
       },
-      { name: 'mask', internalType: 'uint8', type: 'uint8' },
+      { name: 'mask', internalType: 'uint16', type: 'uint16' },
     ],
     name: 'proposeTerms',
     outputs: [],
@@ -2945,20 +2958,6 @@ export const slotAbi = [
               { name: 'settings', internalType: 'bytes', type: 'bytes' },
             ],
           },
-          {
-            name: 'manifest',
-            internalType: 'struct Manifest',
-            type: 'tuple',
-            components: [
-              { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-              { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'feeRecipient',
-                internalType: 'address',
-                type: 'address',
-              },
-            ],
-          },
         ],
       },
     ],
@@ -3100,6 +3099,23 @@ export const slotAbi = [
       },
     ],
     name: 'Deposited',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'fee',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'FeeAccepted',
   },
   {
     type: 'event',
@@ -3321,6 +3337,19 @@ export const slotAbi = [
     anonymous: false,
     inputs: [
       {
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+    ],
+    name: 'ScopesAccepted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
         name: 'module',
         internalType: 'address',
         type: 'address',
@@ -3334,36 +3363,6 @@ export const slotAbi = [
       },
     ],
     name: 'ScopesDropped',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'manifest',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-        indexed: false,
-      },
-      {
-        name: 'feeApplied',
-        internalType: 'bool',
-        type: 'bool',
-        indexed: false,
-      },
-      {
-        name: 'scopesQueued',
-        internalType: 'bool',
-        type: 'bool',
-        indexed: false,
-      },
-    ],
-    name: 'ScopesGranted',
   },
   {
     type: 'event',
@@ -3460,17 +3459,22 @@ export const slotAbi = [
         indexed: false,
       },
       {
-        name: 'manifest',
-        internalType: 'struct Manifest',
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'fee',
+        internalType: 'struct ModuleFee',
         type: 'tuple',
         components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
         ],
         indexed: false,
       },
-      { name: 'mask', internalType: 'uint8', type: 'uint8', indexed: false },
+      { name: 'mask', internalType: 'uint16', type: 'uint16', indexed: false },
     ],
     name: 'TermsApplied',
   },
@@ -3478,7 +3482,7 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'mask', internalType: 'uint8', type: 'uint8', indexed: false },
+      { name: 'mask', internalType: 'uint16', type: 'uint16', indexed: false },
     ],
     name: 'TermsCancelled',
   },
@@ -3507,7 +3511,7 @@ export const slotAbi = [
         ],
         indexed: false,
       },
-      { name: 'mask', internalType: 'uint8', type: 'uint8', indexed: false },
+      { name: 'mask', internalType: 'uint16', type: 'uint16', indexed: false },
     ],
     name: 'TermsProposed',
   },
@@ -3551,6 +3555,7 @@ export const slotAbi = [
     name: 'CurrencyTakesACut',
   },
   { type: 'error', inputs: [], name: 'FailedCall' },
+  { type: 'error', inputs: [], name: 'FeeChanged' },
   { type: 'error', inputs: [], name: 'InvalidCurrency' },
   { type: 'error', inputs: [], name: 'InvalidDeposit' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
@@ -3562,8 +3567,8 @@ export const slotAbi = [
   { type: 'error', inputs: [], name: 'InvalidRunway' },
   { type: 'error', inputs: [], name: 'InvalidTax' },
   { type: 'error', inputs: [], name: 'InvalidValue' },
-  { type: 'error', inputs: [], name: 'ManifestChanged' },
-  { type: 'error', inputs: [], name: 'ManifestTooExpensive' },
+  { type: 'error', inputs: [], name: 'ModuleChangeQueued' },
+  { type: 'error', inputs: [], name: 'ModuleTooExpensive' },
   { type: 'error', inputs: [], name: 'NoPendingTerms' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotInsolvent' },
@@ -3583,6 +3588,7 @@ export const slotAbi = [
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
   },
+  { type: 'error', inputs: [], name: 'ScopesChanged' },
   { type: 'error', inputs: [], name: 'TransferFailed' },
   { type: 'error', inputs: [], name: 'UnknownTerms' },
   { type: 'error', inputs: [], name: 'Vacant' },
@@ -3891,6 +3897,23 @@ export const slotBoundNftAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
     name: 'getApproved',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
@@ -3947,20 +3970,6 @@ export const slotBoundNftAbi = [
                   { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
-              {
-                name: 'manifest',
-                internalType: 'struct Manifest',
-                type: 'tuple',
-                components: [
-                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-                  { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-                  {
-                    name: 'feeRecipient',
-                    internalType: 'address',
-                    type: 'address',
-                  },
-                ],
-              },
             ],
           },
           {
@@ -3977,6 +3986,15 @@ export const slotBoundNftAbi = [
               { name: 'strict', internalType: 'bool', type: 'bool' },
               { name: 'onInstall', internalType: 'bool', type: 'bool' },
               { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+            ],
+          },
+          {
+            name: 'fee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
             ],
           },
           { name: 'occupant', internalType: 'address', type: 'address' },
@@ -3996,7 +4014,7 @@ export const slotBoundNftAbi = [
           },
           {
             name: 'pending',
-            internalType: 'struct PendingTerms',
+            internalType: 'struct Pending',
             type: 'tuple',
             components: [
               {
@@ -4018,22 +4036,30 @@ export const slotBoundNftAbi = [
                 ],
               },
               {
-                name: 'moduleTerms',
-                internalType: 'struct ModuleTerms',
+                name: 'module',
+                internalType: 'struct InstalledModule',
                 type: 'tuple',
                 components: [
                   { name: 'target', internalType: 'address', type: 'address' },
+                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'fee',
+                    internalType: 'struct ModuleFee',
+                    type: 'tuple',
+                    components: [
+                      { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                    ],
+                  },
                   { name: 'settings', internalType: 'bytes', type: 'bytes' },
                 ],
               },
-              { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-              { name: 'mask', internalType: 'uint8', type: 'uint8' },
+              { name: 'mask', internalType: 'uint16', type: 'uint16' },
               { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-              {
-                name: 'reviewedManifest',
-                internalType: 'bytes32',
-                type: 'bytes32',
-              },
             ],
           },
           { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
@@ -4051,24 +4077,6 @@ export const slotBoundNftAbi = [
     name: 'isApprovedForAll',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
-    name: 'manifest',
-    outputs: [
-      {
-        name: 'o',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -4211,6 +4219,13 @@ export const slotBoundNftAbi = [
     name: 'safeTransferFrom',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -5136,6 +5151,23 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
     name: 'getApproved',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
@@ -5167,24 +5199,6 @@ export const slotBoundNftWrapperAbi = [
     name: 'isApprovedForAll',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
-    name: 'manifest',
-    outputs: [
-      {
-        name: 'o',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -5299,7 +5313,7 @@ export const slotBoundNftWrapperAbi = [
     outputs: [
       { name: 'total', internalType: 'uint256', type: 'uint256' },
       { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-      { name: 'fee', internalType: 'uint256', type: 'uint256' },
+      { name: 'wrapFee', internalType: 'uint256', type: 'uint256' },
     ],
     stateMutability: 'view',
   },
@@ -5325,6 +5339,13 @@ export const slotBoundNftWrapperAbi = [
     name: 'safeTransferFrom',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -5822,6 +5843,34 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
+      {
+        name: 'expected',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    name: 'acceptFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
+      { name: 'expected', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'acceptScopes',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
     ],
     name: 'cancelAllProposals',
     outputs: [],
@@ -5988,25 +6037,6 @@ export const slotCollectiveAbi = [
       { name: 'warehouseBalance', internalType: 'uint256', type: 'uint256' },
     ],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
-      {
-        name: 'expected',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
-      },
-    ],
-    name: 'grant',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -6410,6 +6440,25 @@ export const slotCollectiveAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'by', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'fee',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'FeeAcceptRelayed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
       {
         name: 'version',
         internalType: 'uint64',
@@ -6505,18 +6554,13 @@ export const slotCollectiveAbi = [
       { name: 'slot', internalType: 'address', type: 'address', indexed: true },
       { name: 'by', internalType: 'address', type: 'address', indexed: true },
       {
-        name: 'manifest',
-        internalType: 'struct Manifest',
-        type: 'tuple',
-        components: [
-          { name: 'scopes', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'feeRecipient', internalType: 'address', type: 'address' },
-        ],
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
         indexed: false,
       },
     ],
-    name: 'ScopesGrantRelayed',
+    name: 'ScopesAcceptRelayed',
   },
   {
     type: 'event',

@@ -62,9 +62,9 @@ abstract contract SlotConstants {
 
     // Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
     // `TERM_SCOPES` is queued by `grant`, never proposed.
-    uint8 public constant TERM_TAX_RATE = 1 << 0;
-    uint8 public constant TERM_RECIPIENT = 1 << 1;
-    uint8 public constant TERM_MIN_RUNWAY = 1 << 2;
-    uint8 public constant TERM_MODULE = 1 << 3;
-    uint8 public constant TERM_SCOPES = 1 << 4;
+    uint16 public constant TERM_TAX_RATE = 1 << 0;
+    uint16 public constant TERM_RECIPIENT = 1 << 1;
+    uint16 public constant TERM_MIN_RUNWAY = 1 << 2;
+    uint16 public constant TERM_MODULE = 1 << 3;
+    uint16 public constant TERM_SCOPES = 1 << 4;
 }

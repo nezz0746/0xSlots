@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../src/types/SlotTypes.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -19,10 +20,9 @@ import {Ownable} from "splits-v2/utils/Ownable.sol";
 /// @dev A module with code that charges a fee: what the policy role may no
 ///      longer attach alone.
 contract ChargingModuleStub {
-    function manifest(bytes calldata) external pure returns (Manifest memory m) {
-        m.scopes = 4;
-        m.feeBps = 500;
-        m.feeRecipient = address(0xFEE);
+    function fee(bytes calldata) external pure returns (ModuleFee memory f) {
+        f.bps = 500;
+        f.recipient = address(0xFEE);
     }
 }
 
@@ -49,14 +49,19 @@ contract MockSlot {
     }
 
     uint16 public acceptedFeeBps;
+    uint16 public acceptedScopes;
 
-    function grant(Manifest calldata expected) external onlyManager {
-        acceptedFeeBps = expected.feeBps;
+    function acceptFee(ModuleFee calldata expected) external onlyManager {
+        acceptedFeeBps = expected.bps;
     }
 
-    /// @dev What the slot accepted, as the real slot reports it.
-    function manifest() external view returns (Manifest memory m) {
-        m.feeBps = acceptedFeeBps;
+    function acceptScopes(uint16 expected) external onlyManager {
+        acceptedScopes = expected;
+    }
+
+    /// @dev The fee the slot accepted, as the real slot reports it.
+    function fee() external view returns (ModuleFee memory f) {
+        f.bps = acceptedFeeBps;
     }
 
     modifier onlyManager() {
@@ -66,7 +71,7 @@ contract MockSlot {
 
     /// @dev Mirrors the real slot: each term is queued only when its bit is
     ///      set, so two roles can queue independently.
-    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint8 mask)
+    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint16 mask)
         external
         onlyManager
     {
@@ -84,7 +89,7 @@ contract MockSlot {
 
     /// @dev Clears whichever of `mask` is queued, and reverts only when none
     ///      was, as the real slot does.
-    function cancelTerms(uint8 mask) external onlyManager {
+    function cancelTerms(uint16 mask) external onlyManager {
         bool cancelTax = mask & 1 != 0 && hasTax;
         bool cancelModule = mask & 8 != 0 && hasModule;
         if (!cancelTax && !cancelModule) revert NoPendingTerms();
@@ -193,7 +198,7 @@ contract SlotCollectiveTest is Test {
         calls[0] = Wallet.Call({
             to: address(slot),
             value: 0,
-            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1)))
+            data: abi.encodeCall(MockSlot.proposeTerms, (TaxTerms({recipient: address(0), rateBps: uint16(9999), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1)))
         });
 
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -410,17 +415,18 @@ contract SlotCollectiveTest is Test {
         mgr.setSplit(wrong, wrong, tokens);
     }
 
-    function test_policyManagerRelaysTheGrant() public {
-        Manifest memory declared = Manifest({scopes: 4, feeBps: 0, feeRecipient: address(0)});
-
+    function test_policyManagerRelaysAcceptances() public {
         bytes32 policyRole = mgr.POLICY_MANAGER_ROLE();
         vm.prank(taxMgr);
         vm.expectRevert(_unauthorized(taxMgr, policyRole));
-        mgr.grant(IManagedSlot(address(slot)), declared);
+        mgr.acceptScopes(IManagedSlot(address(slot)), 4);
 
-        // New scopes, no fee: the policy role's call alone.
+        // New scopes, and a fee that does not rise: the policy role's call alone.
         vm.prank(policyMgr);
-        mgr.grant(IManagedSlot(address(slot)), declared);
+        mgr.acceptScopes(IManagedSlot(address(slot)), 4);
+        assertEq(slot.acceptedScopes(), 4);
+        vm.prank(policyMgr);
+        mgr.acceptFee(IManagedSlot(address(slot)), ModuleFee(0, address(0)));
         assertEq(slot.acceptedFeeBps(), 0);
     }
 
@@ -443,19 +449,19 @@ contract SlotCollectiveTest is Test {
     /// @notice A higher module fee takes a share of the revenue the split
     ///         divides, so the payout role must agree to it too.
     function test_aFeeRiseNeedsThePayoutRoleToo() public {
-        Manifest memory declared = Manifest({scopes: 4, feeBps: 100, feeRecipient: payeeA});
+        ModuleFee memory declared = ModuleFee({bps: 100, recipient: payeeA});
         bytes32 splitRole = mgr.SPLIT_MANAGER_ROLE();
 
         vm.prank(policyMgr);
         vm.expectRevert(_unauthorized(policyMgr, splitRole));
-        mgr.grant(IManagedSlot(address(slot)), declared);
+        mgr.acceptFee(IManagedSlot(address(slot)), declared);
         assertEq(slot.acceptedFeeBps(), 0, "the policy role alone moves nothing");
 
         // One address holding both roles is both decisions at once.
         vm.prank(admin);
         mgr.grantRole(splitRole, policyMgr);
         vm.prank(policyMgr);
-        mgr.grant(IManagedSlot(address(slot)), declared);
+        mgr.acceptFee(IManagedSlot(address(slot)), declared);
         assertEq(slot.acceptedFeeBps(), 100);
     }
 

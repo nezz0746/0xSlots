@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -25,9 +27,9 @@ contract Tok is ERC20 {
  *      That is the one way a healthy-looking slot can fail a collection, and
  *      the case the batch has to survive.
  */
-contract StrictBreaker is ISlotModule {
+contract StrictBreaker is AskModule {
     function checkSettings(bytes calldata) external pure {}
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterSettle = true;
         f.strict = true;

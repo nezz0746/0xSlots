@@ -256,20 +256,20 @@ contract AdLandTenureTest is Test {
     uint16 constant VETO = ScopesLib.BEFORE_BUY | ScopesLib.BEFORE_SELF_ASSESS;
     uint16 constant EXITS = ScopesLib.AFTER_BUY | ScopesLib.AFTER_RELEASE | ScopesLib.AFTER_LIQUIDATE;
 
-    /// @notice The manifest reads the configuration: a veto is asked for only
+    /// @notice Its scopes read the configuration: a veto is asked for only
     ///         where a window gives it something to veto.
     function test_OnlyAWindowAsksForAVeto() public {
-        assertEq(_slot(0).manifest().scopes & VETO, 0, "nothing configured, no veto");
-        assertEq(_slot(WINDOW).manifest().scopes & VETO, VETO, "a window, a veto");
+        assertEq(ScopesLib.pack(_slot(0).scopes()) & VETO, 0, "nothing configured, no veto");
+        assertEq(ScopesLib.pack(_slot(WINDOW).scopes()) & VETO, VETO, "a window, a veto");
 
         // A registered configuration without a window is no different from zero.
         bytes memory moderatedOnly =
             abi.encode(AdConfig({tenureWindow: 0, moderation: ModerationMode.Every, key: bytes32(0)}));
-        assertEq(_slotWithSettings(moderatedOnly).manifest().scopes & VETO, 0, "moderation alone, no veto");
+        assertEq(ScopesLib.pack(_slotWithSettings(moderatedOnly).scopes()) & VETO, 0, "moderation alone, no veto");
 
         // Every configuration still hears a tenure end: that is what clears the creative.
-        assertEq(_slot(0).manifest().scopes & EXITS, EXITS, "exits, without a window");
-        assertEq(_slot(WINDOW).manifest().scopes & EXITS, EXITS, "exits, with one");
+        assertEq(ScopesLib.pack(_slot(0).scopes()) & EXITS, EXITS, "exits, without a window");
+        assertEq(ScopesLib.pack(_slot(WINDOW).scopes()) & EXITS, EXITS, "exits, with one");
     }
 
     /// @notice A window added later brings its veto with it: the new
@@ -284,7 +284,7 @@ contract AdLandTenureTest is Test {
         );
         vm.warp(block.timestamp + s.TERMS_DELAY() + 1);
         s.applyTerms();
-        assertEq(s.manifest().scopes & VETO, VETO, "the veto landed with the window");
+        assertEq(ScopesLib.pack(s.scopes()) & VETO, VETO, "the veto landed with the window");
 
         _take(s, alice, 1 ether);
         vm.warp(block.timestamp + 1 days);

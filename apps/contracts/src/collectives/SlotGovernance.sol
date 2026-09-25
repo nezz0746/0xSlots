@@ -3,20 +3,22 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import {TaxTerms, ModuleTerms, Manifest} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, ModuleFee} from "../types/SlotTypes.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 import {ISlotModule} from "../interfaces/ISlotModule.sol";
 
 
 /// @notice The subset of `Slot` a collective drives.
 interface IManagedSlot {
-    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint8 mask) external;
+    function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata module, uint16 mask) external;
 
-    function cancelTerms(uint8 mask) external;
+    function cancelTerms(uint16 mask) external;
 
-    function grant(Manifest calldata expected) external;
+    function acceptFee(ModuleFee calldata expected) external;
 
-    function manifest() external view returns (Manifest memory);
+    function acceptScopes(uint16 expected) external;
+
+    function fee() external view returns (ModuleFee memory);
 
     function collect() external;
 
@@ -95,12 +97,11 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         Dimension indexed kind
     );
 
-    /// @notice A policy manager accepted the attached module's current manifest on `slot`.
-    event ScopesGrantRelayed(
-        address indexed slot,
-        address indexed by,
-        Manifest manifest
-    );
+    /// @notice A policy manager accepted the attached module's current fee on `slot`.
+    event FeeAcceptRelayed(address indexed slot, address indexed by, ModuleFee fee);
+
+    /// @notice A policy manager accepted the attached module's current scopes on `slot`.
+    event ScopesAcceptRelayed(address indexed slot, address indexed by, uint16 scopes);
 
     /// @notice An admin dropped every pending proposal on `slot` at once.
     /// @dev Distinct from `TermsCancelRelayed`: this is the admin-only reach
@@ -245,10 +246,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         // every slot's rent to a module's fee recipient and the split's members
         // would receive nothing, with the split itself untouched.
         // Only a target with code can charge anything: the slot reads every
-        // module's manifest when it is proposed and refuses one it cannot read.
+        // module's fee when it is proposed and refuses one it cannot read.
         if (module.target.code.length != 0) {
-            Manifest memory m = ISlotModule(module.target).manifest(module.settings);
-            if (m.feeBps != 0) _requireRoleOrAdmin(_payoutRole());
+            ModuleFee memory f = ISlotModule(module.target).fee(module.settings);
+            if (f.bps != 0) _requireRoleOrAdmin(_payoutRole());
         }
         TaxTerms memory none;
         slot.proposeTerms(none, module, TermsLib.MODULE);
@@ -260,23 +261,32 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         );
     }
 
-    /// @notice Accept the attached module's current manifest on `slot`: a new fee at
-    ///         once, new scopes at the next buy.
+    /// @notice Accept the attached module's current fee on `slot`. Applies at once.
     ///
     /// @dev The policy manager's decision, like proposing a module — and, for a
-    ///      higher fee, the payout role's as well. `expected` is the manifest they
+    ///      higher fee, the payout role's as well. `expected` is the fee they
     ///      reviewed; the slot reverts if the module now declares anything else.
-    function grant(IManagedSlot slot, Manifest calldata expected)
+    function acceptFee(IManagedSlot slot, ModuleFee calldata expected)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
         // Raising the fee is the payout role's call too, for the reason given
-        // in {_proposeModule}. Lowering it, or accepting new scopes, is not.
-        if (expected.feeBps > slot.manifest().feeBps) {
+        // in {_proposeModule}. Lowering it is not.
+        if (expected.bps > slot.fee().bps) {
             _requireRoleOrAdmin(_payoutRole());
         }
-        slot.grant(expected);
-        emit ScopesGrantRelayed(address(slot), msg.sender, expected);
+        slot.acceptFee(expected);
+        emit FeeAcceptRelayed(address(slot), msg.sender, expected);
+    }
+
+    /// @notice Accept the attached module's current scopes on `slot`. They
+    ///         land at the next buy.
+    function acceptScopes(IManagedSlot slot, uint16 expected)
+        external
+        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
+    {
+        slot.acceptScopes(expected);
+        emit ScopesAcceptRelayed(address(slot), msg.sender, expected);
     }
 
     /// @notice Retract this role's own queued tax proposal on `slot`.

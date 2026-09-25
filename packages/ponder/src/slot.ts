@@ -757,6 +757,14 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
       pendingHasModule: hk || row.pendingHasModule,
       pendingModule: hk ? lower(h.target) : row.pendingModule,
       pendingModuleSettings: hk ? lower(h.settings) : row.pendingModuleSettings,
+      // A proposed module replaces scopes accepted from the current one.
+      ...(hk
+        ? {
+            pendingMask: (row.pendingMask | mask) & ~TERM_SCOPES,
+            pendingHasScopes: false,
+            pendingScopes: null,
+          }
+        : {}),
       pendingProposedAt: event.block.timestamp,
       updatedAt: event.block.timestamp,
     }));
@@ -784,13 +792,13 @@ ponder.on("Slot:TermsProposed", async ({ event, context }) => {
 
 /**
  * Queued terms landed, at a buy or at `applyTerms`. The event carries the
- * terms now in force, manifest included.
+ * terms now in force, the module's scopes and fee included.
  */
 ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);
-  const { taxTerms, moduleTerms: h, manifest: offer, mask } = event.args;
+  const { taxTerms, moduleTerms: h, scopes: scopeBits, fee, mask } = event.args;
 
   const nextModule = lower(h.target);
   const nextModuleSettings = lower(h.settings);
@@ -802,7 +810,7 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
   const taxChanged = s.taxRateBps !== BigInt(taxTerms.rateBps);
   const recipientChanged = s.recipient !== nextRecipient;
 
-  const scopes = unpackScopes(offer.scopes);
+  const scopes = unpackScopes(scopeBits);
 
   if (moduleChanged) {
     if (prevModule) {
@@ -843,8 +851,8 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
     module: noModule ? null : nextModule,
     settings: noModule ? null : nextModuleSettings,
-    moduleFeeBps: offer.feeBps,
-    moduleFeeRecipient: offer.feeBps === 0 ? null : lower(offer.feeRecipient),
+    moduleFeeBps: fee.bps,
+    moduleFeeRecipient: fee.bps === 0 ? null : lower(fee.recipient),
     ...scopeColumns(scopes),
     pendingMask: 0,
     pendingHasTaxRate: false,
@@ -872,9 +880,9 @@ ponder.on("Slot:TermsApplied", async ({ event, context }) => {
     minRunwaySeconds: BigInt(taxTerms.minRunwaySeconds),
     module: nextModule,
     settings: nextModuleSettings,
-    scopes: offer.scopes,
-    moduleFeeBps: offer.feeBps,
-    moduleFeeRecipient: lower(offer.feeRecipient),
+    scopes: scopeBits,
+    moduleFeeBps: fee.bps,
+    moduleFeeRecipient: lower(fee.recipient),
     previousTaxPercentage: s.taxRateBps,
     previousRecipient: s.recipient,
     previousModule: prevModule ?? ZERO_ADDR,
@@ -1047,30 +1055,31 @@ ponder.on("Slot:ManagerSet", async ({ event, context }) => {
     .set({ manager: lower(event.args.next), updatedAt: event.block.timestamp });
 });
 
+/** The manager accepted the module's current fee. It applies from now on. */
+ponder.on("Slot:FeeAccepted", async ({ event, context }) => {
+  const { fee } = event.args;
+  await context.db
+    .update(slot, { id: lower(event.log.address), chainId: context.chain.id })
+    .set({
+      moduleFeeBps: fee.bps,
+      moduleFeeRecipient: fee.bps === 0 ? null : lower(fee.recipient),
+      updatedAt: event.block.timestamp,
+    });
+});
+
 /**
- * The manager granted the module's current manifest. A new fee applies now; new
- * scopes queue for the next buy, restarting the queue's clock.
+ * The manager accepted the module's current scopes. They queue for the next
+ * buy, restarting the queue's clock.
  */
-ponder.on("Slot:ScopesGranted", async ({ event, context }) => {
-  const { manifest, feeApplied, scopesQueued } = event.args;
-  const slotAddr = lower(event.log.address);
-  const s = await loadSlot(context, slotAddr);
-  await context.db.update(slot, { id: slotAddr, chainId: context.chain.id }).set({
-    ...(feeApplied
-      ? {
-          moduleFeeBps: manifest.feeBps,
-          moduleFeeRecipient:
-            manifest.feeBps === 0 ? null : lower(manifest.feeRecipient),
-        }
-      : {}),
-    ...(scopesQueued
-      ? {
-          pendingMask: s.pendingMask | TERM_SCOPES,
-          pendingHasScopes: true,
-          pendingScopes: manifest.scopes,
-          pendingProposedAt: event.block.timestamp,
-        }
-      : {}),
-    updatedAt: event.block.timestamp,
-  });
+ponder.on("Slot:ScopesAccepted", async ({ event, context }) => {
+  const { scopes } = event.args;
+  await context.db
+    .update(slot, { id: lower(event.log.address), chainId: context.chain.id })
+    .set((row) => ({
+      pendingMask: row.pendingMask | TERM_SCOPES,
+      pendingHasScopes: true,
+      pendingScopes: scopes,
+      pendingProposedAt: event.block.timestamp,
+      updatedAt: event.block.timestamp,
+    }));
 });

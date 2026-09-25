@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ModuleTerms, Manifest} from "../types/SlotTypes.sol";
+import {ModuleTerms, ModuleFee} from "../types/SlotTypes.sol";
 
 /**
  * @notice Everything a module is told, for every callback.
@@ -49,7 +49,7 @@ struct SlotContext {
  * @notice What a module may do to a slot, unpacked: the callbacks it receives,
  *         and whether it may block an exit (`strict`).
  *
- * @dev Declared by the module as `Manifest.scopes` and copied when it attaches.
+ * @dev Declared by the module in `scopes(settings)` and copied when it attaches.
  *      Never re-read on its own: a module able to widen its own reach mid-tenure
  *      could veto an exit its occupant never agreed to. A change reaches the
  *      slot only when its manager accepts it, at the next buy, and never on a
@@ -188,26 +188,31 @@ interface ISlotModule {
     function checkSettings(bytes calldata settings) external view;
 
     /**
-     * @notice What this module asks of a slot configured with `settings`: the
-     *         callbacks it wants and its share of rent.
+     * @notice The callbacks this module asks for on a slot configured with
+     *         `settings`, as `ScopesLib` bits. Non-zero, known bits only.
      *
-     * @dev A request, not a setting. The slot copies it when the module attaches,
-     *      and later only when its manager calls `grant`: a new fee
-     *      at once, new scopes at the next buy and only if the slot's
-     *      module is mutable. Payouts and callbacks use the slot's copy and
-     *      never call back here, so a module can neither make an eviction depend
-     *      on it nor change what it takes from rent already earned. A module whose
-     *      manifest a manager ignores may refuse service; that is the module's lever,
-     *      and the manager's risk.
+     * @dev A request, not a setting. The slot copies it when the module
+     *      attaches, and later only when its manager calls `acceptScopes`: the
+     *      new scopes land at the next buy, and only on a slot whose module is
+     *      mutable. Callbacks use the slot's copy and never call back here.
      *
-     *      `view`, not `pure`: a module may answer from storage, and that is a
-     *      legitimate module rather than an edge case.
-     *
-     *      `scopes` must be non-zero and use only `ScopesLib` bits. A zero fee
-     *      takes nothing; a non-zero `feeBps` needs a recipient and may not
-     *      exceed 10_000.
+     *      `view`, not `pure`: a module may answer from storage.
      */
-    function manifest(bytes calldata settings) external view returns (Manifest memory);
+    function scopes(bytes calldata settings) external view returns (uint16);
+
+    /**
+     * @notice This module's share of collected tax on a slot configured with
+     *         `settings`, and who receives it. Zero takes nothing; a non-zero
+     *         `bps` needs a recipient and may not exceed 10_000.
+     *
+     * @dev A request, not a setting. The slot copies it when the module
+     *      attaches, and later only when its manager calls `acceptFee`, which
+     *      applies at once. Payouts use the slot's copy and never call back
+     *      here, so a module cannot change what it takes from rent already
+     *      earned. A module whose fee a manager ignores may refuse service; that
+     *      is the module's lever, and the manager's risk.
+     */
+    function fee(bytes calldata settings) external view returns (ModuleFee memory);
 
     // ─── decisions: `view`, revert to veto ──────────────────────────────────
 

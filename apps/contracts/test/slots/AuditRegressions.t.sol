@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -23,12 +25,12 @@ contract Small is ERC20 {
 }
 
 /// @dev Answers honestly until flipped, then stops answering.
-contract FlipModule is ISlotModule {
+contract FlipModule is AskModule {
     bool public broken;
     function flip() external { broken = true; }
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         if (broken) revert("gone");
         f.beforeBuy = true;
@@ -48,17 +50,17 @@ contract FlipModule is ISlotModule {
 
 }
 
-/// @dev Honest until flipped, then answers `manifest` with returndata too short
-///      to decode.
+/// @dev Honest until flipped, then answers with one word, where `fee` needs
+///      two: returndata too short to decode.
 ///
 ///      Not a revert — a SUCCESS the compiler's decoder then rejects. The
 ///      decode sits outside `try`'s catch, which is why the read is raw.
-contract ShortAnswerModule is ISlotModule {
+contract ShortAnswerModule is AskModule {
     bool public broken;
     function flip() external { broken = true; }
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         if (broken) assembly { mstore(0, 1) return(0, 32) } // 1 word, 256 wanted
         f.beforeBuy = true;
@@ -81,12 +83,12 @@ contract ShortAnswerModule is ISlotModule {
 /// @dev Honest until flipped, then answers with eight all-ones words: scope
 ///      bits the slot does not know, which solc's decoder would reject outside
 ///      the catch.
-contract DirtyBoolModule is ISlotModule {
+contract DirtyBoolModule is AskModule {
     bool public broken;
     function flip() external { broken = true; }
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         if (broken) {
             assembly {
@@ -115,7 +117,7 @@ contract DirtyBoolModule is ISlotModule {
 
 /// @dev Honest until flipped, then refuses every configuration. The one failure
 ///      mode `try` did catch — kept so the rewrite cannot silently lose it.
-contract RejectingModule is ISlotModule {
+contract RejectingModule is AskModule {
     error No();
     bool public broken;
     function flip() external { broken = true; }
@@ -123,7 +125,7 @@ contract RejectingModule is ISlotModule {
     function checkSettings(bytes calldata) external view {
         if (broken) revert No();
     }
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -143,10 +145,10 @@ contract RejectingModule is ISlotModule {
 }
 
 /// @dev Counts the `after` callbacks it receives. The leaf of a nested tree.
-contract Counter is ISlotModule {
+contract Counter is AskModule {
     uint256 public buys;
     function checkSettings(bytes calldata) external pure {}
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -269,7 +271,7 @@ contract AuditRegressionsTest is Test {
         vm.stopPrank();
 
         FlipModule h = new FlipModule();
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(h), settings: ""}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(h), settings: ""}), uint16(8));
 
         vm.warp(block.timestamp + 3650 days);
         assertTrue(s.isInsolvent());
@@ -302,7 +304,7 @@ contract AuditRegressionsTest is Test {
         // Queued while it still answers honestly — `proposeTerms` is fail-CLOSED
         // and would refuse it otherwise. The break happens afterwards, which is
         // the whole point: the apply path cannot re-verify what it accepted.
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: pending, settings: ""}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: pending, settings: ""}), uint16(8));
         if (etchAway) vm.etch(pending, "");
         else IFlippable(pending).flip();
 
@@ -389,7 +391,7 @@ contract AuditRegressionsTest is Test {
 
     function test_QueuedTermsCannotBindTheNextBlocksBuyer() public {
         Slot s = _slot(address(token), 0);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
 
         vm.startPrank(occ);
         token.approve(address(s), type(uint256).max);

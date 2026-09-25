@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../src/types/SlotTypes.sol";
 import {InvalidModule} from "../src/errors/SlotErrors.sol";
 
 import {Test} from "forge-std/Test.sol";
@@ -122,10 +122,10 @@ contract CollectiveGovernsRealSlotTest is Test {
         view
         returns (uint256 tax, address module, bool hasTax, bool hasModule)
     {
-        PendingTerms memory __p1 = slot.pendingTerms();
+        Pending memory __p1 = slot.pending();
         TaxTerms memory __r1 = __p1.taxTerms;
-        ModuleTerms memory __h1 = __p1.moduleTerms;
-        uint8 __m1 = __p1.mask;
+        ModuleTerms memory __h1 = ModuleTerms(__p1.module.target, __p1.module.settings);
+        uint16 __m1 = __p1.mask;
         uint64 __at1 = __p1.proposedAt;
         tax = __r1.rateBps;
         module = __h1.target;
@@ -148,12 +148,12 @@ contract CollectiveGovernsRealSlotTest is Test {
         assertEq(slot.taxRateBps(), 750, "landed on the occupancy change");
     }
 
-    /// @notice Accepting a module manifest reaches a real slot as its manager: the
+    /// @notice Accepting a module's fee reaches a real slot as its manager: the
     ///         slot answers with its own refusal, not `NotManager`.
-    function test_TheGrantRelayReachesARealSlot() public {
+    function test_TheAcceptFeeRelayReachesARealSlot() public {
         vm.prank(policyMgr);
         vm.expectRevert(InvalidModule.selector);
-        collective.grant(IManagedSlot(address(slot)), Manifest(0, 0, address(0)));
+        collective.acceptFee(IManagedSlot(address(slot)), ModuleFee(0, address(0)));
     }
 
     /// @notice The policy manager's lever reaches a real slot, and the real slot
@@ -171,7 +171,7 @@ contract CollectiveGovernsRealSlotTest is Test {
             "scopes were copied from the real module"
         );
 
-        // A module that cannot answer `manifest` is refused at the slot, not here.
+        // A module that cannot answer `scopes` or `fee` is refused at the slot, not here.
         vm.prank(policyMgr);
         vm.expectRevert();
         collective.proposeModule(IManagedSlot(address(slot)), ModuleTerms({target: address(warehouse), settings: ""}));

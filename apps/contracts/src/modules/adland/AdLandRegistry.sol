@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {AdLandModule} from "./AdLandModule.sol";
-import {AdConfig, ISlotAd, Pending} from "./IAdLand.sol";
+import {AdConfig, ISlotAd, PendingKey} from "./IAdLand.sol";
 
 /**
  * @title AdLandRegistry
@@ -44,7 +44,7 @@ abstract contract AdLandRegistry is AdLandModule {
         if (!byOwner && pendingOf[key].byOwner) revert OwnerProposalPending(key);
 
         uint64 readyAt = uint64(block.timestamp + CHANGE_DELAY);
-        pendingOf[key] = Pending({slot: slot, readyAt: readyAt, byOwner: byOwner});
+        pendingOf[key] = PendingKey({slot: slot, readyAt: readyAt, byOwner: byOwner});
         emit SlotProposed(key, slot, readyAt);
     }
 
@@ -96,7 +96,7 @@ abstract contract AdLandRegistry is AdLandModule {
     ///      to press a second button only adds a way for a change everybody has
     ///      already seen to sit unapplied.
     function commitSlot(bytes32 key) external {
-        Pending memory p = pendingOf[key];
+        PendingKey memory p = pendingOf[key];
         if (p.readyAt == 0) revert NothingPending();
         if (block.timestamp < p.readyAt) revert TooEarly(p.readyAt);
 
@@ -110,7 +110,7 @@ abstract contract AdLandRegistry is AdLandModule {
     /// @dev The owner may withdraw any; the holder only one the owner did not
     ///      make, for the same reason they cannot overwrite it.
     function cancelSlot(bytes32 key) external {
-        Pending memory p = pendingOf[key];
+        PendingKey memory p = pendingOf[key];
         if (p.readyAt == 0) revert NothingPending();
         if (msg.sender != owner()) {
             if (msg.sender != keyOwner(key)) revert NotKeyOwner(key);

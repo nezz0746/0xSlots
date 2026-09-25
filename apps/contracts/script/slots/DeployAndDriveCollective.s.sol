@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, Pending} from "../../src/types/SlotTypes.sol";
 
 import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -102,7 +102,7 @@ contract DeployAndDriveCollective is Script {
     /**
      * @param slotFactoryAddr The already-deployed `SlotFactory` — printed by
      *        `DeployProtocol`, and in `deployments/31337/SlotFactory.json`.
-     * @param moduleAddr A module that answers `manifest`. The slot validates it at
+     * @param moduleAddr A module that answers `scopes` and `fee`. The slot validates it at
      *        propose time, so a contract that cannot answer is refused there
      *        rather than here.
      */
@@ -172,9 +172,9 @@ contract DeployAndDriveCollective is Script {
         // The assertion the port turns on, checked against the live chain
         // rather than against a fixture. If this trips, nothing downstream is
         // worth indexing.
-        PendingTerms memory __p1 = slot.pendingTerms();
+        Pending memory __p1 = slot.pending();
         TaxTerms memory pendingTaxTerms = __p1.taxTerms;
-        uint8 mask = __p1.mask;
+        uint16 mask = __p1.mask;
         require(mask & slot.TERM_TAX_RATE() != 0, "the tax manager's proposal did not survive");
         require(pendingTaxTerms.rateBps == TAX_PROPOSED, "wrong tax survived");
         require(mask & slot.TERM_MODULE() == 0, "the module proposal was not cancelled");
@@ -199,8 +199,8 @@ contract DeployAndDriveCollective is Script {
         vm.broadcast(PK_ADMIN);
         collective.cancelAllProposals(IManagedSlot(address(slot)));
 
-        PendingTerms memory __p2 = slot.pendingTerms();
-        uint8 left = __p2.mask;
+        Pending memory __p2 = slot.pending();
+        uint16 left = __p2.mask;
         require(left == 0, "cancelAllProposals left something");
 
         // ── 10. shrink the split ───────────────────────────────────────────

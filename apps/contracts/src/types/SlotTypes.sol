@@ -31,21 +31,18 @@ struct ModuleTerms {
 }
 
 /**
- * @notice What a module asks of a slot: the callbacks it wants and a share of rent.
- * @dev Declared by the module in `ISlotModule.manifest`. The slot keeps its own
- *      copy, taken when the module attaches, and never reads the module's current
- *      answer at payout or callback time. A different answer is a manifest the
- *      manager may accept: the fee applies at once, the scopes at the next
- *      buy and only on a slot whose module is mutable.
+ * @notice A module's share of collected tax, and who receives it.
+ * @dev Declared by the module in `ISlotModule.fee`. The slot keeps its own
+ *      copy, taken when the module attaches, and never reads the module's
+ *      current answer at payout time. A different answer is a fee the manager
+ *      may accept with `acceptFee`, and it applies at once.
  *      Append new fields at the end only.
  */
-struct Manifest {
-    /// Callbacks the module wants, as `ScopesLib` bits. Never zero.
-    uint16 scopes;
-    /// Share of collected rent, in basis points. 0..10_000.
-    uint16 feeBps;
-    /// Required when `feeBps` is non-zero.
-    address feeRecipient;
+struct ModuleFee {
+    /// Share of collected tax, in basis points. 0..10_000.
+    uint16 bps;
+    /// Required when `bps` is non-zero.
+    address recipient;
 }
 
 /// @notice Everything a slot needs at birth.
@@ -69,29 +66,43 @@ struct SlotInit {
 struct Terms {
     TaxTerms taxTerms;
     ModuleTerms moduleTerms;
-    /// What the module asks, as the slot last accepted it.
-    Manifest manifest;
 }
 
 /**
- * @notice The terms queued for the next buy: what is proposed, and since when.
- * @dev Stored exactly as `pendingTerms()` returns it. Whether it will land at
- *      the next buy is `hasRipeTerms()`.
+ * @notice A slot's module, as installed: which contract, its settings, and the
+ *         scopes and fee the slot copied from it.
+ * @dev One record, live and queued (`Pending.module`). Installing a module is
+ *      copying a record in; removing it is deleting it. Ordered so `target`
+ *      and `scopes`, read on every callback, share one storage word.
+ *      Append new fields at the end only.
  */
-struct PendingTerms {
+struct InstalledModule {
+    /// Zero for no module; the other fields are then empty.
+    address target;
+    /// Callbacks the slot calls, as `ScopesLib` bits. Copied from the module.
+    uint16 scopes;
+    /// The module's share of collected tax. Copied from the module.
+    ModuleFee fee;
+    /// This slot's settings for the module, handed to every callback.
+    bytes settings;
+}
+
+/**
+ * @notice Everything queued for the next buy, and since when.
+ * @dev Stored exactly as `pending()` returns it. Whether it will land at the
+ *      next buy is `hasRipeTerms()`. `TERM_MODULE` and `TERM_SCOPES` are never
+ *      queued together: a proposed module replaces accepted scopes.
+ */
+struct Pending {
     /// Only the fields named by `mask` are meaningful.
     TaxTerms taxTerms;
-    /// Meaningful when `mask` includes `TERM_MODULE`.
-    ModuleTerms moduleTerms;
-    /// Meaningful when `mask` includes `TERM_SCOPES`: scopes the
-    /// manager accepted from the attached module.
-    uint16 scopes;
+    /// With `TERM_MODULE`: the proposed module, with the scopes and fee the
+    /// manager reviewed. With `TERM_SCOPES`: only `scopes`, the new scopes
+    /// accepted from the current module. Read again when it lands; different
+    /// means dropped.
+    InstalledModule module;
     /// Which terms are queued: `TERM_*` bits.
-    uint8 mask;
+    uint16 mask;
     /// When the delay started. Every proposal restarts it.
     uint64 proposedAt;
-    /// Hash of the manifest the manager reviewed when proposing a module. The
-    /// module is read again when it lands and dropped unless it still
-    /// declares this, so the delay cannot be used to change what was agreed.
-    bytes32 reviewedManifest;
 }

@@ -55,7 +55,7 @@ export const NO_SETTINGS = "0x" as const;
 /**
  * Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
  * `MODULE` always covers the whole {@link ModuleTerms}. `SCOPES` is never
- * proposed: it is queued by {@link SlotsClient.grant}.
+ * proposed: it is queued by {@link SlotsClient.acceptScopes}.
  */
 export const TERMS = {
   TAX_RATE: 1,
@@ -90,19 +90,17 @@ export interface ModuleTerms {
 }
 
 /**
- * What a module asks of a slot: its callbacks and a share of rent. Declared by the
+ * A module's share of collected tax, and who receives it. Declared by the
  * module; the slot keeps a copy from when it attached or its manager last
- * accepted. Mirrors `Manifest`.
+ * accepted. Mirrors `ModuleFee`.
  */
-export interface Manifest {
-  /** Callbacks, as {@link SCOPE_BITS}. See {@link unpackScopes}. */
-  scopes: number;
-  /** Basis points of collected rent. 0..10000. */
-  feeBps: number;
-  feeRecipient: Address;
+export interface ModuleFee {
+  /** Basis points of collected tax. 0..10000. */
+  bps: number;
+  recipient: Address;
 }
 
-/** Bits of {@link Manifest.scopes}. Mirrors `ScopesLib`. */
+/** Scope bits a module declares and a slot stores. Mirrors `ScopesLib`. */
 export const SCOPE_BITS = {
   beforeBuy: 1,
   beforeSelfAssess: 2,
@@ -216,6 +214,8 @@ export interface Scopes {
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
+  onInstall: boolean;
+  onUninstall: boolean;
   /**
    * Not a callback — a mode. The module's `after` calls run uncapped and their
    * revert propagates, so its writes cannot be silently dropped.
@@ -227,7 +227,7 @@ export interface Scopes {
   strict: boolean;
 }
 
-/** {@link Manifest.scopes} as {@link Scopes}. */
+/** Scope bits (see {@link SCOPE_BITS}) as {@link Scopes}. */
 export function unpackScopes(scopes: number): Scopes {
   const has = (bit: number) => (scopes & bit) !== 0;
   return {
@@ -237,18 +237,33 @@ export function unpackScopes(scopes: number): Scopes {
     afterRelease: has(SCOPE_BITS.afterRelease),
     afterLiquidate: has(SCOPE_BITS.afterLiquidate),
     afterSettle: has(SCOPE_BITS.afterSettle),
+    onInstall: has(SCOPE_BITS.onInstall),
+    onUninstall: has(SCOPE_BITS.onUninstall),
     strict: has(SCOPE_BITS.strict),
   };
 }
 
-/** Terms the manager has queued, landing at the next buy. */
-export interface PendingTerms {
+/** {@link Scopes} back to bits. */
+export function packScopes(scopes: Scopes): number {
+  return (Object.keys(SCOPE_BITS) as (keyof typeof SCOPE_BITS)[]).reduce(
+    (bits, name) => (scopes[name] ? bits | SCOPE_BITS[name] : bits),
+    0,
+  );
+}
+
+/** Everything queued for the next buy. Mirrors `Pending`. */
+export interface Pending {
   /** Only the fields named by `mask` are meaningful. */
   taxTerms: TaxTerms;
   /** Meaningful when `hasModule`. */
   moduleTerms: ModuleTerms;
-  /** Meaningful when `hasScopes`: scopes accepted from the attached module. */
+  /**
+   * With `hasModule`: the scopes reviewed for the proposed module. With
+   * `hasScopes`: new scopes accepted from the attached one.
+   */
   scopes: number;
+  /** With `hasModule`: the fee reviewed for the proposed module. */
+  fee: ModuleFee;
   /** Which terms are queued. See {@link TERMS}. */
   mask: number;
   hasTaxRate: boolean;
@@ -280,7 +295,7 @@ export interface ProposeTermsParams {
   taxRateBps?: number;
   recipient?: Address;
   minRunwaySeconds?: number;
-  /** The whole module terms. The manifest is the module's own, read when it attaches. */
+  /** The whole module terms. Its scopes and fee are the module's own, read when it attaches. */
   moduleTerms?: Partial<ModuleTerms> & { target: Address };
 }
 
@@ -288,7 +303,6 @@ export interface ProposeTermsParams {
 export interface SlotTerms {
   taxTerms: TaxTerms;
   moduleTerms: ModuleTerms;
-  manifest: Manifest;
 }
 
 /**
@@ -378,15 +392,17 @@ export interface PostOfferParams {
   expiry: bigint;
 }
 
-/** The slot's accepted manifest beside what the module declares today. */
-export interface GrantStatus {
-  accepted: Manifest;
-  declared: Manifest;
-  /** Accepting would change the fee, at once. */
+/** What the attached module declares today, beside what the slot copied. */
+export interface ModuleUpdate {
+  current: { scopes: number; fee: ModuleFee };
+  /** `null` when there is no module, or it does not answer. */
+  declared: { scopes: number; fee: ModuleFee } | null;
+  /** {@link SlotsClient.acceptFee} would change the fee, at once. */
   feeDiffers: boolean;
   /**
-   * Accepting would queue new scopes for the next buy. Always false when
-   * the slot's module is immutable, or those scopes are already queued.
+   * {@link SlotsClient.acceptScopes} would queue new scopes for the next buy.
+   * False when the module is immutable, those scopes are already queued, or a
+   * new module is queued.
    */
   scopesDiffer: boolean;
 }
@@ -453,12 +469,13 @@ export interface SlotState {
   mutableRecipient: boolean;
   mutableModule: boolean;
   module: Address;
-  /** The module's configuration: 32 bytes only the module can interpret. */
+  /** The module's configuration: bytes only the module can interpret. */
   settings: Hex;
-  /** What the module asks — callbacks and fee — as this slot accepted it. */
-  manifest: Manifest;
+  /** The module's callbacks, as this slot accepted them. */
   scopes: Scopes;
-  pending: PendingTerms;
+  /** The module's share of collected tax, as this slot accepted it. */
+  fee: ModuleFee;
+  pending: Pending;
   /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
   occupiedSince: bigint;
   /**
@@ -761,12 +778,12 @@ export class SlotsClient {
    * caller left to infer the second from `proposedAt` and its own clock is
    * inferring it against the wrong clock.
    */
-  async pending(slot: Address): Promise<PendingTerms> {
+  async pending(slot: Address): Promise<Pending> {
     const [p, ripe] = await Promise.all([
-      this.read<PendingTermsResult>(slot, "pendingTerms"),
+      this.read<PendingResult>(slot, "pending"),
       this.hasRipeTerms(slot),
     ]);
-    return toPendingTerms(p, ripe);
+    return toPending(p, ripe);
   }
 
   /** The token this slot is denominated in. {@link zeroAddress} means native ETH. */
@@ -812,14 +829,14 @@ export class SlotsClient {
     return this.read<bigint>(slot, "tenureId");
   }
 
-  /** Every term in force: tax terms, module terms and the accepted manifest. */
+  /** Every term in force: tax terms and module terms. */
   terms(slot: Address): Promise<SlotTerms> {
     return this.read<SlotTerms>(slot, "terms");
   }
 
-  /** The module's manifest as this slot accepted it. */
-  manifest(slot: Address): Promise<Manifest> {
-    return this.read<Manifest>(slot, "manifest");
+  /** The module's fee as this slot accepted it. What payouts use. */
+  fee(slot: Address): Promise<ModuleFee> {
+    return this.read<ModuleFee>(slot, "fee");
   }
 
   /** Who may propose terms. Zero when nothing about the slot can change. */
@@ -858,16 +875,29 @@ export class SlotsClient {
   // ─── Modules ──────────────────────────────────────────────────────────────────
 
   /**
-   * What `module` asks of a slot configured with `settings`, as it declares it
-   * today. Not what any slot has accepted: that is {@link manifest}.
+   * The scopes `module` asks for on a slot configured with `settings`, as it
+   * declares them today. Not what any slot accepted: that is {@link scopes}.
    */
-  readManifest(module: Address, settings: Hex = NO_SETTINGS): Promise<Manifest> {
+  readScopes(module: Address, settings: Hex = NO_SETTINGS): Promise<number> {
     return this.publicClient.readContract({
       address: module,
       abi: minimumTenureModuleAbi,
-      functionName: "manifest",
+      functionName: "scopes",
       args: [settings],
-    }) as Promise<Manifest>;
+    }) as Promise<number>;
+  }
+
+  /**
+   * The fee `module` asks for on a slot configured with `settings`, as it
+   * declares it today. Not what any slot accepted: that is {@link fee}.
+   */
+  readFee(module: Address, settings: Hex = NO_SETTINGS): Promise<ModuleFee> {
+    return this.publicClient.readContract({
+      address: module,
+      abi: minimumTenureModuleAbi,
+      functionName: "fee",
+      args: [settings],
+    }) as Promise<ModuleFee>;
   }
 
   /**
@@ -964,9 +994,9 @@ export class SlotsClient {
       mutableModule: i.mutableModule,
       module: i.terms.moduleTerms.target,
       settings: i.terms.moduleTerms.settings,
-      manifest: i.terms.manifest,
       scopes: i.scopes,
-      pending: toPendingTerms(i.pending, i.hasRipeTerms),
+      fee: i.fee,
+      pending: toPending(i.pending, i.hasRipeTerms),
       occupiedSince: i.occupiedSince,
       lastSettled: i.lastSettled,
       collectedTax: i.collectedTax,
@@ -1598,25 +1628,58 @@ export class SlotsClient {
     return this.write(slot, "proposeTerms", [taxTerms, moduleTerms, mask]);
   }
 
-  /** The slot's accepted manifest beside what the module declares today. */
-  async grantStatus(slot: Address): Promise<GrantStatus> {
-    const [accepted, declared, feeDiffers, scopesDiffer] = await this.read<
-      readonly [Manifest, Manifest, boolean, boolean]
-    >(slot, "grantStatus");
-    return { accepted, declared, feeDiffers, scopesDiffer };
+  /**
+   * What the attached module declares today, beside what the slot copied.
+   * Never throws for a module that will not answer: `declared` is `null`.
+   */
+  async moduleUpdate(slot: Address): Promise<ModuleUpdate> {
+    const i = await this.read<SlotInfoResult>(slot, "getSlotInfo");
+    const current = { scopes: packScopes(i.scopes), fee: i.fee };
+    const { target, settings } = i.terms.moduleTerms;
+    let declared: ModuleUpdate["declared"] = null;
+    if (target !== zeroAddress) {
+      try {
+        const [scopes, fee] = await Promise.all([
+          this.readScopes(target, settings),
+          this.readFee(target, settings),
+        ]);
+        declared = { scopes, fee };
+      } catch {
+        declared = null;
+      }
+    }
+    if (!declared) return { current, declared, feeDiffers: false, scopesDiffer: false };
+
+    const feeDiffers =
+      declared.fee.bps !== current.fee.bps ||
+      declared.fee.recipient.toLowerCase() !== current.fee.recipient.toLowerCase();
+    const p = i.pending;
+    const moduleQueued = (p.mask & TERMS.MODULE) !== 0;
+    const alreadyQueued = (p.mask & TERMS.SCOPES) !== 0 && p.module.scopes === declared.scopes;
+    const scopesDiffer =
+      i.mutableModule && !moduleQueued && !alreadyQueued && declared.scopes !== current.scopes;
+    return { current, declared, feeDiffers, scopesDiffer };
   }
 
   /**
-   * Accept the module's current manifest. Manager only.
-   *
-   * A new fee applies at once. New scopes queue for the next occupancy
-   * transition, and only when the slot's module is mutable. `expected` is the
-   * manifest the manager reviewed; the call reverts `ManifestChanged` if the module
-   * declares anything else by the time it lands, and `NothingToAccept` if it
-   * would change nothing.
+   * Accept the fee the attached module declares today. Manager only. Applies
+   * at once; tax collected so far is paid out at the old fee first. `expected`
+   * is the fee the manager reviewed: the call reverts `FeeChanged` if the
+   * module declares anything else by then, `NothingToAccept` if it is the
+   * current fee, and `NotMutable` for a rise on a slot with a fixed recipient.
    */
-  async grant(slot: Address, expected: Manifest): Promise<Hash> {
-    return this.write(slot, "grant", [expected]);
+  async acceptFee(slot: Address, expected: ModuleFee): Promise<Hash> {
+    return this.write(slot, "acceptFee", [expected]);
+  }
+
+  /**
+   * Accept the scopes the attached module declares today. Manager only. They
+   * queue and land at the next buy, only when the slot's module is mutable.
+   * Reverts `ScopesChanged` if the module declares anything else by then, and
+   * `ModuleChangeQueued` while a new module is queued.
+   */
+  async acceptScopes(slot: Address, expected: number): Promise<Hash> {
+    return this.write(slot, "acceptScopes", [expected]);
   }
 
   /** Hand the slot to another manager, immediately. Manager only. */
@@ -1895,14 +1958,20 @@ export function createSlotsClient(config: SlotsClientConfig): SlotsClient {
   return new SlotsClient(config);
 }
 
-/** `pendingTerms()` as viem decodes it. */
-interface PendingTermsResult {
+/** `pending()` as viem decodes it. */
+interface PendingResult {
   taxTerms: TaxTerms;
-  moduleTerms: ModuleTerms;
-  scopes: number;
+  module: InstalledModuleResult;
   mask: number;
   proposedAt: bigint;
-  reviewedManifest: Hex;
+}
+
+/** `InstalledModule` as viem decodes it. */
+interface InstalledModuleResult {
+  target: Address;
+  scopes: number;
+  fee: ModuleFee;
+  settings: Hex;
 }
 
 /** `getSlotInfo()` as viem decodes it. */
@@ -1912,8 +1981,9 @@ interface SlotInfoResult {
   mutableTax: boolean;
   mutableRecipient: boolean;
   mutableModule: boolean;
-  terms: { taxTerms: TaxTerms; moduleTerms: ModuleTerms; manifest: Manifest };
+  terms: { taxTerms: TaxTerms; moduleTerms: ModuleTerms };
   scopes: Scopes;
+  fee: ModuleFee;
   occupant: Address;
   price: bigint;
   deposit: bigint;
@@ -1925,16 +1995,17 @@ interface SlotInfoResult {
   isVacant: boolean;
   isInsolvent: boolean;
   secondsUntilLiquidation: bigint;
-  pending: PendingTermsResult;
+  pending: PendingResult;
   hasRipeTerms: boolean;
 }
 
-function toPendingTerms(p: PendingTermsResult, ripe: boolean): PendingTerms {
+function toPending(p: PendingResult, ripe: boolean): Pending {
   const isEmpty = p.mask === 0;
   return {
     taxTerms: p.taxTerms,
-    moduleTerms: p.moduleTerms,
-    scopes: p.scopes,
+    moduleTerms: { target: p.module.target, settings: p.module.settings },
+    scopes: p.module.scopes,
+    fee: p.module.fee,
     mask: p.mask,
     hasTaxRate: (p.mask & TERMS.TAX_RATE) !== 0,
     hasRecipient: (p.mask & TERMS.RECIPIENT) !== 0,

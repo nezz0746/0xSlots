@@ -12,6 +12,7 @@ import {
   type SlotInit,
   SlotsClient,
   unpackScopes,
+  packScopes,
   NO_SETTINGS,
 } from "./client";
 
@@ -624,7 +625,7 @@ describe("creation", () => {
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: NO_MODULE, scopes: 0, mask: 0, proposedAt: 0n, reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      pending: { taxTerms: TAX_TERMS_NONE, module: { target: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS }, mask: 0, proposedAt: 0n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
@@ -638,7 +639,7 @@ describe("reads", () => {
   it("pending unpacks a queued module change", async () => {
     const module = { ...NO_MODULE, target: MODULE };
     const { client } = harness({
-      pendingTerms: { taxTerms: TAX_TERMS_NONE, moduleTerms: module, scopes: 0, mask: TERMS.MODULE, proposedAt: 1234n, reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      pending: { taxTerms: TAX_TERMS_NONE, module: { ...module, scopes: 0, fee: { bps: 0, recipient: ZERO } }, mask: TERMS.MODULE, proposedAt: 1234n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
@@ -646,6 +647,7 @@ describe("reads", () => {
       taxTerms: TAX_TERMS_NONE,
       moduleTerms: module,
       scopes: 0,
+      fee: { bps: 0, recipient: ZERO },
       mask: TERMS.MODULE,
       hasTaxRate: false,
       hasRecipient: false,
@@ -662,13 +664,11 @@ describe("reads", () => {
 
   it("pending asks the CHAIN whether the queued terms are ripe", async () => {
     const { client, readContract } = harness({
-      pendingTerms: {
+      pending: {
         taxTerms: { ...TAX_TERMS_NONE, rateBps: 500 },
-        moduleTerms: NO_MODULE,
-        scopes: 0,
+        module: { target: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
         mask: TERMS.TAX_RATE,
         proposedAt: 1234n,
-        reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000",
       },
       hasRipeTerms: true,
     });
@@ -677,7 +677,7 @@ describe("reads", () => {
     expect(pending.applies).toBe(true);
     expect(
       readContract.mock.calls.map((c: any[]) => c[0].functionName),
-    ).toEqual(expect.arrayContaining(["pendingTerms", "hasRipeTerms"]));
+    ).toEqual(expect.arrayContaining(["pending", "hasRipeTerms"]));
   });
 
   it("debtOf is asked per account", async () => {
@@ -704,23 +704,43 @@ describe("reads", () => {
     expect(await client.scopes(SLOT)).toEqual(scopes);
   });
 
-  it("grantStatus names both differences", async () => {
-    const accepted = { scopes: SCOPE_BITS.afterSettle, feeBps: 100, feeRecipient: MODULE };
-    const declared = { ...accepted, feeBps: 200 };
-    const { client } = harness({ grantStatus: [accepted, declared, true, false] });
-    expect(await client.grantStatus(SLOT)).toEqual({
-      accepted,
-      declared,
+  it("moduleUpdate compares what the module declares with what the slot copied", async () => {
+    const settleOnly = unpackScopes(SCOPE_BITS.afterSettle);
+    const { client } = harness({
+      getSlotInfo: {
+        mutableModule: true,
+        terms: { taxTerms: TAX_TERMS_NONE, moduleTerms: { target: MODULE, settings: NO_SETTINGS } },
+        scopes: settleOnly,
+        fee: { bps: 100, recipient: MODULE },
+        pending: { taxTerms: TAX_TERMS_NONE, module: { target: NO_MODULE.target, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_MODULE.settings }, mask: 0, proposedAt: 0n },
+        hasRipeTerms: false,
+      },
+      scopes: SCOPE_BITS.afterSettle | SCOPE_BITS.afterBuy,
+      fee: { bps: 200, recipient: MODULE },
+    });
+    expect(await client.moduleUpdate(SLOT)).toEqual({
+      current: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 100, recipient: MODULE } },
+      declared: {
+        scopes: SCOPE_BITS.afterSettle | SCOPE_BITS.afterBuy,
+        fee: { bps: 200, recipient: MODULE },
+      },
       feeDiffers: true,
-      scopesDiffer: false,
+      scopesDiffer: true,
     });
   });
 
-  it("grant sends the reviewed offer as the pin", async () => {
+  it("acceptFee and acceptScopes send what the manager reviewed", async () => {
     const { client, writeContract } = harness({});
-    const expected = { scopes: SCOPE_BITS.afterBuy, feeBps: 0, feeRecipient: ZERO };
-    await client.grant(SLOT, expected);
-    expect(sent(writeContract, "grant").args).toEqual([expected]);
+    const fee = { bps: 100, recipient: MODULE };
+    await client.acceptFee(SLOT, fee);
+    expect(sent(writeContract, "acceptFee").args).toEqual([fee]);
+    await client.acceptScopes(SLOT, SCOPE_BITS.afterBuy);
+    expect(sent(writeContract, "acceptScopes").args).toEqual([SCOPE_BITS.afterBuy]);
+  });
+
+  it("packScopes undoes unpackScopes", () => {
+    const bits = SCOPE_BITS.beforeBuy | SCOPE_BITS.onInstall | SCOPE_BITS.strict;
+    expect(packScopes(unpackScopes(bits))).toBe(bits);
   });
 
   it("unpackScopes follows ScopesLib's bit order", () => {
@@ -731,6 +751,8 @@ describe("reads", () => {
       afterRelease: false,
       afterLiquidate: false,
       afterSettle: false,
+      onInstall: false,
+      onUninstall: false,
       strict: true,
     });
   });
@@ -863,7 +885,6 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         terms: {
           taxTerms: { recipient: ACCOUNT, rateBps: 250, minRunwaySeconds: 0 },
           moduleTerms: NO_MODULE,
-          manifest: { scopes: 0, feeBps: 0, feeRecipient: ZERO },
         },
         scopes: {
           beforeBuy: false,
@@ -885,13 +906,12 @@ describe("operator approvals belong to a tenure, not to an address", () => {
         isVacant: false,
         isInsolvent: false,
         secondsUntilLiquidation: 10n,
+        fee: { bps: 0, recipient: ZERO },
         pending: {
           taxTerms: TAX_TERMS_NONE,
-          moduleTerms: NO_MODULE,
-          scopes: 0,
+          module: { target: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
           mask: 0,
           proposedAt: 0n,
-          reviewedManifest: "0x0000000000000000000000000000000000000000000000000000000000000000",
         },
         hasRipeTerms: false,
       },
@@ -1234,12 +1254,14 @@ describe("module reads", () => {
     expect(client.moduleSettings(schema, NO_SETTINGS)).toBeNull();
   });
 
-  it("readManifest asks the module about its settings", async () => {
-    const offer = { scopes: 4, feeBps: 0, feeRecipient: ZERO };
-    const { client, readContract } = harness({ manifest: offer });
-    expect(await client.readManifest(MODULE, NO_SETTINGS)).toEqual(offer);
+  it("readScopes and readFee ask the module about its settings", async () => {
+    const fee = { bps: 0, recipient: ZERO };
+    const { client, readContract } = harness({ scopes: 4, fee });
+    expect(await client.readScopes(MODULE, NO_SETTINGS)).toBe(4);
+    expect(await client.readFee(MODULE, NO_SETTINGS)).toEqual(fee);
     const call = readContract.mock.calls.at(-1)![0];
     expect(call.address).toBe(MODULE);
+    expect(call.functionName).toBe("fee");
     expect(call.args).toEqual([NO_SETTINGS]);
   });
 });

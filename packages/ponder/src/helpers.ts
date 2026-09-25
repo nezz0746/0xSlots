@@ -287,7 +287,7 @@ export const NO_SCOPES: ScopeSet = {
   strict: false,
 };
 
-/** `Manifest.scopes` as a set. Bits follow `ScopesLib`. */
+/** Scope bits as a set. Bits follow `ScopesLib`. */
 export function unpackScopes(scopes: number): ScopeSet {
   const has = (bit: number) => (scopes & bit) !== 0;
   return {
@@ -359,7 +359,7 @@ async function readMany(
 /**
  * A module's own declaration of its scopes, for empty settings.
  *
- * `null` when `manifest` does not answer. A module whose manifest reverts is
+ * `null` when `scopes` does not answer. A module whose `scopes` reverts is
  * REFUSED at attach time, so seeing null here means either a module that was
  * seen but never attached, or one that has since been upgraded into
  * something that no longer answers.
@@ -369,13 +369,13 @@ export async function readScopes(
   moduleAddr: Hex,
 ): Promise<ScopeSet | null> {
   try {
-    const offer = (await ctx.client.readContract({
+    const bits = (await ctx.client.readContract({
       address: getAddress(lower(moduleAddr)),
       abi: SlotModuleAbi,
-      functionName: "manifest",
+      functionName: "scopes",
       args: [NO_SETTINGS],
-    })) as { scopes: number };
-    return unpackScopes(offer.scopes);
+    })) as number;
+    return unpackScopes(bits);
   } catch {
     return null;
   }
@@ -387,7 +387,7 @@ export async function readScopes(
  */
 export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
-  const [taxTerms, moduleTerms, manager, mutTax, mutRecipient, mutModule, offer] =
+  const [taxTerms, moduleTerms, manager, mutTax, mutRecipient, mutModule, scopesRead, feeRead] =
     await readMany(ctx, address, SlotAbi as unknown as Abi, [
       "taxTerms",
       "moduleTerms",
@@ -395,16 +395,16 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
       "mutableTax",
       "mutableRecipient",
       "mutableModule",
-      "manifest",
+      "scopes",
+      "fee",
     ]);
 
   const r = taxTerms as
     | { recipient: Hex; rateBps: number; minRunwaySeconds: number }
     | undefined;
   const h = moduleTerms as { target: Hex; settings: Hex } | undefined;
-  const o = offer as
-    | { scopes: number; feeBps: number; feeRecipient: Hex }
-    | undefined;
+  const sc = scopesRead as ScopeSet | undefined;
+  const f = feeRead as { bps: number; recipient: Hex } | undefined;
   const managerAddr =
     typeof manager === "string" && lower(manager as Hex) !== ZERO_ADDR
       ? lower(manager as Hex)
@@ -419,11 +419,21 @@ export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
     mutableRecipient: mutRecipient === true,
     mutableModule: mutModule === true,
     /// The module's fee, as the slot accepted it.
-    moduleFeeBps: o?.feeBps ?? 0,
+    moduleFeeBps: f?.bps ?? 0,
     moduleFeeRecipient:
-      o && lower(o.feeRecipient) !== ZERO_ADDR ? lower(o.feeRecipient) : null,
+      f && lower(f.recipient) !== ZERO_ADDR ? lower(f.recipient) : null,
     /// The scopes THIS SLOT obeys, as it accepted them.
-    scopes: o ? unpackScopes(o.scopes) : NO_SCOPES,
+    scopes: sc
+      ? {
+          beforeBuy: sc.beforeBuy,
+          beforeSelfAssess: sc.beforeSelfAssess,
+          afterBuy: sc.afterBuy,
+          afterRelease: sc.afterRelease,
+          afterLiquidate: sc.afterLiquidate,
+          afterSettle: sc.afterSettle,
+          strict: sc.strict,
+        }
+      : NO_SCOPES,
     settings: h ? lower(h.settings) : NO_SETTINGS,
   };
 }

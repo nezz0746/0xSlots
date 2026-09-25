@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../../src/types/SlotTypes.sol";
 import {ISlotEvents} from "../../src/interfaces/ISlotEvents.sol";
 import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import "../../src/errors/SlotErrors.sol";
 
 /// @dev Takes no fee, subscribes to one harmless callback.
-contract AnyModule is ISlotModule {
-    function manifest(bytes calldata) external view virtual returns (Manifest memory o) {
+contract AnyModule is AskModule {
+    function _ask(bytes calldata) internal view virtual override returns (Ask memory o) {
         o.scopes = ScopesLib.AFTER_SETTLE;
     }
 
@@ -33,9 +35,10 @@ contract AnyModule is ISlotModule {
 
 }
 
-/// @dev A manifest its owner can change at any time, and a count of the buys it hears about.
-contract ManifestModule is AnyModule {
-    uint16 public scopes = ScopesLib.AFTER_SETTLE;
+/// @dev Scopes and a fee its owner can change at any time, and a count of the
+///      buys it hears about.
+contract ChangingModule is AnyModule {
+    uint16 public scopeBits = ScopesLib.AFTER_SETTLE;
     uint16 public bps;
     address public to;
     uint256 public buys;
@@ -51,11 +54,11 @@ contract ManifestModule is AnyModule {
     }
 
     function setScopes(uint16 scopes_) external {
-        scopes = scopes_;
+        scopeBits = scopes_;
     }
 
-    function manifest(bytes calldata) external view override returns (Manifest memory) {
-        return Manifest(scopes, bps, to);
+    function _ask(bytes calldata) internal view override returns (Ask memory) {
+        return Ask(scopeBits, bps, to);
     }
 
     function afterBuy(SlotContext calldata) external override {
@@ -64,15 +67,15 @@ contract ManifestModule is AnyModule {
 }
 
 /// @notice Terms queue per mutable term and land at transitions; modules declare
-///         a manifest the slot keeps a copy of until its manager accepts another.
+///         scopes and a fee the slot keeps a copy of until its manager accepts others.
 contract SlotTermsTest is Test {
     event ScopesDropped(address indexed module, uint16 scopes);
 
-    uint8 constant TAX_RATE = 1;
-    uint8 constant RECIPIENT = 2;
-    uint8 constant MIN_RUNWAY = 4;
-    uint8 constant MODULE = 8;
-    uint8 constant SCOPES = 16;
+    uint16 constant TAX_RATE = 1;
+    uint16 constant RECIPIENT = 2;
+    uint16 constant MIN_RUNWAY = 4;
+    uint16 constant MODULE = 8;
+    uint16 constant SCOPES = 16;
     uint16 constant SETTLE = ScopesLib.AFTER_SETTLE;
     uint16 constant SETTLE_AND_BUY = ScopesLib.AFTER_SETTLE | ScopesLib.AFTER_BUY;
 
@@ -122,7 +125,7 @@ contract SlotTermsTest is Test {
         return Slot(payable(factory.createSlot(_init(tax, rec, module, h))));
     }
 
-    function _propose(Slot s, TaxTerms memory taxTerms, ModuleTerms memory module, uint8 mask) internal {
+    function _propose(Slot s, TaxTerms memory taxTerms, ModuleTerms memory module, uint16 mask) internal {
         vm.prank(manager);
         s.proposeTerms(taxTerms, module, mask);
     }
@@ -187,9 +190,9 @@ contract SlotTermsTest is Test {
         _propose(slot, taxTerms, _noModule(), RECIPIENT);
 
         assertEq(slot.recipient(), recipient, "nothing moves on proposal");
-        PendingTerms memory __p1 = slot.pendingTerms();
+        Pending memory __p1 = slot.pending();
         TaxTerms memory queued = __p1.taxTerms;
-        uint8 mask = __p1.mask;
+        uint16 mask = __p1.mask;
         assertEq(mask, RECIPIENT);
         assertEq(queued.recipient, next);
         assertEq(queued.rateBps, 0, "an unmasked field is not queued");
@@ -199,9 +202,9 @@ contract SlotTermsTest is Test {
         _propose(slot, TaxTerms({recipient: address(0), rateBps: 900, minRunwaySeconds: 0}), _noModule(), TAX_RATE);
         _propose(slot, TaxTerms({recipient: next, rateBps: 0, minRunwaySeconds: 0}), _noModule(), RECIPIENT);
 
-        PendingTerms memory __p2 = slot.pendingTerms();
+        Pending memory __p2 = slot.pending();
         TaxTerms memory queued = __p2.taxTerms;
-        uint8 mask = __p2.mask;
+        uint16 mask = __p2.mask;
         assertEq(mask, TAX_RATE | RECIPIENT);
         assertEq(queued.rateBps, 900, "the tax survived the recipient proposal");
         assertEq(queued.recipient, next);
@@ -242,9 +245,9 @@ contract SlotTermsTest is Test {
 
         vm.prank(manager);
         slot.cancelTerms(RECIPIENT | MODULE);
-        PendingTerms memory __p3 = slot.pendingTerms();
+        Pending memory __p3 = slot.pending();
         TaxTerms memory queued = __p3.taxTerms;
-        uint8 mask = __p3.mask;
+        uint16 mask = __p3.mask;
         uint64 at = __p3.proposedAt;
         assertEq(mask, TAX_RATE, "the tax is still queued");
         assertEq(queued.rateBps, 900);
@@ -253,7 +256,7 @@ contract SlotTermsTest is Test {
 
         vm.prank(manager);
         slot.cancelTerms(TAX_RATE);
-        PendingTerms memory __p4 = slot.pendingTerms();
+        Pending memory __p4 = slot.pending();
         mask = __p4.mask;
         at = __p4.proposedAt;
         assertEq(mask, 0);
@@ -283,8 +286,8 @@ contract SlotTermsTest is Test {
         assertEq(slot.recipient(), next);
         assertEq(slot.taxRateBps(), 900);
         assertEq(slot.minRunwaySeconds(), 2 hours);
-        PendingTerms memory __p5 = slot.pendingTerms();
-        uint8 mask = __p5.mask;
+        Pending memory __p5 = slot.pending();
+        uint16 mask = __p5.mask;
         assertEq(mask, 0);
     }
 
@@ -295,8 +298,8 @@ contract SlotTermsTest is Test {
         _release(slot);
 
         assertEq(slot.recipient(), recipient, "still inside the delay");
-        PendingTerms memory __p6 = slot.pendingTerms();
-        uint8 mask = __p6.mask;
+        Pending memory __p6 = slot.pending();
+        uint16 mask = __p6.mask;
         assertEq(mask, RECIPIENT, "and still queued");
     }
 
@@ -334,43 +337,40 @@ contract SlotTermsTest is Test {
         slot.setManager(address(0));
     }
 
-    // ── module manifest ──────────────────────────────────────────────────────────
+    // ── module scopes and fee ────────────────────────────────────────────────
 
-    function _manifestSlot(bool mutableModule, uint16 bps, address to) internal returns (Slot s, ManifestModule h) {
-        h = new ManifestModule(bps, to);
+    function _changingSlot(bool mutableModule, uint16 bps, address to) internal returns (Slot s, ChangingModule h) {
+        h = new ChangingModule(bps, to);
         s = _slot(true, true, mutableModule, ModuleTerms({target: address(h), settings: ""}));
     }
 
-    function test_TheManifestIsWhatTheModuleDeclares() public {
-        (Slot s, ) = _manifestSlot(true, 2_500, author);
+    function test_TheSlotCopiesTheModulesScopesAndFee() public {
+        (Slot s, ) = _changingSlot(true, 2_500, author);
 
-        Manifest memory declared = s.manifest();
-        assertEq(declared.scopes, SETTLE);
-        assertEq(declared.feeBps, 2_500);
-        assertEq(declared.feeRecipient, author);
+        ModuleFee memory f = s.fee();
+        assertEq(f.bps, 2_500);
+        assertEq(f.recipient, author);
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE);
         assertTrue(s.scopes().afterSettle);
     }
 
-    function test_AModuleWithABadManifestIsRefused() public {
-        ManifestModule noRecipient = new ManifestModule(100, address(0));
+    function test_AModuleWithBadScopesOrFeeIsRefused() public {
+        ChangingModule noRecipient = new ChangingModule(100, address(0));
         vm.expectRevert(InvalidModuleFee.selector);
         factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noRecipient), settings: ""})));
 
-        ManifestModule tooMuch = new ManifestModule(10_001, author);
+        ChangingModule tooMuch = new ChangingModule(10_001, author);
         vm.expectRevert(InvalidModuleFee.selector);
         factory.createSlot(_init(true, true, true, ModuleTerms({target: address(tooMuch), settings: ""})));
 
-
-
-        ManifestModule noScopes = new ManifestModule(0, address(0));
+        ChangingModule noScopes = new ChangingModule(0, address(0));
         noScopes.setScopes(0);
         vm.expectRevert(InvalidModule.selector);
         factory.createSlot(_init(true, true, true, ModuleTerms({target: address(noScopes), settings: ""})));
-
     }
 
     function test_TheFeeIsSplitFromCollectedRent() public {
-        (Slot s, ) = _manifestSlot(true, 2_500, author);
+        (Slot s, ) = _changingSlot(true, 2_500, author);
         _buy(s);
         skip(10 days);
 
@@ -382,90 +382,78 @@ contract SlotTermsTest is Test {
         assertEq(recipient.balance, owed - fee, "the rest to the recipient");
     }
 
-    function test_ANewManifestIsVisibleUntilAccepted() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
-
-        (, , bool feeDiffers, bool scopesDiffer) = s.grantStatus();
-        assertFalse(feeDiffers);
-        assertFalse(scopesDiffer);
+    function test_ANewAnswerChangesNothingUntilAccepted() public {
+        (Slot s, ChangingModule h) = _changingSlot(true, 1_000, author);
 
         h.set(2_000, author);
         h.setScopes(SETTLE_AND_BUY);
-        Manifest memory accepted;
-        Manifest memory offered;
-        (accepted, offered, feeDiffers, scopesDiffer) = s.grantStatus();
-        assertTrue(feeDiffers);
-        assertTrue(scopesDiffer);
-        assertEq(accepted.feeBps, 1_000);
-        assertEq(offered.feeBps, 2_000);
-        assertEq(offered.scopes, SETTLE_AND_BUY);
+        assertEq(h.fee("").bps, 2_000, "the module says one thing");
+        assertEq(h.scopes(""), SETTLE_AND_BUY);
+        assertEq(s.fee().bps, 1_000, "the slot keeps what it copied");
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE);
     }
 
     function test_ANewFeeAppliesAtOnceEvenOnALockedModule() public {
-        (Slot s, ManifestModule h) = _manifestSlot(false, 1_000, author);
+        (Slot s, ChangingModule h) = _changingSlot(false, 1_000, author);
         h.set(2_000, author);
 
         vm.expectEmit(address(s));
-        emit ISlotEvents.ScopesGranted(Manifest(SETTLE, 2_000, author), true, false);
+        emit ISlotEvents.FeeAccepted(ModuleFee(2_000, author));
         vm.prank(manager);
-        s.grant(Manifest(SETTLE, 2_000, author));
+        s.acceptFee(ModuleFee(2_000, author));
 
-        assertEq(s.manifest().feeBps, 2_000);
-        (, , bool feeDiffers, ) = s.grantStatus();
-        assertFalse(feeDiffers);
+        assertEq(s.fee().bps, 2_000);
+        assertEq(s.pending().mask, 0, "nothing queued");
     }
 
     function test_ALockedModuleKeepsItsScopes() public {
-        (Slot s, ManifestModule h) = _manifestSlot(false, 0, address(0));
+        (Slot s, ChangingModule h) = _changingSlot(false, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
 
-        (, , , bool scopesDiffer) = s.grantStatus();
-        assertFalse(scopesDiffer, "nothing a manager could take");
-
         vm.prank(manager);
-        vm.expectRevert(NothingToAccept.selector);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        vm.expectRevert(NotMutable.selector);
+        s.acceptScopes(SETTLE_AND_BUY);
 
-        // A fee change alongside is still taken, and the scopes are not.
+        // Its fee is still the manager's to accept.
         h.set(500, author);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE_AND_BUY, 500, author));
-        assertEq(s.manifest().feeBps, 500);
-        assertEq(s.manifest().scopes, SETTLE);
-        assertEq(s.pendingTerms().mask, 0);
+        s.acceptFee(ModuleFee(500, author));
+        assertEq(s.fee().bps, 500);
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE);
+        assertEq(s.pending().mask, 0);
     }
 
     function test_NewScopesWaitForTheNextTransitionAfterTheDelay() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
 
         vm.expectEmit(address(s));
-        emit ISlotEvents.ScopesGranted(Manifest(SETTLE_AND_BUY, 0, address(0)), false, true);
+        emit ISlotEvents.ScopesAccepted(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        s.acceptScopes(SETTLE_AND_BUY);
 
-        PendingTerms memory p = s.pendingTerms();
+        Pending memory p = s.pending();
         assertEq(p.mask, SCOPES);
-        assertEq(p.scopes, SETTLE_AND_BUY);
-        assertEq(s.manifest().scopes, SETTLE, "not yet");
+        assertEq(p.module.scopes, SETTLE_AND_BUY);
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE, "not yet");
 
         _buy(s);
         assertEq(h.buys(), 0, "the sitting occupant bought under the old scopes");
 
         skip(s.TERMS_DELAY());
         _releaseAndApply(s);
-        assertEq(s.manifest().scopes, SETTLE_AND_BUY, "the seat changed hands");
-        assertEq(s.pendingTerms().mask, 0);
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE_AND_BUY, "the seat changed hands");
+        assertEq(s.pending().mask, 0);
 
         _buy(s);
         assertEq(h.buys(), 1);
     }
 
     function test_ScopesTheModuleNoLongerDeclaresAreDropped() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        s.acceptScopes(SETTLE_AND_BUY);
 
         h.setScopes(SETTLE);
         skip(s.TERMS_DELAY());
@@ -474,96 +462,122 @@ contract SlotTermsTest is Test {
         emit ScopesDropped(address(h), SETTLE_AND_BUY);
         _buy(s);
 
-        assertEq(s.manifest().scopes, SETTLE);
-        assertEq(s.pendingTerms().mask, 0);
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE);
+        assertEq(s.pending().mask, 0);
         assertEq(h.buys(), 0);
     }
 
     function test_AcceptingQueuedScopesAgainIsNothing() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        s.acceptScopes(SETTLE_AND_BUY);
 
-        (, , , bool scopesDiffer) = s.grantStatus();
-        assertFalse(scopesDiffer);
         vm.prank(manager);
         vm.expectRevert(NothingToAccept.selector);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        s.acceptScopes(SETTLE_AND_BUY);
+    }
+
+    function test_AcceptingTheSameFeeIsNothing() public {
+        (Slot s, ) = _changingSlot(true, 1_000, author);
+        vm.prank(manager);
+        vm.expectRevert(NothingToAccept.selector);
+        s.acceptFee(ModuleFee(1_000, author));
     }
 
     function test_AcceptedScopesCanBeCancelled() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        s.acceptScopes(SETTLE_AND_BUY);
 
         vm.prank(manager);
         s.cancelTerms(SCOPES);
-        PendingTerms memory p = s.pendingTerms();
+        Pending memory p = s.pending();
         assertEq(p.mask, 0);
-        assertEq(p.scopes, 0);
+        assertEq(p.module.scopes, 0);
     }
 
-    function test_AQueuedModuleSupersedesAcceptedScopes() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
+    function test_AQueuedModuleReplacesAcceptedScopes() public {
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         h.setScopes(SETTLE_AND_BUY);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE_AND_BUY, 0, address(0)));
+        s.acceptScopes(SETTLE_AND_BUY);
 
         AnyModule other = new AnyModule();
         _propose(s, _taxTerms(), ModuleTerms({target: address(other), settings: ""}), MODULE);
+        Pending memory p = s.pending();
+        assertEq(p.mask, MODULE, "the accepted scopes are gone from the queue");
+        assertEq(p.module.scopes, SETTLE, "replaced by what the new module declared");
+
         skip(s.TERMS_DELAY());
         _buy(s);
 
         assertEq(s.module(), address(other));
-        assertEq(s.manifest().scopes, SETTLE, "the new module's own manifest");
-        assertEq(s.pendingTerms().mask, 0);
+        assertEq(ScopesLib.pack(s.scopes()), SETTLE, "the new module's own scopes");
+        assertEq(s.pending().mask, 0);
     }
 
-    function test_AcceptingPinsTheReviewedManifest() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
+    function test_ScopesCannotBeAcceptedWhileAModuleIsQueued() public {
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
+        _propose(s, _taxTerms(), ModuleTerms({target: address(new AnyModule()), settings: ""}), MODULE);
+
+        h.setScopes(SETTLE_AND_BUY);
+        vm.prank(manager);
+        vm.expectRevert(ModuleChangeQueued.selector);
+        s.acceptScopes(SETTLE_AND_BUY);
+    }
+
+    function test_AcceptingPinsWhatTheManagerReviewed() public {
+        (Slot s, ChangingModule h) = _changingSlot(true, 1_000, author);
         h.set(2_000, author);
         // The module raises again after the manager reviewed 2_000.
         h.set(9_000, author);
 
         vm.prank(manager);
-        vm.expectRevert(ManifestChanged.selector);
-        s.grant(Manifest(SETTLE, 2_000, author));
+        vm.expectRevert(FeeChanged.selector);
+        s.acceptFee(ModuleFee(2_000, author));
 
-        // And widens its subscriptions behind a fee the manager reviewed.
+        // And widens its subscriptions after the manager reviewed them.
         h.setScopes(SETTLE_AND_BUY);
+        h.setScopes(SETTLE | ScopesLib.STRICT);
         vm.prank(manager);
-        vm.expectRevert(ManifestChanged.selector);
-        s.grant(Manifest(SETTLE, 9_000, author));
+        vm.expectRevert(ScopesChanged.selector);
+        s.acceptScopes(SETTLE_AND_BUY);
     }
 
     function test_OnlyTheManagerAcceptsAndOnlyWithAModule() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
+        (Slot s, ChangingModule h) = _changingSlot(true, 1_000, author);
         h.set(2_000, author);
         vm.expectRevert(NotManager.selector);
-        s.grant(Manifest(SETTLE, 2_000, author));
+        s.acceptFee(ModuleFee(2_000, author));
+        vm.expectRevert(NotManager.selector);
+        s.acceptScopes(SETTLE_AND_BUY);
 
+        Slot bare = _slot(true, true, true, _noModule());
         vm.prank(manager);
         vm.expectRevert(InvalidModule.selector);
-        slot.grant(Manifest(SETTLE, 2_000, author));
+        bare.acceptFee(ModuleFee(2_000, author));
+        vm.prank(manager);
+        vm.expectRevert(InvalidModule.selector);
+        bare.acceptScopes(SETTLE);
     }
 
     function test_AcceptingPaysEarnedRentUnderTheOldFee() public {
-        (Slot s, ManifestModule h) = _manifestSlot(false, 0, address(0));
+        (Slot s, ChangingModule h) = _changingSlot(false, 0, address(0));
         _buy(s);
         skip(10 days);
 
         h.set(10_000, author);
         vm.prank(manager);
-        s.grant(Manifest(SETTLE, 10_000, author));
+        s.acceptFee(ModuleFee(10_000, author));
 
         assertEq(author.balance, 0, "rent earned under a 0% fee pays no fee");
         assertGt(recipient.balance, 0);
     }
 
     function test_AModuleRaisingItsFeeDoesNotReachAttachedSlotsUntilAccepted() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 1_000, author);
+        (Slot s, ChangingModule h) = _changingSlot(true, 1_000, author);
 
         h.set(9_000, author);
         _buy(s);
@@ -571,12 +585,12 @@ contract SlotTermsTest is Test {
         uint256 owed = s.taxOwed();
         s.collect();
 
-        assertEq(s.manifest().feeBps, 1_000, "the copy holds");
+        assertEq(s.fee().bps, 1_000, "the copy holds");
         assertEq(author.balance, owed / 10);
     }
 
-    function test_ReattachingPicksUpTheNewManifestAndNeverReachesEarnedRent() public {
-        (Slot s, ManifestModule h) = _manifestSlot(true, 0, address(0));
+    function test_ReattachingPicksUpTheNewFeeAndNeverReachesEarnedRent() public {
+        (Slot s, ChangingModule h) = _changingSlot(true, 0, address(0));
         _buy(s);
 
         h.set(10_000, author);
@@ -586,21 +600,21 @@ contract SlotTermsTest is Test {
 
         assertEq(author.balance, 0, "rent earned under a 0% fee pays no fee");
         assertGt(recipient.balance, 0);
-        assertEq(s.manifest().feeBps, 10_000, "and the new fee is in force");
+        assertEq(s.fee().bps, 10_000, "and the new fee is in force");
     }
 
-    function test_DetachingClearsTheModuleAndItsManifest() public {
-        (Slot s, ) = _manifestSlot(true, 2_500, author);
+    function test_DetachingClearsTheModuleItsScopesAndItsFee() public {
+        (Slot s, ) = _changingSlot(true, 2_500, author);
         _buy(s);
         _propose(s, _taxTerms(), _noModule(), MODULE);
         skip(s.TERMS_DELAY());
         _releaseAndApply(s);
 
-        Manifest memory declared = s.manifest();
+        ModuleFee memory f = s.fee();
         assertEq(s.module(), address(0));
-        assertEq(declared.scopes, 0);
-        assertEq(declared.feeBps, 0);
-        assertEq(declared.feeRecipient, address(0));
+        assertEq(ScopesLib.pack(s.scopes()), 0);
+        assertEq(f.bps, 0);
+        assertEq(f.recipient, address(0));
     }
 
     function test_AnImmutableModuleCannotBeProposed() public {

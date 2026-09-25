@@ -1,15 +1,11 @@
 "use client";
 
-import type { Address } from "viem";
+import type { ModuleFee } from "@0xslots/sdk/slots";
 import { SCOPE_LABELS, SCOPE_ORDER, type ScopeSet } from "@/lib/module-scopes";
 import { cn } from "@/lib/utils";
 import { formatBps, truncateAddress } from "@/utils";
 
-/** The fee half of a module's offer. */
-export interface ModuleFee {
-  feeBps: number;
-  feeRecipient: Address;
-}
+export type { ModuleFee };
 
 /**
  * A module's declared scopes, drawn rather than described.
@@ -70,19 +66,19 @@ export function ModuleScopeRow({
           <span
             className={cn(
               "inline-flex items-center px-1.5 py-0.5 text-[10px] leading-none whitespace-nowrap tabular-nums",
-              fee.feeBps > 0
+              fee.bps > 0
                 ? "bg-blue-500/10 text-blue-700 dark:text-blue-400"
                 : "bg-muted text-muted-foreground/50",
             )}
           >
-            {fee.feeBps > 0 ? `fee ${formatBps(fee.feeBps)}` : "no fee"}
+            {fee.bps > 0 ? `fee ${formatBps(fee.bps)}` : "no fee"}
           </span>
-          {fee.feeBps > 0 && (
+          {fee.bps > 0 && (
             <span
-              title={fee.feeRecipient}
+              title={fee.recipient}
               className="inline-flex items-center bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none whitespace-nowrap text-muted-foreground"
             >
-              to {truncateAddress(fee.feeRecipient)}
+              to {truncateAddress(fee.recipient)}
             </span>
           )}
         </>

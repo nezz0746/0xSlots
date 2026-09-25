@@ -42,7 +42,8 @@ fields (`occupant`, `price`, `deposit`, `taxOwed`, `module`, `scopes`,
 | `minDepositToHold(slot, price)` | the floor `selfAssess` and `withdraw` enforce |
 | `pending(slot)` | queued terms, with `appliesAt` and `applies` |
 | `hasRipeTerms(slot)` | whether the next buy lands them — the chain's clock, not yours |
-| `grantStatus(slot)` | `{ accepted, declared, feeDiffers, scopesDiffer }` |
+| `fee(slot)` / `scopes(slot)` | the module's fee and scopes, as the slot copied them |
+| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }` |
 | `debtOf(slot, account)` / `withdrawableOf(slot, account?)` | debt carried / credits to `claim` |
 | `isOperator(slot, operator)` | live, per tenure |
 
@@ -111,8 +112,9 @@ await client.proposeTerms(slot, { moduleTerms: NO_MODULE });   // remove the mod
 await client.cancelTerms(slot, TERMS.MODULE);  // one term
 await client.cancelTerms(slot);                // everything (ALL_TERMS)
 
-const status = await client.grantStatus(slot);
-if (status.feeDiffers || status.scopesDiffer) await client.grant(slot, status.declared);
+const update = await client.moduleUpdate(slot);
+if (update.feeDiffers) await client.acceptFee(slot, update.declared!.fee);          // now
+if (update.scopesDiffer) await client.acceptScopes(slot, update.declared!.scopes);  // next buy
 
 await client.setManager(slot, next);
 ```
@@ -127,10 +129,11 @@ import { minimumTenureModuleAddress } from "@0xslots/contracts";
 import { toHex } from "viem";
 
 const target = minimumTenureModuleAddress[chainId];
-const settings = toHex(7n * 24n * 3600n, { size: 32 });  // the window, in seconds
+const settings = toHex(7n * 24n * 3600n, { size: 32 });  // abi.encode(uint256 window)
 
 await client.checkSettings(target, settings);  // { ok: true } | { ok: false, reason }
-await client.readManifest(target, settings);   // what the module asks, today
+await client.readScopes(target, settings);     // what the module asks, today
+await client.readFee(target, settings);
 await client.moduleDefinition(target);         // parsed definition() JSON, or null
 ```
 
@@ -165,7 +168,8 @@ Two more clients ship beside `SlotsClient`:
   (`createCollection`, `quoteMint`, `approveMint`, `mint`, `setBaseURI`).
 - **`CollectivesClient`** creates and governs `SlotCollective`s — a split
   recipient with role-gated management. `COLLECTIVE_ROLES` names the roles:
-  `tax` proposes tax rates, `policy` proposes and grants modules
-  (`proposeModule`, `grant`, `cancelModuleProposal`), `split` edits the payout.
+  `tax` proposes tax rates, `policy` proposes modules and accepts their updates
+  (`proposeModule`, `acceptFee`, `acceptScopes`, `cancelModuleProposal`), `split`
+  edits the payout.
   Holders are set at creation with `taxManagers`, `policyManagers` and
   `splitManagers`.

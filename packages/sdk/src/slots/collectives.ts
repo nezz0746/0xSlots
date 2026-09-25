@@ -17,7 +17,7 @@ import {
   zeroHash,
 } from "viem";
 import { SlotsError } from "../errors";
-import type { Manifest, ModuleTerms } from "./client";
+import type { ModuleFee, ModuleTerms } from "./client";
 import { NO_MODULE } from "./client";
 
 /**
@@ -268,11 +268,16 @@ export class CollectivesClient {
   }
 
   /**
-   * Accept the attached module's current offer on `slot`. Module managers or admin.
-   * `expected` is the manifest reviewed; see `SlotsClient.grantStatus`.
+   * Relay `acceptFee` to `slot`. Policy role; a rise needs the payout role too.
+   * `expected` is the fee reviewed; see `SlotsClient.moduleUpdate`.
    */
-  grant(collective: Address, slot: Address, expected: Manifest): Promise<Hash> {
-    return this.write(collective, "grant", [slot, expected]);
+  acceptFee(collective: Address, slot: Address, expected: ModuleFee): Promise<Hash> {
+    return this.write(collective, "acceptFee", [slot, expected]);
+  }
+
+  /** Relay `acceptScopes` to `slot`. Policy role. */
+  acceptScopes(collective: Address, slot: Address, expected: number): Promise<Hash> {
+    return this.write(collective, "acceptScopes", [slot, expected]);
   }
 
   /** Drop a queued tax change. */

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -20,7 +22,7 @@ contract Tok is ERC20 {
 }
 
 /// @dev A module that records everything and refuses nothing.
-contract Recorder is ISlotModule {
+contract Recorder is AskModule {
     uint256 public buys;
     uint256 public releases;
     uint256 public liquidations;
@@ -29,7 +31,7 @@ contract Recorder is ISlotModule {
 
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true;
         f.afterRelease = true;
@@ -56,11 +58,11 @@ contract Recorder is ISlotModule {
 }
 
 /// @dev Refuses every buy. The canonical `before` module.
-contract DenyBuys is ISlotModule {
+contract DenyBuys is AskModule {
     error Denied();
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
@@ -80,10 +82,10 @@ contract DenyBuys is ISlotModule {
 }
 
 /// @dev Reverts in every `after`. Must never affect an outcome.
-contract Hostile is ISlotModule {
+contract Hostile is AskModule {
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true;
         f.afterRelease = true;
@@ -107,11 +109,11 @@ contract Hostile is ISlotModule {
 }
 
 /// @dev Burns every unit of gas it is handed.
-contract GasBurner is ISlotModule {
+contract GasBurner is AskModule {
     uint256 public sink;
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.afterLiquidate = true;
         f.afterSettle = true;
@@ -240,7 +242,7 @@ contract SlotsTest is Test {
         _take(s, alice, 100 ether, 100 ether);
 
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(2000), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
 
         vm.warp(block.timestamp + 10 days);
         assertEq(s.taxRateBps(), 1000, "alice's rate is untouched mid-tenure");
@@ -295,7 +297,7 @@ contract SlotsTest is Test {
         assertTrue(f.afterBuy, "declared");
     }
 
-    /// @notice A module that answers `manifest` with nothing is refused outright.
+    /// @notice A module that answers `scopes` with nothing is refused outright.
     /// @dev The one place a bad module is NOT tolerated. It happens once, while
     ///      attaching, in a call the manager sent on purpose — attaching a module
     ///      that can never fire is a silent, permanent mistake.
@@ -308,7 +310,7 @@ contract SlotsTest is Test {
 
         vm.prank(manager);
         vm.expectRevert(InvalidModule.selector);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: useless, settings: ""}), uint8(8));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: useless, settings: ""}), uint16(8));
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -346,10 +348,10 @@ contract SlotsTest is Test {
 }
 
 /// @dev Declares no subscriptions at all.
-contract Nothing is ISlotModule {
+contract Nothing is AskModule {
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) { Scopes memory f; o.scopes = ScopesLib.pack(f); }
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) { Scopes memory f; o.scopes = ScopesLib.pack(f); }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}

@@ -22,7 +22,7 @@ contract TermsApplicationTest is SlotsTest {
     function _ripeDenial(Slot s) internal returns (DenyBuys deny) {
         deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(deny), settings: ""}), uint8(9));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}), ModuleTerms({target: address(deny), settings: ""}), uint16(9));
         vm.warp(block.timestamp + s.TERMS_DELAY());
         assertTrue(s.hasRipeTerms(), "terms are ripe");
     }
@@ -132,7 +132,7 @@ contract TermsApplicationTest is SlotsTest {
         s.applyTerms();
 
         vm.prank(manager);
-        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(600), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(1));
+        s.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(600), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(1));
         vm.prank(bob);
         vm.expectRevert(NoPendingTerms.selector);
         s.applyTerms();

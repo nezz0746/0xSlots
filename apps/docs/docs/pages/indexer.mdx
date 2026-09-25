@@ -46,7 +46,7 @@ A slot points at **one** `module` (or none). Scopes are stored on **both**
 rows and they answer different questions: `slot.scope*` is the copy the slot
 accepted — what it obeys — while `module.declared*` is what the module declared
 when the indexer first saw it. Comparing them is how you find a module that
-changed its manifest after slots had committed to it.
+changed its scopes after slots had committed to it.
 
 `slot.scopeStrict` is the one worth surfacing: a strict module's `after` callbacks
 run uncapped and can fail the slot, eviction included.

@@ -12,7 +12,8 @@ The interfaces a module implements, and the modules the protocol ships. See
 ```solidity
 interface ISlotModule {
     function checkSettings(bytes calldata settings) external view;
-    function manifest(bytes calldata settings) external view returns (Manifest memory);
+    function scopes(bytes calldata settings) external view returns (uint16);
+    function fee(bytes calldata settings) external view returns (ModuleFee memory);
 
     // decisions — view, revert to veto
     function beforeBuy(SlotContext calldata ctx) external view;
@@ -28,20 +29,21 @@ interface ISlotModule {
 }
 ```
 
-A module implements every function; the slot calls only those its manifest
-declares.
+A module implements every function; the slot calls only the callbacks its
+scopes declare.
 
 **`checkSettings`** reverts if `settings` is not a configuration the module
 accepts. The slot calls it when the module is proposed and when it is installed.
 A module that takes no configuration implements it as a no-op and so accepts
 anything, empty included.
 
-**`manifest`** is `view`, not `pure` — a module may answer from storage. The
-answer must have non-zero `scopes` using only known bits, and a non-zero `feeBps`
-needs a `feeRecipient` and may not exceed 10,000 — and needs a slot whose
-recipient is mutable (`NotMutable` otherwise). It must also answer within half
-of `MODULE_GAS`, which is what the slot allows the read when the module is
-installed; one that cannot is refused at proposal with `ManifestTooExpensive`.
+**`scopes`** must be non-zero and use only known bits. **`fee`** may be zero; a
+non-zero `bps` needs a `recipient`, may not exceed 10,000, and needs a slot whose
+recipient is mutable (`NotMutable` otherwise). Both are `view`, not `pure` — a
+module may answer from storage. Each read (`checkSettings`, `scopes`, `fee`)
+must answer within a third of `MODULE_GAS`, which is what the slot allows when
+the module is installed; one that cannot is refused at proposal with
+`ModuleTooExpensive`.
 
 <Callout type="warning">
 The effect callbacks are `external` and state-changing, so **anyone** can call
@@ -86,13 +88,12 @@ struct ModuleTerms {
 }
 ```
 
-## `Manifest` and `Scopes`
+## `ModuleFee` and `Scopes`
 
 ```solidity
-struct Manifest {
-    uint16  scopes;       // ScopesLib bits; never zero
-    uint16  feeBps;       // share of collected tax, 0..10_000
-    address feeRecipient; // required when feeBps is non-zero
+struct ModuleFee {
+    uint16  bps;          // share of collected tax, 0..10_000
+    address recipient;    // required when bps is non-zero
 }
 
 struct Scopes {           // `scopes`, unpacked — what Slot.scopes() returns
@@ -122,8 +123,8 @@ regardless. Leave `strict` off unless a swallowed write would be worse than a
 stuck slot; the NFT modules below set it because they hold real ERC-721
 ownership.
 
-The slot's accepted copy is what counts: `Slot.manifest()` and `Slot.scopes()`.
-How a manager accepts a changed manifest is on the [Slot reference](/reference/slot#modules).
+The slot's accepted copy is what counts: `Slot.scopes()` and `Slot.fee()`.
+How a manager accepts new ones is on the [Slot reference](/reference/slot#modules).
 
 ## `IDescribedModule`
 

@@ -64,10 +64,11 @@ instead of reverting; `claim` pulls it later.
 Only by the manager, and only for what the slot was created mutable for.
 
 ```solidity
-function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata moduleTerms, uint8 mask) external;
-function cancelTerms(uint8 mask) external;
-function grant(Manifest calldata expected) external;
-function setManager(address next) external;   // immediate, one step
+function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata moduleTerms, uint16 mask) external;
+function cancelTerms(uint16 mask) external;
+function acceptFee(ModuleFee calldata expected) external;  // applies now
+function acceptScopes(uint16 expected) external;          // queues for the next buy
+function setManager(address next) external;               // immediate, one step
 ```
 
 `mask` names what to change:
@@ -78,10 +79,10 @@ function setManager(address next) external;   // immediate, one step
 | `2` | `TERM_RECIPIENT` | `taxTerms.recipient` | `mutableRecipient` |
 | `4` | `TERM_MIN_RUNWAY` | `taxTerms.minRunwaySeconds` | `mutableTax` |
 | `8` | `TERM_MODULE` | the whole `moduleTerms` | `mutableModule` |
-| `16` | `TERM_SCOPES` | queued by `grant`, never proposed | `mutableModule` |
+| `16` | `TERM_SCOPES` | queued by `acceptScopes`, never proposed | `mutableModule` |
 
 Fields outside the mask are ignored. Proposals are validated now — a module is
-asked `checkSettings` and `manifest` at proposal — and then **queue**: they
+asked `checkSettings`, `scopes` and `fee` at proposal — and then **queue**: they
 ripen after `TERMS_DELAY` (one hour) and land at the next `buy`, or earlier
 through `applyTerms`. Proposing again overwrites the named terms, keeps the rest
 queued, and restarts the delay. `cancelTerms` drops whichever of `mask` is
@@ -93,23 +94,21 @@ queued and leaves the rest.
 function module() external view returns (address);
 function moduleTerms() external view returns (ModuleTerms memory);
 function mutableModule() external view returns (bool);
-function manifest() external view returns (Manifest memory); // the slot's accepted copy
-function scopes() external view returns (Scopes memory);     // that copy, unpacked
-function grantStatus() external view returns (
-    Manifest memory accepted,
-    Manifest memory declared,  // what the module answers today
-    bool feeDiffers,           // grant would change the fee now
-    bool scopesDiffer          // grant would queue new scopes
-);
+function scopes() external view returns (Scopes memory);   // the slot's accepted copy, unpacked
+function fee() external view returns (ModuleFee memory);   // the slot's accepted copy
 ```
 
-When the module declares a different manifest, the manager accepts it with
-`grant(expected)`, passing the manifest they reviewed. It reverts
-`ManifestChanged` if the module now says something else, and `NothingToAccept`
-if nothing would change. A new fee applies at once (tax collected so far is paid
-out under the old one first); new scopes queue under `TERM_SCOPES` and apply at
-the next buy, and only when the slot's module is mutable. `scopesDiffer` is
-always false otherwise.
+When the module declares something different, the manager accepts it, passing
+the value they reviewed. Each reverts `NothingToAccept` if nothing would change.
+
+- `acceptFee(expected)` applies at once; tax collected so far is paid out under
+  the old fee first. Reverts `FeeChanged` if the module now says something else;
+  a rise needs `mutableRecipient`.
+- `acceptScopes(expected)` queues under `TERM_SCOPES` and lands at the next buy,
+  only when the slot's module is mutable. Reverts `ScopesChanged` if the module
+  now says something else, and `ModuleChangeQueued` while a new module is queued.
+
+The SDK's `moduleUpdate(slot)` compares what the module declares with the copy.
 
 ## Reading state
 
@@ -125,15 +124,16 @@ struct SlotInfo {
     // governance
     IERC20 currency; address manager;
     bool mutableTax; bool mutableRecipient; bool mutableModule;
-    Terms terms;          // { TaxTerms taxTerms; ModuleTerms moduleTerms; Manifest manifest; }
+    Terms terms;          // { TaxTerms taxTerms; ModuleTerms moduleTerms; }
     Scopes scopes;
+    ModuleFee fee;
     // occupancy
     address occupant; uint256 price; uint256 deposit;
     uint64 occupiedSince; uint64 tenureId; uint64 lastSettled;
     // money, as of this block
     uint256 taxOwed; uint256 collectedTax;
     bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
-    PendingTerms pending; // { taxTerms, moduleTerms, scopes, mask, proposedAt, reviewedManifest }
+    Pending pending;      // { taxTerms, module: { target, scopes, fee, settings }, mask, proposedAt }
     bool hasRipeTerms;    // whether `pending` lands at the next buy
 }
 ```
@@ -145,7 +145,7 @@ function quoteBuy(address account, uint256 depositAmount) external view returns 
 function minDepositForBuy(uint256 price) external view returns (uint256);  // uses ripe queued terms
 function minDepositToHold(uint256 price) external view returns (uint256);  // terms in force
 function hasRipeTerms() external view returns (bool);
-function pendingTerms() external view returns (PendingTerms memory); // stored as-is
+function pending() external view returns (Pending memory); // stored as-is
 function isOperator(address operator) external view returns (bool);
 function debtOf(address account) external view returns (uint256);
 function withdrawableOf(address account) external view returns (uint256);
@@ -175,15 +175,16 @@ event DebtRepaid(address indexed account, uint256 amount);
 event Credited(address indexed account, uint256 amount);  // a push payment failed
 event Claimed(address indexed account, uint256 amount);   // and was later pulled
 
-event TermsProposed(TaxTerms taxTerms, ModuleTerms moduleTerms, uint8 mask);
-event TermsCancelled(uint8 mask);
-event TermsApplied(TaxTerms taxTerms, ModuleTerms moduleTerms, Manifest manifest, uint8 mask);
+event TermsProposed(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 mask);
+event TermsCancelled(uint16 mask);
+event TermsApplied(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 scopes, ModuleFee fee, uint16 mask);
 event ManagerSet(address indexed previous, address indexed next);
-event ScopesGranted(Manifest manifest, bool feeApplied, bool scopesQueued);
+event FeeAccepted(ModuleFee fee);
+event ScopesAccepted(uint16 scopes);
 
 event ModuleCallFailed(address indexed module, bytes4 selector); // an effect callback reverted, swallowed
 event ModuleDropped(address indexed module);                     // a queued module could not be installed
-event ScopesDropped(address indexed module, uint16 scopes);      // granted scopes the module no longer declares
+event ScopesDropped(address indexed module, uint16 scopes);      // accepted scopes the module no longer declares
 ```
 
 `OperatorSet` carries the `tenureId` it is scoped to: an approval dies with the

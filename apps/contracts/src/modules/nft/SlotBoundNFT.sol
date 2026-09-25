@@ -11,7 +11,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {ISlotModule, Scopes, SlotContext} from "../../interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../libraries/ScopesLib.sol";
 import {SlotFactory} from "../../SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../types/SlotTypes.sol";
 import {SlotInfo} from "../../slot/SlotViews.sol";
 import {SlotMath} from "../../libraries/SlotMath.sol";
 import {ISlotBoundNFT, ISlotOccupancy} from "./ISlotBoundNFT.sol";
@@ -192,14 +192,18 @@ contract SlotBoundNFT is
         return _uri;
     }
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function scopes(bytes calldata) external pure returns (uint16) {
         Scopes memory f;
         f.afterBuy = true;
         f.afterRelease = true;
         f.afterLiquidate = true;
         f.strict = true; // why this contract can hold real ownership state
-        o.scopes = ScopesLib.pack(f);
+        return ScopesLib.pack(f);
     }
+
+    /// @inheritdoc ISlotModule
+    /// @dev Takes nothing.
+    function fee(bytes calldata) external pure returns (ModuleFee memory) {}
 
     function checkSettings(bytes calldata) external view {}
 

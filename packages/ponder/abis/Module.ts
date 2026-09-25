@@ -1,7 +1,7 @@
 /**
  * The one function a module has to answer.
  *
- * `manifest(settings)` is what the slot reads and copies when a module attaches;
+ * `scopes(settings)` is what the slot reads and copies when a module attaches;
  * it is the only part of ISlotModule this indexer ever calls: everything else on
  * the interface is a callback the slot makes, never something we ask about.
  *
@@ -13,19 +13,9 @@
 export const SlotModuleAbi = [
   {
     type: "function",
-    name: "manifest",
+    name: "scopes",
     inputs: [{ name: "settings", type: "bytes" }],
-    outputs: [
-      {
-        name: "",
-        type: "tuple",
-        components: [
-          { name: "scopes", type: "uint16" },
-          { name: "feeBps", type: "uint16" },
-          { name: "feeRecipient", type: "address" },
-        ],
-      },
-    ],
+    outputs: [{ name: "", type: "uint16" }],
     stateMutability: "view",
   },
 ] as const;

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 import {ISlotModule, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
@@ -14,10 +16,10 @@ import {QuoteAboveOffer} from "../../src/periphery/book/OfferBookErrors.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../../src/errors/SlotErrors.sol";
 
-/// @dev A module whose manifest its author can rewrite between a proposal and
-///      the day it lands.
-contract FlipModule is ISlotModule {
-    uint16 public scopes = ScopesLib.AFTER_SETTLE;
+/// @dev A module whose scopes and fee its author can rewrite between a
+///      proposal and the day it lands.
+contract FlipModule is AskModule {
+    uint16 public scopeBits = ScopesLib.AFTER_SETTLE;
     uint16 public bps;
     address public to;
 
@@ -27,11 +29,11 @@ contract FlipModule is ISlotModule {
     }
 
     function setScopes(uint16 scopes_) external {
-        scopes = scopes_;
+        scopeBits = scopes_;
     }
 
-    function manifest(bytes calldata) external view returns (Manifest memory) {
-        return Manifest(scopes, bps, to);
+    function _ask(bytes calldata) internal view override returns (Ask memory) {
+        return Ask(scopeBits, bps, to);
     }
 
     function checkSettings(bytes calldata) external pure {}
@@ -129,9 +131,9 @@ contract AuditFixesTest is Test {
         return ModuleTerms({target: address(0), settings: ""});
     }
 
-    // ── 1. a queued module cannot change its manifest after it was reviewed ──
+    // ── 1. a queued module cannot change its scopes or fee after review ────
 
-    function test_AModuleThatMovesItsManifestAfterReviewIsDropped() public {
+    function test_AModuleThatMovesItsScopesOrFeeAfterReviewIsDropped() public {
         FlipModule m = new FlipModule();
         Slot s = _slot(manager, recipient, 500, 0, true, _noModule());
 
@@ -151,11 +153,11 @@ contract AuditFixesTest is Test {
         s.applyTerms();
 
         assertEq(s.module(), address(0), "the module is dropped, not installed");
-        assertEq(s.manifest().feeBps, 0, "and its fee never lands");
+        assertEq(s.fee().bps, 0, "and its fee never lands");
         assertFalse(s.scopes().strict, "nor the eviction veto it gave itself");
     }
 
-    function test_AModuleThatKeepsItsManifestStillAttaches() public {
+    function test_AModuleThatKeepsItsScopesAndFeeStillAttaches() public {
         FlipModule m = new FlipModule();
         m.set(1_000, author);
         Slot s = _slot(manager, recipient, 500, 0, true, _noModule());
@@ -170,7 +172,7 @@ contract AuditFixesTest is Test {
         s.applyTerms();
 
         assertEq(s.module(), address(m), "an honest module is unaffected");
-        assertEq(s.manifest().feeBps, 1_000);
+        assertEq(s.fee().bps, 1_000);
     }
 
     // ── 9. a fee is the recipient's business ────────────────────────────────
@@ -198,10 +200,10 @@ contract AuditFixesTest is Test {
         );
         skip(open.TERMS_DELAY());
         open.applyTerms();
-        assertEq(open.manifest().feeBps, 10_000, "100% is a choice, not a bug");
+        assertEq(open.fee().bps, 10_000, "100% is a choice, not a bug");
     }
 
-    function test_AFeeRiseCannotBeGrantedOnAFixedRecipientSlot() public {
+    function test_AFeeRiseCannotBeAcceptedOnAFixedRecipientSlot() public {
         FlipModule m = new FlipModule();
         Slot s = _slot(
             manager,
@@ -215,7 +217,7 @@ contract AuditFixesTest is Test {
         m.set(2_000, author);
         vm.prank(manager);
         vm.expectRevert(NotMutable.selector);
-        s.grant(Manifest(ScopesLib.AFTER_SETTLE, 2_000, author));
+        s.acceptFee(ModuleFee(2_000, author));
     }
 
     // ── 3. terms cannot land inside somebody else's buy ─────────────────────
@@ -238,7 +240,7 @@ contract AuditFixesTest is Test {
 
         assertFalse(rm.fired(), "the re-entrant proposal is refused");
         assertEq(s.taxRateBps(), 500, "so the rate bob bought under still holds");
-        assertEq(s.pendingTerms().mask, 0, "and nothing was queued behind him");
+        assertEq(s.pending().mask, 0, "and nothing was queued behind him");
     }
 
     // ── 4. an open window is never re-priced ───────────────────────────────

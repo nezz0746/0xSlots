@@ -6,7 +6,8 @@ import "../errors/SlotErrors.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Scopes} from "../interfaces/ISlotModule.sol";
 import {SlotAccounting} from "./SlotAccounting.sol";
-import {TaxTerms, ModuleTerms, Manifest, Terms, PendingTerms} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, ModuleFee, Terms, Pending, InstalledModule} from "../types/SlotTypes.sol";
+import {ModuleLib} from "../libraries/ModuleLib.sol";
 import {Settings, Occupancy} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 
@@ -23,6 +24,7 @@ struct SlotInfo {
     bool mutableModule;
     Terms terms;
     Scopes scopes;
+    ModuleFee fee;
     // occupancy
     address occupant;
     uint256 price;
@@ -36,7 +38,7 @@ struct SlotInfo {
     bool isVacant;
     bool isInsolvent;
     uint256 secondsUntilLiquidation;
-    PendingTerms pending;
+    Pending pending;
     /// Whether `pending` lands at the next buy.
     bool hasRipeTerms;
 }
@@ -56,6 +58,7 @@ struct SlotConstantsInfo {
     uint256 moduleGas;
     uint256 payoutGas;
     uint64 termsDelay;
+    uint256 maxMinRunway;
 }
 
 /**
@@ -68,7 +71,8 @@ struct SlotConstantsInfo {
  *      file is not `view`, it is in the wrong file.
  */
 abstract contract SlotViews is SlotAccounting {
-    using TermsLib for PendingTerms;
+    using TermsLib for Pending;
+    using ModuleLib for InstalledModule;
 
     /// @notice The whole slot, in one call.
     function getSlotInfo() external view returns (SlotInfo memory info) {
@@ -81,6 +85,7 @@ abstract contract SlotViews is SlotAccounting {
 
         info.terms = terms();
         info.scopes = scopes();
+        info.fee = _module().fee;
 
         Occupancy storage o = _occupancy();
         info.occupant = o.occupant;
@@ -96,7 +101,7 @@ abstract contract SlotViews is SlotAccounting {
         info.isInsolvent = isInsolvent();
         info.secondsUntilLiquidation = secondsUntilLiquidation();
 
-        info.pending = pendingTerms();
+        info.pending = pending();
         info.hasRipeTerms = hasRipeTerms();
     }
 
@@ -113,6 +118,7 @@ abstract contract SlotViews is SlotAccounting {
         c.moduleGas = MODULE_GAS;
         c.payoutGas = PAYOUT_GAS;
         c.termsDelay = TERMS_DELAY;
+        c.maxMinRunway = MAX_MIN_RUNWAY;
     }
 
     // ─── governance ─────────────────────────────────────────────────────────
@@ -141,7 +147,7 @@ abstract contract SlotViews is SlotAccounting {
 
     /// @notice Every term in force.
     function terms() public view returns (Terms memory) {
-        return Terms(_taxTerms(), _moduleTerms(), _manifest());
+        return Terms(_taxTerms(), _module().terms());
     }
 
     function taxTerms() external view returns (TaxTerms memory) {
@@ -149,11 +155,11 @@ abstract contract SlotViews is SlotAccounting {
     }
 
     function moduleTerms() external view returns (ModuleTerms memory) {
-        return _moduleTerms();
+        return _module().terms();
     }
 
     /// @notice What is queued. Only the fields named by `mask` are meaningful.
-    function pendingTerms() public view returns (PendingTerms memory) {
+    function pending() public view returns (Pending memory) {
         return _pending();
     }
 
@@ -170,40 +176,12 @@ abstract contract SlotViews is SlotAccounting {
     }
 
     function module() external view returns (address) {
-        return _moduleTerms().target;
+        return _module().target;
     }
 
-    /// @notice The module's manifest as this slot accepted it. What payouts and
-    ///         callbacks use.
-    function manifest() external view returns (Manifest memory) {
-        return _manifest();
-    }
-
-    /**
-     * @notice The slot's accepted manifest beside what the module declares today.
-     *
-     * @return accepted The slot's copy.
-     * @return declared The module's current answer.
-     * @return feeDiffers Accepting would change the fee now.
-     * @return scopesDiffer Accepting would queue new scopes. Always false on a
-     *         slot whose module is immutable, and when those scopes are queued.
-     *
-     * @dev Pending by comparison rather than by storage: the module publishes,
-     *      and a difference is a manifest waiting for the manager. Never reverts;
-     *      a module that will not answer, or answers out of range, reads as
-     *      declaring exactly what is accepted.
-     */
-    function grantStatus()
-        external
-        view
-        returns (Manifest memory accepted, Manifest memory declared, bool feeDiffers, bool scopesDiffer)
-    {
-        accepted = _manifest();
-        declared = accepted;
-        (bool ok, Manifest memory o) = _tryReadManifest(_moduleTerms());
-        if (!ok) return (accepted, declared, false, false);
-        declared = o;
-        (feeDiffers, scopesDiffer) = _manifestChanges(o);
+    /// @notice The module's fee as this slot accepted it. What payouts use.
+    function fee() external view returns (ModuleFee memory) {
+        return _module().fee;
     }
 
     // ─── occupancy ──────────────────────────────────────────────────────────
@@ -288,7 +266,7 @@ abstract contract SlotViews is SlotAccounting {
      */
     function minDepositForBuy(uint256 price_) public view returns (uint256) {
         TaxTerms memory r = _taxTerms();
-        PendingTerms storage q = _pending();
+        Pending storage q = _pending();
         if (q.isRipe(TERMS_DELAY)) {
             if (q.mask & TermsLib.TAX_RATE != 0) r.rateBps = q.taxTerms.rateBps;
             if (q.mask & TermsLib.MIN_RUNWAY != 0) r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;

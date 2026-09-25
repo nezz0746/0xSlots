@@ -7,7 +7,7 @@ import {SlotEscrow} from "./slot/SlotEscrow.sol";
 import {SlotAdmin} from "./slot/SlotAdmin.sol";
 import "./errors/SlotErrors.sol";
 import {Versioned} from "./utils/Versioned.sol";
-import {SlotInit, Manifest} from "./types/SlotTypes.sol";
+import {SlotInit, ModuleFee, InstalledModule} from "./types/SlotTypes.sol";
 import {ISlotModule} from "./interfaces/ISlotModule.sol";
 import {Settings} from "./slot/SlotStorage.sol";
 import {TermsLib} from "./libraries/TermsLib.sol";
@@ -68,7 +68,7 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         if (anyMutable != (p.manager != address(0))) revert InvalidManager();
 
         _validateRent(p.taxTerms, TermsLib.ALL);
-        Manifest memory declared = _validateModule(p.moduleTerms);
+        (uint16 declaredScopes, ModuleFee memory declaredFee) = _validateModule(p.moduleTerms);
 
         Settings storage st = _settings();
         st.currency = p.currency;
@@ -81,13 +81,11 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         _taxTerms().rateBps = p.taxTerms.rateBps;
         _taxTerms().minRunwaySeconds = p.taxTerms.minRunwaySeconds;
 
-        _moduleTerms().target = p.moduleTerms.target;
-        _moduleTerms().settings = p.moduleTerms.settings;
-
-        Manifest storage accepted = _manifest();
-        accepted.scopes = declared.scopes;
-        accepted.feeBps = declared.feeBps;
-        accepted.feeRecipient = declared.feeRecipient;
+        InstalledModule storage m = _module();
+        m.target = p.moduleTerms.target;
+        m.settings = p.moduleTerms.settings;
+        m.scopes = declaredScopes;
+        m.fee = declaredFee;
 
         _occupancy().lastSettled = uint64(block.timestamp);
 

@@ -9,7 +9,7 @@ import {
 } from "wagmi";
 import type {
   BuyParams,
-  Manifest,
+  ModuleFee,
   PostOfferParams,
   ProposeTermsParams,
   SlotInit,
@@ -363,9 +363,15 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     [exec, client],
   );
 
-  const grant = useCallback(
-    (slot: Address, expected: Manifest) =>
-      exec("Accept module update", () => client.grant(slot, expected)),
+  const acceptFee = useCallback(
+    (slot: Address, expected: ModuleFee) =>
+      exec("Accept module fee", () => client.acceptFee(slot, expected)),
+    [exec, client],
+  );
+
+  const acceptScopes = useCallback(
+    (slot: Address, expected: number) =>
+      exec("Accept module scopes", () => client.acceptScopes(slot, expected)),
     [exec, client],
   );
 
@@ -416,7 +422,8 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     // Manager
     proposeTerms,
     cancelTerms,
-    grant,
+    acceptFee,
+    acceptScopes,
     setManager,
     // Orders
     postOffer,

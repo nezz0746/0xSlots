@@ -7,7 +7,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SlotMath} from "../libraries/SlotMath.sol";
 import {SlotModules} from "./SlotModules.sol";
 import {ISlotModule, SlotContext} from "../interfaces/ISlotModule.sol";
-import {TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../types/SlotTypes.sol";
+import {TaxTerms, ModuleTerms, ModuleFee, Pending, InstalledModule} from "../types/SlotTypes.sol";
+import {ModuleLib} from "../libraries/ModuleLib.sol";
 import {Occupancy, Ledger} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
 import "../errors/SlotErrors.sol";
@@ -18,7 +19,8 @@ import "../errors/SlotErrors.sol";
  */
 abstract contract SlotAccounting is SlotModules {
     using SafeERC20 for IERC20;
-    using TermsLib for PendingTerms;
+    using TermsLib for Pending;
+    using ModuleLib for InstalledModule;
 
     event Settled(uint256 owed, uint256 paid, uint256 depositLeft);
     event TaxPaid(address indexed payer, uint256 owed, uint256 paid);
@@ -29,9 +31,9 @@ abstract contract SlotAccounting is SlotModules {
     /// @notice Debt from an earlier shortfall was paid, out of a buy, a buyout
     ///         or a top-up.
     event DebtRepaid(address indexed account, uint256 amount);
-    /// @notice Queued terms took effect. `taxTerms`, `moduleTerms` and `manifest`
-    ///         are what is now in force; `mask` says which terms changed.
-    event TermsApplied(TaxTerms taxTerms, ModuleTerms moduleTerms, Manifest manifest, uint8 mask);
+    /// @notice Queued terms took effect. `taxTerms`, `moduleTerms`, `scopes` and
+    ///         `fee` are what is now in force; `mask` says which terms changed.
+    event TermsApplied(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 scopes, ModuleFee fee, uint16 mask);
     /// @notice A queued module could not be attached and was dropped instead of
     ///         being allowed to block the transition.
     event ModuleDropped(address indexed module);
@@ -166,112 +168,68 @@ abstract contract SlotAccounting is SlotModules {
      *      never reach back into it, and no history needs keeping.
      */
     function _applyPending() internal returns (bool attached) {
-        PendingTerms storage q = _pending();
+        Pending storage q = _pending();
         if (!q.isRipe(TERMS_DELAY)) return false;
 
-        ModuleTerms memory next = q.moduleTerms;
-        ModuleTerms memory current = _moduleTerms();
         bool moduleChanges = q.mask & TermsLib.MODULE != 0;
-        // A queued module brings its own manifest, scopes included.
-        bool scopesChange = !moduleChanges && q.mask & TermsLib.SCOPES != 0;
-        address reading = moduleChanges ? next.target : scopesChange ? current.target : address(0);
+        // Never both: a queued module brings its own scopes.
+        bool scopesChange = q.mask & TermsLib.SCOPES != 0;
+        // What the manager reviewed: the whole proposed module, or only the
+        // scopes accepted from the current one. Copied out before the queue
+        // is emptied.
+        InstalledModule memory next = q.module;
+        InstalledModule storage live = _module();
 
         _flush();
 
-        // Read the module before the copy clears the queue. Re-read here rather
-        // than trusted from proposal or acceptance: a module could have been
+        // Read the module before anything moves. Re-read here rather than
+        // trusted from proposal or acceptance: a module could have been
         // upgraded in the interval, and the copy has to describe the code that
-        // will run.
-        //
-        // FAIL-OPEN, unlike `proposeTerms`: a module that stopped answering must
-        // not be able to wedge the queue shut. An incoming module that will not
-        // say what it wants is attached as nothing; accepted scopes it no
-        // longer declares are dropped.
+        // will run. FAIL-OPEN: a module that stopped answering must not be
+        // able to wedge the queue shut.
         bool ok;
-        Manifest memory declared;
-        if (reading != address(0)) {
-            (ok, declared) = _tryReadManifest(moduleChanges ? next : current);
-        }
-        uint16 acceptedScopes = q.scopes;
-        bytes32 reviewed = q.reviewedManifest;
-
-        // Told BEFORE the swap, while the slot's terms still describe the module
-        // being removed — so `ctx.moduleTerms` is its own configuration, and it can
-        // close whatever it opened at install. Never fatal: see
-        // {Scopes-onUninstall}.
-        if (moduleChanges && current.target != address(0)) {
-            _uninstall(current);
+        uint16 declaredScopes;
+        ModuleFee memory declaredFee;
+        if (moduleChanges) {
+            (ok, declaredScopes, declaredFee) = _tryReadModule(ModuleTerms(next.target, next.settings));
+        } else if (scopesChange) {
+            (ok, declaredScopes, ) = _tryReadModule(_module().terms());
         }
 
-        uint8 applied = q.applyQueued(_taxTerms(), _moduleTerms());
-        Manifest storage live = _manifest();
+        // The outgoing module is told BEFORE anything moves, while the record
+        // and the tax terms still describe the slot it served, so it is handed
+        // its own settings. Never fatal.
+        if (moduleChanges) _onUninstall();
+
+        uint16 applied = q.applyQueued(_taxTerms());
 
         if (moduleChanges) {
-            applied &= ~TermsLib.SCOPES;
-                        // Dropped rather than installed when the module no longer declares
+            // Dropped rather than installed when the module no longer declares
             // what the manager reviewed. The re-read is what makes an upgraded
             // module honest; the comparison is what stops it being a second,
-            // unreviewed proposal — the same test the scopes branch below runs.
-            if (next.target != address(0) && (!ok || _manifestHash(declared) != reviewed)) {
-                _moduleTerms().target = address(0);
-                delete _moduleTerms().settings;
+            // unreviewed proposal.
+            if (
+                next.target != address(0) &&
+                (!ok || declaredScopes != next.scopes || !ModuleLib.sameFee(declaredFee, next.fee))
+            ) {
                 emit ModuleDropped(next.target);
-                declared = Manifest(0, 0, address(0));
+                delete next;
             }
-            live.scopes = declared.scopes;
-            live.feeBps = declared.feeBps;
-            live.feeRecipient = declared.feeRecipient;
+            live.install(next);
+            attached = next.target != address(0);
         } else if (scopesChange) {
-            if (ok && declared.scopes == acceptedScopes) {
-                live.scopes = acceptedScopes;
+            if (ok && declaredScopes == next.scopes) {
+                live.scopes = next.scopes;
             } else {
                 applied &= ~TermsLib.SCOPES;
-                emit ScopesDropped(current.target, acceptedScopes);
+                emit ScopesDropped(live.target, next.scopes);
             }
         }
 
-        emit TermsApplied(_taxTerms(), _moduleTerms(), live, applied);
-
-        // Told to the caller rather than sent from here: a buy applies terms
-        // BEFORE it seats anybody, so a context built now would hand the
-        // incoming module the outgoing occupant. The caller tells it once the
-        // seat is settled.
-        attached = moduleChanges && _moduleTerms().target != address(0);
-    }
-
-    /**
-     * @dev Tell the outgoing module it is being removed, if it asked to be told.
-     *
-     *      Capped and swallowed even for a `strict` module, unlike every other
-     *      callback it declared. A module able to revert here is a module a manager
-     *      can never replace: the removal is the one action that must not
-     *      depend on the thing being removed.
-     */
-    function _uninstall(ModuleTerms memory outgoing) internal {
-        if (_manifest().scopes & F_ON_UNINSTALL == 0) return;
-        (bool ok, ) = outgoing.target.call{gas: MODULE_GAS}(
-            abi.encodeCall(
-                ISlotModule.onUninstall,
-                (_ctx(msg.sender, _occupancy().occupant, 0, 0))
-            )
-        );
-        if (!ok) emit ModuleCallFailed(outgoing.target, ISlotModule.onUninstall.selector);
-    }
-
-    /// @dev Tell a newly attached module, if it asked to be told. Only ever
-    ///      called where a seat is taken, never on an eviction.
-    function _onInstall(
-        address account,
-        uint256 price_,
-        uint256 depositAmount
-    ) internal {
-        _after(
-            F_ON_INSTALL,
-            abi.encodeCall(
-                ISlotModule.onInstall,
-                (_ctx(msg.sender, account, price_, depositAmount))
-            )
-        );
+        // A new module is told it was attached by the caller, not here: a buy
+        // applies terms BEFORE it seats anybody, so a context built now would
+        // hand the incoming module the outgoing occupant.
+        emit TermsApplied(_taxTerms(), live.terms(), live.scopes, live.fee, applied);
     }
 
     /**
@@ -356,11 +314,11 @@ abstract contract SlotAccounting is SlotModules {
         if (amount == 0) return;
         l.collectedTax = 0;
 
-        Manifest storage h = _manifest();
-        uint256 fee = Math.mulDiv(amount, h.feeBps, BASIS_POINTS);
+        InstalledModule storage m = _module();
+        uint256 fee = Math.mulDiv(amount, m.fee.bps, BASIS_POINTS);
         if (fee > 0) {
-            _payOrCredit(h.feeRecipient, fee);
-            emit ModuleFeePaid(_moduleTerms().target, h.feeRecipient, fee);
+            _payOrCredit(m.fee.recipient, fee);
+            emit ModuleFeePaid(m.target, m.fee.recipient, fee);
         }
 
         address recipient = _taxTerms().recipient;

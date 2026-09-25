@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -17,7 +19,7 @@ contract TT is ERC20 { constructor() ERC20("T","T"){} function mint(address t,ui
 
 /// @dev Base for the fixtures: `strict` is a constructor argument so the same
 ///      behaviour can be tested under both modes without duplicating a module.
-abstract contract Modal is ISlotModule {
+abstract contract Modal is AskModule {
     bool internal immutable _strict;
     constructor(bool strict_) { _strict = strict_; }
     function checkSettings(bytes calldata) external pure {}
@@ -36,7 +38,7 @@ abstract contract Modal is ISlotModule {
 contract FailingAfter is Modal {
     error Nope();
     constructor(bool s) Modal(s) {}
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true; f.afterRelease = true; f.afterLiquidate = true;
         f.strict = _strict;
@@ -51,7 +53,7 @@ contract FailingAfter is Modal {
 contract BlocksEviction is Modal {
     error Stuck();
     constructor(bool s) Modal(s) {}
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true; f.afterLiquidate = true; f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
@@ -66,7 +68,7 @@ contract HungryAfter is Modal {
     mapping(uint256 => uint256) public junk;
     uint256 public runs;
     constructor(bool s) Modal(s) {}
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true; f.strict = _strict;
         o.scopes = ScopesLib.pack(f);
@@ -188,7 +190,7 @@ contract StrictModulesTest is Test {
         assertFalse(s.getSlotInfo().scopes.strict, "attached lenient");
 
         h.flip();
-        assertTrue(ScopesLib.unpack(h.manifest("").scopes).strict, "the module now claims strict");
+        assertTrue(ScopesLib.unpack(h.scopes("")).strict, "the module now claims strict");
 
         // Still swallowed: the slot obeys its snapshot, not the live answer.
         _buy(s, alice, 1 ether, 1 ether);
@@ -197,12 +199,12 @@ contract StrictModulesTest is Test {
 }
 
 /// @dev Lenient until flipped, then claims strict.
-contract Flipper is ISlotModule {
+contract Flipper is AskModule {
     error Nope();
     bool public flipped;
     function flip() external { flipped = true; }
     function checkSettings(bytes calldata) external pure {}
-    function manifest(bytes calldata) external view returns (Manifest memory o) {
+    function _ask(bytes calldata) internal view override returns (Ask memory o) {
         Scopes memory f;
         f.afterBuy = true; f.strict = flipped;
         o.scopes = ScopesLib.pack(f);

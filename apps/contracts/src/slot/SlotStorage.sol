@@ -7,7 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {SlotConstants} from "./SlotConstants.sol";
 import {ISlotEvents} from "../interfaces/ISlotEvents.sol";
-import {TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../types/SlotTypes.sol";
+import {TaxTerms, InstalledModule, Pending} from "../types/SlotTypes.sol";
 import "../errors/SlotErrors.sol";
 
 /// @notice How the slot is governed. Fixed at birth except `manager`.
@@ -67,12 +67,9 @@ abstract contract SlotStorage is
     /// @custom:storage-location erc7201:slots.terms.tax
     bytes32 private constant TAX_TERMS =
         0x9ced1b0fc58b3fce277f0e66820898812467bac04a43b3f7986c99b5a310c200;
-    /// @custom:storage-location erc7201:slots.terms.module
+    /// @custom:storage-location erc7201:slots.module
     bytes32 private constant MODULE =
-        0x6e2c248c6ad3808f2026b5e56231dce3bac9bc41e931114e49cf410c3adfa200;
-    /// @custom:storage-location erc7201:slots.module.manifest
-    bytes32 private constant MANIFEST =
-        0x99b5ec0ea69a4a3ef3d4d212549c40394931a4a31277b53f45146f31040b4900;
+        0x1bc04e3ed307764572bc2803d48f03e84a9d12c612c8cd1e0b63fb12c6b2e200;
     /// @custom:storage-location erc7201:slots.pending
     bytes32 private constant PENDING =
         0x023ee9066f3621eea0977361a106ad8381ddaa4680323fb13aa296d0d00f5c00;
@@ -95,21 +92,16 @@ abstract contract SlotStorage is
         }
     }
 
-    function _moduleTerms() internal pure returns (ModuleTerms storage $) {
+    /// @dev The installed module: target, settings, and the scopes and fee
+    ///      this slot copied from it.
+    function _module() internal pure returns (InstalledModule storage $) {
         assembly ("memory-safe") {
             $.slot := MODULE
         }
     }
 
-    /// @dev The module's manifest as this slot accepted it.
-    function _manifest() internal pure returns (Manifest storage $) {
-        assembly ("memory-safe") {
-            $.slot := MANIFEST
-        }
-    }
-
     /// @dev The terms queued for the next buy, and the bookkeeping about them.
-    function _pending() internal pure returns (PendingTerms storage $) {
+    function _pending() internal pure returns (Pending storage $) {
         assembly ("memory-safe") {
             $.slot := PENDING
         }

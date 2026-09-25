@@ -22,7 +22,7 @@ forge test
 src/
 ├── Slot.sol, slot/        # one position: occupancy, escrow, tax, terms, module calls
 ├── SlotFactory.sol        # UUPS factory; deploys slots behind one beacon
-├── types/SlotTypes.sol    # SlotInit, TaxTerms, ModuleTerms, Manifest, Terms, PendingTerms
+├── types/SlotTypes.sol    # SlotInit, TaxTerms, ModuleTerms, ModuleFee, Terms, Pending
 ├── interfaces/            # ISlotModule, IDescribedModule, ISlotEvents
 ├── libraries/             # ScopesLib, TermsLib, SlotMath, ModuleSchemaLib
 ├── modules/               # MinimumTenureModule, AdLand, slot-bound NFTs
@@ -45,11 +45,11 @@ src/
 
 A slot installs at most one module, `ISlotModule`. `before` callbacks are views
 that may revert to refuse a buy or a reprice; `after` callbacks are gas-capped
-and swallowed unless the module declares `strict`. A module's `manifest`
-declares the scopes it needs and an optional fee on collected tax; the slot keeps
-its own copy, and the manager accepts changes with `grant`. Per-slot
-configuration is the slot's `settings` word, checked by the module's
-`checkSettings`.
+and swallowed unless the module declares `strict`. A module declares
+the scopes it needs (`scopes`) and an optional fee on collected tax (`fee`); the
+slot keeps its own copy, and the manager accepts changes with `acceptFee` and
+`acceptScopes`. Per-slot configuration is the slot's `settings` bytes, checked
+by the module's `checkSettings`.
 
 Shipped modules:
 

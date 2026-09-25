@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotInit, TaxTerms, ModuleTerms, Manifest, PendingTerms} from "../../src/types/SlotTypes.sol";
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../../src/types/SlotTypes.sol";
 import {ISlotModule, SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 /// @dev Refuses buys below a floor carried in a configuration far past one word.
-contract FloorModule is ISlotModule {
+contract FloorModule is AskModule {
     error BelowFloor(uint256 floor);
 
     struct Config {
@@ -25,7 +27,7 @@ contract FloorModule is ISlotModule {
         abi.decode(settings, (Config));
     }
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         o.scopes = ScopesLib.BEFORE_BUY;
     }
 
@@ -121,20 +123,20 @@ contract LargeSettingsTest is Test {
         ModuleTerms memory next = ModuleTerms({target: address(module), settings: _config(2 ether)});
 
         s.proposeTerms(none, next, s.TERM_MODULE());
-        PendingTerms memory p = s.pendingTerms();
-        assertEq(p.moduleTerms.settings, next.settings, "queued whole");
-        assertTrue(p.reviewedManifest != bytes32(0), "and the reviewed manifest pinned beside it");
+        Pending memory p = s.pending();
+        assertEq(p.module.settings, next.settings, "queued whole");
+        assertEq(p.module.scopes, ScopesLib.BEFORE_BUY, "and the reviewed scopes kept beside it");
 
         s.cancelTerms(s.TERM_MODULE());
-        p = s.pendingTerms();
-        assertEq(p.moduleTerms.settings.length, 0, "cancel empties the bytes");
-        assertEq(p.reviewedManifest, bytes32(0));
+        p = s.pending();
+        assertEq(p.module.settings.length, 0, "cancel empties the bytes");
+        assertEq(p.module.scopes, 0);
         assertEq(p.mask, 0);
 
         s.proposeTerms(none, next, s.TERM_MODULE());
         vm.warp(block.timestamp + s.TERMS_DELAY());
         s.applyTerms();
         assertEq(s.moduleTerms().settings, next.settings, "landed");
-        assertEq(s.pendingTerms().moduleTerms.settings.length, 0, "and the queue is empty");
+        assertEq(s.pending().module.settings.length, 0, "and the queue is empty");
     }
 }

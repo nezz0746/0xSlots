@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 
 import {SlotInfo} from "../../slot/SlotViews.sol";
-import {ModuleTerms, PendingTerms} from "../../types/SlotTypes.sol";
+import {ModuleTerms, Pending} from "../../types/SlotTypes.sol";
 
 /// @dev The slice of `Slot` AdLand calls. Narrow on purpose: declaring the
 ///      whole surface would recompile this on every unrelated change to it.
@@ -17,7 +17,7 @@ interface ISlotAd {
     function manager() external view returns (address);
     function module() external view returns (address);
     function moduleTerms() external view returns (ModuleTerms memory);
-    function pendingTerms() external view returns (PendingTerms memory);
+    function pending() external view returns (Pending memory);
     function buy(
         address account,
         uint256 selfAssessedPrice,
@@ -86,7 +86,7 @@ struct AdConfig {
 }
 
 /// @notice A key change waiting out its delay.
-struct Pending {
+struct PendingKey {
     address slot;
     /// @dev Zero means nothing proposed, so a timed change TO the zero address
     ///      is not expressible. Deliberate: retiring a key is `cancelSlot` and

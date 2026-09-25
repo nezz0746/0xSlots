@@ -139,14 +139,20 @@ describe("split and module offers", () => {
     });
   });
 
-  it("grant relays through the collective", async () => {
+  it("acceptFee and acceptScopes relay through the collective", async () => {
     const { client, last } = harness();
-    const offer = { scopes: 4, feeBps: 100, feeRecipient: ALICE };
-    await client.grant(COLLECTIVE, SLOT_A, offer);
+    const fee = { bps: 100, recipient: ALICE };
+    await client.acceptFee(COLLECTIVE, SLOT_A, fee);
     expect(last()).toMatchObject({
       address: COLLECTIVE,
-      functionName: "grant",
-      args: [SLOT_A, offer],
+      functionName: "acceptFee",
+      args: [SLOT_A, fee],
+    });
+    await client.acceptScopes(COLLECTIVE, SLOT_A, 4);
+    expect(last()).toMatchObject({
+      address: COLLECTIVE,
+      functionName: "acceptScopes",
+      args: [SLOT_A, 4],
     });
   });
 });

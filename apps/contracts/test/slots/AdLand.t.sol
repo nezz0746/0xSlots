@@ -103,7 +103,7 @@ contract AdLandTest is Test {
         adland.publish(address(slot), "alice's ad");
 
         // Detach the module, so no `afterBuy` can possibly run, then reseat.
-        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint8(8));
+        slot.proposeTerms(TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}), ModuleTerms({target: address(0), settings: ""}), uint16(8));
         vm.warp(block.timestamp + 8 days);
         _seat(bob, 1 ether);
 

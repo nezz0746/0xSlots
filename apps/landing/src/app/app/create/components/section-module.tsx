@@ -60,7 +60,7 @@ export function SectionModule() {
   // module itself, so a module picked by name deserves the same scrutiny as one
   // pasted in — arguably more, since nobody typed its address.
   const check = useModuleCheck(module, chainId);
-  const declared = useDeclaredManifest(module);
+  const declared = useDeclared(module);
 
   return (
     <FormField
@@ -123,7 +123,7 @@ export function SectionModule() {
                     ? unpackScopes(declared.scopes)
                     : check.data.scopes
                 }
-                fee={declared}
+                fee={declared?.fee}
                 className="mt-2"
               />
             )}
@@ -188,7 +188,7 @@ export function SectionModule() {
                 {check.data?.status === "not-a-app" && (
                   <p className="flex items-start gap-1.5 text-[10px] text-destructive">
                     <AlertCircle className="mt-0.5 size-3 shrink-0" />
-                    Not a module — no <code>manifest()</code>.
+                    Not a module — no <code>scopes()</code>.
                   </p>
                 )}
 
@@ -292,16 +292,26 @@ function ModuleDeclaredSettings({ module }: { module: string }) {
  * scopes and its fee, as the module itself declares them. The slot copies
  * this when the module attaches; nobody creating a slot chooses it.
  */
-function useDeclaredManifest(module: string) {
+function useDeclared(module: string) {
   const { chainId } = useChain();
   const data = useFormContext<CreateSlotFormValues>().watch("customSettings");
   const valid = isAddress(module);
-  return useReadContract({
+  const settings = (data || NO_SETTINGS) as Hex;
+  const scopes = useReadContract({
     address: valid ? (module as Address) : undefined,
     abi: minimumTenureModuleAbi,
-    functionName: "manifest",
-    args: [(data || NO_SETTINGS) as Hex],
+    functionName: "scopes",
+    args: [settings],
     chainId,
     query: { enabled: valid },
   }).data;
+  const fee = useReadContract({
+    address: valid ? (module as Address) : undefined,
+    abi: minimumTenureModuleAbi,
+    functionName: "fee",
+    args: [settings],
+    chainId,
+    query: { enabled: valid },
+  }).data;
+  return scopes === undefined || fee === undefined ? undefined : { scopes, fee };
 }

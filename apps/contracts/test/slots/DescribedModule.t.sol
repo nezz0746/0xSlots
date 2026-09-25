@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SlotInit, TaxTerms, ModuleTerms, Manifest} from "../../src/types/SlotTypes.sol";
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -15,10 +17,10 @@ import {MinimumTenureModule} from "../../src/modules/MinimumTenureModule.sol";
 
 /// @dev A module that works but describes nothing — the case a client must
 ///      degrade on rather than fail on.
-contract SilentModule is ISlotModule {
+contract SilentModule is AskModule {
     function checkSettings(bytes calldata) external pure {}
 
-    function manifest(bytes calldata) external pure returns (Manifest memory o) {
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
         Scopes memory f;
         f.beforeBuy = true;
         o.scopes = ScopesLib.pack(f);
