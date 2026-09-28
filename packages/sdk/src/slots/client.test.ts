@@ -1235,9 +1235,9 @@ describe("offer book", () => {
     ).rejects.toThrow(/expiry/);
   });
 
-  it("offerCost includes the bidder's debt on the slot", async () => {
-    const { client } = harness({ debtOf: 7n });
-    expect(await client.offerCost(SLOT, ACCOUNT, 100n, 5n)).toBe(112n);
+  it("offerCost is the price plus the deposit: debt ends with the tenure", async () => {
+    const { client } = harness({});
+    expect(await client.offerCost(SLOT, ACCOUNT, 100n, 5n)).toBe(105n);
   });
 
   it("authorizeOfferBook makes the book the occupant's operator", async () => {
@@ -1330,11 +1330,10 @@ describe("liquidateAndBuy", () => {
     selfAssessedPrice: 1_000n,
   };
 
-  it("batches liquidate and buy, pinning deposit plus debt", async () => {
+  it("batches liquidate and buy, pinning the deposit", async () => {
     const { client, writeContract } = harness({
       currency: ERC20,
       isInsolvent: true,
-      debtOf: 3n,
       allowance: 10n ** 30n,
     });
     await client.liquidateAndBuy(params);
@@ -1345,17 +1344,39 @@ describe("liquidateAndBuy", () => {
     );
     expect(liq.functionName).toBe("liquidate");
     expect(buy.functionName).toBe("buy");
-    expect(buy.args).toEqual([TAKER, 1_000n, 100n, 103n]);
+    expect(buy.args).toEqual([TAKER, 1_000n, 100n, 100n]);
   });
 
   it("refuses a native slot, whose buy cannot ride a multicall", async () => {
-    const { client, writeContract } = harness({ currency: ZERO, isInsolvent: true, debtOf: 0n });
+    const { client, writeContract } = harness({ currency: ZERO, isInsolvent: true });
     await expect(client.liquidateAndBuy(params)).rejects.toThrow(/native/);
     expect(writeContract).not.toHaveBeenCalled();
   });
 
   it("refuses a solvent occupant before sending", async () => {
-    const { client } = harness({ currency: ERC20, isInsolvent: false, debtOf: 0n });
+    const { client } = harness({ currency: ERC20, isInsolvent: false });
     await expect(client.liquidateAndBuy(params)).rejects.toThrow(/not insolvent/);
+  });
+});
+
+describe("the rest of the slot, lens and factory surface", () => {
+  it("applyTerms lands ripe terms on the slot", async () => {
+    const { client, writeContract } = harness({});
+    await client.applyTerms(SLOT);
+    expect(sent(writeContract, "applyTerms")).toMatchObject({ address: SLOT, args: [] });
+  });
+
+  it("slotConstants asks the lens about that slot", async () => {
+    const constants = { maxPrice: 1n, termScopes: 16 };
+    const { client, readContract } = harness({ getSlotConstants: constants });
+    expect(await client.slotConstants(SLOT)).toBe(constants);
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({ address: LENS, args: [SLOT] });
+  });
+
+  it("isSlot and slotCount read the factory", async () => {
+    const { client, readContract } = harness({ isSlot: true, slotCount: 3n });
+    expect(await client.isSlot(SLOT)).toBe(true);
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({ address: FACTORY, args: [SLOT] });
+    expect(await client.slotCount()).toBe(3n);
   });
 });

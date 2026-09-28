@@ -26,6 +26,7 @@ export {
   type ModuleMetadata,
   type ModuleFee,
   type ModuleUpdate,
+  type SlotConstants,
   type Scopes,
   type ModuleTerms,
   NO_MODULE,

@@ -394,6 +394,24 @@ export interface PostOfferParams {
   expiry: bigint;
 }
 
+/** Every constant a slot runs under, as `SlotLens.getSlotConstants` reports them. */
+export interface SlotConstants {
+  maxPrice: bigint;
+  maxTaxBps: bigint;
+  basisPoints: bigint;
+  month: bigint;
+  moduleCallbackGasLimit: bigint;
+  nativePayoutGasLimit: bigint;
+  termsDelay: bigint;
+  maxMinRunway: bigint;
+  /** `TERM_*` bits for `proposeTerms` and `cancelTerms`. */
+  termTaxRate: number;
+  termRecipient: number;
+  termMinRunway: number;
+  termModule: number;
+  termScopes: number;
+}
+
 /** What the attached module declares today, beside what the slot copied. */
 export interface ModuleUpdate {
   current: { scopes: number; fee: ModuleFee };
@@ -752,15 +770,9 @@ export class SlotsClient {
   }
 
   /**
-   * Tax `account` still owes from an occupancy their deposit could not cover.
-   *
-   * Charged on RE-ENTRY, which is the point: settling can only take what the
-   * deposit holds, and the remainder used to be written off — so running dry
-   * and retaking the vacated seat was the cheapest way to hold a slot. It is
-   * carried on the ACCOUNT, not on the seat, and it is part of
-   * {@link quoteBuy}'s answer for that account. Quote for the address being
-   * SEATED, not for the one paying: they need not be the same, and the debt
-   * follows the seat's occupant.
+   * Tax the occupant owes beyond an emptied deposit, this tenure. A top-up
+   * pays it first, and so does the price a buyer pays them. It ends with the
+   * tenure, so it is zero for anyone not seated and never part of a quote.
    */
   debtOf(slot: Address, account: Address): Promise<bigint> {
     return this.read<bigint>(slot, "debtOf", [account]);
@@ -1007,6 +1019,33 @@ export class SlotsClient {
   }
 
   /** Several slots, as of one block, in one call. Throws if any is not a slot. */
+  /**
+   * Every constant `slot` runs under, asked of the slot through the lens, so
+   * a beacon upgrade can never leave a client on old numbers.
+   */
+  slotConstants(slot: Address): Promise<SlotConstants> {
+    return this.readLens<SlotConstants>("getSlotConstants", [slot]);
+  }
+
+  /** Whether `slot` was created by this client's factory. */
+  isSlot(slot: Address): Promise<boolean> {
+    return this.publicClient.readContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "isSlot",
+      args: [slot],
+    });
+  }
+
+  /** How many slots this client's factory has created. */
+  slotCount(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "slotCount",
+    });
+  }
+
   async slotStates(slots: readonly Address[]): Promise<SlotState[]> {
     if (slots.length === 0) return [];
     const infos = await this.readLens<readonly SlotInfoResult[]>("getSlotInfos", [slots]);
@@ -1135,7 +1174,8 @@ export class SlotsClient {
    *
    * Amounts are capped by each slot's deposit rather than being its raw
    * `taxOwed`: an insolvent slot pays what escrow it has and the remainder is
-   * carried as debt against the occupant, never transferred to the recipient.
+   * carried as debt against the occupant for the rest of their tenure, never
+   * transferred to the recipient.
    */
   async simulateCollectAll(slots: readonly Address[]): Promise<bigint[]> {
     this.assertSomeSlots(slots, "simulateCollectAll");
@@ -1213,9 +1253,6 @@ export class SlotsClient {
     if (params.account === zeroAddress)
       throw new SlotsError("buy", "account must not be the zero address");
 
-    // Quoted for the account being SEATED. Debt lives on that account, and
-    // quoting for the payer instead would miss a debt the buy is about to
-    // charge — or invent one the seated account does not owe.
     const amount = await this.quoteBuy(
       params.slot,
       params.account,
@@ -1334,8 +1371,8 @@ export class SlotsClient {
    * the slot's `multicall`. ERC-20 slots only: `multicall` is not payable, so a
    * native slot needs `liquidate` then `buy`.
    *
-   * The vacated slot charges the deposit plus any debt `account` owes, and that
-   * figure is pinned as `maxPayment`.
+   * The vacated slot charges the deposit alone, and that figure is pinned as
+   * `maxPayment`.
    */
   async liquidateAndBuy(params: BuyParams): Promise<Hash> {
     this.assertPositive(params.depositAmount, "depositAmount");
@@ -1343,10 +1380,9 @@ export class SlotsClient {
     if (params.account === zeroAddress)
       throw new SlotsError("liquidateAndBuy", "account must not be the zero address");
 
-    const [currency, insolvent, debt] = await Promise.all([
+    const [currency, insolvent] = await Promise.all([
       this.currency(params.slot),
       this.isInsolvent(params.slot),
-      this.debtOf(params.slot, params.account),
     ]);
     if (isNativeCurrency(currency))
       throw new SlotsError(
@@ -1356,7 +1392,7 @@ export class SlotsClient {
     if (!insolvent)
       throw new SlotsError("liquidateAndBuy", "the occupant is not insolvent");
 
-    const amount = params.depositAmount + debt;
+    const amount = params.depositAmount;
     await this.ensureAllowance(currency, params.slot, amount);
     return this.write(params.slot, "multicall", [
       [
@@ -1494,17 +1530,18 @@ export class SlotsClient {
   }
 
   /**
-   * What accepting an offer at `price` and `deposit` would pull from `bidder`:
-   * the price, the deposit and any debt the bidder owes on this slot. The
-   * bidder's allowance to the book must cover it.
+   * What accepting an offer at `price` and `deposit` would pull from the
+   * bidder: the price and the deposit. The bidder's allowance to the book must
+   * cover it. `slot` and `bidder` are kept for callers written when a bidder's
+   * debt was part of the cost; debt now ends with the tenure.
    */
   async offerCost(
-    slot: Address,
-    bidder: Address,
+    _slot: Address,
+    _bidder: Address,
     price: bigint,
     deposit: bigint,
   ): Promise<bigint> {
-    return price + deposit + (await this.debtOf(slot, bidder));
+    return price + deposit;
   }
 
   /**
@@ -1666,7 +1703,8 @@ export class SlotsClient {
    * at once; tax collected so far is paid out at the old fee first. `expected`
    * is the fee the manager reviewed: the call reverts `FeeChanged` if the
    * module declares anything else by then, `NothingToAccept` if it is the
-   * current fee, and `NotMutable` for a rise on a slot with a fixed recipient.
+   * current fee, `NotMutable` for a rise or a new fee recipient on a slot with
+   * a fixed recipient, and `DebtOutstanding` while the occupant owes debt.
    */
   async acceptFee(slot: Address, expected: ModuleFee): Promise<Hash> {
     return this.write(slot, "acceptFee", [expected]);
@@ -1680,6 +1718,16 @@ export class SlotsClient {
    */
   async acceptScopes(slot: Address, expected: number): Promise<Hash> {
     return this.write(slot, "acceptScopes", [expected]);
+  }
+
+  /**
+   * Land ripe queued terms now, without waiting for a buy. The occupant's call
+   * while the slot is held; anyone's once it is vacant. Reverts
+   * `NoPendingTerms` when nothing is ripe and `DebtOutstanding` while the
+   * occupant owes debt — a top-up pays it off first.
+   */
+  async applyTerms(slot: Address): Promise<Hash> {
+    return this.write(slot, "applyTerms", []);
   }
 
   /** Hand the slot to another manager, immediately. Manager only. */
