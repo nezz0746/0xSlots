@@ -426,8 +426,8 @@ export const slot = onchainTable(
     moduleFeeRecipient: t.hex(),
     /// Every wei ever paid out as the module's fee.
     moduleFeesTotal: t.bigint().notNull(),
-    /// Every wei of debt repaid into collected tax: from a debtor's rebuy, out
-    /// of their buyout, or out of their top-up.
+    /// Every wei of debt repaid into collected tax, out of the occupant's
+    /// top-up or out of what a buyout paid them. Debt ends with the tenure.
     debtRepaidTotal: t.bigint().notNull(),
     /// Accepted when the module attached and changed only by a manager accepting
     /// new ones, at the next buy, so a module cannot widen its own reach

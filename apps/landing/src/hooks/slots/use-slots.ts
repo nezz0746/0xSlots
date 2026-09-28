@@ -255,21 +255,13 @@ export function useMinDepositForBuy(slot: Address | undefined, price: bigint) {
 /**
  * What taking the slot will actually charge, asked of the slot itself.
  *
- * NOT `price() + deposit`. The payment rule is the contract's promise and it
- * folds in the seated account's debt; a native slot checks `msg.value` for
- * EQUALITY, so a figure derived here rather than quoted would revert whenever
- * the two disagreed.
+ * NOT `price() + deposit` computed here. The payment rule is the contract's
+ * promise, and a native slot checks `msg.value` for EQUALITY, so a figure
+ * derived here rather than quoted would revert whenever the two disagreed.
  */
 export function useTakeQuote(
   slot: Address | undefined,
-  /**
-   * The address being SEATED, not the one paying.
-   *
-   * Both quotes include that account's debt, and the two need not be the
-   * same address — this app lets a buyer seat someone else. Quoting for the
-   * payer under-quotes a debtor's re-entry, and on a native slot, where
-   * `msg.value` is checked for EQUALITY, an under-quote is a revert.
-   */
+  /** The address being SEATED, not the one paying. */
   account: Address | undefined,
   depositAmount: bigint,
 ) {
@@ -291,28 +283,3 @@ export function useTakeQuote(
   });
 }
 
-/**
- * Tax `account` still owes this slot from an occupancy its deposit could not
- * cover.
- *
- * Settling can only take what the deposit holds; the shortfall used to be
- * written off, which made running dry and retaking the vacated seat the
- * cheapest way to hold a slot. It is carried on the ACCOUNT now and charged on
- * re-entry — so it is part of what taking this slot costs, and the person
- * paying it deserves to see it as its own line rather than folded into a total
- * that is quietly larger than the price plus the deposit.
- */
-export function useDebt(
-  slot: Address | undefined,
-  account: Address | undefined,
-) {
-  const { chainId } = useChain();
-  const client = useSlots();
-
-  return useQuery({
-    queryKey: ["slots", "debt", chainId, slot, account],
-    enabled: !!slot && !!account,
-    refetchInterval: 10_000,
-    queryFn: () => client.debtOf(slot!, account!),
-  });
-}

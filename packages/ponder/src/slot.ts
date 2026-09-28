@@ -978,7 +978,7 @@ ponder.on("Slot:ModuleFeePaid", async ({ event, context }) => {
   });
 });
 
-/** Debt repaid into collected tax, by a rebuy, a buyout or a top-up. */
+/** Debt repaid into collected tax, by a top-up or out of a buyout. */
 ponder.on("Slot:DebtRepaid", async ({ event, context }) => {
   const slotAddr = lower(event.log.address);
   const s = await loadSlot(context, slotAddr);

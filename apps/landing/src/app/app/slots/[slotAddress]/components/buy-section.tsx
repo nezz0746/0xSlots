@@ -14,7 +14,6 @@ import { PriceInput } from "@/components/ui/price-input";
 import { useChain } from "@/context/chain";
 import type { CurrencyMeta } from "@/hooks/slots/use-slots";
 import {
-  useDebt,
   useMinDepositForBuy,
   useTakeQuote,
 } from "@/hooks/slots/use-slots";
@@ -44,8 +43,7 @@ const ZERO = 0n;
  *
  * - The COST comes from `quoteBuy`, never from `price()`. An occupied slot
  *   charges the sitting occupant's asking price plus your deposit; a vacant one
- *   charges the deposit alone; and either way the seated account's debt is
- *   folded in. A native slot checks `msg.value` for EQUALITY, not sufficiency,
+ *   charges the deposit alone. A native slot checks `msg.value` for EQUALITY, not sufficiency,
  *   so a figure derived here rather than quoted reverts the moment the two
  *   disagree.
  *
@@ -218,9 +216,8 @@ export function BuySection({
   const bounds = useSlotBounds(slot);
   const overMaxPrice = bounds ? price > bounds.maxPrice : false;
 
-  // Declared before the quotes, because both are asked FOR this address: it is
-  // the one being seated, it is the one carrying debt, and it is not
-  // necessarily the one paying.
+  // Declared before the quote, because it is asked FOR this address: the one
+  // being seated, not necessarily the one paying.
   const seatAddress = (showSeat && seat.trim() ? seat.trim() : address) as
     | Address
     | undefined;
@@ -238,35 +235,17 @@ export function BuySection({
    */
   const { data: quote } = useTakeQuote(slot, quoteFor, deposit);
 
-  /**
-   * Tax the seated account still owes this slot from a previous occupancy.
-   *
-   * Inside both quotes already — this read is what lets it be shown as its own
-   * line. Folding it silently into the total would present someone paying off a
-   * default as someone paying a higher price, which is the one reading that
-   * makes the charge look like a bug.
-   */
-  const { data: debtOwed } = useDebt(slot, quoteFor);
-  const debt = debtOwed ?? ZERO;
-
   // Derived from the quote rather than from `price`, so it is right on all
   // paths without this panel having to know the rule: an eviction charges the
-  // deposit alone and the purchase half is simply zero. The debt comes out
-  // first — it is in the quote, and it is not part of what the occupant is
-  // being paid.
+  // deposit alone and the purchase half is simply zero.
   const quotedPurchase =
-    quote === undefined
-      ? ZERO
-      : quote - deposit - debt < ZERO
-        ? ZERO
-        : quote - deposit - debt;
+    quote === undefined ? ZERO : quote - deposit < ZERO ? ZERO : quote - deposit;
   // An offer pays what YOU named; a purchase pays what the occupant named.
   const purchase = isOffer ? price : quotedPurchase;
-  const total = isOffer ? price + deposit + debt : (quote ?? ZERO);
+  const total = isOffer ? price + deposit : (quote ?? ZERO);
 
   const usdPurchase = usdOfRaw(purchase);
   const usdDeposit = usdOfRaw(deposit);
-  const usdDebt = usdOfRaw(debt);
   const usdTotal = usdOfRaw(total);
 
   const ready =
@@ -515,25 +494,6 @@ export function BuySection({
           </span>
         </div>
 
-        {/* Its own line, never folded into the total. The seated account owes
-            this from an occupancy whose deposit ran dry here; the protocol
-            carries it rather than forgiving it, and charges it on re-entry. A
-            total silently larger than price + deposit reads as a bug, and the
-            person paying off their own default is entitled to know that is
-            what they are doing. */}
-        {debt > ZERO && (
-          <div className="flex justify-between text-xs">
-            <span className="text-amber-700 dark:text-amber-400">
-              Debt owed
-            </span>
-            <span className="tabular-nums text-amber-700 dark:text-amber-400">
-              {formatBalance(debt, decimals)} {symbol}
-              {usdDebt && (
-                <span className="opacity-70"> ≈ {usdDebt}</span>
-              )}
-            </span>
-          </div>
-        )}
         <div className="mt-1 flex justify-between border-t pt-1 text-sm font-bold">
           <span>Total</span>
           <span className="tabular-nums">
@@ -560,14 +520,6 @@ export function BuySection({
             : state.isVacant
               ? "The deposit alone — the slot is vacant."
               : "Your deposit, plus buying the occupant out at their own price."}
-          {debt > ZERO
-            ? ` Plus ${formatBalance(debt, decimals)} ${symbol} of tax ${
-                seatAddress?.toLowerCase() === address?.toLowerCase()
-                  ? "you still owe"
-                  : "that address still owes"
-              } from a previous occupancy here, which the slot charges on
-               re-entry.`
-            : ""}
         </p>
         {quote !== undefined && !isOffer ? (
           <p className="text-[10px] leading-snug text-muted-foreground">
