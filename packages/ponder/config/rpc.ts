@@ -163,7 +163,7 @@ const PUBLIC_RPCS: Record<string, string[]> = {
   // for it. base-sepolia.drpc.org is deliberately absent: its free tier timed
   // out on two of the three windows, which is a slow stall rather than a fast
   // error.
-  base_sepolia: ["https://base-sepolia.gateway.tenderly.co"],
+  base_sepolia: ["https://base-sepolia-rpc.publicnode.com"],
   // Vetted with the recipe above on 2026-09-07, 50 addresses at the tip:
   //
   //   sepolia.gateway.tenderly.co        ok at 25 and 10,000 blocks
@@ -173,7 +173,7 @@ const PUBLIC_RPCS: Record<string, string[]> = {
   //   sepolia.drpc.org                     no response
   //
   // So the same single-member tier as base-sepolia, for the same reason.
-  sepolia: ["https://sepolia.gateway.tenderly.co"],
+  sepolia: ["https://ethereum-sepolia-rpc.publicnode.com"],
 };
 
 const USE_PUBLIC_RPCS = process.env.PONDER_PUBLIC_RPCS === "1";
