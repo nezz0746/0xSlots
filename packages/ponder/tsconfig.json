@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["./src/**/*.ts", "./abis/**/*.ts", "./abis/**/*.json", "./*.ts"]
+  "include": ["./src/**/*.ts", "./abis/**/*.ts", "./abis/**/*.json", "./config/**/*.ts", "./*.ts"]
 }
