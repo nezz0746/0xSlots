@@ -323,7 +323,7 @@ export default function CreatePage() {
      * One branch, for every app. Minimum tenure used to have a second one
      * here — its duration was a pair of form fields converted to seconds at
      * submit — which meant the same `uint256 window` had two encoders and only
-     * the descriptor's was ever put to `checkSettings`. Empty is a legal
+     * the descriptor's was ever put to `validateSettings`. Empty is a legal
      * answer and stays one: a module that refuses it says so through the form,
      * which is what disarms the button.
      */

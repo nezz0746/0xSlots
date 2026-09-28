@@ -108,7 +108,7 @@ export const createSlotSchema = z
     /**
      * Whether the module has ACCEPTED the word above.
      *
-     * Written by the configuration form from `checkSettings` on chain —
+     * Written by the configuration form from `validateSettings` on chain —
      * the same function the slot runs at attach — and true when there is
      * nothing to configure. A boolean rather than a rule, because the rule
      * belongs to the module and this schema cannot know it: what counts as a

@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  findKnownModule,
-  knownModules,
-  minimumTenureModuleAbi,
-} from "@0xslots/contracts/slots";
+import { findKnownModule, knownModules } from "@0xslots/contracts/slots";
 import { unpackScopes, NO_SETTINGS } from "@0xslots/sdk/slots";
 import { AlertCircle, Loader2, Plug } from "lucide-react";
 import Image from "next/image";
@@ -29,6 +25,7 @@ import {
 import { useChain } from "@/context/chain";
 import { useModuleCheck } from "@/hooks/use-module-check";
 import { useModuleDefinition } from "@/hooks/use-module-schema";
+import { moduleAbi } from "@/lib/module-abi";
 import { AddressInput } from "../address-input";
 import type { CreateSlotFormValues } from "../schema";
 import { ModuleSettings } from "./module-settings";
@@ -91,10 +88,14 @@ export function SectionModule() {
                   form.setValue("moduleMode", "none", { shouldValidate: true });
                   field.onChange("");
                 } else if (v === "custom") {
-                  form.setValue("moduleMode", "custom", { shouldValidate: true });
+                  form.setValue("moduleMode", "custom", {
+                    shouldValidate: true,
+                  });
                   field.onChange("");
                 } else {
-                  form.setValue("moduleMode", "known", { shouldValidate: true });
+                  form.setValue("moduleMode", "known", {
+                    shouldValidate: true,
+                  });
                   field.onChange(v);
                 }
               }}
@@ -119,9 +120,7 @@ export function SectionModule() {
             {check.data?.status === "ok" && (
               <ModuleScopeRow
                 scopes={
-                  declared
-                    ? unpackScopes(declared.scopes)
-                    : check.data.scopes
+                  declared ? unpackScopes(declared.scopes) : check.data.scopes
                 }
                 fee={declared?.fee}
                 className="mt-2"
@@ -225,9 +224,9 @@ export function SectionModule() {
 /**
  * A module's own configuration form, from its own declaration.
  *
- * Read from `definition()`: the type comes from the schema's `x-abi`, the
- * label, unit and bounds from the module's published constants, and the verdict
- * from simulating `checkSettings` — the same function the slot will run.
+ * Read from `metadata()`: the type comes from the schema's `x-abi`, the
+ * label, unit and bounds from the same document, and the verdict from
+ * `validateSettings` — the same function the slot will run.
  *
  * A module that publishes nothing renders nothing, which is most of them and is
  * why this is silent rather than empty. There is no second, hand-written form
@@ -240,7 +239,9 @@ function ModuleDeclaredSettings({ module }: { module: string }) {
   const [values, setValues] = useState<Record<string, string>>({});
 
   // One configuration per slot: a module that takes none renders nothing.
-  const config = definition?.settings?.fields.length ? definition.settings : undefined;
+  const config = definition?.settings?.fields.length
+    ? definition.settings
+    : undefined;
 
   /**
    * Clear the settings when the ADDRESS changes, so ones meant for one module are
@@ -258,8 +259,10 @@ function ModuleDeclaredSettings({ module }: { module: string }) {
     if (lastModule.current === module) return;
     lastModule.current = module;
     setValues({});
-    setValue("customSettings", "");
-  }, [module, setValue]);
+    // A module with a form reports its own defaults as it mounts, and child
+    // effects run first — clearing here would overwrite them.
+    if (!config) setValue("customSettings", "");
+  }, [module, config, setValue]);
 
   // A module that asks for nothing cannot be misconfigured, so the gate opens —
   // and it must open again when the form moves from a module that asked to one
@@ -299,7 +302,7 @@ function useDeclared(module: string) {
   const settings = (data || NO_SETTINGS) as Hex;
   const scopes = useReadContract({
     address: valid ? (module as Address) : undefined,
-    abi: minimumTenureModuleAbi,
+    abi: moduleAbi,
     functionName: "scopes",
     args: [settings],
     chainId,
@@ -307,11 +310,13 @@ function useDeclared(module: string) {
   }).data;
   const fee = useReadContract({
     address: valid ? (module as Address) : undefined,
-    abi: minimumTenureModuleAbi,
+    abi: moduleAbi,
     functionName: "fee",
     args: [settings],
     chainId,
     query: { enabled: valid },
   }).data;
-  return scopes === undefined || fee === undefined ? undefined : { scopes, fee };
+  return scopes === undefined || fee === undefined
+    ? undefined
+    : { scopes, fee };
 }

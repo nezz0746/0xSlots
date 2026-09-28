@@ -35,8 +35,8 @@ import {
  *
  * Everything on a card is read from the chain at the address, not from this
  * module: the callbacks from `scopes()`, the fee from `fee()`, the configuration from
- * `definition()`, and whether that configuration is optional from
- * `checkSettings` itself. The name and the sentence are the only editorial
+ * `metadata()`, and whether that configuration is optional from
+ * `validateSettings` itself. The name and the sentence are the only editorial
  * content, and they are the only part that could ever be out of date.
  */
 export default function ModulesPage() {
@@ -158,7 +158,9 @@ function ModuleCard({
 }) {
   const check = useModuleCheck(module.address, chainId);
   const { definition } = useModuleDefinition(module.address);
-  const config = definition?.settings?.fields.length ? definition.settings : undefined;
+  const config = definition?.settings?.fields.length
+    ? definition.settings
+    : undefined;
 
   return (
     <article className="flex flex-col gap-3 border p-4">
@@ -269,7 +271,7 @@ function ModuleCard({
  * What a module takes, as it describes itself.
  *
  * `x-abi` gives the type, the schema gives the label, the unit and the range,
- * and `checkSettings` on empty settings gives the one thing neither can
+ * and `validateSettings` on empty settings gives the one thing neither can
  * express: whether a slot may attach this module without configuring it.
  */
 function ConfigRow({
@@ -279,7 +281,7 @@ function ConfigRow({
   address: Address;
   config: ModuleSettingsSpec;
 }) {
-  const zero = useSettingsCheck(address, EMPTY_SETTINGS, 0);
+  const zero = useSettingsCheck(address, EMPTY_SETTINGS, { delayMs: 0 });
 
   return (
     <div className="border-l-2 border-muted pl-3 text-xs">

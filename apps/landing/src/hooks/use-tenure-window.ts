@@ -4,15 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { type Address, decodeAbiParameters, type Hex, zeroAddress } from "viem";
 import { usePublicClient } from "wagmi";
 import { useChain } from "@/context/chain";
-import { parseDefinition } from "./use-module-schema";
+import { parseDefinition, SEMANTIC } from "./use-module-schema";
 
 /** The tag a module puts on whichever of its fields is a tenure window. */
-const TENURE = "minimum-tenure";
 
 const abi = [
   {
     type: "function",
-    name: "uiMetadata",
+    name: "metadata",
     stateMutability: "pure",
     inputs: [],
     outputs: [{ type: "string" }],
@@ -29,7 +28,7 @@ const abi = [
  *
  * What takes a round trip is WHETHER the number means a tenure at all, and
  * where inside the configuration it sits. Both come from the module's own
- * `definition()`: the field carrying `x-semantic: "minimum-tenure"` is the
+ * `metadata()`: the field carrying `x-semantic: "minimum-tenure"` is the
  * window, whatever that module chose to call it. By tag rather than by address,
  * so somebody else's implementation of the same rule reads correctly without
  * this file learning about it.
@@ -58,12 +57,14 @@ export function useTenureWindow(
         const raw = await publicClient!.readContract({
           address: module!,
           abi,
-          functionName: "uiMetadata",
+          functionName: "metadata",
         });
         const config = parseDefinition(raw)?.settings;
         if (!config) return null;
 
-        const index = config.fields.findIndex((f) => f.semantic === TENURE);
+        const index = config.fields.findIndex(
+          (f) => f.semantic === SEMANTIC.tenure,
+        );
         if (index < 0) return null;
 
         const values = decodeAbiParameters(

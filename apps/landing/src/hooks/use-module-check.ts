@@ -1,14 +1,11 @@
 "use client";
 
-import { minimumTenureModuleAbi } from "@0xslots/contracts/slots";
 import { type ModuleFee, unpackScopes, NO_SETTINGS } from "@0xslots/sdk/slots";
 import { type Address, getAddress, isAddress } from "viem";
 import { useBytecode, useReadContracts } from "wagmi";
 import { useSlotsFactory } from "@/hooks/slots/use-slots";
-import {
-  describeScopes,
-  type ScopeSet,
-} from "@/lib/module-scopes";
+import { moduleAbi } from "@/lib/module-abi";
+import { describeScopes, type ScopeSet } from "@/lib/module-scopes";
 
 /**
  * The successor to the old `useModuleCheck`.
@@ -38,14 +35,11 @@ import {
  */
 
 /**
- * Any module, read through one module's generated ABI.
- *
- * `scopes` and `fee` are `ISlotModule`, so every module answers them with the
- * same selectors and shapes — which is why the probe works on an address this
- * module has never heard of. Taken from the package rather than written here so
- * the tuple cannot drift from the struct the slot decodes.
+ * Any module, read through `ISlotModule`'s own `scopes` and `fee` — the same
+ * selectors and shapes on every module, which is why the probe works on an
+ * address this app has never heard of.
  */
-const moduleProbeAbi = minimumTenureModuleAbi;
+const moduleProbeAbi = moduleAbi;
 
 export type ModuleCheckStatus = "ok" | "inert" | "not-a-app" | "no-code";
 

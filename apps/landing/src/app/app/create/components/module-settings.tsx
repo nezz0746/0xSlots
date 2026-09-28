@@ -6,11 +6,16 @@ import type { Hex } from "viem";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  defaultValues,
   describeSeconds,
+  describeSettings,
   EMPTY_SETTINGS,
   encodeSettings,
-  type ModuleSettingsSpec,
+  isFilled,
   type ModuleField,
+  type ModuleSettingsSpec,
+  FORMAT,
+  type SettingsEntry,
   useSettingsCheck,
 } from "@/hooks/use-module-schema";
 import { TIME_MULTIPLIERS, type TimeUnit, timeUnits } from "../sections";
@@ -25,7 +30,7 @@ import { TIME_MULTIPLIERS, type TimeUnit, timeUnits } from "../sections";
  *
  * Two things are separated on purpose. The BOUNDS came from the schema and are
  * advice: they shape the control and catch a wrong value early. The VERDICT
- * comes from `checkSettings` on the chain, and it is the authority — the
+ * comes from `validateSettings` on the chain, and it is the authority — the
  * same function the slot runs at attach. When they disagree the chain wins, and
  * the message says what the chain said. That split matters more now that every
  * value travels as a string: a range on a string is not something a schema
@@ -46,9 +51,31 @@ export function ModuleSettings({
   /** The chain's answer, for whoever owns the submit button. */
   onVerdict?: (ok: boolean) => void;
 }) {
-  const filled = config.fields.every((f) => (values[f.name] ?? "").trim());
-  const encoded = filled ? encodeSettings(config, values) : null;
-  const check = useSettingsCheck(moduleAddress, encoded);
+  // What is on screen: the module's defaults, overlaid with what was typed.
+  // A select always shows a value, so the form has to hold that value too.
+  const shown = { ...defaultValues(config), ...values };
+  const filled = isFilled(config, shown);
+  const encoded = filled ? encodeSettings(config, shown) : null;
+  const check = useSettingsCheck(moduleAddress, encoded, {
+    refusals: config.refusals,
+  });
+
+  /**
+   * The defaults, reported up once per module.
+   *
+   * Without this the caller holds no settings until somebody edits a field,
+   * so a form showing "Open" and a minimum tenure of 0 would submit empty
+   * bytes that only happen to mean the same thing — and a module whose
+   * defaults are not zero would be attached with settings nobody saw.
+   */
+  const reported = useRef<string | null>(null);
+  const change = useRef(onChange);
+  change.current = onChange;
+  useEffect(() => {
+    if (reported.current === moduleAddress) return;
+    reported.current = moduleAddress;
+    change.current(shown, encoded);
+  }, [moduleAddress, shown, encoded]);
 
   /**
    * Whether leaving this empty is allowed — asked, not assumed.
@@ -59,7 +86,10 @@ export function ModuleSettings({
    * tenure rule and skips it when the settings are empty; the standalone module
    * refuses.
    */
-  const zeroCheck = useSettingsCheck(moduleAddress, EMPTY_SETTINGS, 0);
+  const zeroCheck = useSettingsCheck(moduleAddress, EMPTY_SETTINGS, {
+    refusals: config.refusals,
+    delayMs: 0,
+  });
 
   /**
    * The verdict, reported up.
@@ -91,9 +121,11 @@ export function ModuleSettings({
   }, [verdict]);
 
   const set = (name: string, next: string) => {
-    const merged = { ...values, [name]: next };
-    const all = config.fields.every((f) => (merged[f.name] ?? "").trim());
-    onChange(merged, all ? encodeSettings(config, merged) : null);
+    const merged = { ...shown, [name]: next };
+    onChange(
+      merged,
+      isFilled(config, merged) ? encodeSettings(config, merged) : null,
+    );
   };
 
   return (
@@ -102,7 +134,7 @@ export function ModuleSettings({
         <FieldControl
           key={field.name}
           field={field}
-          value={values[field.name] ?? ""}
+          value={shown[field.name] ?? ""}
           onChange={(next) => set(field.name, next)}
           invalid={!!check.reason}
         />
@@ -110,11 +142,15 @@ export function ModuleSettings({
 
       <Verdict
         {...check}
+        reason={
+          filled && !encoded
+            ? "A value does not fit its type — a number, a 0x address, or a name of at most 32 bytes."
+            : check.reason
+        }
         empty={!filled}
         optional={zeroCheck.ok}
         optionalKnown={!zeroCheck.checking}
-        fields={config.fields}
-        values={values}
+        entries={encoded ? describeSettings(config, encoded) : null}
       />
     </div>
   );
@@ -169,12 +205,23 @@ function FieldControl({
         </select>
       ) : isSeconds ? (
         <DurationInput seconds={value} onChange={onChange} />
+      ) : field.format === FORMAT.bytes32String ? (
+        <Input
+          id={`app-${field.name}`}
+          value={value}
+          placeholder="none — or text, up to 32 bytes"
+          maxLength={32}
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={invalid ? true : undefined}
+        />
       ) : (
         <Input
           id={`app-${field.name}`}
           value={value}
           placeholder={field.param.type.startsWith("uint") ? "0" : "0x…"}
-          inputMode={field.param.type.startsWith("uint") ? "numeric" : undefined}
+          inputMode={
+            field.param.type.startsWith("uint") ? "numeric" : undefined
+          }
           onChange={(e) => onChange(e.target.value)}
           aria-invalid={invalid ? true : undefined}
         />
@@ -291,8 +338,7 @@ function Verdict({
   empty,
   optional,
   optionalKnown,
-  fields,
-  values,
+  entries,
 }: {
   checking: boolean;
   ok: boolean;
@@ -300,8 +346,7 @@ function Verdict({
   empty: boolean;
   optional: boolean;
   optionalKnown: boolean;
-  fields: ModuleField[];
-  values: Record<string, string>;
+  entries: SettingsEntry[] | null;
 }) {
   if (empty)
     return (
@@ -310,7 +355,7 @@ function Verdict({
           ? "Reading what this module needs…"
           : optional
             ? "Optional — left empty, the module runs without it."
-            : "Required by this app. The slot refuses an attach without it."}
+            : "Required by this module. The slot refuses an attach without it."}
       </p>
     );
 
@@ -334,15 +379,10 @@ function Verdict({
     return (
       <p className="flex items-center gap-1.5 text-[10px] text-green-600">
         <Check className="size-3" />
-        {fields
-          .map((f) =>
-            f.unit === "seconds"
-              ? describeSeconds(values[f.name])
-              : f.enumLabels[Number(values[f.name] ?? 0)] ||
-                (values[f.name] ?? ""),
-          )
-          .join(", ")}
-        , accepted by the app.
+        {(entries ?? [])
+          .map((e) => `${e.title}: ${e.display || "none"}`)
+          .join(" · ")}{" "}
+        — accepted by the module.
       </p>
     );
 

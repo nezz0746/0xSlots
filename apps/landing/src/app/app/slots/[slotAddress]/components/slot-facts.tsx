@@ -14,6 +14,10 @@ import type { CurrencyMeta } from "@/hooks/slots/use-slots";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
 import { useNow } from "@/hooks/use-duration";
 import type { LiveAccrual } from "@/hooks/use-live-accrual";
+import {
+  describeSettings,
+  useModuleDefinition,
+} from "@/hooks/use-module-schema";
 import { useTenureWindow } from "@/hooks/use-tenure-window";
 import { cn } from "@/lib/utils";
 import { HoldingCost } from "./holding-cost";
@@ -176,6 +180,13 @@ export function SlotDetails({
   const { chainId } = useChain();
   const attached = state.module !== zeroAddress;
   const known = findKnownModule(chainId, attached ? state.module : undefined);
+  // What the module says it is, and what this slot configured it with — both
+  // read from the module's own on-chain metadata, labelled by its schema.
+  const { definition } = useModuleDefinition(attached ? state.module : "");
+  const configured =
+    attached && definition?.settings?.fields.length
+      ? describeSettings(definition.settings, state.settings)
+      : null;
   const tenureSeconds = useTenureWindow(
     attached ? state.module : undefined,
     attached ? state.settings : undefined,
@@ -303,7 +314,7 @@ export function SlotDetails({
         >
           {attached ? (
             <span className="inline-flex items-center gap-1.5">
-              {known?.name ?? "unrecognised"}
+              {definition?.title || known?.name || "unrecognised"}
               <AddressText address={state.module} />
             </span>
           ) : (
@@ -344,6 +355,22 @@ export function SlotDetails({
         {attached && (
           <div className="w-full space-y-1">
             <ModuleScopeRow scopes={state.scopes} fee={state.fee} />
+            {configured && configured.length > 0 && (
+              <dl className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                {configured.map((e) => (
+                  <div
+                    key={e.name}
+                    className="flex gap-1.5"
+                    title={e.description}
+                  >
+                    <dt className="text-muted-foreground">{e.title}</dt>
+                    <dd className={e.display ? "" : "text-muted-foreground"}>
+                      {e.display || "none"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
                 Unrecognised module — read its code before buying.

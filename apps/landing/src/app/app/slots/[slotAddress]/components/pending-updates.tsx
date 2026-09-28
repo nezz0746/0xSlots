@@ -1,12 +1,18 @@
 "use client";
 
 import { findKnownModule } from "@0xslots/contracts/slots";
-import { packScopes, type SlotState, TERMS, unpackScopes } from "@0xslots/sdk/slots";
+import {
+  packScopes,
+  type SlotState,
+  TERMS,
+  unpackScopes,
+} from "@0xslots/sdk/slots";
 import { Info, Loader2 } from "lucide-react";
 import { type Address, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
+import { useModuleSummary } from "@/hooks/use-module-schema";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { cn } from "@/lib/utils";
 import { describeScopes } from "@/lib/module-scopes";
@@ -49,9 +55,29 @@ export function eligibleIn(appliesAt: bigint, nowSeconds: number): string {
   return `${Math.ceil(left / 86400)}d`;
 }
 
-function moduleLabel(chainId: number, module: Address): string {
+function moduleLabel(
+  chainId: number,
+  module: Address,
+  summary?: string | null,
+): string {
   if (module === zeroAddress) return "none";
-  return findKnownModule(chainId, module)?.name ?? truncateAddress(module);
+  return (
+    summary || findKnownModule(chainId, module)?.name || truncateAddress(module)
+  );
+}
+
+/**
+ * Both sides of a module change in the modules' own words, read from their
+ * on-chain metadata — so a change that keeps the module and only moves its
+ * settings (a longer tenure, stricter moderation) is visible as such.
+ */
+function useModuleSummaries(state: SlotState) {
+  const current = useModuleSummary(state.module, state.settings);
+  const next = useModuleSummary(
+    state.pending.moduleTerms.module,
+    state.pending.moduleTerms.settings,
+  );
+  return { current, next };
 }
 
 export type PendingRow = {
@@ -79,6 +105,7 @@ export type PendingRow = {
 export function pendingChanges(
   state: SlotState,
   chainId: number,
+  modules: { current?: string | null; next?: string | null } = {},
 ): PendingRow[] {
   const rows: PendingRow[] = [];
   const { pending } = state;
@@ -89,7 +116,8 @@ export function pendingChanges(
       label: "Tax rate",
       current: `${formatBps(Number(state.taxRateBps))}`,
       next: `${formatBps(pending.taxTerms.rateBps)} / mo`,
-      direction: BigInt(pending.taxTerms.rateBps) > state.taxRateBps ? "up" : "down",
+      direction:
+        BigInt(pending.taxTerms.rateBps) > state.taxRateBps ? "up" : "down",
     });
   }
   if (pending.hasRecipient) {
@@ -112,8 +140,8 @@ export function pendingChanges(
     rows.push({
       dimension: "module",
       label: "Module",
-      current: moduleLabel(chainId, state.module),
-      next: moduleLabel(chainId, pending.moduleTerms.module),
+      current: moduleLabel(chainId, state.module, modules.current),
+      next: moduleLabel(chainId, pending.moduleTerms.module, modules.next),
     });
   }
   if (pending.hasScopes) {
@@ -213,7 +241,8 @@ export function PendingTermsBanner({
    */
   const skew = useChainTimeSkew();
 
-  const rows = pendingChanges(state, chainId);
+  const modules = useModuleSummaries(state);
+  const rows = pendingChanges(state, chainId, modules);
   if (rows.length === 0) return null;
 
   const chainNow = nowSeconds + skew;
@@ -308,7 +337,8 @@ export function QueuedTermsControls({
   const { chainId } = useChain();
   const skew = useChainTimeSkew();
 
-  const rows = pendingChanges(state, chainId);
+  const modules = useModuleSummaries(state);
+  const rows = pendingChanges(state, chainId, modules);
   if (rows.length === 0) return null;
 
   const chainNow = nowSecondsOf(skew);
