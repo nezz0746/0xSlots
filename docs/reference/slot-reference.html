@@ -262,7 +262,7 @@
       <tr><td class="sig"><b>afterBuy</b> · <b>afterRelease</b> · <b>afterLiquidate</b> · <b>afterSettle</b><span class="args">(ctx)</span></td><td>Told after the fact. 500k gas, always in full (<code>ModuleGasTooLow</code> otherwise); a revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
       <tr><td class="sig"><b>onInstall</b><span class="args">(ctx)</span></td><td>Attached. A revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
       <tr><td class="sig"><b>onUninstall</b><span class="args">(ctx)</span></td><td>Being replaced or removed. Always capped, a revert always ignored.</td></tr>
-      <tr><td class="sig"><b>uiMetadata</b><span class="args">()</span><span class="tag">optional</span></td><td>JSON for UIs (<code>IModuleMetadata</code>). The slot never calls it.</td></tr>
+      <tr><td class="sig"><b>metadata</b><span class="args">()</span><span class="tag">optional</span></td><td>JSON for UIs (<code>IModuleMetadata</code>). The slot never calls it.</td></tr>
     </tbody>
   </table>
 </section>

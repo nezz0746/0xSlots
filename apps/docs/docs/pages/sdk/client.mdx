@@ -136,7 +136,7 @@ const settings = toHex(7n * 24n * 3600n, { size: 32 });  // abi.encode(uint256 w
 await client.validateSettings(module, settings); // { ok: true } | { ok: false, reason }
 await client.readScopes(module, settings);       // what the module asks, today
 await client.readFee(module, settings);
-await client.moduleMetadata(module);             // parsed uiMetadata() JSON, or null
+await client.moduleMetadata(module);             // parsed metadata() JSON, or null
 ```
 
 `validateSettings` runs the same check the slot runs at proposal and resolves with

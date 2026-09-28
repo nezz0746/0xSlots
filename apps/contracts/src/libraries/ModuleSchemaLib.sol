@@ -5,14 +5,14 @@ import {LibString} from "solady/utils/LibString.sol";
 
 /**
  * @title ModuleSchemaLib
- * @notice Builds the JSON document a module answers `uiMetadata()` with.
+ * @notice Builds the JSON document a module answers `metadata()` with.
  *
  * @dev ── Why a module writes JSON at all ──────────────────────────────────
  *
  *      So that an application can render a configuration form for a module
  *      nobody wrote a UI for, by reading the chain and nothing else. JSON
  *      Schema is the format with libraries behind it — `react-jsonschema-form`,
- *      JSONForms, AJV — so `uiMetadata().settings` is handed to one of those
+ *      JSONForms, AJV — so `metadata().settings` is handed to one of those
  *      untouched, and the work is already done.
  *
  *      Built here rather than stored as a literal because the BOUNDS are the
@@ -34,7 +34,7 @@ import {LibString} from "solady/utils/LibString.sol";
  *      the chain is the authority. A form shows the hint; the module gives the
  *      verdict.
  *
- *      ── The conventions, and there are only three ───────────────────────
+ *      ── The conventions ─────────────────────────────────────────────────
  *
  *      `x-abi` is an ORDERED list of `{name, type}` — viem's own
  *      `AbiParameter[]`, so a client encodes with one call. Ordered because
@@ -48,6 +48,17 @@ import {LibString} from "solady/utils/LibString.sol";
  *      `x-semantic` tags a field with a behaviour a client may recognise —
  *      `"minimum-tenure"` — so a module can say "this slot protects its
  *      occupant for 7 days" without knowing which module is enforcing it.
+ *
+ *      `x-format` says how a value is typed and read, beyond its ABI type:
+ *      `"bytes32-string"` is text packed left-aligned into 32 bytes. It is
+ *      presentation, so a client that does not know a format shows the raw
+ *      value and loses nothing but comfort.
+ *
+ *      `errors`, beside `settings`, lists what `validateSettings` may revert
+ *      with: an error signature, a sentence to show, and the unit its
+ *      arguments are in. A revert carries only a selector and its arguments;
+ *      this is what lets a client name and word a refusal from a module it
+ *      has never seen, where `{0}`, `{1}` in the message are the arguments.
  */
 library ModuleSchemaLib {
     using LibString for string;
@@ -73,6 +84,18 @@ library ModuleSchemaLib {
         string[] enumLabels;
         /// `x-semantic`. May be empty.
         string semantic;
+        /// `x-format`. May be empty.
+        string format;
+    }
+
+    /// @notice One way `validateSettings` may refuse, and how to say it.
+    struct Refusal {
+        /// The error's signature — `"TenureTooLong(uint256)"`.
+        string signature;
+        /// What to show. `{0}`, `{1}` are the error's arguments.
+        string message;
+        /// The unit every argument is in — `"seconds"`. May be empty.
+        string unit;
     }
 
     // ─── declaring a value ──────────────────────────────────────────────────
@@ -147,6 +170,12 @@ library ModuleSchemaLib {
         return f;
     }
 
+    /// @notice How the value is typed and read — `"bytes32-string"`.
+    function readAs(Field memory f, string memory fmt) internal pure returns (Field memory) {
+        f.format = fmt;
+        return f;
+    }
+
     /// @notice Move the floor — a rule that is required on one host and
     ///         optional on another shares everything but this.
     function from(Field memory f, uint256 min) internal pure returns (Field memory) {
@@ -217,7 +246,7 @@ library ModuleSchemaLib {
     // ─── the document ───────────────────────────────────────────────────────
 
     /**
-     * @notice Everything a module answers `uiMetadata()` with, in one call.
+     * @notice Everything a module answers `metadata()` with, in one call.
      *
      * @param title What the module is called.
      * @param description One line about what it does.
@@ -245,6 +274,62 @@ library ModuleSchemaLib {
                 : string.concat(',"settings":', _configSchema(title, fields, optional)),
             "}"
         );
+    }
+
+    /// @notice A way `validateSettings` refuses, worded for a person.
+    function refusal(
+        string memory signature,
+        string memory message
+    ) internal pure returns (Refusal memory r) {
+        r.signature = signature;
+        r.message = message;
+    }
+
+    /// @notice The unit a {refusal}'s arguments are in.
+    function inUnit(Refusal memory r, string memory unit) internal pure returns (Refusal memory) {
+        r.unit = unit;
+        return r;
+    }
+
+    function refusals(Refusal memory a) internal pure returns (Refusal[] memory out) {
+        out = new Refusal[](1);
+        out[0] = a;
+    }
+
+    function refusals(
+        Refusal memory a,
+        Refusal memory b
+    ) internal pure returns (Refusal[] memory out) {
+        out = new Refusal[](2);
+        (out[0], out[1]) = (a, b);
+    }
+
+    function refusals(
+        Refusal memory a,
+        Refusal memory b,
+        Refusal memory c
+    ) internal pure returns (Refusal[] memory out) {
+        out = new Refusal[](3);
+        (out[0], out[1], out[2]) = (a, b, c);
+    }
+
+    /// @notice The whole document, with the ways its settings may be refused.
+    function describe(
+        string memory title,
+        string memory description,
+        string memory docs,
+        Field[] memory fields,
+        bool optional,
+        Refusal[] memory errors
+    ) internal pure returns (string memory out) {
+        out = describe(title, description, docs, fields, optional);
+        if (errors.length == 0) return out;
+        // Reopen the object just written and append beside `settings`.
+        out = string.concat(LibString.slice(out, 0, bytes(out).length - 1), ',"errors":[');
+        for (uint256 i; i < errors.length; ++i) {
+            out = string.concat(out, i == 0 ? "" : ",", _refusal(errors[i]));
+        }
+        out = string.concat(out, "]}");
     }
 
     /// @notice A module that takes no configuration at all.
@@ -302,6 +387,16 @@ library ModuleSchemaLib {
         out = string.concat(out, "]}");
     }
 
+    function _refusal(Refusal memory r) private pure returns (string memory out) {
+        out = string.concat(
+            '{"signature":', r.signature.escapeJSON(true), ',"message":', r.message.escapeJSON(true)
+        );
+        if (bytes(r.unit).length != 0) {
+            out = string.concat(out, ',"x-unit":', r.unit.escapeJSON(true));
+        }
+        out = string.concat(out, "}");
+    }
+
     function _property(Field memory f) private pure returns (string memory out) {
         out = string.concat(
             f.name.escapeJSON(true),
@@ -326,6 +421,9 @@ library ModuleSchemaLib {
         }
         if (bytes(f.semantic).length != 0) {
             out = string.concat(out, ',"x-semantic":', f.semantic.escapeJSON(true));
+        }
+        if (bytes(f.format).length != 0) {
+            out = string.concat(out, ',"x-format":', f.format.escapeJSON(true));
         }
         if (f.enumLabels.length != 0) {
             out = string.concat(out, ',"x-enum-labels":[');

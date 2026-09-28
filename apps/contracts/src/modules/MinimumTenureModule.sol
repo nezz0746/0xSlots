@@ -132,13 +132,17 @@ contract MinimumTenureModule is MinimumTenure, ISlotModule, IModuleMetadata {
      *      Not optional here, unlike on AdLand. A tenure module with no window is
      *      a module that does nothing, and {tenureOf} refuses empty settings.
      */
-    function uiMetadata() external pure returns (string memory) {
+    function metadata() external pure returns (string memory) {
         return ModuleSchemaLib.describe(
             "Minimum tenure",
             "Protects an occupant from being bought out for a fixed window after they take the slot.",
             "",
             ModuleSchemaLib.list(tenureField("window", "uint256")),
-            false // a tenure module with no window does nothing
+            false, // a tenure module with no window does nothing
+            ModuleSchemaLib.refusals(
+                ModuleSchemaLib.refusal("TenureNotConfigured()", "Set a window above zero."),
+                tenureTooLong()
+            )
         );
     }
 

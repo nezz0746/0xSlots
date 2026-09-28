@@ -25,7 +25,7 @@ struct ModuleTerms {
     /// The module contract. Zero for a slot with no module, in which case `settings`
     /// is empty too.
     address module;
-    /// This slot's configuration for the module, as the module's `uiMetadata()`
+    /// This slot's configuration for the module, as the module's `metadata()`
     /// says to encode it. Opaque to the slot, handed to every callback.
     bytes settings;
 }

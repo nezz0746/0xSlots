@@ -852,6 +852,13 @@ export const adLandAbi = [
   },
   {
     type: 'function',
+    inputs: [],
+    name: 'metadata',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'moderationOf',
     outputs: [
@@ -1069,13 +1076,6 @@ export const adLandAbi = [
     name: 'transferOwnership',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'uiMetadata',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -1368,7 +1368,7 @@ export const adLandAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  */
 export const adLandAddress = {
-  31337: '0x74689fd663503fa619490Dc3Cd8E59B0CB37c713',
+  31337: '0x3e0B5E2bC2f895eB79d6461Ab8afB2A3e742Cc74',
   84532: '0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B',
   11155111: '0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B',
 } as const
@@ -1633,6 +1633,13 @@ export const minimumTenureModuleAbi = [
   },
   {
     type: 'function',
+    inputs: [],
+    name: 'metadata',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [
       {
         name: '',
@@ -1738,13 +1745,6 @@ export const minimumTenureModuleAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'uiMetadata',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
     name: 'validateSettings',
     outputs: [],
@@ -1781,7 +1781,7 @@ export const minimumTenureModuleAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
  */
 export const minimumTenureModuleAddress = {
-  31337: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
+  31337: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
   84532: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
   11155111: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
 } as const
@@ -2185,7 +2185,7 @@ export const offerBookAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  */
 export const offerBookAddress = {
-  31337: '0xa1AaceF14fe29Fd6f30496a80383A1DD87429f95',
+  31337: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
   84532: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
   11155111: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
 } as const
@@ -3483,7 +3483,7 @@ export const slotAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
  */
 export const slotAddress = {
-  31337: '0xd24e03b69Ed80Bbf6Bb320F826CFF21d203452A1',
+  31337: '0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1',
   84532: '0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1',
   11155111: '0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1',
 } as const
@@ -4632,7 +4632,7 @@ export const slotBoundNftFactoryAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  */
 export const slotBoundNftFactoryAddress = {
-  31337: '0x49f182E33e6f803A3f74F3EB4FD6b23A6811C526',
+  31337: '0x037DB7DaD5D186123D415A17bcC16352bB2D7952',
   84532: '0x930B546078c110E43Bbf8A6c18651120c8a7b820',
   11155111: '0x930B546078c110E43Bbf8A6c18651120c8a7b820',
 } as const
@@ -6479,7 +6479,7 @@ export const slotCollectiveAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x0409B7539f5bd5701771551F361CFA415b547453)
  */
 export const slotCollectiveAddress = {
-  31337: '0xE339626ee3ee6781847aaC705d0Bb4Ee5aC2786D',
+  31337: '0x53AB9d5234EbD176E694F83B60adD598773889cF',
   84532: '0x0409B7539f5bd5701771551F361CFA415b547453',
   11155111: '0x0409B7539f5bd5701771551F361CFA415b547453',
 } as const
@@ -6767,7 +6767,7 @@ export const slotCollectiveFactoryAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  */
 export const slotCollectiveFactoryAddress = {
-  31337: '0x479763e6b4041aDB4d9a302CCbB8CB17a7BFe69A',
+  31337: '0xE864B582062658Ba02951c6816B8ecE16Ac68082',
   84532: '0x019a3a241e5326e79Bc31F1F2008866737468e5d',
   11155111: '0x019a3a241e5326e79Bc31F1F2008866737468e5d',
 } as const
@@ -7069,7 +7069,7 @@ export const slotFactoryAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  */
 export const slotFactoryAddress = {
-  31337: '0xce69CCac3c7bb8d03a37Fa6519b2c8893CbB85C8',
+  31337: '0xE3619826C1036Cc79F18f113b5590d390920A4bD',
   84532: '0xc696f795584cFbbC837B04A69746E8DAC2b1B76c',
   11155111: '0xc696f795584cFbbC837B04A69746E8DAC2b1B76c',
 } as const
@@ -7600,7 +7600,7 @@ export const slotLensAbi = [
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
  */
 export const slotLensAddress = {
-  31337: '0x2F228AA7383d6D12B4160251F67b2010C134f614',
+  31337: '0x2cd862b7a1A1Ed93dbeC60B5cd6eeBcfDaE8654e',
   84532: '0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2',
   11155111: '0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2',
 } as const
@@ -7817,52 +7817,52 @@ export const slotsTestTokenConfig = {
  */
 export const deployBlocks = {
   AdLand: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   MinimumTenureModule: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   OfferBook: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   Slot: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotBoundNFTFactory: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotBoundNFTWrapper: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotCollective: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotCollectiveFactory: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotFactory: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotLens: {
-    '31337': 3,
+    '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },

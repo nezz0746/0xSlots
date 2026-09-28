@@ -173,7 +173,7 @@ abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, I
      *      `pure`, so it says what the module CAN enforce. What a given slot is
      *      configured with is `Slot.moduleTerms().settings`.
      */
-    function uiMetadata() external pure returns (string memory) {
+    function metadata() external pure returns (string memory) {
         return ModuleSchemaLib.describe(
             "AdLand",
             "An advertising space: the occupant publishes a creative, the manager may screen it, and a minimum tenure can protect them while it runs.",
@@ -192,9 +192,15 @@ abstract contract AdLandModule is AdLandCreatives, MinimumTenure, ISlotModule, I
                 ModuleSchemaLib.value("key", "bytes32", "Key")
                     .explain(
                         "A registry name this slot asks for. Claimed first come, with claimKey."
-                    ).means("adland-key")
+                    ).means("adland-key").readAs("bytes32-string")
             ),
-            true // a slot may configure none of them
+            true, // a slot may configure none of them
+            ModuleSchemaLib.refusals(
+                tenureTooLong(),
+                ModuleSchemaLib.refusal(
+                    "MalformedSettings()", "These values are not a configuration this module reads."
+                )
+            )
         );
     }
 }

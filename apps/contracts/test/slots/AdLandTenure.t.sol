@@ -307,7 +307,7 @@ contract AdLandTenureTest is Test, SlotConstants {
      *         three fields a slot registers together, in encoding order.
      */
     function test_TheDefinitionDescribesTheWholeConfiguration() public view {
-        string memory d = adland.uiMetadata();
+        string memory d = adland.metadata();
 
         assertEq(vm.parseJsonString(d, ".settings.title"), "AdLand");
         assertFalse(
@@ -333,7 +333,7 @@ contract AdLandTenureTest is Test, SlotConstants {
 
     /// @notice Every value is a string, so no client rounds a `uint64`.
     function test_EveryValueIsAStringWithAPattern() public view {
-        string memory d = adland.uiMetadata();
+        string memory d = adland.metadata();
         assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.type"), "string");
         assertEq(vm.parseJsonString(d, ".settings.properties.tenureWindow.pattern"), "^[0-9]+$");
         assertEq(vm.parseJsonString(d, ".settings.properties.key.pattern"), "^0x[0-9a-fA-F]{64}$");
@@ -351,17 +351,17 @@ contract AdLandTenureTest is Test, SlotConstants {
 
         assertEq(
             vm.parseJsonString(
-                adland.uiMetadata(), ".settings.properties.tenureWindow[\'x-semantic\']"
+                adland.metadata(), ".settings.properties.tenureWindow[\'x-semantic\']"
             ),
             "minimum-tenure"
         );
         assertEq(
             vm.parseJsonString(
-                standalone.uiMetadata(), ".settings.properties.window[\'x-semantic\']"
+                standalone.metadata(), ".settings.properties.window[\'x-semantic\']"
             ),
             "minimum-tenure"
         );
-        assertFalse(vm.keyExistsJson(standalone.uiMetadata(), '.settings["x-settings-encoding"]'));
+        assertFalse(vm.keyExistsJson(standalone.metadata(), '.settings["x-settings-encoding"]'));
     }
 
     /**
@@ -374,7 +374,7 @@ contract AdLandTenureTest is Test, SlotConstants {
     function test_TheSchemaCannotDriftFromTheCheck() public {
         uint256 max = vm.parseUint(
             vm.parseJsonString(
-                adland.uiMetadata(), ".settings.properties.tenureWindow[\'x-maximum\']"
+                adland.metadata(), ".settings.properties.tenureWindow[\'x-maximum\']"
             )
         );
         assertEq(max, adland.MAX_TENURE());

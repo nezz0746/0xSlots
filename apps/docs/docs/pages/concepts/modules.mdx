@@ -223,13 +223,13 @@ Proposing `ModuleTerms` with a zero `module` removes the module.
 ## Describing a module
 
 A module is just an address; on its own it says nothing to a UI. It may
-*optionally* implement `IModuleMetadata`, whose `uiMetadata()` returns a JSON
+*optionally* implement `IModuleMetadata`, whose `metadata()` returns a JSON
 document: a title, a description, and a JSON Schema for its settings — enough
 for a client to render a configuration form for a module nobody wrote a screen
 for.
 
 <Callout type="info">
-The slot never reads `uiMetadata()`. It is self-reported and unbounded, and the
+The slot never reads `metadata()`. It is self-reported and unbounded, and the
 moment the protocol trusted it a label would become an attack surface on the
 path liquidation depends on. A UI may say "this module *says* it takes a 7-day
 window"; authority is always the slot's copy of the scopes and fee, and the module's

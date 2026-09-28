@@ -1287,12 +1287,12 @@ describe("module reads", () => {
         "x-abi": [{ name: "window", type: "uint256" }],
       },
     };
-    const { client } = harness({ uiMetadata: JSON.stringify(definition) });
+    const { client } = harness({ metadata: JSON.stringify(definition) });
     expect(await client.moduleMetadata(MODULE)).toEqual(definition);
   });
 
   it("moduleMetadata is null when the module answers something that is not JSON", async () => {
-    const { client } = harness({ uiMetadata: "not json" });
+    const { client } = harness({ metadata: "not json" });
     expect(await client.moduleMetadata(MODULE)).toBeNull();
   });
 

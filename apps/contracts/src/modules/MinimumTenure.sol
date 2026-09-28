@@ -45,6 +45,7 @@ import {SlotContext} from "../interfaces/ISlotModule.sol";
  */
 abstract contract MinimumTenure {
     using ModuleSchemaLib for ModuleSchemaLib.Field;
+    using ModuleSchemaLib for ModuleSchemaLib.Refusal;
 
     /// @dev Long enough for any real lease, short enough that
     ///      `occupiedSince + window` cannot overflow a uint64 timestamp.
@@ -137,6 +138,14 @@ abstract contract MinimumTenure {
         return ModuleSchemaLib.number(name, abiType, "Minimum tenure", "seconds", 1, MAX_TENURE)
             .explain("How long an occupant is protected from being bought out.")
             .means("minimum-tenure");
+    }
+
+    /// @dev How this rule refuses a window, worded for a client. Shared with
+    ///      every host that reuses {tenureField}.
+    function tenureTooLong() internal pure returns (ModuleSchemaLib.Refusal memory) {
+        return ModuleSchemaLib.refusal(
+                "TenureTooLong(uint256)", "Too long. The most this module allows is {0}."
+            ).inUnit("seconds");
     }
 
     /// @notice The escrow a buy must post to fund a whole window at `price`.

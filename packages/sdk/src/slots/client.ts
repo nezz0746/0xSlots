@@ -308,7 +308,7 @@ export interface SlotTerms {
 }
 
 /**
- * `uiMetadata()`, declared here rather than taken from a generated ABI.
+ * `metadata()`, declared here rather than taken from a generated ABI.
  *
  * Optional surface that any module may implement, so borrowing one module's
  * ABI to call it on another would tie this to whichever module happened to be
@@ -317,7 +317,7 @@ export interface SlotTerms {
 const moduleMetadataAbi = [
   {
     type: "function",
-    name: "uiMetadata",
+    name: "metadata",
     stateMutability: "pure",
     inputs: [],
     outputs: [{ type: "string" }],
@@ -350,7 +350,7 @@ export interface ModuleSettingsSchema {
   "x-abi": ModuleSettingsParam[];
 }
 
-/** What a module says it is. `IModuleMetadata.uiMetadata`, parsed. */
+/** What a module says it is. `IModuleMetadata.metadata`, parsed. */
 export interface ModuleMetadata {
   version: number;
   title: string;
@@ -966,7 +966,7 @@ export class SlotsClient {
   }
 
   /**
-   * What a module says it is (`IModuleMetadata.uiMetadata`), parsed.
+   * What a module says it is (`IModuleMetadata.metadata`), parsed.
    *
    * `null` for a module that does not describe itself, that reverts, or that
    * answers with something that is not JSON — all of which are legal. The
@@ -981,7 +981,7 @@ export class SlotsClient {
       const raw = await this.publicClient.readContract({
         address: module,
         abi: moduleMetadataAbi,
-        functionName: "uiMetadata",
+        functionName: "metadata",
       });
       return JSON.parse(raw) as ModuleMetadata;
     } catch {

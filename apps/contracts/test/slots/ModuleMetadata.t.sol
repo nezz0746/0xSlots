@@ -6,6 +6,7 @@ import {AskModule, Ask} from "../utils/AskModule.sol";
 import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
 
 import {Test} from "forge-std/Test.sol";
+import {LibString} from "solady/utils/LibString.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Slot} from "../../src/Slot.sol";
@@ -37,10 +38,10 @@ contract SilentModule is AskModule {
     function onInstall(SlotContext calldata) external {}
 }
 
-/// @dev A module whose `uiMetadata()` reverts. It must still be usable — the
+/// @dev A module whose `metadata()` reverts. It must still be usable — the
 ///      discovery layer is advisory and cannot be load-bearing.
 contract LyingModule is SilentModule, IModuleMetadata {
-    function uiMetadata() external pure returns (string memory) {
+    function metadata() external pure returns (string memory) {
         revert("no");
     }
 }
@@ -90,7 +91,7 @@ contract DescribedModuleTest is Test {
     // ── the definition itself ───────────────────────────────────────────────
 
     function test_TheTenureModuleDescribesItself() public view {
-        string memory d = tenure.uiMetadata();
+        string memory d = tenure.metadata();
         assertEq(vm.parseJsonUint(d, ".version"), 1, "the document's own version");
         assertEq(vm.parseJsonString(d, ".title"), "Minimum tenure");
         assertEq(
@@ -108,7 +109,7 @@ contract DescribedModuleTest is Test {
     ///      same constant the check reads — which is what stops a form and a
     ///      revert disagreeing.
     function test_TheDefinitionNamesAShapeNotAWindow() public view {
-        string memory d = tenure.uiMetadata();
+        string memory d = tenure.metadata();
 
         assertEq(vm.parseJsonString(d, ".settings[\'x-abi\'][0].name"), "window");
         assertEq(
@@ -130,7 +131,7 @@ contract DescribedModuleTest is Test {
     /// @notice Settings are `abi.encode` of the `x-abi` fields, so a client
     ///         encodes and attaches, with no flag to consult.
     function test_SettingsAreTheEncodedFields() public view {
-        string memory d = tenure.uiMetadata();
+        string memory d = tenure.metadata();
         assertFalse(vm.keyExistsJson(d, '.settings["x-settings-encoding"]'));
         assertEq(
             vm.parseJsonString(d, ".settings.properties.window[\'x-semantic\']"),
@@ -141,9 +142,23 @@ contract DescribedModuleTest is Test {
 
     /// @notice Two deployments of this module are indistinguishable, which is
     ///         the point: nothing about a slot's terms lives in the address.
+    /// @notice A refusal is named and worded in the document itself, so a
+    ///         client can explain a module it has never seen.
+    function test_TheDocumentListsHowSettingsAreRefused() public view {
+        string memory json = tenure.metadata();
+        assertTrue(LibString.contains(json, '"errors":[{"signature":"TenureNotConfigured()"'));
+        assertTrue(
+            LibString.contains(
+                json,
+                '{"signature":"TenureTooLong(uint256)","message":"Too long. The most this module allows is {0}.","x-unit":"seconds"}'
+            )
+        );
+        assertTrue(LibString.endsWith(json, "]}"), "still one closed object");
+    }
+
     function test_EveryDeploymentDescribesItselfIdentically() public {
         MinimumTenureModule other = new MinimumTenureModule();
-        assertEq(tenure.uiMetadata(), other.uiMetadata());
+        assertEq(tenure.metadata(), other.metadata());
     }
 
     /// @notice The window comes from the slot's `settings` and nowhere else.
@@ -154,7 +169,7 @@ contract DescribedModuleTest is Test {
 
     // ── the rule that keeps it safe ──────────────────────────────────────────
 
-    /// @notice The protocol must never read this. A module whose `uiMetadata()`
+    /// @notice The protocol must never read this. A module whose `metadata()`
     ///         reverts has to remain completely usable, or the advisory layer
     ///         has quietly become load-bearing.
     function test_AModuleWhoseDefinitionRevertsStillWorks() public {
@@ -162,7 +177,7 @@ contract DescribedModuleTest is Test {
         Slot s = _slot(address(liar));
 
         vm.expectRevert();
-        IModuleMetadata(address(liar)).uiMetadata();
+        IModuleMetadata(address(liar)).metadata();
 
         address buyer = address(0xB0B);
         vm.deal(buyer, 10 ether);
@@ -181,7 +196,7 @@ contract DescribedModuleTest is Test {
         SilentModule quiet = new SilentModule();
         Slot s = _slot(address(quiet));
 
-        (bool ok,) = address(quiet).staticcall(abi.encodeCall(IModuleMetadata.uiMetadata, ()));
+        (bool ok,) = address(quiet).staticcall(abi.encodeCall(IModuleMetadata.metadata, ()));
         assertFalse(ok, "no such function; the client falls back to scopes");
 
         address buyer = address(0xB0B);
@@ -198,11 +213,11 @@ contract DescribedModuleTest is Test {
     /// @dev Scans the IMPLEMENTATION, not the slot. A slot is a BeaconProxy,
     ///      so `address(slot).code` is the proxy stub and contains no selector
     ///      from the logic at all — scanning it would pass for every possible
-    ///      implementation, including one that reads `uiMetadata()` on every
+    ///      implementation, including one that reads `metadata()` on every
     ///      buy. Mutation-checked: adding such a read to `Slot` fails this.
     function test_TheSlotBytecodeDoesNotContainTheDefinitionSelector() public {
         _slot(address(tenure), abi.encode(TENURE));
-        bytes4 sel = IModuleMetadata.uiMetadata.selector;
+        bytes4 sel = IModuleMetadata.metadata.selector;
         bytes memory code = factory.implementation().code;
         assertGt(code.length, 1000, "must be scanning the logic, not a proxy");
 

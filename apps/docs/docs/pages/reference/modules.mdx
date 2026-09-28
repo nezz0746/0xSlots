@@ -132,11 +132,11 @@ Optional. Self-reported metadata for clients — **never** read by the slot.
 
 ```solidity
 interface IModuleMetadata {
-    function uiMetadata() external pure returns (string memory);
+    function metadata() external pure returns (string memory);
 }
 ```
 
-`uiMetadata()` returns one JSON document, built on-chain by `ModuleSchemaLib`
+`metadata()` returns one JSON document, built on-chain by `ModuleSchemaLib`
 from the module's own constants. `MinimumTenureModule` answers:
 
 ```json
@@ -163,22 +163,39 @@ from the module's own constants. `MinimumTenureModule` answers:
     "required": ["window"],
     "additionalProperties": false,
     "x-abi": [{ "name": "window", "type": "uint256" }]
-  }
+  },
+  "errors": [
+    { "signature": "TenureNotConfigured()", "message": "Set a window above zero." },
+    {
+      "signature": "TenureTooLong(uint256)",
+      "message": "Too long. The most this module allows is {0}.",
+      "x-unit": "seconds"
+    }
+  ]
 }
 ```
 
 `settings` is a JSON Schema 2020-12 document a form library can take as is,
-plus three conventions:
+plus these conventions:
 
 | Key | Meaning |
 |---|---|
 | `x-abi` | The values in ABI-encoding order, as viem `AbiParameter`s. `abi.encode` of them is the slot's `settings` |
 | `x-optional` | The slot may leave `settings` empty |
 | `x-semantic` | A behaviour a client may recognise, such as `"minimum-tenure"` |
+| `x-unit`, `x-minimum`, `x-maximum` | What a number counts, and its bounds |
+| `x-enum-labels` | Labels for an enumeration, in value order |
+| `x-format` | How a value is typed and read. `"bytes32-string"` is text packed into 32 bytes |
+
+`errors`, beside `settings`, lists how `validateSettings` may revert: the
+error's signature, a sentence to show, and the unit its arguments are in.
+`{0}`, `{1}` in the message are the error's arguments. A revert carries only a
+selector, so this is what lets a client name and word a refusal from a module
+it has never seen.
 
 Every value is a string, because JSON numbers lose precision above 2^53; bounds
 travel as `x-minimum` / `x-maximum` strings. They are advice — `validateSettings`
-is the authority. A module that does not implement `uiMetadata()`, or answers
+is the authority. A module that does not implement `metadata()`, or answers
 with something that is not JSON, is simply undescribed; fall back to its scopes.
 
 ## `MinimumTenureModule`
