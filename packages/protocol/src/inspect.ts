@@ -39,7 +39,7 @@ export interface Upgradeable {
  * whatever its admin deployed next. It ships immutable, and a new version is a
  * new deployment that competes with the old one.
  *
- * `MinimumTenureHook` is absent for the same reason, and so is every
+ * `MinimumTenureModule` is absent for the same reason, and so is every
  * SlotBoundNFT COLLECTION — the factory that deploys them is upgradeable, the
  * collections themselves are plain contracts with no key over them. An upgrade
  * there changes the next collection, never one people already hold tokens in.
@@ -48,13 +48,14 @@ export interface Upgradeable {
  */
 export const PROXIES: Record<string, Upgradeable> = {
   SlotFactory: { target: "src/SlotFactory.sol:SlotFactory", kind: "uups" },
+  SlotLens: { target: "src/periphery/lens/SlotLens.sol:SlotLens", kind: "uups" },
   SlotCollectiveFactory: {
     target: "src/collectives/SlotCollectiveFactory.sol:SlotCollectiveFactory",
     kind: "uups",
   },
-  AdLand: { target: "src/hooks/adland/AdLand.sol:AdLand", kind: "uups" },
+  AdLand: { target: "src/modules/adland/AdLand.sol:AdLand", kind: "uups" },
   SlotBoundNFTFactory: {
-    target: "src/hooks/nft/SlotBoundNFTFactory.sol:SlotBoundNFTFactory",
+    target: "src/modules/nft/SlotBoundNFTFactory.sol:SlotBoundNFTFactory",
     kind: "uups",
   },
   Slot: {
@@ -76,7 +77,7 @@ export const PROXIES: Record<string, Upgradeable> = {
    * owns cannot be reached through the usual `beacon()`.
    */
   SlotBoundNFTWrapper: {
-    target: "src/hooks/nft/SlotBoundNFTWrapper.sol:SlotBoundNFTWrapper",
+    target: "src/modules/nft/SlotBoundNFTWrapper.sol:SlotBoundNFTWrapper",
     kind: "beacon",
     owner: "SlotBoundNFTFactory",
     beaconGetter: "wrapperBeacon()",
@@ -92,12 +93,12 @@ export const PROXIES: Record<string, Upgradeable> = {
  * SECOND one at a new address, because the CREATE2 salt covers the initcode and
  * a changed contract predicts somewhere else. The old address keeps running and
  * keeps serving every slot already attached to it. That is the safe behaviour —
- * nobody's hook changes under them — and it is exactly the thing an operator has
+ * nobody's module changes under them — and it is exactly the thing an operator has
  * to be told, because "upgrade" reads like the old one moved.
  *
  * And with no row here, an upgrade whose ONLY change was one of these counted as
  * zero changes: the CLI announced that everything was already running its
- * current code and returned without broadcasting. The new hook could not be
+ * current code and returned without broadcasting. The new module could not be
  * deployed through this tool at all.
  *
  * No storage gate on these, deliberately. A new address has fresh storage, so
@@ -116,16 +117,16 @@ export interface Standalone {
 
 export const IMMUTABLES: Record<string, Standalone> = {
   OfferBook: { target: "src/periphery/book/OfferBook.sol:OfferBook" },
-  MinimumTenureHook: {
-    target: "src/hooks/MinimumTenureHook.sol:MinimumTenureHook",
-    versionConstant: "TENURE_HOOK_VERSION",
+  MinimumTenureModule: {
+    target: "src/modules/MinimumTenureModule.sol:MinimumTenureModule",
+    versionConstant: "TENURE_MODULE_VERSION",
   },
 };
 
 /**
  * The salt version a constant in the deploy script carries.
  *
- * `MinimumTenureHook` has no `version()` — it is not a proxy and nothing calls
+ * `MinimumTenureModule` has no `version()` — it is not a proxy and nothing calls
  * one — so its version lives beside its deployment, as the constant that goes
  * into the salt. Reading it here keeps one source rather than a copy in this
  * package that could disagree with the script that actually deploys.
@@ -137,6 +138,50 @@ export function scriptVersion(constant: string): string | null {
     new RegExp(`${constant}\\s*=\\s*(\\d+)`),
   );
   return m?.[1] ?? null;
+}
+
+/** EIP-170: the most runtime code one contract may deploy. */
+export const CODE_SIZE_LIMIT = 24_576;
+/** EIP-3860: the most initcode one creation may carry. */
+export const INITCODE_SIZE_LIMIT = 49_152;
+
+export interface CodeSize {
+  runtime: number;
+  init: number;
+}
+
+/**
+ * The bytecode size of each contract in `targets`, as this build compiles it.
+ *
+ * Asked of forge rather than read from `out/`, so the answer is the compiler's
+ * own for the profile the deploy uses. Only `src` is built: tests and scripts
+ * are never deployed, and they would only add names to disambiguate.
+ *
+ * Forge keys a contract by name, and by `Name (path)` when two share a name —
+ * both are matched, the second against the target's own file.
+ */
+export function codeSizes(targets: Record<string, string>): Map<string, CodeSize> | null {
+  let raw: Record<string, { runtime_size: number; init_size: number }>;
+  try {
+    raw = JSON.parse(
+      execFileSync("forge", ["build", "src", "--sizes", "--json"], {
+        cwd: CONTRACTS,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, ...FORGE_ENV },
+      }),
+    );
+  } catch {
+    return null;
+  }
+
+  const sizes = new Map<string, CodeSize>();
+  for (const [name, target] of Object.entries(targets)) {
+    const [file, contract] = target.split(":") as [string, string];
+    const hit = raw[contract] ?? raw[`${contract} (${file})`];
+    if (hit) sizes.set(name, { runtime: hit.runtime_size, init: hit.init_size });
+  }
+  return sizes;
 }
 
 export interface StorageVar {

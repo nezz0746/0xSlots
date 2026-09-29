@@ -9,62 +9,61 @@ Creates a memoized `SlotsClient` from wagmi's public and wallet clients.
 ```tsx
 import { useSlotsClient } from "@0xslots/sdk/react";
 
-const client = useSlotsClient();                 // connected chain
-const client = useSlotsClient(SlotsChain.BASE);  // override chain
+const client = useSlotsClient();                        // connected chain
+const client = useSlotsClient({ chainId: 84532 });      // override the chain
+const client = useSlotsClient({ factoryAddress });      // needed for createSlot
 ```
 
-The hook takes **one** parameter. The old second argument was a subgraph API
-key; the indexer serves GraphQL unauthenticated, and passing the key through
-`NEXT_PUBLIC_*` published a credential to every visitor in exchange for nothing.
-It resolves the factory address from the chain and throws if there is none.
-
-For a client against a non-default endpoint — a local indexer, or your own
-deployment behind auth — construct `SlotsClient` directly and memoize it
-yourself; the hook always uses `DEFAULT_API_URL`.
+The config is optional: `factoryAddress` (only `createSlot` and `collectAll`
+need it), `offerBookAddress` (defaults to the book recorded for the chain) and
+`chainId`. `useCollectivesClient({ factoryAddress?, chainId? })` does the same
+for `CollectivesClient`.
 
 ---
 
 ## `useSlotAction`
 
-Unified write executor with transaction lifecycle tracking.
+Every write, wrapped in shared pending/receipt tracking.
 
 ```tsx
 import { useSlotAction } from "@0xslots/sdk/react";
 
 const {
-  createSlot,                                  // factory
-  buy, release, liquidate,                     // occupancy
-  selfAssess, topUp, withdraw, setOperator,    // holding
-  collect, claim,                              // money out
-  proposeTerms, cancelTerms, manageTerms,      // manager
-  exec,          // generic executor
-  preflight,     // dry-run a call
+  createSlot,                                        // factory
+  buy, release, liquidate, liquidateAndBuy,          // occupancy
+  selfAssess, topUp, withdraw, manageTerms, setOperator, // holding
+  collect, collectAll, claim,                        // money out
+  proposeTerms, cancelTerms, acceptFee, acceptScopes, setManager, // manager
+  postOffer, cancelOffer, authorizeOfferBook, acceptOffer, // OfferBook
+  client,        // the underlying SlotsClient
+  exec,          // run any write with the same tracking
+  preflight,     // run a read or signature, reporting failure the same way
   busy,          // isPending || isConfirming
   isPending,     // wallet interaction in progress
   isConfirming,  // waiting for on-chain confirmation
   isSuccess,
-  activeAction,  // label of current action
+  activeAction,  // label of the current action
 } = useSlotAction({
   onSuccess: (label, hash) => console.log(`${label}: ${hash}`),
   onError: (label, error) => console.error(`${label}: ${error}`),
 });
 ```
 
-`sell`, `makeSellOrder`, `signSellOrder` and `cancelSellOrder` are gone with
-`Slot.sell`. A consensual sale is `setOperator(book, true)` once per tenure, then
-`book.acceptOffer(slot, id)` — see [Selling into an offer](/sdk/client).
+Failures are reported through `onError` rather than thrown — a module's veto
+arrives with its own error name — and an action resolves to the hash, or
+`undefined` when it failed. `useSlotAction` also accepts the `useSlotsClient`
+config.
 
-`proposeTerms(slot, { taxBps?, hook? })` queues the tax rate, the hook, or
-both; `cancelTerms(slot, cancelTax?, cancelHook?)` retracts them, one
-dimension or both. There is no separate call per dimension — a slot has two
-mutable terms, tax and hook, and they move through the same pair of functions.
+`proposeTerms(slot, { taxRateBps?, recipient?, minRunwaySeconds?, moduleTerms? })`
+queues any mix of terms; `cancelTerms(slot, mask?)` retracts them, and its
+`activeAction` label names the term being cancelled when `mask` is a single
+`TERMS` bit.
 
 ---
 
 ## Reading a slot
 
-There is no read hook. `@0xslots/sdk/react` ships exactly two — `useSlotsClient`
-and `useSlotAction` — and reads go through the client, which returns plain
+There is no read hook. Reads go through the client, which returns plain
 promises you can hand to whatever query library the app already uses.
 
 ```tsx
@@ -80,7 +79,5 @@ function useSlot(address: `0x${string}`) {
 }
 ```
 
-`slotState` returns occupancy, price, deposit, tax owed, the terms, and
-`hookFlags` — the hook declaration this slot snapshotted — in one call. For many
-slots, call it per address and let the query client dedupe; the client batches
-the underlying reads.
+`slotState` returns occupancy, price, deposit, tax owed, the terms, the module
+and the `scopes` this slot accepted from it, in one call.

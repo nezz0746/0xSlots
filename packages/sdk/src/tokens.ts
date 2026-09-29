@@ -57,7 +57,7 @@ export const CHAIN_TOKENS: Record<SlotsChain, TokenInfo[]> = {
   [SlotsChain.ANVIL]: [
     {
       // The test token deployed by `script/slots/SeedSlots.s.sol`, the
-      // hook-protocol local stack.
+      // app-protocol local stack.
       //
       // `dev-chain.sh` re-checks it against the records on every local boot
       // and refuses to start when the generated table is a step behind.

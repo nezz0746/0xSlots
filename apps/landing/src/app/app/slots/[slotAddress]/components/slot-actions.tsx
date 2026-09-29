@@ -16,7 +16,7 @@ interface ActionProps {
   state: SlotState;
   currency: CurrencyMeta;
   actions: Actions;
-  /** The deposit `minDepositSeconds` demands at the price being proposed. */
+  /** The deposit `minRunwaySeconds` demands at the price being proposed. */
   minDepositFor: (price: bigint) => bigint;
 }
 

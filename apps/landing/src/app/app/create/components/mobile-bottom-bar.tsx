@@ -1,4 +1,4 @@
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
 import {
   ChevronUp,
@@ -64,14 +64,15 @@ export function MobileBottomBar({
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxBps = form.watch("taxBps");
+  const taxRateBps = form.watch("taxRateBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
-  const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const moduleMode = form.watch("moduleMode");
+  const module = form.watch("module");
   const mutableTax = form.watch("mutableTax");
-  const mutableHook = form.watch("mutableHook");
+  const mutableRecipient = form.watch("mutableRecipient");
+  const mutableModule = form.watch("mutableModule");
   const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
@@ -97,8 +98,8 @@ export function MobileBottomBar({
         ? erc20.data.name
         : null;
 
-  const knownHook = findKnownHook(chainId, hook as Address);
-  const hasMutable = mutableTax || mutableHook;
+  const knownModule = findKnownModule(chainId, module as Address);
+  const hasMutable = mutableTax || mutableRecipient || mutableModule;
   // Nothing is sequential any more, so "ready" means the form actually
   // validates — not that you reached the last of three steps.
   const ready = submitState.isFormValid && !submitState.initError;
@@ -206,7 +207,7 @@ export function MobileBottomBar({
                 icon={<HandCoins className="size-3" />}
                 onJump={jumpTo}
               >
-                {taxBps || "0"}% / 30d
+                {taxRateBps || "0"}% / 30d
               </SummaryRow>
 
               {/* Min Deposit */}
@@ -219,19 +220,19 @@ export function MobileBottomBar({
                 {formatValueUnit(minDepositValue || "0", minDepositUnit)}
               </SummaryRow>
 
-              {/* Hook */}
+              {/* Module */}
               <SummaryRow
-                section="hook"
-                label="Hook"
+                section="module"
+                label="Module"
                 icon={<Plug className="size-3" />}
                 onJump={jumpTo}
               >
                 <span className="truncate max-w-32 inline-block align-bottom">
-                  {hookMode === "none" || !hook
+                  {moduleMode === "none" || !module
                     ? "None"
-                    : (knownHook?.name ??
-                      (isAddress(hook, { strict: false })
-                        ? truncateAddress(hook)
+                    : (knownModule?.name ??
+                      (isAddress(module, { strict: false })
+                        ? truncateAddress(module)
                         : "—"))}
                 </span>
               </SummaryRow>
@@ -240,23 +241,25 @@ export function MobileBottomBar({
 
               {/* Mutability */}
               <SummaryRow
-                section="permissions"
+                section="scopes"
                 label="Mutable"
                 icon={<KeyRound className="size-3" />}
                 onJump={jumpTo}
               >
                 {hasMutable
-                  ? mutableTax && mutableHook
-                    ? "Tax + Hook"
-                    : mutableTax
-                      ? "Tax"
-                      : "Hook"
-                  : "Nothing — immutable"}
+                  ? [
+                      mutableTax && "Tax",
+                      mutableRecipient && "Recipient",
+                      mutableModule && "Module",
+                    ]
+                      .filter(Boolean)
+                      .join(", ")
+                  : "Nothing — fixed forever"}
               </SummaryRow>
 
               {hasMutable && (
                 <SummaryRow
-                  section="permissions"
+                  section="scopes"
                   label="Manager"
                   onJump={jumpTo}
                 >

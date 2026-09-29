@@ -30,7 +30,7 @@ function rows(field: any): any[] {
  * Every event table, flattened into one sortable stream.
  *
  * The SHAPE and the display craft below are the original's; the inputs are all
- * that changed. The mapping onto the hook-based protocol, event by event:
+ * that changed. The mapping onto the v1 protocol, event by event:
  *
  *   * `Buy` reads `boughtEvent`. `from` is the previous occupant — zero when
  *     the slot was vacant, which is the "claimed" wording rather than a
@@ -43,8 +43,8 @@ function rows(field: any): any[] {
  *     from a contested one. The feed says "bought" rather than guessing.
  *   * `Liquidate` no longer carries a bounty. There ISN'T one in this
  *     protocol, so the row shows how long the evicted occupant had held it.
- *   * `Tax Proposed` and `Hook Proposed` both come from ONE
- *     `termsProposedEvent`, split back apart on its `changeTax`/`changeHook`
+ *   * `Tax Proposed` and `Module Proposed` both come from ONE
+ *     `termsProposedEvent`, split back apart on its `changeTax`/`changeModule`
  *     flags. They stay two rows because they are two decisions with different
  *     consequences, and a manager may propose either alone.
  *   * `Update Cancelled` reads `termsCancelledEvent`, and `Terms Applied`
@@ -53,13 +53,13 @@ function rows(field: any): any[] {
  *   * `Credit` and `Claim` are new and worth their space: a credit means a
  *     push payment could not reach somebody and nothing on chain will ever
  *     tell them.
- *   * `Hook Failed` is an `after` callback that reverted and was swallowed. A
- *     hook accumulating these is broken in a way its users cannot otherwise
+ *   * `Module Failed` is an `after` callback that reverted and was swallowed. A
+ *     module accumulating these is broken in a way its users cannot otherwise
  *     see.
  *
  * Dropped, with nothing to map onto: `LiquidationBountyUpdated` (bounties are
- * gone from the protocol) and `ModuleProposed` in its module sense (there are
- * no modules — the hook dimension of `termsProposedEvent` replaces it).
+ * gone from the protocol) and the retired gallery's `ModuleProposed` (the
+ * module dimension of `termsProposedEvent` replaces it).
  */
 // biome-ignore lint/suspicious/noExplicitAny: rows are untyped indexer JSON
 export function normalizeEvents(data: any): UnifiedEvent[] {
@@ -241,7 +241,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     });
   }
 
-  // One event, up to two rows. `changeTax` and `changeHook` are independent
+  // One event, up to two rows. `changeTax` and `changeModule` are independent
   // dimensions of one proposal, and folding them into a single row would hide
   // which of the two a manager actually moved.
   for (const e of rows(data.termsProposedEvents)) {
@@ -251,21 +251,21 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
         type: "Tax Proposed",
         slot: getSlot(e),
         actor: e.manager,
-        detail: `→ ${(Number(e.taxBps) / 100).toFixed(1)}%/mo`,
+        detail: `→ ${(Number(e.taxRateBps) / 100).toFixed(1)}%/mo`,
         timestamp: Number(e.timestamp),
         tx: e.tx,
       });
     }
-    if (e.changeHook) {
+    if (e.changeModule) {
       events.push({
-        id: `${e.id}-hook`,
-        type: "Hook Proposed",
+        id: `${e.id}-app`,
+        type: "Module Proposed",
         slot: getSlot(e),
         actor: e.manager,
-        // The zero address is a real proposal — "detach the hook" — not an
+        // The zero address is a real proposal — "detach the module" — not an
         // absent one, so it is named rather than shown as a bare 0x0000…
         detail:
-          !e.hook || e.hook === ZERO ? "detach hook" : truncateAddress(e.hook),
+          !e.module || e.module === ZERO ? "detach module" : truncateAddress(e.module),
         timestamp: Number(e.timestamp),
         tx: e.tx,
       });
@@ -276,11 +276,11 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     const changes: string[] = [];
     if (e.taxChanged)
       changes.push(
-        `tax ${(Number(e.previousTaxPercentage) / 100).toFixed(1)}% → ${(Number(e.taxBps) / 100).toFixed(1)}%/mo`,
+        `tax ${(Number(e.previousTaxPercentage) / 100).toFixed(1)}% → ${(Number(e.taxRateBps) / 100).toFixed(1)}%/mo`,
       );
-    if (e.hookChanged)
+    if (e.moduleChanged)
       changes.push(
-        `hook → ${!e.hook || e.hook === ZERO ? "none" : truncateAddress(e.hook)}`,
+        `module → ${!e.module || e.module === ZERO ? "none" : truncateAddress(e.module)}`,
       );
     events.push({
       id: e.id,
@@ -296,7 +296,7 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
   for (const e of rows(data.termsCancelledEvents)) {
     const cancelled = [
       e.cancelTax ? "tax" : null,
-      e.cancelHook ? "hook" : null,
+      e.cancelModule ? "module" : null,
     ].filter(Boolean);
     events.push({
       id: e.id,
@@ -309,12 +309,12 @@ export function normalizeEvents(data: any): UnifiedEvent[] {
     });
   }
 
-  for (const e of rows(data.hookCallFailedEvents)) {
+  for (const e of rows(data.moduleCallFailedEvents)) {
     events.push({
       id: e.id,
-      type: "Hook Failed",
+      type: "Module Failed",
       slot: getSlot(e),
-      actor: e.hook,
+      actor: e.app,
       detail: `reverted in ${e.selector}`,
       timestamp: Number(e.timestamp),
       tx: e.tx,

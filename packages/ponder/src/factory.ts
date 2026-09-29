@@ -4,7 +4,7 @@ import {
   adminTransferredEvent,
   beaconUpgradedEvent,
   factory,
-  hook,
+  module,
   slot,
   slotCreatedEvent,
 } from "ponder:schema";
@@ -13,10 +13,10 @@ import {
   evtId,
   getOrCreateAccount,
   getOrCreateCurrency,
-  getOrCreateHook,
-  hookFlagColumns,
+  getOrCreateModule,
+  scopeColumns,
   lower,
-  NO_HOOK_FLAGS,
+  NO_SCOPES,
   readSlotTerms,
   ZERO_ADDR,
 } from "./helpers";
@@ -64,10 +64,9 @@ async function touchFactory(
 /**
  * A new slot.
  *
- * `SlotCreated` carries slot, recipient, creator, currency and hook — and
- * nothing about the terms. Tax, the deposit floor, the two mutability flags and
- * the manager are read back from the slot with `readSlotTerms`, which is six
- * eth_calls at the creation block.
+ * `SlotCreated` carries slot, recipient, creator, currency and module — and
+ * nothing about the terms. They are read back from the slot with
+ * `readSlotTerms` at the creation block.
  *
  * That read is the one avoidable cost in this indexer. Putting the four scalars
  * in the event would remove it entirely, and they are all known at emit time —
@@ -79,8 +78,8 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
   const chainId = context.chain.id;
   const factoryId = lower(event.log.address);
   const slotId = lower(event.args.slot);
-  const hookAddr = lower(event.args.hook);
-  const hasHook = hookAddr !== ZERO_ADDR;
+  const moduleAddr = lower(event.args.module);
+  const hasModule = moduleAddr !== ZERO_ADDR;
 
   await touchFactory(context, factoryId, { slotCount: 1n });
 
@@ -106,9 +105,9 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
 
   const terms = await readSlotTerms(context, slotId);
 
-  if (hasHook) {
-    await getOrCreateHook(context, hookAddr, event.block.timestamp);
-    await context.db.update(hook, { id: hookAddr, chainId }).set((row) => ({
+  if (hasModule) {
+    await getOrCreateModule(context, moduleAddr, event.block.timestamp);
+    await context.db.update(module, { id: moduleAddr, chainId }).set((row) => ({
       slotCount: row.slotCount + 1,
       updatedAt: event.block.timestamp,
     }));
@@ -123,13 +122,18 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     currency: cur.id,
     manager: terms.manager,
     creator: lower(event.args.creator),
-    taxBps: terms.taxBps,
-    minDepositSeconds: terms.minDepositSeconds,
+    taxRateBps: terms.taxRateBps,
+    minRunwaySeconds: terms.minRunwaySeconds,
     mutableTax: terms.mutableTax,
-    mutableHook: terms.mutableHook,
-    hook: hasHook ? hookAddr : null,
-    hookData: hasHook ? terms.hookData : null,
-    ...hookFlagColumns(hasHook ? terms.flags : NO_HOOK_FLAGS),
+    mutableRecipient: terms.mutableRecipient,
+    mutableModule: terms.mutableModule,
+    module: hasModule ? moduleAddr : null,
+    settings: hasModule ? terms.settings : null,
+    moduleFeeBps: terms.moduleFeeBps,
+    moduleFeeRecipient: terms.moduleFeeRecipient,
+    moduleFeesTotal: 0n,
+    debtRepaidTotal: 0n,
+    ...scopeColumns(hasModule ? terms.scopes : NO_SCOPES),
     occupant: null,
     occupantAccount: null,
     isOccupied: false,
@@ -143,11 +147,18 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     taxPaidTotal: 0n,
     totalCollected: 0n,
     creditedTotal: 0n,
-    pendingHasTax: false,
-    pendingTaxBps: null,
-    pendingHasHook: false,
-    pendingHook: null,
-    pendingHookData: null,
+    pendingMask: 0,
+    pendingHasTaxRate: false,
+    pendingTaxRateBps: null,
+    pendingHasRecipient: false,
+    pendingRecipient: null,
+    pendingHasMinRunway: false,
+    pendingMinRunwaySeconds: null,
+    pendingHasModule: false,
+    pendingModule: null,
+    pendingModuleSettings: null,
+    pendingHasScopes: false,
+    pendingScopes: null,
     pendingProposedAt: null,
     createdAt: event.block.timestamp,
     createdTx: event.transaction.hash,
@@ -163,12 +174,15 @@ ponder.on("SlotFactory:SlotCreated", async ({ event, context }) => {
     recipient: lower(event.args.recipient),
     creator: lower(event.args.creator),
     currency: cur.id,
-    hook: hookAddr,
-    hookData: terms.hookData,
-    taxBps: terms.taxBps,
-    minDepositSeconds: terms.minDepositSeconds,
+    module: moduleAddr,
+    settings: terms.settings,
+    taxRateBps: terms.taxRateBps,
+    minRunwaySeconds: terms.minRunwaySeconds,
     mutableTax: terms.mutableTax,
-    mutableHook: terms.mutableHook,
+    mutableRecipient: terms.mutableRecipient,
+    mutableModule: terms.mutableModule,
+    moduleFeeBps: terms.moduleFeeBps,
+    moduleFeeRecipient: terms.moduleFeeRecipient,
     manager: terms.manager,
     deployer: lower(event.transaction.from),
     timestamp: event.block.timestamp,

@@ -3,10 +3,11 @@ pragma solidity ^0.8.24;
 
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {Slot, SlotInit} from "./Slot.sol";
-import "./SlotErrors.sol";
-import {VersionedUUPS} from "./VersionedUUPS.sol";
-import {Versioned} from "./Versioned.sol";
+import {Slot} from "./Slot.sol";
+import {SlotInit} from "./types/SlotTypes.sol";
+import {NotManager, InvalidRecipient, NotASlot} from "./errors/SlotErrors.sol";
+import {VersionedUUPS} from "./utils/VersionedUUPS.sol";
+import {Versioned} from "./utils/Versioned.sol";
 
 /**
  * @title SlotFactory
@@ -21,19 +22,11 @@ import {Versioned} from "./Versioned.sol";
  *      every handler twice to cover both eras.
  */
 contract SlotFactory is VersionedUUPS {
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 4;
+        return 1;
     }
-
-    /// @notice Which migration has run against THIS proxy's storage.
-    /// @dev OpenZeppelin already tracks this and already refuses to run a
-    ///      `reinitializer(N)` twice or out of order — so an upgrade that
-    ///      needs new state gets its monotonicity enforced by the library
-    ///      rather than by a script. Exposed because it is otherwise
-    ///      internal, and during an incident you want both numbers.
 
     /// @notice The beacon every slot delegates to. Upgrading it upgrades all.
     UpgradeableBeacon public beacon;
@@ -51,20 +44,21 @@ contract SlotFactory is VersionedUUPS {
         address indexed recipient,
         address indexed creator,
         address currency,
-        address hook
+        address module
     );
     event AdminTransferred(address indexed from, address indexed to);
     event BeaconUpgraded(address indexed implementation);
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotManager();
+        _checkAdmin();
         _;
     }
 
-    function initialize(address admin_, address implementation_)
-        external
-        initializer
-    {
+    function _checkAdmin() internal view {
+        if (msg.sender != admin) revert NotManager();
+    }
+
+    function initialize(address admin_, address implementation_) external initializer {
         if (admin_ == address(0)) revert InvalidRecipient();
         admin = admin_;
         // The FACTORY owns the beacon, not the admin EOA. Handing beacon
@@ -85,7 +79,7 @@ contract SlotFactory is VersionedUUPS {
      *      This was plain `new BeaconProxy(...)` — CREATE — whose address is
      *      `keccak(rlp(deployer, nonce))` and NOTHING else. Constructor
      *      arguments do not enter a CREATE address, so two slots with
-     *      different recipients, currencies, hooks and tax rates still landed
+     *      different recipients, currencies, modules and tax rates still landed
      *      on the same address whenever the factory's nonce matched.
      *
      *      This factory is deployed at the same address on every chain. Its
@@ -122,10 +116,10 @@ contract SlotFactory is VersionedUUPS {
         }
         emit SlotCreated(
             slot,
-            init.recipient,
+            init.taxTerms.recipient,
             msg.sender,
             address(init.currency),
-            init.hook
+            init.moduleTerms.module
         );
     }
 
@@ -152,8 +146,8 @@ contract SlotFactory is VersionedUUPS {
      *      Each collection is isolated, and the reasons a single one reverts
      *      are ordinary rather than exceptional: `NothingToCollect` for a slot
      *      whose tax is already flushed — which is most of them, most of the
-     *      time — and a hook that reverts in `afterSettle` while running
-     *      uncapped under `strict`. Neither is a reason to deny nineteen other
+     *      time — and a module that reverts in `afterSettle` while running
+     *      uncapped under `afterCallbacksMustSucceed`. Neither is a reason to deny nineteen other
      *      recipients their rent, so a failure leaves a zero in `collected` and
      *      the loop carries on.
      *
@@ -167,10 +161,7 @@ contract SlotFactory is VersionedUUPS {
      *         all three. Simulate this call to price the button before showing
      *         it; the per-slot `TaxCollected` events carry the recipients.
      */
-    function collectAll(address[] calldata slots)
-        external
-        returns (uint256[] memory collected)
-    {
+    function collectAll(address[] calldata slots) external returns (uint256[] memory collected) {
         collected = new uint256[](slots.length);
         for (uint256 i; i < slots.length; ++i) {
             // Through an external self-call, which is the only way to isolate
@@ -202,7 +193,7 @@ contract SlotFactory is VersionedUUPS {
      *      Capped by the deposit, which is not defensive rounding but the
      *      settlement rule: `taxOwed()` is the RAW debt and may exceed the
      *      escrow, in which case `_settle` takes the deposit and carries the
-     *      rest as arrears against the occupant rather than paying it out.
+     *      rest as debt against the occupant rather than paying it out.
      *      Adding the uncapped debt here would report money to a recipient that
      *      no transfer moved, on exactly the slots — insolvent ones — a
      *      collection run is most likely to be sweeping up.

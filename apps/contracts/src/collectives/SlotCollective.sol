@@ -3,25 +3,26 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 
 import {PushSplit} from "splits-v2/splitters/push/PushSplit.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotGovernance, IManagedSlot} from "./SlotGovernance.sol";
-import {Versioned} from "../Versioned.sol";
+import {Versioned} from "../utils/Versioned.sol";
 
 /// @title SlotCollective — a collective that pays out through a 0xSplits split
 ///
 /// @notice A slot names two addresses at creation and never lets go of either:
 ///         `recipient`, which money flows to, and `manager`, which may propose
-///         tax and hook changes. The protocol deliberately
+///         tax and module changes. The protocol deliberately
 ///         keeps them separate — "receives money" and "has admin powers" are
 ///         different jobs. This contract is for the case where you want them to
 ///         be the same address anyway, without collapsing them into one person:
 ///         a 0xSplits PushSplit that pays out to many recipients, wearing a
 ///         role-gated control panel on top.
 ///
-///         Point a slot's `recipient` AND `config.manager` at an instance of
+///         Point a slot's `recipient` AND `manager` at an instance of
 ///         this and you get: tax accrues here, `distribute()` fans it out over
 ///         the split, and each of the slot's two governable dimensions is
 ///         gated behind its own role.
@@ -43,7 +44,7 @@ import {Versioned} from "../Versioned.sol";
 ///      that function would completely defeat everything below it: the owner
 ///      would simply call
 ///
-///          execCalls([{ to: slot, data: proposeTerms(9999, …, true, false) }])
+///          execCalls([{ to: slot, data: proposeTerms(tax, module, TERM_TAX_RATE) }])
 ///
 ///      and bypass `TAX_MANAGER_ROLE` entirely. The roles would be decoration.
 ///
@@ -66,13 +67,23 @@ import {Versioned} from "../Versioned.sol";
 ///      DELEGATECALL gas cost. Deployed directly there is no proxy. Without a
 ///      `receive()`, every native-ETH tax push from `Slot._payOrCredit` — a
 ///      deliberately gas-capped `call{gas: 30_000}` — would fail and silently
-///      degrade into a `withdrawableOf` credit needing a manual `claim`.
-contract SlotCollective is PushSplit, SlotGovernance, Versioned {
-
+///      degrade into a `claimableOf` credit needing a manual `claim`.
+///
+///      ── WHY `multicall` IS SAFE WHERE `execCalls` IS NOT ─────────────────
+///      `multicall` only delegatecalls this contract's own functions, keeping
+///      `msg.sender`, so every call in a batch passes the same role check it
+///      would alone. It cannot reach another contract and is not payable.
+contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 1;
+    }
+
+    /// @dev The split manager: whoever decides who is paid decides whether a
+    ///      module may take a share first.
+    function _payoutRole() internal pure override returns (bytes32) {
+        return SPLIT_MANAGER_ROLE;
     }
 
     using SplitV2Lib for SplitV2Lib.Split;
@@ -105,6 +116,11 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     ///      recipient. Rejected here at construction instead.
     error EmptySplit();
 
+    /// @dev The implementation was deployed by an account with no code. That
+    ///      account would be `FACTORY`, able to call the inherited `initialize`
+    ///      on every collective behind the beacon. See the constructor.
+    error DeployedByAnAccount();
+
     // ═══════════════════════════════════════════════════════════
     // CONSTRUCTOR
     // ═══════════════════════════════════════════════════════════
@@ -112,15 +128,13 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     /// @param admin Holder of `DEFAULT_ADMIN_ROLE`. Can call every relay below
     ///        and is the admin of all three manager roles.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
-    /// @param hookManagers Initial `POLICY_MANAGER_ROLE` holders — the role
-    ///        that governs the hook. May be empty. There is no longer a
-    ///        separate utility role: a hook is the old policy and the old
-    ///        utility unified, so the two collapsed into one.
+    /// @param policyManagers Initial `POLICY_MANAGER_ROLE` holders — the role
+    ///        that governs the module. May be empty.
     /// @param splitManagers Initial `SPLIT_MANAGER_ROLE` holders. May be empty.
     struct InitialRoles {
         address admin;
         address[] taxManagers;
-        address[] hookManagers;
+        address[] policyManagers;
         address[] splitManagers;
     }
 
@@ -136,16 +150,27 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     ///
     ///      `SplitWalletV2.FACTORY` is immutable and set to `msg.sender` here,
     ///      so on a proxy it resolves to whoever deployed the IMPLEMENTATION,
-    ///      not the collective's own factory. That would matter if this contract
-    ///      used the inherited `initialize(split, owner)`, which is gated on
-    ///      `msg.sender == FACTORY`. It does not — `initializeCollective` below
-    ///      does the same work itself, exactly as the old constructor did, so
-    ///      nothing depends on `FACTORY` and nothing breaks when the beacon
-    ///      points at an implementation someone else deployed.
+    ///      not the collective's own factory. This contract never uses the
+    ///      inherited `initialize(split, owner)` — `initializeCollective` does
+    ///      that work itself — but it cannot remove it either: upstream it is
+    ///      not `virtual`, has no initialized latch, and is gated ONLY on
+    ///      `msg.sender == FACTORY`. Whoever deployed the implementation can
+    ///      therefore call it on EVERY collective behind the beacon, at any
+    ///      time, making themselves `owner` — which re-arms `execCalls` and
+    ///      undoes everything the note above describes.
+    ///
+    ///      So the deployer must be something that can never make that call.
+    ///      The canonical one is the deterministic CREATE2 deployer, whose
+    ///      code has no `CALL` at all; `DeployProtocol` uses it. An account
+    ///      with no code is refused outright, because `forge create` from a
+    ///      wallet is the realistic way to get this wrong. A contract deployer
+    ///      is allowed (tests, and the deploy script's own version probe), and
+    ///      is on whoever adopts its implementation into the beacon to vet.
     ///
     /// @param splitsWarehouse The canonical `SplitsWarehouse` for this chain.
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(address splitsWarehouse) PushSplit(splitsWarehouse) {
+        if (msg.sender.code.length == 0) revert DeployedByAnAccount();
         // The implementation must never hold a split or roles of its own. It is
         // reachable directly at its own address, and a live, owned, role-granted
         // implementation behind a beacon is a standing invitation.
@@ -155,8 +180,8 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     /// @notice Set up a collective. Called by `SlotCollectiveFactory` in the
     ///         proxy constructor.
     ///
-    /// @dev Byte-for-byte the old constructor body. It deliberately does NOT
-    ///      route through the inherited `SplitWalletV2.initialize`: that one is
+    /// @dev Deliberately does NOT route through the inherited
+    ///      `SplitWalletV2.initialize`: that one is
     ///      gated on the `FACTORY` immutable (see the constructor note) and
     ///      would tie every collective to whoever happened to deploy the
     ///      implementation it was pointing at when it was created.
@@ -180,11 +205,7 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
 
         // Reverts on a zero admin, so the ordering below matches the original:
         // validation of the split first, then of the roles.
-        _initGovernance(
-            roles.admin,
-            roles.taxManagers,
-            roles.hookManagers
-        );
+        _initGovernance(roles.admin, roles.taxManagers, roles.policyManagers);
         _grantRoleBatch(SPLIT_MANAGER_ROLE, roles.splitManagers);
     }
 
@@ -192,27 +213,45 @@ contract SlotCollective is PushSplit, SlotGovernance, Versioned {
     // SPLIT GOVERNANCE
     // ═══════════════════════════════════════════════════════════
 
-    /// @notice Rewrite the payout configuration.
-    /// @dev Routed through the inherited `updateSplit` by external self-call.
-    ///      `Ownable.onlyOwner` admits `msg.sender == address(this)`, so this
-    ///      passes, and the hash/validation/event logic stays in exactly one
-    ///      place — upstream's — instead of being duplicated and drifting.
-    function setSplit(SplitV2Lib.Split calldata split)
-        external
-        onlyRoleOrAdmin(SPLIT_MANAGER_ROLE)
-    {
-        this.updateSplit(split);
+    /// @notice Pay out what is held under the current split, then rewrite it.
+    ///
+    /// @param current The split in force, as `distribute` requires.
+    /// @param next The split to install.
+    /// @param tokens Every token the collective holds, `NATIVE_TOKEN` for ETH.
+    ///        Each is distributed under `current` first, so rent already
+    ///        collected for the old recipients cannot be paid to the new ones.
+    ///        A token left out is paid under `next`; listing all of them is the
+    ///        split manager's responsibility.
+    /// @param slots The slots paying this collective. Swept first, as {sweep}
+    ///        does, so rent they are still holding for the old recipients
+    ///        reaches the collective in time to be paid under `current`. A slot
+    ///        left out pays what it holds under `next`.
+    ///
+    /// @dev Reverts while paused, because distributing does. Routed through the
+    ///      inherited `updateSplit` by external self-call: `Ownable.onlyOwner`
+    ///      admits `msg.sender == address(this)`, so the hash, validation and
+    ///      event logic stay upstream's.
+    function setSplit(
+        SplitV2Lib.Split calldata current,
+        SplitV2Lib.Split calldata next,
+        address[] calldata tokens,
+        IManagedSlot[] calldata slots
+    ) external onlyRoleOrAdmin(SPLIT_MANAGER_ROLE) {
+        _sweep(slots);
+        uint256 length = tokens.length;
+        for (uint256 i; i < length; ++i) {
+            (uint256 held, uint256 warehoused) = getSplitBalance(tokens[i]);
+            // `distribute` leaves one unit behind, so one unit is nothing to pay.
+            if (held > 1 || warehoused > 1) this.distribute(current, tokens[i], msg.sender);
+        }
+        this.updateSplit(next);
     }
 
     /// @notice Pause or unpause distribution.
     /// @dev Reimplemented rather than delegating to `super`: the inherited body
     ///      is `onlyOwner`, and the caller here is a role holder, not this
     ///      contract. The two lines are the whole function upstream.
-    function setPaused(bool _paused)
-        public
-        override
-        onlyRoleOrAdmin(SPLIT_MANAGER_ROLE)
-    {
+    function setPaused(bool _paused) public override onlyRoleOrAdmin(SPLIT_MANAGER_ROLE) {
         paused = _paused;
         emit SetPaused(_paused);
     }

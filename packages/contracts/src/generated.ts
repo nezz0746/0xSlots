@@ -3,12 +3,18 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  */
 export const adLandAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: 'slotLens', internalType: 'contract SlotLens', type: 'address' },
+    ],
+    stateMutability: 'nonpayable',
+  },
   {
     type: 'function',
     inputs: [],
@@ -21,13 +27,6 @@ export const adLandAbi = [
     inputs: [],
     name: 'CHANGE_DELAY',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'FAMILY',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'view',
   },
   {
@@ -47,15 +46,8 @@ export const adLandAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'TENURE_DESCRIPTOR_VERSION',
-    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TENURE_FAMILY',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'SLOT_LENS',
+    outputs: [{ name: '', internalType: 'contract SlotLens', type: 'address' }],
     stateMutability: 'view',
   },
   {
@@ -83,26 +75,64 @@ export const adLandAbi = [
             internalType: 'struct SlotInfo',
             type: 'tuple',
             components: [
-              { name: 'recipient', internalType: 'address', type: 'address' },
               {
                 name: 'currency',
                 internalType: 'contract IERC20',
                 type: 'address',
               },
               { name: 'manager', internalType: 'address', type: 'address' },
-              { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-              {
-                name: 'minDepositSeconds',
-                internalType: 'uint256',
-                type: 'uint256',
-              },
               { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-              { name: 'mutableHook', internalType: 'bool', type: 'bool' },
-              { name: 'hook', internalType: 'address', type: 'address' },
-              { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+              { name: 'mutableModule', internalType: 'bool', type: 'bool' },
               {
-                name: 'hookFlags',
-                internalType: 'struct HookFlags',
+                name: 'terms',
+                internalType: 'struct Terms',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'taxTerms',
+                    internalType: 'struct TaxTerms',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'rateBps',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'minRunwaySeconds',
+                        internalType: 'uint32',
+                        type: 'uint32',
+                      },
+                    ],
+                  },
+                  {
+                    name: 'moduleTerms',
+                    internalType: 'struct ModuleTerms',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'module',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'settings',
+                        internalType: 'bytes',
+                        type: 'bytes',
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                name: 'scopes',
+                internalType: 'struct Scopes',
                 type: 'tuple',
                 components: [
                   { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
@@ -119,7 +149,26 @@ export const adLandAbi = [
                     type: 'bool',
                   },
                   { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-                  { name: 'strict', internalType: 'bool', type: 'bool' },
+                  {
+                    name: 'afterCallbacksMustSucceed',
+                    internalType: 'bool',
+                    type: 'bool',
+                  },
+                  { name: 'onInstall', internalType: 'bool', type: 'bool' },
+                  { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+                ],
+              },
+              {
+                name: 'fee',
+                internalType: 'struct ModuleFee',
+                type: 'tuple',
+                components: [
+                  { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
                 ],
               },
               { name: 'occupant', internalType: 'address', type: 'address' },
@@ -142,22 +191,78 @@ export const adLandAbi = [
                 type: 'uint256',
               },
               {
-                name: 'pendingTaxBps',
-                internalType: 'uint256',
-                type: 'uint256',
-              },
-              { name: 'pendingHook', internalType: 'address', type: 'address' },
-              {
-                name: 'pendingHookData',
-                internalType: 'bytes32',
-                type: 'bytes32',
-              },
-              { name: 'pendingHasTax', internalType: 'bool', type: 'bool' },
-              { name: 'pendingHasHook', internalType: 'bool', type: 'bool' },
-              {
-                name: 'pendingProposedAt',
-                internalType: 'uint64',
-                type: 'uint64',
+                name: 'pending',
+                internalType: 'struct Pending',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'taxTerms',
+                    internalType: 'struct TaxTerms',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'rateBps',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'minRunwaySeconds',
+                        internalType: 'uint32',
+                        type: 'uint32',
+                      },
+                    ],
+                  },
+                  {
+                    name: 'nextModule',
+                    internalType: 'struct InstalledModule',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'module',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'scopes',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'fee',
+                        internalType: 'struct ModuleFee',
+                        type: 'tuple',
+                        components: [
+                          {
+                            name: 'bps',
+                            internalType: 'uint16',
+                            type: 'uint16',
+                          },
+                          {
+                            name: 'recipient',
+                            internalType: 'address',
+                            type: 'address',
+                          },
+                        ],
+                      },
+                      {
+                        name: 'settings',
+                        internalType: 'bytes',
+                        type: 'bytes',
+                      },
+                    ],
+                  },
+                  { name: 'mask', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'proposedAt',
+                    internalType: 'uint64',
+                    type: 'uint64',
+                  },
+                ],
               },
               { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
             ],
@@ -185,26 +290,64 @@ export const adLandAbi = [
             internalType: 'struct SlotInfo',
             type: 'tuple',
             components: [
-              { name: 'recipient', internalType: 'address', type: 'address' },
               {
                 name: 'currency',
                 internalType: 'contract IERC20',
                 type: 'address',
               },
               { name: 'manager', internalType: 'address', type: 'address' },
-              { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-              {
-                name: 'minDepositSeconds',
-                internalType: 'uint256',
-                type: 'uint256',
-              },
               { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-              { name: 'mutableHook', internalType: 'bool', type: 'bool' },
-              { name: 'hook', internalType: 'address', type: 'address' },
-              { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+              { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+              { name: 'mutableModule', internalType: 'bool', type: 'bool' },
               {
-                name: 'hookFlags',
-                internalType: 'struct HookFlags',
+                name: 'terms',
+                internalType: 'struct Terms',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'taxTerms',
+                    internalType: 'struct TaxTerms',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'rateBps',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'minRunwaySeconds',
+                        internalType: 'uint32',
+                        type: 'uint32',
+                      },
+                    ],
+                  },
+                  {
+                    name: 'moduleTerms',
+                    internalType: 'struct ModuleTerms',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'module',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'settings',
+                        internalType: 'bytes',
+                        type: 'bytes',
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                name: 'scopes',
+                internalType: 'struct Scopes',
                 type: 'tuple',
                 components: [
                   { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
@@ -221,7 +364,26 @@ export const adLandAbi = [
                     type: 'bool',
                   },
                   { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-                  { name: 'strict', internalType: 'bool', type: 'bool' },
+                  {
+                    name: 'afterCallbacksMustSucceed',
+                    internalType: 'bool',
+                    type: 'bool',
+                  },
+                  { name: 'onInstall', internalType: 'bool', type: 'bool' },
+                  { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+                ],
+              },
+              {
+                name: 'fee',
+                internalType: 'struct ModuleFee',
+                type: 'tuple',
+                components: [
+                  { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
                 ],
               },
               { name: 'occupant', internalType: 'address', type: 'address' },
@@ -244,22 +406,78 @@ export const adLandAbi = [
                 type: 'uint256',
               },
               {
-                name: 'pendingTaxBps',
-                internalType: 'uint256',
-                type: 'uint256',
-              },
-              { name: 'pendingHook', internalType: 'address', type: 'address' },
-              {
-                name: 'pendingHookData',
-                internalType: 'bytes32',
-                type: 'bytes32',
-              },
-              { name: 'pendingHasTax', internalType: 'bool', type: 'bool' },
-              { name: 'pendingHasHook', internalType: 'bool', type: 'bool' },
-              {
-                name: 'pendingProposedAt',
-                internalType: 'uint64',
-                type: 'uint64',
+                name: 'pending',
+                internalType: 'struct Pending',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'taxTerms',
+                    internalType: 'struct TaxTerms',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'rateBps',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'minRunwaySeconds',
+                        internalType: 'uint32',
+                        type: 'uint32',
+                      },
+                    ],
+                  },
+                  {
+                    name: 'nextModule',
+                    internalType: 'struct InstalledModule',
+                    type: 'tuple',
+                    components: [
+                      {
+                        name: 'module',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                      {
+                        name: 'scopes',
+                        internalType: 'uint16',
+                        type: 'uint16',
+                      },
+                      {
+                        name: 'fee',
+                        internalType: 'struct ModuleFee',
+                        type: 'tuple',
+                        components: [
+                          {
+                            name: 'bps',
+                            internalType: 'uint16',
+                            type: 'uint16',
+                          },
+                          {
+                            name: 'recipient',
+                            internalType: 'address',
+                            type: 'address',
+                          },
+                        ],
+                      },
+                      {
+                        name: 'settings',
+                        internalType: 'bytes',
+                        type: 'bytes',
+                      },
+                    ],
+                  },
+                  { name: 'mask', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'proposedAt',
+                    internalType: 'uint64',
+                    type: 'uint64',
+                  },
+                ],
               },
               { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
             ],
@@ -268,6 +486,50 @@ export const adLandAbi = [
       },
     ],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'adConfig',
+    outputs: [
+      {
+        name: 'c',
+        internalType: 'struct AdConfig',
+        type: 'tuple',
+        components: [
+          { name: 'tenureWindow', internalType: 'uint64', type: 'uint64' },
+          {
+            name: 'moderation',
+            internalType: 'enum ModerationMode',
+            type: 'uint8',
+          },
+          { name: 'key', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
+    name: 'adConfigOf',
+    outputs: [
+      {
+        name: 'c',
+        internalType: 'struct AdConfig',
+        type: 'tuple',
+        components: [
+          { name: 'tenureWindow', internalType: 'uint64', type: 'uint64' },
+          {
+            name: 'moderation',
+            internalType: 'enum ModerationMode',
+            type: 'uint8',
+          },
+          { name: 'key', internalType: 'bytes32', type: 'bytes32' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -282,13 +544,21 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -309,13 +579,21 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -336,13 +614,21 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -363,17 +649,35 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
     name: 'afterSettle',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'uriHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'approveCreative',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -390,13 +694,21 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -417,13 +729,21 @@ export const adLandAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -471,54 +791,16 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'commitSlot',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'claimKey',
     outputs: [],
     stateMutability: 'nonpayable',
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'recipient', internalType: 'address', type: 'address' },
-      { name: 'currency', internalType: 'contract IERC20', type: 'address' },
-      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-      { name: 'minDepositSeconds', internalType: 'uint256', type: 'uint256' },
-      { name: 'tenureWindow', internalType: 'uint256', type: 'uint256' },
-      { name: 'manager', internalType: 'address', type: 'address' },
-      { name: 'key', internalType: 'bytes32', type: 'bytes32' },
-    ],
-    name: 'createAdSlot',
-    outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: 'params',
-        internalType: 'struct AdLandCreate.AdSlotParams[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'recipient', internalType: 'address', type: 'address' },
-          {
-            name: 'currency',
-            internalType: 'contract IERC20',
-            type: 'address',
-          },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
-          { name: 'tenureWindow', internalType: 'uint256', type: 'uint256' },
-          { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'key', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    name: 'createAdSlotMany',
-    outputs: [{ name: 'slots', internalType: 'address[]', type: 'address[]' }],
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'commitSlot',
+    outputs: [],
     stateMutability: 'nonpayable',
   },
   {
@@ -530,19 +812,16 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'descriptors',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
     outputs: [
       {
-        name: 'd',
-        internalType: 'struct HookDescriptor[]',
-        type: 'tuple[]',
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
         components: [
-          { name: 'family', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'version', internalType: 'uint32', type: 'uint32' },
-          { name: 'signature', internalType: 'string', type: 'string' },
-          { name: 'data', internalType: 'bytes', type: 'bytes' },
-          { name: 'metadataURI', internalType: 'string', type: 'string' },
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
         ],
       },
     ],
@@ -573,9 +852,101 @@ export const adLandAbi = [
   },
   {
     type: 'function',
+    inputs: [],
+    name: 'metadata',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'moderationOf',
+    outputs: [
+      { name: 'current', internalType: 'enum ModerationMode', type: 'uint8' },
+      {
+        name: 'nextTenure',
+        internalType: 'enum ModerationMode',
+        type: 'uint8',
+      },
+      { name: 'submission', internalType: 'string', type: 'string' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'data', internalType: 'bytes[]', type: 'bytes[]' }],
     name: 'multicall',
     outputs: [{ name: 'results', internalType: 'bytes[]', type: 'bytes[]' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onInstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onUninstall',
+    outputs: [],
     stateMutability: 'nonpayable',
   },
   {
@@ -592,6 +963,7 @@ export const adLandAbi = [
     outputs: [
       { name: 'slot', internalType: 'address', type: 'address' },
       { name: 'readyAt', internalType: 'uint64', type: 'uint64' },
+      { name: 'byOwner', internalType: 'bool', type: 'bool' },
     ],
     stateMutability: 'view',
   },
@@ -641,6 +1013,16 @@ export const adLandAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'uriHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'rejectCreative',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'renounceOwnership',
     outputs: [],
@@ -650,11 +1032,18 @@ export const adLandAbi = [
     type: 'function',
     inputs: [
       { name: 'price', internalType: 'uint256', type: 'uint256' },
-      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
       { name: 'window', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'requiredDeposit',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'pure',
   },
   {
@@ -669,20 +1058,6 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'factory', internalType: 'address', type: 'address' }],
-    name: 'setSlotFactory',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'slotFactory',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
     name: 'slotOf',
     outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
@@ -690,65 +1065,9 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'subscriptions',
-    outputs: [
-      {
-        name: 'f',
-        internalType: 'struct HookFlags',
-        type: 'tuple',
-        components: [
-          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-          { name: 'strict', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'tenureBounds',
-    outputs: [
-      {
-        name: 'b',
-        internalType: 'struct HookBounds[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'name', internalType: 'string', type: 'string' },
-          { name: 'unit', internalType: 'string', type: 'string' },
-          { name: 'bounded', internalType: 'bool', type: 'bool' },
-          { name: 'min', internalType: 'uint256', type: 'uint256' },
-          { name: 'max', internalType: 'uint256', type: 'uint256' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'tenureBounds_',
-    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
     name: 'tenureOf',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'tenureSignature',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
     stateMutability: 'pure',
   },
   {
@@ -770,8 +1089,8 @@ export const adLandAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'validateHookData',
+    inputs: [{ name: 'settings', internalType: 'bytes', type: 'bytes' }],
+    name: 'validateSettings',
     outputs: [],
     stateMutability: 'pure',
   },
@@ -787,26 +1106,15 @@ export const adLandAbi = [
     anonymous: false,
     inputs: [
       { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'uri', internalType: 'string', type: 'string', indexed: false },
       {
-        name: 'creator',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'recipient',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'tenureWindow',
-        internalType: 'uint256',
-        type: 'uint256',
+        name: 'tenureId',
+        internalType: 'uint64',
+        type: 'uint64',
         indexed: false,
       },
     ],
-    name: 'AdSlotCreated',
+    name: 'Approved',
   },
   {
     type: 'event',
@@ -879,20 +1187,16 @@ export const adLandAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'uri', internalType: 'string', type: 'string', indexed: false },
       {
-        name: 'previous',
-        internalType: 'address',
-        type: 'address',
-        indexed: false,
-      },
-      {
-        name: 'next',
-        internalType: 'address',
-        type: 'address',
+        name: 'tenureId',
+        internalType: 'uint64',
+        type: 'uint64',
         indexed: false,
       },
     ],
-    name: 'SlotFactorySet',
+    name: 'Rejected',
   },
   {
     type: 'event',
@@ -937,6 +1241,21 @@ export const adLandAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'uri', internalType: 'string', type: 'string', indexed: false },
+      {
+        name: 'tenureId',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Submitted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
       {
         name: 'implementation',
         internalType: 'address',
@@ -964,7 +1283,6 @@ export const adLandAbi = [
     name: 'ERC1967InvalidImplementation',
   },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
-  { type: 'error', inputs: [], name: 'EmptyBatch' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   {
@@ -972,8 +1290,9 @@ export const adLandAbi = [
     inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
     name: 'KeyTaken',
   },
+  { type: 'error', inputs: [], name: 'MalformedSettings' },
   { type: 'error', inputs: [], name: 'NativeSlotHasNoPermit' },
-  { type: 'error', inputs: [], name: 'NoFactory' },
+  { type: 'error', inputs: [], name: 'NoSlotLens' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   {
     type: 'error',
@@ -981,7 +1300,10 @@ export const adLandAbi = [
     name: 'NotKeyOwner',
   },
   { type: 'error', inputs: [], name: 'NotOccupant' },
+  { type: 'error', inputs: [], name: 'NotSlotManager' },
+  { type: 'error', inputs: [], name: 'NotTheSlot' },
   { type: 'error', inputs: [], name: 'NothingPending' },
+  { type: 'error', inputs: [], name: 'NothingToModerate' },
   {
     type: 'error',
     inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
@@ -992,12 +1314,23 @@ export const adLandAbi = [
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
     name: 'OwnableUnauthorizedAccount',
   },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'OwnerProposalPending',
+  },
   { type: 'error', inputs: [], name: 'PriceCutDuringTenure' },
+  {
+    type: 'error',
+    inputs: [{ name: 'key', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'ReservedKey',
+  },
   {
     type: 'error',
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
   },
+  { type: 'error', inputs: [], name: 'SubmissionChanged' },
   { type: 'error', inputs: [], name: 'TenureNotConfigured' },
   {
     type: 'error',
@@ -1030,37 +1363,33 @@ export const adLandAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  */
 export const adLandAddress = {
-  8453: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
-  31337: '0xE739d3dBd10CeCE45c73c408B3e22543Ff609aAD',
-  84532: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
-  11155111: '0x27b8E0D543547D6094ACf3592d17a74f43d6B899',
+  31337: '0x3e0B5E2bC2f895eB79d6461Ab8afB2A3e742Cc74',
+  84532: '0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B',
+  11155111: '0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x27b8E0D543547D6094ACf3592d17a74f43d6B899)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  */
 export const adLandConfig = { address: adLandAddress, abi: adLandAbi } as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// MinimumTenureHook
+// MinimumTenureModule
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
  */
-export const minimumTenureHookAbi = [
+export const minimumTenureModuleAbi = [
   {
     type: 'function',
     inputs: [],
@@ -1071,36 +1400,8 @@ export const minimumTenureHookAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'DESCRIPTOR_VERSION',
-    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'FAMILY',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'MAX_TENURE',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TENURE_DESCRIPTOR_VERSION',
-    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'TENURE_FAMILY',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'view',
   },
   {
@@ -1116,13 +1417,21 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -1143,13 +1452,21 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -1170,13 +1487,21 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -1197,13 +1522,21 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -1224,13 +1557,21 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -1251,13 +1592,21 @@ export const minimumTenureHookAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -1267,23 +1616,97 @@ export const minimumTenureHookAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'descriptors',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
     outputs: [
       {
-        name: 'result',
-        internalType: 'struct HookDescriptor[]',
-        type: 'tuple[]',
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
         components: [
-          { name: 'family', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'version', internalType: 'uint32', type: 'uint32' },
-          { name: 'signature', internalType: 'string', type: 'string' },
-          { name: 'data', internalType: 'bytes', type: 'bytes' },
-          { name: 'metadataURI', internalType: 'string', type: 'string' },
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
         ],
       },
     ],
     stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'metadata',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onInstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onUninstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -1299,7 +1722,7 @@ export const minimumTenureHookAbi = [
     type: 'function',
     inputs: [
       { name: 'price', internalType: 'uint256', type: 'uint256' },
-      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
       { name: 'window', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'requiredDeposit',
@@ -1308,71 +1731,22 @@ export const minimumTenureHookAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'subscriptions',
-    outputs: [
-      {
-        name: 'f',
-        internalType: 'struct HookFlags',
-        type: 'tuple',
-        components: [
-          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-          { name: 'strict', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'pure',
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'tenureBounds',
-    outputs: [
-      {
-        name: 'b',
-        internalType: 'struct HookBounds[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'name', internalType: 'string', type: 'string' },
-          { name: 'unit', internalType: 'string', type: 'string' },
-          { name: 'bounded', internalType: 'bool', type: 'bool' },
-          { name: 'min', internalType: 'uint256', type: 'uint256' },
-          { name: 'max', internalType: 'uint256', type: 'uint256' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'tenureBounds_',
-    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
     name: 'tenureOf',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'pure',
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'tenureSignature',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'data', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'validateHookData',
+    inputs: [{ name: 'data', internalType: 'bytes', type: 'bytes' }],
+    name: 'validateSettings',
     outputs: [],
     stateMutability: 'pure',
   },
@@ -1381,6 +1755,7 @@ export const minimumTenureHookAbi = [
     inputs: [{ name: 'required', internalType: 'uint256', type: 'uint256' }],
     name: 'BuyoutBelowPremium',
   },
+  { type: 'error', inputs: [], name: 'NotTheSlot' },
   { type: 'error', inputs: [], name: 'PriceCutDuringTenure' },
   { type: 'error', inputs: [], name: 'TenureNotConfigured' },
   {
@@ -1401,27 +1776,24 @@ export const minimumTenureHookAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
  */
-export const minimumTenureHookAddress = {
-  8453: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
-  31337: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
-  84532: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
-  11155111: '0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F',
+export const minimumTenureModuleAddress = {
+  31337: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
+  84532: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
+  11155111: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x32dc981b9622B8ae5e90716ED07a275cCAd1Ba9F)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
  */
-export const minimumTenureHookConfig = {
-  address: minimumTenureHookAddress,
-  abi: minimumTenureHookAbi,
+export const minimumTenureModuleConfig = {
+  address: minimumTenureModuleAddress,
+  abi: minimumTenureModuleAbi,
 } as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1429,10 +1801,9 @@ export const minimumTenureHookConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  */
 export const offerBookAbi = [
   {
@@ -1440,6 +1811,7 @@ export const offerBookAbi = [
     inputs: [
       { name: 'slot', internalType: 'address', type: 'address' },
       { name: 'id', internalType: 'uint256', type: 'uint256' },
+      { name: 'minPrice', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'acceptOffer',
     outputs: [],
@@ -1470,8 +1842,61 @@ export const offerBookAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'bestIn',
+    outputs: [
+      { name: 'found', internalType: 'bool', type: 'bool' },
+      { name: 'id', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'o',
+        internalType: 'struct OfferBookStorage.Offer',
+        type: 'tuple',
+        components: [
+          { name: 'bidder', internalType: 'address', type: 'address' },
+          { name: 'price', internalType: 'uint256', type: 'uint256' },
+          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+          { name: 'expiry', internalType: 'uint64', type: 'uint64' },
+          { name: 'cancelled', internalType: 'bool', type: 'bool' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'board',
+    outputs: [
+      {
+        name: 'list',
+        internalType: 'struct OfferBookStorage.Offer[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'bidder', internalType: 'address', type: 'address' },
+          { name: 'price', internalType: 'uint256', type: 'uint256' },
+          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+          { name: 'expiry', internalType: 'uint64', type: 'uint64' },
+          { name: 'cancelled', internalType: 'bool', type: 'bool' },
+          { name: 'filled', internalType: 'bool', type: 'bool' },
+        ],
+      },
+      { name: 'live', internalType: 'bool[]', type: 'bool[]' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'boardPage',
     outputs: [
       {
         name: 'list',
@@ -1524,6 +1949,17 @@ export const offerBookAbi = [
     type: 'function',
     inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     name: 'liveCount',
+    outputs: [{ name: 'n', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address' },
+      { name: 'start', internalType: 'uint256', type: 'uint256' },
+      { name: 'count', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'liveCountIn',
     outputs: [{ name: 'n', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -1716,6 +2152,22 @@ export const offerBookAbi = [
   { type: 'error', inputs: [], name: 'OfferNotLive' },
   {
     type: 'error',
+    inputs: [
+      { name: 'price', internalType: 'uint256', type: 'uint256' },
+      { name: 'minPrice', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'PriceBelowMinimum',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'owed', internalType: 'uint256', type: 'uint256' },
+      { name: 'ceiling', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'QuoteAboveOffer',
+  },
+  {
+    type: 'error',
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
   },
@@ -1728,23 +2180,20 @@ export const offerBookAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  */
 export const offerBookAddress = {
-  8453: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
-  31337: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
-  84532: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
-  11155111: '0x691C6010F6953e632405d3c3fBaF561914F095D1',
+  31337: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
+  84532: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
+  11155111: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x691C6010F6953e632405d3c3fBaF561914F095D1)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  */
 export const offerBookConfig = {
   address: offerBookAddress,
@@ -1756,10 +2205,9 @@ export const offerBookConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
  */
 export const slotAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
@@ -1774,15 +2222,8 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'HOOK_GAS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'HOOK_READ_FLOOR',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    name: 'MAX_MIN_RUNWAY',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
     stateMutability: 'view',
   },
   {
@@ -1802,6 +2243,13 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'MODULE_CALLBACK_GAS_LIMIT',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'MONTH',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -1809,7 +2257,7 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'PAYOUT_GAS',
+    name: 'NATIVE_PAYOUT_GAS_LIMIT',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -1822,10 +2270,69 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'address', type: 'address' }],
-    name: 'arrearsOf',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    inputs: [],
+    name: 'TERM_MIN_RUNWAY',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'TERM_MODULE',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'TERM_RECIPIENT',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'TERM_SCOPES',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'TERM_TAX_RATE',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'expected',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    name: 'acceptFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'expected', internalType: 'uint16', type: 'uint16' }],
+    name: 'acceptScopes',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'applyTerms',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -1841,10 +2348,7 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'cancelTax', internalType: 'bool', type: 'bool' },
-      { name: 'cancelHook', internalType: 'bool', type: 'bool' },
-    ],
+    inputs: [{ name: 'mask', internalType: 'uint16', type: 'uint16' }],
     name: 'cancelTerms',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -1855,6 +2359,13 @@ export const slotAbi = [
     name: 'claim',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'claimableOf',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -1879,6 +2390,13 @@ export const slotAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'debtOf',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'deposit',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
@@ -1887,88 +2405,15 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'getSlotConstants',
+    name: 'fee',
     outputs: [
       {
-        name: 'c',
-        internalType: 'struct SlotConstantsInfo',
+        name: '',
+        internalType: 'struct ModuleFee',
         type: 'tuple',
         components: [
-          { name: 'maxPrice', internalType: 'uint256', type: 'uint256' },
-          { name: 'maxTaxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'basisPoints', internalType: 'uint256', type: 'uint256' },
-          { name: 'month', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookGas', internalType: 'uint256', type: 'uint256' },
-          { name: 'payoutGas', internalType: 'uint256', type: 'uint256' },
-          { name: 'termsDelay', internalType: 'uint64', type: 'uint64' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'getSlotInfo',
-    outputs: [
-      {
-        name: 'info',
-        internalType: 'struct SlotInfo',
-        type: 'tuple',
-        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
           { name: 'recipient', internalType: 'address', type: 'address' },
-          {
-            name: 'currency',
-            internalType: 'contract IERC20',
-            type: 'address',
-          },
-          { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
-          { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-          { name: 'mutableHook', internalType: 'bool', type: 'bool' },
-          { name: 'hook', internalType: 'address', type: 'address' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          {
-            name: 'hookFlags',
-            internalType: 'struct HookFlags',
-            type: 'tuple',
-            components: [
-              { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-              { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-              { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-              { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-              { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-              { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-              { name: 'strict', internalType: 'bool', type: 'bool' },
-            ],
-          },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'price', internalType: 'uint256', type: 'uint256' },
-          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-          { name: 'occupiedSince', internalType: 'uint64', type: 'uint64' },
-          { name: 'tenureId', internalType: 'uint64', type: 'uint64' },
-          { name: 'lastSettled', internalType: 'uint64', type: 'uint64' },
-          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
-          { name: 'collectedTax', internalType: 'uint256', type: 'uint256' },
-          { name: 'isVacant', internalType: 'bool', type: 'bool' },
-          { name: 'isInsolvent', internalType: 'bool', type: 'bool' },
-          {
-            name: 'secondsUntilLiquidation',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
-          { name: 'pendingTaxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'pendingHook', internalType: 'address', type: 'address' },
-          { name: 'pendingHookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'pendingHasTax', internalType: 'bool', type: 'bool' },
-          { name: 'pendingHasHook', internalType: 'bool', type: 'bool' },
-          { name: 'pendingProposedAt', internalType: 'uint64', type: 'uint64' },
-          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
         ],
       },
     ],
@@ -1983,65 +2428,44 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'hook',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'hookData',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'hookFlags',
-    outputs: [
-      {
-        name: 'f',
-        internalType: 'struct HookFlags',
-        type: 'tuple',
-        components: [
-          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-          { name: 'strict', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       {
         name: 'p',
         internalType: 'struct SlotInit',
         type: 'tuple',
         components: [
-          { name: 'recipient', internalType: 'address', type: 'address' },
           {
             name: 'currency',
             internalType: 'contract IERC20',
             type: 'address',
           },
           { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'hook', internalType: 'address', type: 'address' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-          { name: 'mutableHook', internalType: 'bool', type: 'bool' },
+          { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
+          {
+            name: 'taxTerms',
+            internalType: 'struct TaxTerms',
+            type: 'tuple',
+            components: [
+              { name: 'recipient', internalType: 'address', type: 'address' },
+              { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'minRunwaySeconds',
+                internalType: 'uint32',
+                type: 'uint32',
+              },
+            ],
+          },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2100,9 +2524,40 @@ export const slotAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'minDepositSeconds',
+    inputs: [{ name: 'price_', internalType: 'uint256', type: 'uint256' }],
+    name: 'minDepositToHold',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'minRunwaySeconds',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'module',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'moduleTerms',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
+      },
+    ],
     stateMutability: 'view',
   },
   {
@@ -2115,7 +2570,14 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'mutableHook',
+    name: 'mutableModule',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'mutableRecipient',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
@@ -2145,12 +2607,52 @@ export const slotAbi = [
     inputs: [],
     name: 'pending',
     outputs: [
-      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-      { name: 'hook', internalType: 'address', type: 'address' },
-      { name: 'hasTax', internalType: 'bool', type: 'bool' },
-      { name: 'hasHook', internalType: 'bool', type: 'bool' },
-      { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-      { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+      {
+        name: '',
+        internalType: 'struct Pending',
+        type: 'tuple',
+        components: [
+          {
+            name: 'taxTerms',
+            internalType: 'struct TaxTerms',
+            type: 'tuple',
+            components: [
+              { name: 'recipient', internalType: 'address', type: 'address' },
+              { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'minRunwaySeconds',
+                internalType: 'uint32',
+                type: 'uint32',
+              },
+            ],
+          },
+          {
+            name: 'nextModule',
+            internalType: 'struct InstalledModule',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'scopes', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'fee',
+                internalType: 'struct ModuleFee',
+                type: 'tuple',
+                components: [
+                  { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                ],
+              },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+          { name: 'mask', internalType: 'uint16', type: 'uint16' },
+          { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
+        ],
+      },
     ],
     stateMutability: 'view',
   },
@@ -2164,11 +2666,26 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'newTaxBps', internalType: 'uint256', type: 'uint256' },
-      { name: 'newHook', internalType: 'address', type: 'address' },
-      { name: 'newHookData', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'changeTax', internalType: 'bool', type: 'bool' },
-      { name: 'changeHook', internalType: 'bool', type: 'bool' },
+      {
+        name: 'taxTerms',
+        internalType: 'struct TaxTerms',
+        type: 'tuple',
+        components: [
+          { name: 'recipient', internalType: 'address', type: 'address' },
+          { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'minRunwaySeconds', internalType: 'uint32', type: 'uint32' },
+        ],
+      },
+      {
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
+      },
+      { name: 'mask', internalType: 'uint16', type: 'uint16' },
     ],
     name: 'proposeTerms',
     outputs: [],
@@ -2177,7 +2694,7 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'account', internalType: 'address', type: 'address' },
+      { name: '', internalType: 'address', type: 'address' },
       { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'quoteBuy',
@@ -2201,6 +2718,34 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'scopes',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct Scopes',
+        type: 'tuple',
+        components: [
+          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
+          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
+          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
+          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
+          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
+          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
+          {
+            name: 'afterCallbacksMustSucceed',
+            internalType: 'bool',
+            type: 'bool',
+          },
+          { name: 'onInstall', internalType: 'bool', type: 'bool' },
+          { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'secondsUntilLiquidation',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -2209,6 +2754,13 @@ export const slotAbi = [
     type: 'function',
     inputs: [{ name: 'newPrice', internalType: 'uint256', type: 'uint256' }],
     name: 'selfAssess',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'next', internalType: 'address', type: 'address' }],
+    name: 'setManager',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -2225,13 +2777,6 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'taxBps',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'taxOwed',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -2239,8 +2784,71 @@ export const slotAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'taxRateBps',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'taxTerms',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct TaxTerms',
+        type: 'tuple',
+        components: [
+          { name: 'recipient', internalType: 'address', type: 'address' },
+          { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'minRunwaySeconds', internalType: 'uint32', type: 'uint32' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'tenureId',
     outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'terms',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct Terms',
+        type: 'tuple',
+        components: [
+          {
+            name: 'taxTerms',
+            internalType: 'struct TaxTerms',
+            type: 'tuple',
+            components: [
+              { name: 'recipient', internalType: 'address', type: 'address' },
+              { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'minRunwaySeconds',
+                internalType: 'uint32',
+                type: 'uint32',
+              },
+            ],
+          },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
     stateMutability: 'view',
   },
   {
@@ -2263,13 +2871,6 @@ export const slotAbi = [
     name: 'withdraw',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: '', internalType: 'address', type: 'address' }],
-    name: 'withdrawableOf',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
   },
   {
     type: 'event',
@@ -2345,6 +2946,25 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      {
+        name: 'account',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'DebtRepaid',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
       { name: 'by', internalType: 'address', type: 'address', indexed: true },
       {
         name: 'amount',
@@ -2365,23 +2985,18 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'hook', internalType: 'address', type: 'address', indexed: true },
       {
-        name: 'selector',
-        internalType: 'bytes4',
-        type: 'bytes4',
+        name: 'fee',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
         indexed: false,
       },
     ],
-    name: 'HookCallFailed',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'hook', internalType: 'address', type: 'address', indexed: true },
-    ],
-    name: 'HookDetached',
+    name: 'FeeAccepted',
   },
   {
     type: 'event',
@@ -2401,16 +3016,55 @@ export const slotAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'recipient',
+        name: 'currency',
         internalType: 'address',
         type: 'address',
         indexed: true,
       },
       {
-        name: 'currency',
+        name: 'manager',
         internalType: 'address',
         type: 'address',
         indexed: true,
+      },
+      {
+        name: 'mutableTax',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+      {
+        name: 'mutableRecipient',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+      {
+        name: 'mutableModule',
+        internalType: 'bool',
+        type: 'bool',
+        indexed: false,
+      },
+      {
+        name: 'taxTerms',
+        internalType: 'struct TaxTerms',
+        type: 'tuple',
+        components: [
+          { name: 'recipient', internalType: 'address', type: 'address' },
+          { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'minRunwaySeconds', internalType: 'uint32', type: 'uint32' },
+        ],
+        indexed: false,
+      },
+      {
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
+        indexed: false,
       },
     ],
     name: 'Initialized',
@@ -2428,6 +3082,77 @@ export const slotAbi = [
       },
     ],
     name: 'Liquidated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'previous',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'next', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'ManagerSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'selector',
+        internalType: 'bytes4',
+        type: 'bytes4',
+        indexed: false,
+      },
+    ],
+    name: 'ModuleCallFailed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'ModuleDropped',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'recipient',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'ModuleFeePaid',
   },
   {
     type: 'event',
@@ -2487,6 +3212,38 @@ export const slotAbi = [
       },
     ],
     name: 'Released',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+    ],
+    name: 'ScopesAccepted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'module',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+    ],
+    name: 'ScopesDropped',
   },
   {
     type: 'event',
@@ -2562,18 +3319,43 @@ export const slotAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'taxBps',
-        internalType: 'uint256',
-        type: 'uint256',
+        name: 'taxTerms',
+        internalType: 'struct TaxTerms',
+        type: 'tuple',
+        components: [
+          { name: 'recipient', internalType: 'address', type: 'address' },
+          { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'minRunwaySeconds', internalType: 'uint32', type: 'uint32' },
+        ],
         indexed: false,
       },
-      { name: 'hook', internalType: 'address', type: 'address', indexed: true },
       {
-        name: 'hookData',
-        internalType: 'bytes32',
-        type: 'bytes32',
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
         indexed: false,
       },
+      {
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'fee',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+        indexed: false,
+      },
+      { name: 'mask', internalType: 'uint16', type: 'uint16', indexed: false },
     ],
     name: 'TermsApplied',
   },
@@ -2581,13 +3363,7 @@ export const slotAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
-      { name: 'cancelTax', internalType: 'bool', type: 'bool', indexed: false },
-      {
-        name: 'cancelHook',
-        internalType: 'bool',
-        type: 'bool',
-        indexed: false,
-      },
+      { name: 'mask', internalType: 'uint16', type: 'uint16', indexed: false },
     ],
     name: 'TermsCancelled',
   },
@@ -2596,25 +3372,27 @@ export const slotAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'taxBps',
-        internalType: 'uint256',
-        type: 'uint256',
+        name: 'taxTerms',
+        internalType: 'struct TaxTerms',
+        type: 'tuple',
+        components: [
+          { name: 'recipient', internalType: 'address', type: 'address' },
+          { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'minRunwaySeconds', internalType: 'uint32', type: 'uint32' },
+        ],
         indexed: false,
       },
-      { name: 'hook', internalType: 'address', type: 'address', indexed: true },
       {
-        name: 'hookData',
-        internalType: 'bytes32',
-        type: 'bytes32',
+        name: 'moduleTerms',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
         indexed: false,
       },
-      { name: 'changeTax', internalType: 'bool', type: 'bool', indexed: false },
-      {
-        name: 'changeHook',
-        internalType: 'bool',
-        type: 'bool',
-        indexed: false,
-      },
+      { name: 'mask', internalType: 'uint16', type: 'uint16', indexed: false },
     ],
     name: 'TermsProposed',
   },
@@ -2649,16 +3427,31 @@ export const slotAbi = [
     name: 'AddressEmptyCode',
   },
   { type: 'error', inputs: [], name: 'CannotBuyFromYourself' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'sent', internalType: 'uint256', type: 'uint256' },
+      { name: 'received', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CurrencyTakesACut',
+  },
+  { type: 'error', inputs: [], name: 'DebtOutstanding' },
   { type: 'error', inputs: [], name: 'FailedCall' },
-  { type: 'error', inputs: [], name: 'InsufficientGasForTerms' },
+  { type: 'error', inputs: [], name: 'FeeChanged' },
   { type: 'error', inputs: [], name: 'InvalidCurrency' },
   { type: 'error', inputs: [], name: 'InvalidDeposit' },
-  { type: 'error', inputs: [], name: 'InvalidHook' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  { type: 'error', inputs: [], name: 'InvalidManager' },
+  { type: 'error', inputs: [], name: 'InvalidModule' },
+  { type: 'error', inputs: [], name: 'InvalidModuleFee' },
   { type: 'error', inputs: [], name: 'InvalidPrice' },
   { type: 'error', inputs: [], name: 'InvalidRecipient' },
+  { type: 'error', inputs: [], name: 'InvalidRunway' },
   { type: 'error', inputs: [], name: 'InvalidTax' },
   { type: 'error', inputs: [], name: 'InvalidValue' },
+  { type: 'error', inputs: [], name: 'ModuleChangeQueued' },
+  { type: 'error', inputs: [], name: 'ModuleGasTooLow' },
+  { type: 'error', inputs: [], name: 'ModuleTooExpensive' },
   { type: 'error', inputs: [], name: 'NoPendingTerms' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotInsolvent' },
@@ -2667,6 +3460,7 @@ export const slotAbi = [
   { type: 'error', inputs: [], name: 'NotOccupant' },
   { type: 'error', inputs: [], name: 'NotOccupantOrOperator' },
   { type: 'error', inputs: [], name: 'NothingProposed' },
+  { type: 'error', inputs: [], name: 'NothingToAccept' },
   { type: 'error', inputs: [], name: 'NothingToClaim' },
   { type: 'error', inputs: [], name: 'NothingToCollect' },
   { type: 'error', inputs: [], name: 'NothingToWithdraw' },
@@ -2677,28 +3471,27 @@ export const slotAbi = [
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
   },
+  { type: 'error', inputs: [], name: 'ScopesChanged' },
   { type: 'error', inputs: [], name: 'TransferFailed' },
+  { type: 'error', inputs: [], name: 'UnknownTerms' },
   { type: 'error', inputs: [], name: 'Vacant' },
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
  */
 export const slotAddress = {
-  8453: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
-  31337: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
-  84532: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
-  11155111: '0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168',
+  31337: '0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1',
+  84532: '0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1',
+  11155111: '0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfc2c57aF25f3E12a25475d4645ef9Cd94cD34168)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x5a6369D32722a3a5b1E9e7239271c3Bd10d450C1)
  */
 export const slotConfig = { address: slotAddress, abi: slotAbi } as const
 
@@ -2719,8 +3512,8 @@ export const slotBoundNftAbi = [
       { name: 'symbol_', internalType: 'string', type: 'string' },
       { name: 'maxSupply_', internalType: 'uint256', type: 'uint256' },
       { name: 'currency_', internalType: 'contract IERC20', type: 'address' },
-      { name: 'taxBps_', internalType: 'uint256', type: 'uint256' },
-      { name: 'minDepositSeconds_', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxRateBps_', internalType: 'uint16', type: 'uint16' },
+      { name: 'minRunwaySeconds_', internalType: 'uint32', type: 'uint32' },
       { name: 'recipient_', internalType: 'address', type: 'address' },
       { name: 'manager_', internalType: 'address', type: 'address' },
       { name: 'owner', internalType: 'address', type: 'address' },
@@ -2756,13 +3549,21 @@ export const slotBoundNftAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2783,13 +3584,21 @@ export const slotBoundNftAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2810,13 +3619,21 @@ export const slotBoundNftAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2837,13 +3654,21 @@ export const slotBoundNftAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2888,13 +3713,21 @@ export const slotBoundNftAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2915,13 +3748,21 @@ export const slotBoundNftAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -2938,77 +3779,26 @@ export const slotBoundNftAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
-    name: 'getApproved',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
     inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
-    name: 'getSlotInfoOf',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct SlotInfo',
-        type: 'tuple',
-        components: [
-          { name: 'recipient', internalType: 'address', type: 'address' },
-          {
-            name: 'currency',
-            internalType: 'contract IERC20',
-            type: 'address',
-          },
-          { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
-          { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-          { name: 'mutableHook', internalType: 'bool', type: 'bool' },
-          { name: 'hook', internalType: 'address', type: 'address' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          {
-            name: 'hookFlags',
-            internalType: 'struct HookFlags',
-            type: 'tuple',
-            components: [
-              { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-              { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-              { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-              { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-              { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-              { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-              { name: 'strict', internalType: 'bool', type: 'bool' },
-            ],
-          },
-          { name: 'occupant', internalType: 'address', type: 'address' },
-          { name: 'price', internalType: 'uint256', type: 'uint256' },
-          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-          { name: 'occupiedSince', internalType: 'uint64', type: 'uint64' },
-          { name: 'tenureId', internalType: 'uint64', type: 'uint64' },
-          { name: 'lastSettled', internalType: 'uint64', type: 'uint64' },
-          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
-          { name: 'collectedTax', internalType: 'uint256', type: 'uint256' },
-          { name: 'isVacant', internalType: 'bool', type: 'bool' },
-          { name: 'isInsolvent', internalType: 'bool', type: 'bool' },
-          {
-            name: 'secondsUntilLiquidation',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
-          { name: 'pendingTaxBps', internalType: 'uint256', type: 'uint256' },
-          { name: 'pendingHook', internalType: 'address', type: 'address' },
-          { name: 'pendingHookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'pendingHasTax', internalType: 'bool', type: 'bool' },
-          { name: 'pendingHasHook', internalType: 'bool', type: 'bool' },
-          { name: 'pendingProposedAt', internalType: 'uint64', type: 'uint64' },
-          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
+    name: 'getApproved',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
   },
   {
@@ -3037,6 +3827,76 @@ export const slotBoundNftAbi = [
     name: 'name',
     outputs: [{ name: '', internalType: 'string', type: 'string' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onInstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onUninstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -3095,6 +3955,13 @@ export const slotBoundNftAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
     inputs: [
       { name: 'operator', internalType: 'address', type: 'address' },
       { name: 'approved', internalType: 'bool', type: 'bool' },
@@ -3116,28 +3983,6 @@ export const slotBoundNftAbi = [
     name: 'slotOf',
     outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'subscriptions',
-    outputs: [
-      {
-        name: 'f',
-        internalType: 'struct HookFlags',
-        type: 'tuple',
-        components: [
-          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-          { name: 'strict', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -3163,23 +4008,38 @@ export const slotBoundNftAbi = [
         internalType: 'struct SlotInit',
         type: 'tuple',
         components: [
-          { name: 'recipient', internalType: 'address', type: 'address' },
           {
             name: 'currency',
             internalType: 'contract IERC20',
             type: 'address',
           },
           { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'hook', internalType: 'address', type: 'address' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-          { name: 'mutableHook', internalType: 'bool', type: 'bool' },
+          { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
+          {
+            name: 'taxTerms',
+            internalType: 'struct TaxTerms',
+            type: 'tuple',
+            components: [
+              { name: 'recipient', internalType: 'address', type: 'address' },
+              { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'minRunwaySeconds',
+                internalType: 'uint32',
+                type: 'uint32',
+              },
+            ],
+          },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -3226,8 +4086,8 @@ export const slotBoundNftAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'validateHookData',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'validateSettings',
     outputs: [],
     stateMutability: 'view',
   },
@@ -3439,10 +4299,9 @@ export const slotBoundNftAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  */
 export const slotBoundNftFactoryAbi = [
   {
@@ -3482,12 +4341,8 @@ export const slotBoundNftFactoryAbi = [
             internalType: 'contract IERC20',
             type: 'address',
           },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
+          { name: 'taxRateBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'minRunwaySeconds', internalType: 'uint32', type: 'uint32' },
           { name: 'recipient', internalType: 'address', type: 'address' },
           { name: 'manager', internalType: 'address', type: 'address' },
           { name: 'owner', internalType: 'address', type: 'address' },
@@ -3526,21 +4381,13 @@ export const slotBoundNftFactoryAbi = [
         internalType: 'contract SlotFactory',
         type: 'address',
       },
-    ],
-    name: 'initialize',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
       {
         name: 'wrapperImplementation',
         internalType: 'address',
         type: 'address',
       },
     ],
-    name: 'initializeWrappers',
+    name: 'initialize',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -3780,23 +4627,20 @@ export const slotBoundNftFactoryAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  */
 export const slotBoundNftFactoryAddress = {
-  8453: '0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4',
-  31337: '0x5E3eF051FfC7edC5763697c67D46aeBfED4ea4CB',
-  84532: '0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4',
-  11155111: '0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4',
+  31337: '0x037DB7DaD5D186123D415A17bcC16352bB2D7952',
+  84532: '0x930B546078c110E43Bbf8A6c18651120c8a7b820',
+  11155111: '0x930B546078c110E43Bbf8A6c18651120c8a7b820',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xb6eD3130fB37D55B1289E0D65d751FC9d267Daf4)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  */
 export const slotBoundNftFactoryConfig = {
   address: slotBoundNftFactoryAddress,
@@ -3808,17 +4652,17 @@ export const slotBoundNftFactoryConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  */
 export const slotBoundNftWrapperAbi = [
   { type: 'constructor', inputs: [], stateMutability: 'nonpayable' },
   {
     type: 'function',
     inputs: [],
-    name: 'MIN_DEPOSIT_SECONDS',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    name: 'MIN_RUNWAY_SECONDS',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
     stateMutability: 'view',
   },
   {
@@ -3834,13 +4678,21 @@ export const slotBoundNftWrapperAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -3861,13 +4713,21 @@ export const slotBoundNftWrapperAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -3888,13 +4748,21 @@ export const slotBoundNftWrapperAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -3915,13 +4783,21 @@ export const slotBoundNftWrapperAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -3959,13 +4835,21 @@ export const slotBoundNftWrapperAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -3986,19 +4870,44 @@ export const slotBoundNftWrapperAbi = [
           { name: 'account', internalType: 'address', type: 'address' },
           { name: 'occupant', internalType: 'address', type: 'address' },
           { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
           { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
           { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
-          { name: 'owed', internalType: 'uint256', type: 'uint256' },
-          { name: 'paid', internalType: 'uint256', type: 'uint256' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
     name: 'beforeSelfAssess',
     outputs: [],
     stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'fee',
+    outputs: [
+      {
+        name: '',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -4055,6 +4964,76 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onInstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: '',
+        internalType: 'struct SlotContext',
+        type: 'tuple',
+        components: [
+          { name: 'slot', internalType: 'address', type: 'address' },
+          { name: 'caller', internalType: 'address', type: 'address' },
+          { name: 'account', internalType: 'address', type: 'address' },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'occupiedSince', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'currentPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'newPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'depositAmount', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'taxPaid', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
+        ],
+      },
+    ],
+    name: 'onUninstall',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'owner',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
@@ -4071,13 +5050,13 @@ export const slotBoundNftWrapperAbi = [
     type: 'function',
     inputs: [
       { name: 'valuation', internalType: 'uint256', type: 'uint256' },
-      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxRateBps', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'quoteWrap',
     outputs: [
       { name: 'total', internalType: 'uint256', type: 'uint256' },
       { name: 'deposit', internalType: 'uint256', type: 'uint256' },
-      { name: 'fee', internalType: 'uint256', type: 'uint256' },
+      { name: 'wrapFee', internalType: 'uint256', type: 'uint256' },
     ],
     stateMutability: 'view',
   },
@@ -4103,6 +5082,13 @@ export const slotBoundNftWrapperAbi = [
     name: 'safeTransferFrom',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'scopes',
+    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
+    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -4136,28 +5122,6 @@ export const slotBoundNftWrapperAbi = [
     name: 'slotOf',
     outputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'subscriptions',
-    outputs: [
-      {
-        name: 'f',
-        internalType: 'struct HookFlags',
-        type: 'tuple',
-        components: [
-          { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
-          { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
-          { name: 'afterBuy', internalType: 'bool', type: 'bool' },
-          { name: 'afterRelease', internalType: 'bool', type: 'bool' },
-          { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
-          { name: 'afterSettle', internalType: 'bool', type: 'bool' },
-          { name: 'strict', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -4224,8 +5188,8 @@ export const slotBoundNftWrapperAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'validateHookData',
+    inputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    name: 'validateSettings',
     outputs: [],
     stateMutability: 'view',
   },
@@ -4248,9 +5212,10 @@ export const slotBoundNftWrapperAbi = [
     inputs: [
       { name: 'underlying', internalType: 'contract IERC721', type: 'address' },
       { name: 'underlyingId', internalType: 'uint256', type: 'uint256' },
-      { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'taxRateBps', internalType: 'uint16', type: 'uint16' },
       { name: 'valuation', internalType: 'uint256', type: 'uint256' },
       { name: 'mode', internalType: 'enum Mode', type: 'uint8' },
+      { name: 'maxFee', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'wrap',
     outputs: [
@@ -4444,7 +5409,7 @@ export const slotBoundNftWrapperAbi = [
         indexed: false,
       },
       {
-        name: 'taxBps',
+        name: 'taxRateBps',
         internalType: 'uint256',
         type: 'uint256',
         indexed: false,
@@ -4453,6 +5418,7 @@ export const slotBoundNftWrapperAbi = [
     ],
     name: 'Wrapped',
   },
+  { type: 'error', inputs: [], name: 'AlreadyWrapped' },
   {
     type: 'error',
     inputs: [
@@ -4503,6 +5469,14 @@ export const slotBoundNftWrapperAbi = [
   { type: 'error', inputs: [], name: 'FailedCall' },
   {
     type: 'error',
+    inputs: [
+      { name: 'fee', internalType: 'uint256', type: 'uint256' },
+      { name: 'maxFee', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'FeeAboveMax',
+  },
+  {
+    type: 'error',
     inputs: [{ name: 'required', internalType: 'uint256', type: 'uint256' }],
     name: 'FeeUnpaid',
   },
@@ -4524,6 +5498,7 @@ export const slotBoundNftWrapperAbi = [
   { type: 'error', inputs: [], name: 'NotDepositor' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotOwner' },
+  { type: 'error', inputs: [], name: 'NotReceived' },
   { type: 'error', inputs: [], name: 'NotReclaimable' },
   { type: 'error', inputs: [], name: 'NotTransferable' },
   { type: 'error', inputs: [], name: 'Occupied' },
@@ -4533,20 +5508,20 @@ export const slotBoundNftWrapperAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  */
 export const slotBoundNftWrapperAddress = {
-  8453: '0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0',
-  84532: '0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0',
-  11155111: '0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0',
+  31337: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
+  84532: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
+  11155111: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x2577368257FaB78ed2D8A7Ca4A80d1EdD0e6BEb0)
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  */
 export const slotBoundNftWrapperConfig = {
   address: slotBoundNftWrapperAddress,
@@ -4558,10 +5533,9 @@ export const slotBoundNftWrapperConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x0409B7539f5bd5701771551F361CFA415b547453)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x0409B7539f5bd5701771551F361CFA415b547453)
  */
 export const slotCollectiveAbi = [
   {
@@ -4627,6 +5601,34 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
+      {
+        name: 'expected',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+      },
+    ],
+    name: 'acceptFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
+      { name: 'expected', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'acceptScopes',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
     ],
     name: 'cancelAllProposals',
     outputs: [],
@@ -4650,7 +5652,7 @@ export const slotCollectiveAbi = [
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
     ],
-    name: 'cancelHookProposal',
+    name: 'cancelModuleProposal',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -4663,7 +5665,7 @@ export const slotCollectiveAbi = [
         type: 'address[]',
       },
     ],
-    name: 'cancelHookProposalBatch',
+    name: 'cancelModuleProposalBatch',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -4864,7 +5866,7 @@ export const slotCollectiveAbi = [
           { name: 'admin', internalType: 'address', type: 'address' },
           { name: 'taxManagers', internalType: 'address[]', type: 'address[]' },
           {
-            name: 'hookManagers',
+            name: 'policyManagers',
             internalType: 'address[]',
             type: 'address[]',
           },
@@ -4889,6 +5891,13 @@ export const slotCollectiveAbi = [
     name: 'isValidSignature',
     outputs: [{ name: '', internalType: 'bytes4', type: 'bytes4' }],
     stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'data', internalType: 'bytes[]', type: 'bytes[]' }],
+    name: 'multicall',
+    outputs: [{ name: 'results', internalType: 'bytes[]', type: 'bytes[]' }],
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -4946,10 +5955,17 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
-      { name: 'newHook', internalType: 'address', type: 'address' },
-      { name: 'newHookData', internalType: 'bytes32', type: 'bytes32' },
+      {
+        name: 'terms',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
+      },
     ],
-    name: 'proposeHook',
+    name: 'proposeModule',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -4961,10 +5977,17 @@ export const slotCollectiveAbi = [
         internalType: 'contract IManagedSlot[]',
         type: 'address[]',
       },
-      { name: 'newHook', internalType: 'address', type: 'address' },
-      { name: 'newHookData', internalType: 'bytes32', type: 'bytes32' },
+      {
+        name: 'terms',
+        internalType: 'struct ModuleTerms',
+        type: 'tuple',
+        components: [
+          { name: 'module', internalType: 'address', type: 'address' },
+          { name: 'settings', internalType: 'bytes', type: 'bytes' },
+        ],
+      },
     ],
-    name: 'proposeHookBatch',
+    name: 'proposeModuleBatch',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -4972,7 +5995,7 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       { name: 'slot', internalType: 'contract IManagedSlot', type: 'address' },
-      { name: 'newTaxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'newTaxRateBps', internalType: 'uint16', type: 'uint16' },
     ],
     name: 'proposeTax',
     outputs: [],
@@ -4986,7 +6009,7 @@ export const slotCollectiveAbi = [
         internalType: 'contract IManagedSlot[]',
         type: 'address[]',
       },
-      { name: 'newTaxBps', internalType: 'uint256', type: 'uint256' },
+      { name: 'newTaxRateBps', internalType: 'uint16', type: 'uint16' },
     ],
     name: 'proposeTaxBatch',
     outputs: [],
@@ -5030,7 +6053,7 @@ export const slotCollectiveAbi = [
     type: 'function',
     inputs: [
       {
-        name: 'split',
+        name: 'current',
         internalType: 'struct SplitV2Lib.Split',
         type: 'tuple',
         components: [
@@ -5043,6 +6066,27 @@ export const slotCollectiveAbi = [
             type: 'uint16',
           },
         ],
+      },
+      {
+        name: 'next',
+        internalType: 'struct SplitV2Lib.Split',
+        type: 'tuple',
+        components: [
+          { name: 'recipients', internalType: 'address[]', type: 'address[]' },
+          { name: 'allocations', internalType: 'uint256[]', type: 'uint256[]' },
+          { name: 'totalAllocation', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'distributionIncentive',
+            internalType: 'uint16',
+            type: 'uint16',
+          },
+        ],
+      },
+      { name: 'tokens', internalType: 'address[]', type: 'address[]' },
+      {
+        name: 'slots',
+        internalType: 'contract IManagedSlot[]',
+        type: 'address[]',
       },
     ],
     name: 'setSplit',
@@ -5159,6 +6203,25 @@ export const slotCollectiveAbi = [
     type: 'event',
     anonymous: false,
     inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'by', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'fee',
+        internalType: 'struct ModuleFee',
+        type: 'tuple',
+        components: [
+          { name: 'bps', internalType: 'uint16', type: 'uint16' },
+          { name: 'recipient', internalType: 'address', type: 'address' },
+        ],
+        indexed: false,
+      },
+    ],
+    name: 'FeeAcceptRelayed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
       {
         name: 'version',
         internalType: 'uint64',
@@ -5246,6 +6309,21 @@ export const slotCollectiveAbi = [
       },
     ],
     name: 'RoleRevoked',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'slot', internalType: 'address', type: 'address', indexed: true },
+      { name: 'by', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'scopes',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+    ],
+    name: 'ScopesAcceptRelayed',
   },
   {
     type: 'event',
@@ -5348,8 +6426,15 @@ export const slotCollectiveAbi = [
     ],
     name: 'AccessControlUnauthorizedAccount',
   },
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
   { type: 'error', inputs: [], name: 'AdminRequired' },
+  { type: 'error', inputs: [], name: 'DeployedByAnAccount' },
   { type: 'error', inputs: [], name: 'EmptySplit' },
+  { type: 'error', inputs: [], name: 'FailedCall' },
   {
     type: 'error',
     inputs: [
@@ -5389,23 +6474,20 @@ export const slotCollectiveAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x0409B7539f5bd5701771551F361CFA415b547453)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x0409B7539f5bd5701771551F361CFA415b547453)
  */
 export const slotCollectiveAddress = {
-  8453: '0x879352c146CF7498F2738ff83202748Db5cB9c21',
-  31337: '0xB9c6D7c0C5D7E82CA8B1FC8C35bE2489Dd2d4dad',
-  84532: '0x879352c146CF7498F2738ff83202748Db5cB9c21',
-  11155111: '0x879352c146CF7498F2738ff83202748Db5cB9c21',
+  31337: '0x53AB9d5234EbD176E694F83B60adD598773889cF',
+  84532: '0x0409B7539f5bd5701771551F361CFA415b547453',
+  11155111: '0x0409B7539f5bd5701771551F361CFA415b547453',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x879352c146CF7498F2738ff83202748Db5cB9c21)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x0409B7539f5bd5701771551F361CFA415b547453)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x0409B7539f5bd5701771551F361CFA415b547453)
  */
 export const slotCollectiveConfig = {
   address: slotCollectiveAddress,
@@ -5417,10 +6499,9 @@ export const slotCollectiveConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  */
 export const slotCollectiveFactoryAbi = [
   {
@@ -5486,7 +6567,7 @@ export const slotCollectiveFactoryAbi = [
           { name: 'admin', internalType: 'address', type: 'address' },
           { name: 'taxManagers', internalType: 'address[]', type: 'address[]' },
           {
-            name: 'hookManagers',
+            name: 'policyManagers',
             internalType: 'address[]',
             type: 'address[]',
           },
@@ -5681,23 +6762,20 @@ export const slotCollectiveFactoryAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  */
 export const slotCollectiveFactoryAddress = {
-  8453: '0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1',
-  31337: '0x6c40003Ac3cB4c4188b38061A078c6a8b2E0FcD6',
-  84532: '0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1',
-  11155111: '0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1',
+  31337: '0xE864B582062658Ba02951c6816B8ecE16Ac68082',
+  84532: '0x019a3a241e5326e79Bc31F1F2008866737468e5d',
+  11155111: '0x019a3a241e5326e79Bc31F1F2008866737468e5d',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x6201cC28977df3A8C10FC185984Cc933d18C2Fb1)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  */
 export const slotCollectiveFactoryConfig = {
   address: slotCollectiveFactoryAddress,
@@ -5709,10 +6787,9 @@ export const slotCollectiveFactoryConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  */
 export const slotFactoryAbi = [
   {
@@ -5762,23 +6839,38 @@ export const slotFactoryAbi = [
         internalType: 'struct SlotInit',
         type: 'tuple',
         components: [
-          { name: 'recipient', internalType: 'address', type: 'address' },
           {
             name: 'currency',
             internalType: 'contract IERC20',
             type: 'address',
           },
           { name: 'manager', internalType: 'address', type: 'address' },
-          { name: 'hook', internalType: 'address', type: 'address' },
-          { name: 'hookData', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'taxBps', internalType: 'uint256', type: 'uint256' },
-          {
-            name: 'minDepositSeconds',
-            internalType: 'uint256',
-            type: 'uint256',
-          },
           { name: 'mutableTax', internalType: 'bool', type: 'bool' },
-          { name: 'mutableHook', internalType: 'bool', type: 'bool' },
+          { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
+          {
+            name: 'taxTerms',
+            internalType: 'struct TaxTerms',
+            type: 'tuple',
+            components: [
+              { name: 'recipient', internalType: 'address', type: 'address' },
+              { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+              {
+                name: 'minRunwaySeconds',
+                internalType: 'uint32',
+                type: 'uint32',
+              },
+            ],
+          },
+          {
+            name: 'moduleTerms',
+            internalType: 'struct ModuleTerms',
+            type: 'tuple',
+            components: [
+              { name: 'module', internalType: 'address', type: 'address' },
+              { name: 'settings', internalType: 'bytes', type: 'bytes' },
+            ],
+          },
         ],
       },
     ],
@@ -5923,7 +7015,7 @@ export const slotFactoryAbi = [
         indexed: false,
       },
       {
-        name: 'hook',
+        name: 'module',
         internalType: 'address',
         type: 'address',
         indexed: false,
@@ -5972,27 +7064,555 @@ export const slotFactoryAbi = [
 ] as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  */
 export const slotFactoryAddress = {
-  8453: '0x4416f23E3d8de4E35937448FD221549b6E38483B',
-  31337: '0x87Da6e2A1E5623589cdf90a97E235133D37046e5',
-  84532: '0x4416f23E3d8de4E35937448FD221549b6E38483B',
-  11155111: '0x4416f23E3d8de4E35937448FD221549b6E38483B',
+  31337: '0xE3619826C1036Cc79F18f113b5590d390920A4bD',
+  84532: '0xc696f795584cFbbC837B04A69746E8DAC2b1B76c',
+  11155111: '0xc696f795584cFbbC837B04A69746E8DAC2b1B76c',
 } as const
 
 /**
- * - [__View Contract on Base Basescan__](https://basescan.org/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x4416f23E3d8de4E35937448FD221549b6E38483B)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  */
 export const slotFactoryConfig = {
   address: slotFactoryAddress,
   abi: slotFactoryAbi,
+} as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SlotLens
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
+ */
+export const slotLensAbi = [
+  {
+    type: 'function',
+    inputs: [],
+    name: 'UPGRADE_INTERFACE_VERSION',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'admin',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'getSlotConstants',
+    outputs: [
+      {
+        name: 'c',
+        internalType: 'struct SlotConstantsInfo',
+        type: 'tuple',
+        components: [
+          { name: 'maxPrice', internalType: 'uint256', type: 'uint256' },
+          { name: 'maxTaxBps', internalType: 'uint256', type: 'uint256' },
+          { name: 'basisPoints', internalType: 'uint256', type: 'uint256' },
+          { name: 'month', internalType: 'uint256', type: 'uint256' },
+          {
+            name: 'moduleCallbackGasLimit',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
+          {
+            name: 'nativePayoutGasLimit',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
+          { name: 'termsDelay', internalType: 'uint64', type: 'uint64' },
+          { name: 'maxMinRunway', internalType: 'uint256', type: 'uint256' },
+          { name: 'termTaxRate', internalType: 'uint16', type: 'uint16' },
+          { name: 'termRecipient', internalType: 'uint16', type: 'uint16' },
+          { name: 'termMinRunway', internalType: 'uint16', type: 'uint16' },
+          { name: 'termModule', internalType: 'uint16', type: 'uint16' },
+          { name: 'termScopes', internalType: 'uint16', type: 'uint16' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'getSlotInfo',
+    outputs: [
+      {
+        name: 'info',
+        internalType: 'struct SlotInfo',
+        type: 'tuple',
+        components: [
+          {
+            name: 'currency',
+            internalType: 'contract IERC20',
+            type: 'address',
+          },
+          { name: 'manager', internalType: 'address', type: 'address' },
+          { name: 'mutableTax', internalType: 'bool', type: 'bool' },
+          { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
+          {
+            name: 'terms',
+            internalType: 'struct Terms',
+            type: 'tuple',
+            components: [
+              {
+                name: 'taxTerms',
+                internalType: 'struct TaxTerms',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                  { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'minRunwaySeconds',
+                    internalType: 'uint32',
+                    type: 'uint32',
+                  },
+                ],
+              },
+              {
+                name: 'moduleTerms',
+                internalType: 'struct ModuleTerms',
+                type: 'tuple',
+                components: [
+                  { name: 'module', internalType: 'address', type: 'address' },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
+                ],
+              },
+            ],
+          },
+          {
+            name: 'scopes',
+            internalType: 'struct Scopes',
+            type: 'tuple',
+            components: [
+              { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
+              { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
+              { name: 'afterBuy', internalType: 'bool', type: 'bool' },
+              { name: 'afterRelease', internalType: 'bool', type: 'bool' },
+              { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
+              { name: 'afterSettle', internalType: 'bool', type: 'bool' },
+              {
+                name: 'afterCallbacksMustSucceed',
+                internalType: 'bool',
+                type: 'bool',
+              },
+              { name: 'onInstall', internalType: 'bool', type: 'bool' },
+              { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+            ],
+          },
+          {
+            name: 'fee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
+            ],
+          },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'price', internalType: 'uint256', type: 'uint256' },
+          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+          { name: 'occupiedSince', internalType: 'uint64', type: 'uint64' },
+          { name: 'tenureId', internalType: 'uint64', type: 'uint64' },
+          { name: 'lastSettled', internalType: 'uint64', type: 'uint64' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'collectedTax', internalType: 'uint256', type: 'uint256' },
+          { name: 'isVacant', internalType: 'bool', type: 'bool' },
+          { name: 'isInsolvent', internalType: 'bool', type: 'bool' },
+          {
+            name: 'secondsUntilLiquidation',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
+          {
+            name: 'pending',
+            internalType: 'struct Pending',
+            type: 'tuple',
+            components: [
+              {
+                name: 'taxTerms',
+                internalType: 'struct TaxTerms',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                  { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'minRunwaySeconds',
+                    internalType: 'uint32',
+                    type: 'uint32',
+                  },
+                ],
+              },
+              {
+                name: 'nextModule',
+                internalType: 'struct InstalledModule',
+                type: 'tuple',
+                components: [
+                  { name: 'module', internalType: 'address', type: 'address' },
+                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'fee',
+                    internalType: 'struct ModuleFee',
+                    type: 'tuple',
+                    components: [
+                      { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                    ],
+                  },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
+                ],
+              },
+              { name: 'mask', internalType: 'uint16', type: 'uint16' },
+              { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
+            ],
+          },
+          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slots', internalType: 'address[]', type: 'address[]' }],
+    name: 'getSlotInfos',
+    outputs: [
+      {
+        name: 'infos',
+        internalType: 'struct SlotInfo[]',
+        type: 'tuple[]',
+        components: [
+          {
+            name: 'currency',
+            internalType: 'contract IERC20',
+            type: 'address',
+          },
+          { name: 'manager', internalType: 'address', type: 'address' },
+          { name: 'mutableTax', internalType: 'bool', type: 'bool' },
+          { name: 'mutableRecipient', internalType: 'bool', type: 'bool' },
+          { name: 'mutableModule', internalType: 'bool', type: 'bool' },
+          {
+            name: 'terms',
+            internalType: 'struct Terms',
+            type: 'tuple',
+            components: [
+              {
+                name: 'taxTerms',
+                internalType: 'struct TaxTerms',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                  { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'minRunwaySeconds',
+                    internalType: 'uint32',
+                    type: 'uint32',
+                  },
+                ],
+              },
+              {
+                name: 'moduleTerms',
+                internalType: 'struct ModuleTerms',
+                type: 'tuple',
+                components: [
+                  { name: 'module', internalType: 'address', type: 'address' },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
+                ],
+              },
+            ],
+          },
+          {
+            name: 'scopes',
+            internalType: 'struct Scopes',
+            type: 'tuple',
+            components: [
+              { name: 'beforeBuy', internalType: 'bool', type: 'bool' },
+              { name: 'beforeSelfAssess', internalType: 'bool', type: 'bool' },
+              { name: 'afterBuy', internalType: 'bool', type: 'bool' },
+              { name: 'afterRelease', internalType: 'bool', type: 'bool' },
+              { name: 'afterLiquidate', internalType: 'bool', type: 'bool' },
+              { name: 'afterSettle', internalType: 'bool', type: 'bool' },
+              {
+                name: 'afterCallbacksMustSucceed',
+                internalType: 'bool',
+                type: 'bool',
+              },
+              { name: 'onInstall', internalType: 'bool', type: 'bool' },
+              { name: 'onUninstall', internalType: 'bool', type: 'bool' },
+            ],
+          },
+          {
+            name: 'fee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
+            ],
+          },
+          { name: 'occupant', internalType: 'address', type: 'address' },
+          { name: 'price', internalType: 'uint256', type: 'uint256' },
+          { name: 'deposit', internalType: 'uint256', type: 'uint256' },
+          { name: 'occupiedSince', internalType: 'uint64', type: 'uint64' },
+          { name: 'tenureId', internalType: 'uint64', type: 'uint64' },
+          { name: 'lastSettled', internalType: 'uint64', type: 'uint64' },
+          { name: 'taxOwed', internalType: 'uint256', type: 'uint256' },
+          { name: 'collectedTax', internalType: 'uint256', type: 'uint256' },
+          { name: 'isVacant', internalType: 'bool', type: 'bool' },
+          { name: 'isInsolvent', internalType: 'bool', type: 'bool' },
+          {
+            name: 'secondsUntilLiquidation',
+            internalType: 'uint256',
+            type: 'uint256',
+          },
+          {
+            name: 'pending',
+            internalType: 'struct Pending',
+            type: 'tuple',
+            components: [
+              {
+                name: 'taxTerms',
+                internalType: 'struct TaxTerms',
+                type: 'tuple',
+                components: [
+                  {
+                    name: 'recipient',
+                    internalType: 'address',
+                    type: 'address',
+                  },
+                  { name: 'rateBps', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'minRunwaySeconds',
+                    internalType: 'uint32',
+                    type: 'uint32',
+                  },
+                ],
+              },
+              {
+                name: 'nextModule',
+                internalType: 'struct InstalledModule',
+                type: 'tuple',
+                components: [
+                  { name: 'module', internalType: 'address', type: 'address' },
+                  { name: 'scopes', internalType: 'uint16', type: 'uint16' },
+                  {
+                    name: 'fee',
+                    internalType: 'struct ModuleFee',
+                    type: 'tuple',
+                    components: [
+                      { name: 'bps', internalType: 'uint16', type: 'uint16' },
+                      {
+                        name: 'recipient',
+                        internalType: 'address',
+                        type: 'address',
+                      },
+                    ],
+                  },
+                  { name: 'settings', internalType: 'bytes', type: 'bytes' },
+                ],
+              },
+              { name: 'mask', internalType: 'uint16', type: 'uint16' },
+              { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
+            ],
+          },
+          { name: 'hasRipeTerms', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'admin_', internalType: 'address', type: 'address' }],
+    name: 'initialize',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'initializedVersion',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'slot', internalType: 'address', type: 'address' }],
+    name: 'moduleUpdate',
+    outputs: [
+      {
+        name: 'u',
+        internalType: 'struct ModuleUpdate',
+        type: 'tuple',
+        components: [
+          { name: 'currentScopes', internalType: 'uint16', type: 'uint16' },
+          {
+            name: 'currentFee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
+            ],
+          },
+          { name: 'answered', internalType: 'bool', type: 'bool' },
+          { name: 'declaredScopes', internalType: 'uint16', type: 'uint16' },
+          {
+            name: 'declaredFee',
+            internalType: 'struct ModuleFee',
+            type: 'tuple',
+            components: [
+              { name: 'bps', internalType: 'uint16', type: 'uint16' },
+              { name: 'recipient', internalType: 'address', type: 'address' },
+            ],
+          },
+          { name: 'feeDiffers', internalType: 'bool', type: 'bool' },
+          { name: 'scopesDiffer', internalType: 'bool', type: 'bool' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'proxiableUUID',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'next', internalType: 'address', type: 'address' }],
+    name: 'transferAdmin',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'newImplementation', internalType: 'address', type: 'address' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'upgradeToAndCall',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'version',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'from', internalType: 'address', type: 'address', indexed: true },
+      { name: 'to', internalType: 'address', type: 'address', indexed: true },
+    ],
+    name: 'AdminTransferred',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'implementation', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC1967InvalidImplementation',
+  },
+  { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
+  { type: 'error', inputs: [], name: 'FailedCall' },
+  { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  { type: 'error', inputs: [], name: 'InvalidRecipient' },
+  { type: 'error', inputs: [], name: 'NotInitializing' },
+  { type: 'error', inputs: [], name: 'NotManager' },
+  { type: 'error', inputs: [], name: 'UUPSUnauthorizedCallContext' },
+  {
+    type: 'error',
+    inputs: [{ name: 'slot', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'UUPSUnsupportedProxiableUUID',
+  },
+] as const
+
+/**
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
+ */
+export const slotLensAddress = {
+  31337: '0x2cd862b7a1A1Ed93dbeC60B5cd6eeBcfDaE8654e',
+  84532: '0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2',
+  11155111: '0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2',
+} as const
+
+/**
+ * -
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
+ */
+export const slotLensConfig = {
+  address: slotLensAddress,
+  abi: slotLensAbi,
 } as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -6197,57 +7817,54 @@ export const slotsTestTokenConfig = {
  */
 export const deployBlocks = {
   AdLand: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
-  MinimumTenureHook: {
-    '8453': 51090927,
+  MinimumTenureModule: {
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   OfferBook: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   Slot: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   SlotBoundNFTFactory: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   SlotBoundNFTWrapper: {
-    '8453': 51354933,
-    '84532': 46865448,
-    '11155111': 11711775,
+    '31337': 0,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   SlotCollective: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   SlotCollectiveFactory: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   SlotFactory: {
-    '8453': 51090927,
     '31337': 0,
-    '84532': 46601439,
-    '11155111': 11669103,
+    '84532': 47415623,
+    '11155111': 11800602,
+  },
+  SlotLens: {
+    '31337': 0,
+    '84532': 47415623,
+    '11155111': 11800602,
   },
   SlotsTestToken: {
     '31337': 0,

@@ -2,7 +2,7 @@
 
 ![0xSlots Banner](banner.png)
 
-**Modular & Immutable Collective Ownership Slots** — Perpetual onchain real estate powered by partial common ownership and Harberger tax. Any ERC-20.
+**Modular & Immutable Collective Ownership Slots** — Perpetual onchain real estate powered by partial common ownership. Native ETH or any ERC-20.
 
 Every slot has a price. Holders self-assess and pay continuous tax. Anyone can buy any slot at the posted price. Resources flow to whoever values them most.
 
@@ -25,7 +25,8 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 ├── packages/
 │   ├── contracts/       # Published ABIs & addresses (@0xslots/contracts)
 │   ├── sdk/             # Type-safe protocol SDK (@0xslots/sdk)
-│   ├── ponder/          # The indexer the SDK reads (@0xslots/ponder)
+│   ├── ponder/          # GraphQL indexer (@0xslots/ponder)
+│   ├── protocol/        # Deploy & upgrade CLI (pnpm protocol)
 │   ├── config/          # Shared configuration
 │   └── mcp/             # MCP server
 ```
@@ -37,28 +38,31 @@ Every slot has a price. Holders self-assess and pay continuous tax. Anyone can b
 | Contract | Purpose |
 |----------|---------|
 | **Slot** | Core primitive — occupancy, pricing, deposits, tax, liquidation |
-| **SlotFactory** | UUPS-upgradeable factory deploying Slots via Beacon proxy |
-| **SlotCollective** | Splits payout + role-gated governance for a slot's tax |
+| **SlotFactory** | UUPS-upgradeable factory deploying Slots behind one beacon |
+| **OfferBook** | Standing bids; the occupant accepts one to sell |
+| **SlotLens** | UUPS-upgradeable reads: a whole slot, many slots, constants, module updates |
+| **SlotCollective** | Splits payout + role-gated management for a slot's terms |
 | **SlotCollectiveFactory** | Mints collectives behind one upgradeable beacon |
-| **MetadataModule** | UUPS-upgradeable utility storing metadata per slot |
-| **MinimumTenurePolicy** | Occupancy policy — a minimum holding window |
-| **MinimumPricePolicy** | Occupancy policy — a price floor, per currency |
-| **BatchCollector** | Collect tax from multiple slots in one transaction |
+| **MinimumTenureModule** | Module — a minimum holding window, one deployment for every duration |
+| **AdLand** | Module — sponsor creatives, moderation and an optional minimum tenure |
+| **SlotBoundNFTFactory** | Slot-bound NFT collections and a wrapper for existing ERC-721s |
 
-A slot plugs in exactly two things, deliberately asymmetric: a **utility**
-(`IUtility` — what holding it grants, fails open) and an **occupancy policy**
-(`IOccupancyPolicy` — who may hold it, fails closed). Both describe themselves
-through `IModuleMetadata`.
+A slot installs at most one **module** (`ISlotModule`) — the single extension
+point. Its `before` callbacks may refuse a buy or a reprice; its `after`
+callbacks are told what happened, gas-capped and unable to block anything unless
+the module declares `afterCallbacksMustSucceed`. The module declares the scopes
+it needs and any fee it takes, and the slot keeps its own copy.
 
-Slots are immutable once deployed. Tax rate, utility and policy are set at
-creation and each is optionally mutable by the manager — three independent flags,
-because they are three different promises. Changes are proposed, not applied:
-they take effect at the next occupancy change, so terms cannot shift under
-someone mid-tenancy.
+Slots are immutable by default. Tax, recipient and module are each optionally
+mutable by a manager — three independent flags, because they are three
+different promises. Changes are queued, not applied: they land at the next buy
+after a one-hour delay, so terms cannot shift under someone mid-tenancy.
 
-See [apps/contracts/README.md](apps/contracts/README.md) for the full picture.
+See [apps/contracts/README.md](apps/contracts/README.md) and the
+[docs](apps/docs) for the full picture.
 
-**Security:** Audited by K Security (Feb 2026)
+Audit reports for earlier versions of the protocol are in
+[apps/contracts/Audit](apps/contracts/Audit).
 
 ## Frontend
 
@@ -66,9 +70,9 @@ Next.js 16 · React 19 · TailwindCSS 4 · wagmi 3 · viem 2 · RainbowKit · sh
 
 | Feature | Description |
 |---------|-------------|
-| **Explorer** | Tabbed dashboard — Slots, Recipients, Utilities, Events |
+| **Explorer** | Tabbed dashboard — Slots, Recipients, Modules, Events |
 | **Collectives** | Create and govern a shared payout + role-gated manager |
-| **Create Slot** | Multi-step stepper with ENS resolution, currency selection, utility and policy pickers |
+| **Create Slot** | Multi-step stepper with ENS resolution, currency selection and a module picker |
 | **Slot Detail** | Tabbed view — Details, Activity, Manage. Buy section with deposit slider |
 | **EIP-5792** | Atomic batching (approve + buy in one prompt) when wallet supports it |
 | **Profile** | Slots as recipient & occupant for connected wallet |
@@ -83,29 +87,18 @@ Next.js 16 · React 19 · TailwindCSS 4 · wagmi 3 · viem 2 · RainbowKit · sh
 
 ## Deployments
 
-`packages/contracts/src/addresses.ts` is the source of truth — import from
-`@0xslots/contracts` rather than copying an address.
-
-| Contract | Base (8453) | Base Sepolia (84532) |
-|----------|-------------|----------------------|
-| SlotFactory | `0xbf2F890E8F5CCCB3A1D7c5030dBC1843B9E36B0e` | `0x6D87C1647f228Baf8DE0374FCd7FdEBF6900fdFF` |
-| SlotCollectiveFactory | — | `0x03825eA2529e9eA2d5aDFf9DBc3773cDE61Da43d` |
-| MinimumTenurePolicyFactory | `0x6C90Ca1A6ac6bBC0e4B48cc3CF589F6A3c2b30a5` | `0x2a399E4D93d9b7Ffa8367894A39859013B214E4a` |
-| MinimumPricePolicyFactory | `0xFA64C88960c0aaC55279d42131A5B7fB57e0Ff1A` | `0x958088c4Afb2cf3E4c7C23560B57fCb64dfC6551` |
-| BatchCollector | — | `0xd3c7090C2F89c5132C3f91DD1da4bCffEAe10e13` |
-
-Local anvil (31337) addresses are pinned by `apps/contracts/script/DeployLocal.s.sol`.
-
-Superseded policy factories stay listed in `POLICY_FACTORIES` so existing
-policies keep resolving — see [the deployments docs](apps/docs/docs/pages/deployments.mdx).
+The current protocol is not deployed on a public chain yet; it runs locally with
+`pnpm dev:local`. Addresses are generated into `@0xslots/contracts` from
+`apps/contracts/deployments/<chainId>/*.json` — import them rather than copying
+one. See [the deployments docs](apps/docs/docs/pages/deployments.mdx).
 
 ### Indexer
 
-Reads come from a [Ponder](https://ponder.sh) deployment — one instance serving
-every chain, which is why `chainId` is a query filter rather than an endpoint.
-See [packages/ponder](packages/ponder/README.md). It indexes the core protocol
-and one hook: AdLand's creatives, because the ad a slot is showing lives nowhere
-else.
+Lists and history come from a [Ponder](https://ponder.sh) deployment — one
+instance serving every chain, which is why `chainId` is a query filter rather
+than an endpoint. See [packages/ponder](packages/ponder/README.md). It indexes
+the core protocol and one module: AdLand's creatives, because what a sponsor
+slot is showing lives nowhere else.
 
 ## Development
 

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Test, Vm} from "forge-std/Test.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 
 /**
  * The events the indexer reads, asserted from the outside.
@@ -36,22 +39,14 @@ contract AdLandEventsTest is Test {
             address(
                 new ERC1967Proxy(
                     address(factoryImpl),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (address(this), address(slotImpl))
-                    )
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)))
                 )
             )
         );
 
-        AdLand impl = new AdLand();
+        AdLand impl = new AdLand(new SlotLens());
         adland = AdLand(
-            address(
-                new ERC1967Proxy(
-                    address(impl),
-                    abi.encodeCall(AdLand.initialize, (owner))
-                )
-            )
+            address(new ERC1967Proxy(address(impl), abi.encodeCall(AdLand.initialize, (owner))))
         );
 
         vm.deal(alice, 100 ether);
@@ -60,24 +55,23 @@ contract AdLandEventsTest is Test {
     }
 
     function _slot() internal returns (Slot s) {
-        return
-            Slot(
-                payable(
-                    factory.createSlot(
-                        SlotInit({
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
                             recipient: address(this),
-                            currency: IERC20(address(0)),
-                            manager: address(this),
-                            hook: address(adland),
-                            hookData: bytes32(0),
-                            taxBps: 500,
-                            minDepositSeconds: 1 days,
-                            mutableTax: true,
-                            mutableHook: true
-                        })
-                    )
-                )
-            );
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(1 days)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(adland), settings: ""})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, address who, uint256 price) internal {
@@ -121,15 +115,9 @@ contract AdLandEventsTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool sawCleared;
         for (uint256 i; i < logs.length; i++) {
-            if (
-                logs[i].emitter == address(adland) &&
-                logs[i].topics[0] == Cleared.selector
-            ) {
+            if (logs[i].emitter == address(adland) && logs[i].topics[0] == Cleared.selector) {
                 sawCleared = true;
-                (uint64 f, uint64 t) = abi.decode(
-                    logs[i].data,
-                    (uint64, uint64)
-                );
+                (uint64 f, uint64 t) = abi.decode(logs[i].data, (uint64, uint64));
                 assertEq(f, from, "the tenure that lost its creative");
                 assertEq(t, s.tenureId(), "and the one that replaced it");
             }
@@ -154,10 +142,9 @@ contract AdLandEventsTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         uint256 published;
         for (uint256 i; i < logs.length; i++) {
-            if (
-                logs[i].emitter == address(adland) &&
-                logs[i].topics[0] == Published.selector
-            ) published++;
+            if (logs[i].emitter == address(adland) && logs[i].topics[0] == Published.selector) {
+                published++;
+            }
         }
         assertEq(published, 2, "one event per publish, not per tenure");
         assertEq(adland.creativeOf(address(s)), "data:text/plain,two");

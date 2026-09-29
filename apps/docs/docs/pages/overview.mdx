@@ -1,5 +1,3 @@
-import { Callout } from 'vocs'
-
 # Overview
 
 0xSlots is a property primitive for scarce onchain assets.
@@ -14,34 +12,36 @@ that price at any time.
 
 There is no fourth option. That is the whole design.
 
-The tax flows to a **recipient** fixed when the slot is created — a creator, a
-community, a public good. Idle property becomes costly to hold, and positions
-drift toward whoever actually values them.
+The tax flows to a **recipient** — a creator, a community, a public good. Idle
+property becomes costly to hold, and positions drift toward whoever actually
+values them.
 
 ## What a slot is
 
-One contract, immutable by default, that funds **one recipient** in **one
-currency** at **one tax rate**, with at most one **hook** attached.
+One contract that funds **one recipient** in **one currency** at **one tax
+rate**, with at most one **module** installed.
 
-Want a different configuration? Deploy another. Slots are cheap and disposable
-by design — there is no admin panel, because there is nothing to administer.
+A slot is immutable by default. Its tax, its recipient and its module can each
+be declared changeable at creation, and only then does it have a manager.
+Want a different configuration? Deploy another — slots are cheap and disposable
+by design.
 
 ## The slot is the plot
 
 A slot starts empty. It is a position and nothing more.
 
-What makes it valuable is what gets built on it. A **hook** does both jobs at
-once: it defines the rights holding grants — ad space, a name, access,
-publishing — and sets the terms of tenancy — guaranteed time, a price floor.
+What makes it valuable is what gets built on it. A **module** is the one way to
+extend a slot: it can define what holding grants — a sponsor placement, a name,
+an NFT — and set terms of tenancy, like a guaranteed minimum tenure.
 
-The slot is the plot; the hook is the crop. Not a walled garden you lock people
-out of — a public garden you tend, where the market decides whether you are
-tending it well enough to keep it.
+The slot is the plot; the module is the crop. Not a walled garden you lock
+people out of — a public garden you tend, where the market decides whether you
+are tending it well enough to keep it.
 
 ## Start here
 
 | | |
 |---|---|
 | [How a slot works](/concepts/slots) | The mechanism, end to end |
-| [Hooks](/concepts/hooks) | Giving a slot a purpose, and controlling who may hold it |
+| [Modules](/concepts/modules) | Giving a slot a purpose, and controlling who may hold it |
 | [Getting Started](/getting-started) | Install the SDK, create your first slot |

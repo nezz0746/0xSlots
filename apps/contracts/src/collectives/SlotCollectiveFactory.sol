@@ -7,14 +7,14 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
 import {SlotCollective} from "./SlotCollective.sol";
-import {Versioned} from "../Versioned.sol";
-import {VersionedUUPS} from "../VersionedUUPS.sol";
+import {Versioned} from "../utils/Versioned.sol";
+import {VersionedUUPS} from "../utils/VersionedUUPS.sol";
 
 /// @title SlotCollectiveFactory — deploys SlotCollectives behind one upgradeable beacon
 ///
 /// @notice A `SlotCollective` is a 0xSplits PushSplit wearing a role-gated control
 ///         panel: it receives a slot's tax AND governs that slot's tax
-///         and hook. Deploying one by hand means getting a warehouse
+///         and module. Deploying one by hand means getting a warehouse
 ///         address, a validated split, three role arrays and a self-bound owner
 ///         right in a single constructor call, on every chain, every time.
 ///
@@ -45,16 +45,17 @@ import {VersionedUUPS} from "../VersionedUUPS.sol";
 ///      `SplitWalletV2` keeps `SPLITS_WAREHOUSE`, `NATIVE_TOKEN` and `FACTORY`
 ///      in `immutable`s, which live in the implementation's runtime bytecode and
 ///      are therefore read correctly through a delegatecall. The first two are
-///      chain-wide constants and want to be shared. The third would have been a
-///      problem — it gates the inherited `initialize` on `msg.sender == FACTORY`
-///      — except `SlotCollective.initializeCollective` does that work itself and never
-///      touches it. See the constructor note over there.
+///      chain-wide constants and want to be shared. The third is a hazard: it
+///      gates the inherited `initialize` on `msg.sender == FACTORY`, that
+///      function cannot be removed, and on a proxy `FACTORY` is whoever deployed
+///      the implementation. Adopt only an implementation deployed by something
+///      that can never call — the deterministic CREATE2 deployer, as
+///      `DeployProtocol` does. See the constructor note in `SlotCollective`.
 contract SlotCollectiveFactory is VersionedUUPS {
-
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 3;
+        return 1;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -74,9 +75,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
     ///      address govern" is the question a UI actually asks, and it cannot be
     ///      answered from the split or from role events alone.
     event SlotCollectiveDeployed(
-        address indexed collective,
-        address indexed admin,
-        address indexed deployer
+        address indexed collective, address indexed admin, address indexed deployer
     );
     event BeaconUpgraded(address indexed newImplementation);
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
@@ -91,7 +90,6 @@ contract SlotCollectiveFactory is VersionedUUPS {
     /// @notice Can upgrade this factory and the beacon.
     address public admin;
 
-
     /// @notice Managers deployed here. The provenance check a slot creator needs
     ///         before naming an address as both `recipient` and `manager`.
     mapping(address => bool) public isSlotCollective;
@@ -104,19 +102,15 @@ contract SlotCollectiveFactory is VersionedUUPS {
     // INITIALIZATION
     // ═══════════════════════════════════════════════════════════
 
-
-
     /// @notice Initialize the factory (called once, through its proxy).
     /// @param _admin Upgrades this factory and the beacon.
     /// @param _collectiveImplementation A deployed `SlotCollective`, constructed with
     ///        this chain's canonical `SplitsWarehouse`.
-    function initialize(
-        address _admin,
-        address _collectiveImplementation
-    ) external initializer {
+    function initialize(address _admin, address _collectiveImplementation) external initializer {
         if (_admin == address(0)) revert AdminRequired();
-        if (_collectiveImplementation.code.length == 0)
+        if (_collectiveImplementation.code.length == 0) {
             revert ImplementationRequired();
+        }
 
         admin = _admin;
         // The genesis admin, emitted so an indexer can build the whole custody
@@ -128,14 +122,17 @@ contract SlotCollectiveFactory is VersionedUUPS {
         beacon = new UpgradeableBeacon(_collectiveImplementation, address(this));
     }
 
-
     // ═══════════════════════════════════════════════════════════
     // MODIFIERS
     // ═══════════════════════════════════════════════════════════
 
     modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotAdmin();
+        _checkAdmin();
         _;
+    }
+
+    function _checkAdmin() internal view {
+        if (msg.sender != admin) revert NotAdmin();
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -196,10 +193,7 @@ contract SlotCollectiveFactory is VersionedUUPS {
         SplitV2Lib.Split calldata split,
         SlotCollective.InitialRoles calldata roles
     ) internal returns (address collective) {
-        bytes memory initData = abi.encodeCall(
-            SlotCollective.initializeCollective,
-            (split, roles)
-        );
+        bytes memory initData = abi.encodeCall(SlotCollective.initializeCollective, (split, roles));
         // CREATE2, salted with the chain id and the collective's index. Plain
         // `new` derives the address from `keccak(rlp(factory, nonce))` alone,
         // and this factory sits at ONE address across chains — so collective

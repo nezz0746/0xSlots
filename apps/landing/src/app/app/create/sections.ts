@@ -11,8 +11,8 @@ export type SectionId =
   | "recipient"
   | "currency"
   | "economics"
-  | "hook"
-  | "permissions";
+  | "module"
+  | "scopes";
 
 export interface SectionMeta {
   id: SectionId;
@@ -57,15 +57,15 @@ export const SECTIONS: SectionMeta[] = [
     tint: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   },
   {
-    id: "hook",
-    title: "Hook",
+    id: "module",
+    title: "Module",
     description: "The single extension point. What it does, and when.",
     icon: Plug,
     tint: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   },
   {
-    id: "permissions",
-    title: "Permissions",
+    id: "scopes",
+    title: "Scopes",
     description: "What stays fixed after creation, and who holds the rest.",
     icon: KeyRound,
     tint: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
@@ -84,7 +84,7 @@ export const SECTION = Object.fromEntries(
  * wizard used to guarantee by forcing you through every step.
  *
  * The `module*` and `occupancyPolicy*` rows are gone with the concepts: one
- * `hook` per slot is the whole extension surface now.
+ * `module` per slot is the whole extension surface now.
  */
 const FIELD_SECTION: Record<string, SectionId> = {
   recipientMode: "recipient",
@@ -94,14 +94,15 @@ const FIELD_SECTION: Record<string, SectionId> = {
   currencyMode: "currency",
   presetCurrency: "currency",
   customCurrency: "currency",
-  taxBps: "economics",
+  taxRateBps: "economics",
   minDepositValue: "economics",
   minDepositUnit: "economics",
-  hookMode: "hook",
-  hook: "hook",
-  mutableTax: "permissions",
-  mutableHook: "permissions",
-  manager: "permissions",
+  moduleMode: "module",
+  module: "module",
+  mutableTax: "scopes",
+  mutableRecipient: "scopes",
+  mutableModule: "scopes",
+  manager: "scopes",
 };
 
 export function scrollToSection(id: SectionId) {

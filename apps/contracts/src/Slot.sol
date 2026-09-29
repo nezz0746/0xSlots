@@ -1,62 +1,54 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SlotViews} from "./SlotViews.sol";
-import {SlotOccupancy} from "./SlotOccupancy.sol";
-import {SlotEscrow} from "./SlotEscrow.sol";
-import {SlotAdmin} from "./SlotAdmin.sol";
-import "./SlotErrors.sol";
-import {Versioned} from "./Versioned.sol";
-
-/// @notice Everything a slot needs at birth.
-struct SlotInit {
-    address recipient;
-    IERC20 currency;
-    address manager;
-    address hook;
-    /// Opaque to the slot, meaningful to the hook. Must be zero when `hook` is.
-    bytes32 hookData;
-    uint256 taxBps;
-    uint256 minDepositSeconds;
-    bool mutableTax;
-    bool mutableHook;
-}
+import {ScopesLib} from "./libraries/ScopesLib.sol";
+import {SlotViews} from "./slot/SlotViews.sol";
+import {SlotOccupancy} from "./slot/SlotOccupancy.sol";
+import {SlotEscrow} from "./slot/SlotEscrow.sol";
+import {SlotAdmin} from "./slot/SlotAdmin.sol";
+import {InvalidManager, InvalidCurrency, InvalidValue} from "./errors/SlotErrors.sol";
+import {Versioned} from "./utils/Versioned.sol";
+import {SlotInit, ModuleFee, InstalledModule} from "./types/SlotTypes.sol";
+import {ISlotModule} from "./interfaces/ISlotModule.sol";
+import {Governance} from "./slot/SlotStorage.sol";
+import {TermsLib} from "./libraries/TermsLib.sol";
 
 /**
  * @title Slot
- * @notice One Harberger-taxed position. Always for sale at a price its holder
+ * @notice One commonly owned position. Always for sale at a price its holder
  *         sets, taxed continuously on that price.
  *
  * @dev ── The two rules everything else serves ────────────────────────────
  *
  *      1. Liquidation is unconditional. An occupant whose deposit is empty can
- *         always be evicted, by anyone, and nothing — no hook, no recipient, no
+ *         always be evicted, by anyone, and nothing — no module, no recipient, no
  *         currency — may prevent it. Every capped call and swallowed revert in
  *         this codebase exists for that sentence.
  *
- *         The ONE exception is a hook that declared `strict`, whose `after`
+ *         The ONE exception is a module that declared `afterCallbacksMustSucceed`, whose `after`
  *         callbacks are uncapped and fatal so it can do work that must land.
- *         A slot attaching one is only as evictable as that hook. The flag is
- *         snapshotted at attach and readable from {SlotInfo}'s `hookFlags`, so
+ *         A slot attaching one is only as evictable as that module. The flag is
+ *         copied at attach and readable from {SlotInfo}'s `scopes`, so
  *         which kind of slot this is can be told before committing to it.
  *
- *      2. Terms do not move under an occupant. Tax and hook changes are
- *         proposed by the manager and land at the next occupancy transition, so
- *         what you bought into holds for as long as you hold the slot.
+ *      2. Terms do not move under an occupant. Rent and module changes, and new
+ *         scopes a manager accepts from the module, land at the next buy —
+ *         or sooner if the occupant lands them themselves with `applyTerms` —
+ *         so what you bought into holds for as long as you hold the slot. A module's fee may move sooner: it splits the rent
+ *         between recipient and module and never changes what an occupant pays.
  *
  *      ── Extension ───────────────────────────────────────────────────────
  *
- *      One `hook`, and one capped call into it per callback. `before` decides
+ *      One `module`, and one capped call into it per callback. `before` decides
  *      and may refuse; `after` records and cannot. A slot wanting several
- *      behaviours points at a hook that implements all of them, so there is no
+ *      behaviours points at a module that implements all of them, so there is no
  *      loop anywhere near the eviction path.
  */
 contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 3;
+        return 1;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -64,46 +56,57 @@ contract Slot is SlotViews, SlotOccupancy, SlotEscrow, SlotAdmin, Versioned {
         _disableInitializers();
     }
 
-    function initialize(SlotInit calldata p) external initializer {
-        if (p.recipient == address(0)) revert InvalidRecipient();
-        if (p.taxBps == 0 || p.taxBps > MAX_TAX_BPS) revert InvalidTax();
-        if (
-            address(p.currency) != address(0) &&
-            address(p.currency).code.length == 0
-        ) revert InvalidCurrency();
+    function initialize(SlotInit calldata p) external initializer nonReentrant {
+        if (address(p.currency) != address(0) && address(p.currency).code.length == 0) {
+            revert InvalidCurrency();
+        }
+
         // A manager is required exactly when something is mutable, and
-        // forbidden otherwise — so "immutable" is a fact about the slot rather
+        // forbidden otherwise, so "immutable" is a fact about the slot rather
         // than a promise about somebody's restraint.
-        if (p.mutableTax || p.mutableHook) {
-            if (p.manager == address(0)) revert NotManager();
-        } else if (p.manager != address(0)) {
-            revert NotManager();
-        }
+        bool anyMutable = p.mutableTax || p.mutableRecipient || p.mutableModule;
+        if (anyMutable != (p.manager != address(0))) revert InvalidManager();
 
-        recipient = p.recipient;
-        currency = p.currency;
-        manager = p.manager;
-        taxBps = p.taxBps;
-        minDepositSeconds = p.minDepositSeconds;
-        mutableTax = p.mutableTax;
-        mutableHook = p.mutableHook;
-        lastSettled = uint64(block.timestamp);
+        _validateRent(p.taxTerms, TermsLib.ALL);
+        (uint16 declaredScopes, ModuleFee memory declaredFee) = _validateModule(p.moduleTerms);
 
-        if (p.hook != address(0)) {
-            _hookFlags = _readHookFlags(p.hook, p.hookData);
-            hook = p.hook;
-            hookData = p.hookData;
-        } else if (p.hookData != bytes32(0)) {
-            // Configuration for a hook that is not there. Nothing would ever
-            // read it, so it can only be a mistake — and one that silently
-            // becomes live the day a hook is attached without its own data.
-            revert InvalidHook();
-        }
+        Governance storage st = _governance();
+        st.currency = p.currency;
+        st.manager = p.manager;
+        st.mutableTax = p.mutableTax;
+        st.mutableRecipient = p.mutableRecipient;
+        st.mutableModule = p.mutableModule;
 
-        emit Initialized(p.recipient, address(p.currency));
+        _taxTerms().recipient = p.taxTerms.recipient;
+        _taxTerms().rateBps = p.taxTerms.rateBps;
+        _taxTerms().minRunwaySeconds = p.taxTerms.minRunwaySeconds;
+
+        InstalledModule storage m = _module();
+        m.module = p.moduleTerms.module;
+        m.settings = p.moduleTerms.settings;
+        m.scopes = declaredScopes;
+        m.fee = declaredFee;
+
+        _occupancy().lastSettled = uint64(block.timestamp);
+
+        // The module is attached; tell it, if it asked to be told. Honoured
+        // strictly when it declared `afterCallbacksMustSucceed`: refusing here fails the creation,
+        // which is the creator's own transaction and nobody else's problem.
+        _after(
+            ScopesLib.ON_INSTALL,
+            abi.encodeCall(ISlotModule.onInstall, (_ctx(msg.sender, address(0), 0, 0)))
+        );
+
+        emit Initialized(
+            address(p.currency),
+            p.manager,
+            p.mutableTax,
+            p.mutableRecipient,
+            p.mutableModule,
+            p.taxTerms,
+            p.moduleTerms
+        );
     }
-
-    // ─── internals ──────────────────────────────────────────────────────────
 
     receive() external payable {
         revert InvalidValue();

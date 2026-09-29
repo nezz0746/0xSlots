@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -9,16 +11,21 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {SlotBoundNFTWrapper} from "../../src/hooks/nft/SlotBoundNFTWrapper.sol";
-import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/hooks/nft/ISlotBoundNFTWrapper.sol";
-import {ISlotBoundNFT} from "../../src/hooks/nft/ISlotBoundNFT.sol";
-import {SlotContext} from "../../src/ISlotHook.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
+import {ISlotBoundNFTWrapper, Mode, Wrap} from "../../src/modules/nft/ISlotBoundNFTWrapper.sol";
+import {ISlotBoundNFT} from "../../src/modules/nft/ISlotBoundNFT.sol";
+import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 
 contract MockNFT is ERC721 {
     constructor() ERC721("Mock", "MOCK") {}
-    function mint(address to, uint256 id) external { _mint(to, id); }
+
+    function mint(address to, uint256 id) external {
+        _mint(to, id);
+    }
+
     function tokenURI(uint256) public pure override returns (string memory) {
         return "ipfs://underlying";
     }
@@ -26,9 +33,22 @@ contract MockNFT is ERC721 {
 
 contract RevertingURINFT is ERC721 {
     constructor() ERC721("Bad", "BAD") {}
-    function mint(address to, uint256 id) external { _mint(to, id); }
+
+    function mint(address to, uint256 id) external {
+        _mint(to, id);
+    }
+
     function tokenURI(uint256) public pure override returns (string memory) {
         revert("no metadata for you");
+    }
+}
+
+/// @dev An "NFT" whose `transferFrom` does nothing at all.
+contract HollowNFT {
+    function transferFrom(address, address, uint256) external {}
+
+    function ownerOf(uint256) external pure returns (address) {
+        return address(0xdead);
     }
 }
 
@@ -41,7 +61,7 @@ contract SlotBoundNFTWrapperTest is Test {
     address bob = makeAddr("bob");
     address wrapperOwner = makeAddr("wrapperOwner");
 
-    uint256 constant TAX = 1000; // 10%
+    uint16 constant TAX_RATE = 1000; // 10%
     uint256 constant VALUATION = 1 ether;
 
     uint256 tokenId;
@@ -50,8 +70,14 @@ contract SlotBoundNFTWrapperTest is Test {
     function setUp() public {
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(impl))))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
 
         wrapper = _deployWrapper(wrapperOwner, 0);
 
@@ -67,28 +93,33 @@ contract SlotBoundNFTWrapperTest is Test {
     }
 
     /// @dev A fresh wrapper behind its own beacon, as the factory builds them.
-    function _deployWrapper(
-        address owner_,
-        uint256 feeWei
-    ) internal returns (SlotBoundNFTWrapper) {
+    function _deployWrapper(address owner_, uint256 feeWei) internal returns (SlotBoundNFTWrapper) {
         SlotBoundNFTWrapper wImpl = new SlotBoundNFTWrapper();
         UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
-        return SlotBoundNFTWrapper(address(new BeaconProxy(address(beacon),
-            abi.encodeCall(SlotBoundNFTWrapper.initialize,
-                ("Wrapped Slots", "WSLOT", factory, owner_, feeWei)))));
+        return SlotBoundNFTWrapper(
+            address(
+                new BeaconProxy(
+                    address(beacon),
+                    abi.encodeCall(
+                        SlotBoundNFTWrapper.initialize,
+                        ("Wrapped Slots", "WSLOT", factory, owner_, feeWei)
+                    )
+                )
+            )
+        );
     }
 
     /// @dev What a wrap costs in total — the escrow plus whatever fee is set.
     function _deposit(uint256 valuation) internal view returns (uint256 total) {
-        (total, , ) = wrapper.quoteWrap(valuation, TAX);
+        (total,,) = wrapper.quoteWrap(valuation, TAX_RATE);
     }
 
     function _wrap(address who, uint256 id, Mode mode) internal returns (uint256 newId) {
         vm.startPrank(who);
         nft.approve(address(wrapper), id);
-        (newId, ) = wrapper.wrap{value: _deposit(VALUATION)}(
-            IERC721(address(nft)), id, TAX, VALUATION, mode
-        );
+        (newId,) = wrapper.wrap{
+            value: _deposit(VALUATION)
+        }(IERC721(address(nft)), id, TAX_RATE, VALUATION, mode, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -108,14 +139,14 @@ contract SlotBoundNFTWrapperTest is Test {
     function test_TheDepositorIsTheRecipientAndTheManager() public view {
         assertEq(slot.recipient(), alice, "earns the rent on their own asset");
         assertEq(slot.manager(), alice, "and may re-rate it");
-        assertEq(slot.taxBps(), TAX, "at the rate they chose");
+        assertEq(slot.taxRateBps(), TAX_RATE, "at the rate they chose");
     }
 
-    /// @notice The hook cannot be detached; detaching it would strand the token.
-    function test_TheHookIsThisContractAndPermanent() public view {
-        assertEq(slot.hook(), address(wrapper));
-        assertFalse(slot.mutableHook(), "and permanently so");
-        assertTrue(slot.mutableTax(), "but the rate can still move");
+    /// @notice The module cannot be detached; detaching it would strand the token.
+    function test_TheModuleIsThisContractAndPermanent() public view {
+        assertEq(slot.module(), address(wrapper));
+        assertFalse(slot.mutableModule(), "and permanently so");
+        assertEq(slot.manager(), alice, "but the rate can still move");
     }
 
     /// @notice The wrap records what backs the token.
@@ -154,9 +185,9 @@ contract SlotBoundNFTWrapperTest is Test {
         vm.startPrank(alice);
         nft.approve(address(wrapper), 2);
         vm.expectRevert();
-        wrapper.wrap{value: short}(
-            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
-        );
+        wrapper.wrap{
+            value: short
+        }(IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -164,9 +195,9 @@ contract SlotBoundNFTWrapperTest is Test {
     function test_OverfundingBuysRunway() public {
         vm.startPrank(alice);
         nft.approve(address(wrapper), 2);
-        (uint256 id2, address s2) = wrapper.wrap{value: _deposit(VALUATION) * 2}(
-            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
-        );
+        (uint256 id2, address s2) = wrapper.wrap{
+            value: _deposit(VALUATION) * 2
+        }(IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
         vm.stopPrank();
         assertEq(Slot(payable(s2)).deposit(), _deposit(VALUATION) * 2);
         assertEq(wrapper.ownerOf(id2), alice);
@@ -178,13 +209,19 @@ contract SlotBoundNFTWrapperTest is Test {
         nft.approve(address(wrapper), 2);
 
         vm.expectRevert();
-        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, TAX, 0, Mode.Permanent);
+        wrapper.wrap{
+            value: 1 ether
+        }(IERC721(address(nft)), 2, TAX_RATE, 0, Mode.Permanent, type(uint256).max);
 
         vm.expectRevert();
-        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, 0, VALUATION, Mode.Permanent);
+        wrapper.wrap{
+            value: 1 ether
+        }(IERC721(address(nft)), 2, 0, VALUATION, Mode.Permanent, type(uint256).max);
 
         vm.expectRevert();
-        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, 10_001, VALUATION, Mode.Permanent);
+        wrapper.wrap{
+            value: 1 ether
+        }(IERC721(address(nft)), 2, 10_001, VALUATION, Mode.Permanent, type(uint256).max);
 
         vm.stopPrank();
     }
@@ -193,7 +230,9 @@ contract SlotBoundNFTWrapperTest is Test {
     function test_WrappingSomeoneElsesTokenIsRefused() public {
         vm.prank(bob);
         vm.expectRevert();
-        wrapper.wrap{value: 1 ether}(IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent);
+        wrapper.wrap{
+            value: 1 ether
+        }(IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
     }
 
     // ── the lifecycle, inherited wholesale ──────────────────────────────────
@@ -258,17 +297,24 @@ contract SlotBoundNFTWrapperTest is Test {
         slot.buy{value: VALUATION + _deposit(2 ether)}(bob, 2 ether, _deposit(2 ether), 0);
     }
 
-    /// @dev Someone stands up their own slot pointing at this hook and fires
+    /// @dev Someone stands up their own slot pointing at this module and fires
     ///      the callback. `tokenOf` is zero for it, so nothing happens — and
     ///      it must not revert either: never revert on a stranger.
     function test_AStrangerCannotClaimATokenWithTheirOwnSlot() public {
         vm.prank(bob);
-        address rogue = factory.createSlot(SlotInit({
-            recipient: bob, currency: IERC20(address(0)), manager: bob,
-            hook: address(wrapper), hookData: bytes32(0),
-            taxBps: TAX, minDepositSeconds: 7 days,
-            mutableTax: true, mutableHook: false
-        }));
+        address rogue = factory.createSlot(
+            SlotInit({
+                currency: IERC20(address(0)),
+                manager: bob,
+                mutableTax: true,
+                mutableRecipient: true,
+                mutableModule: false,
+                taxTerms: TaxTerms({
+                    recipient: bob, rateBps: uint16(TAX_RATE), minRunwaySeconds: uint32(7 days)
+                }),
+                moduleTerms: ModuleTerms({module: address(wrapper), settings: ""})
+            })
+        );
         assertEq(wrapper.tokenOf(rogue), 0, "not ours");
         assertEq(wrapper.ownerOf(tokenId), alice, "and alice keeps her token");
     }
@@ -276,38 +322,46 @@ contract SlotBoundNFTWrapperTest is Test {
     /// @notice The property this whole design leans on. The depositor manages
     ///         their own slot, and a manager can change NOTHING under a
     ///         sitting occupant — terms ripen for `TERMS_DELAY` and land at the
-    ///         next occupancy transition. Without this, depositor-as-manager
+    ///         next buy. Without this, depositor-as-manager
     ///         plus depositor-as-withdrawer is a rug.
     function test_ARerateCannotTouchASittingOccupant() public {
         vm.prank(bob);
         slot.buy{value: VALUATION + _deposit(2 ether)}(bob, 2 ether, _deposit(2 ether), 0);
 
         vm.prank(alice);
-        slot.proposeTerms(5000, address(0), bytes32(0), true, false);
+        slot.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(5000), minRunwaySeconds: 0}),
+            ModuleTerms({module: address(0), settings: ""}),
+            uint16(1)
+        );
 
         vm.warp(block.timestamp + 2 days); // well past TERMS_DELAY
-        assertEq(slot.taxBps(), TAX, "still the rate bob bought under");
+        assertEq(slot.taxRateBps(), TAX_RATE, "still the rate bob bought under");
 
         vm.prank(bob);
         slot.release();
-        assertEq(slot.taxBps(), 5000, "lands at the transition, never before");
+        slot.applyTerms();
+        assertEq(slot.taxRateBps(), 5000, "lands once the seat is free, never before");
     }
 
     /// @notice The retirement veto cannot be added later. The slot packs these
-    ///         flags into `_hookFlags` at its own `initialize` and reads the
+    ///         scopes into `_scopes` at its own `initialize` and reads the
     ///         bit thereafter, so a wrapper shipped without `beforeBuy` leaves
     ///         every slot it ever creates permanently unable to refuse a buy —
     ///         and no beacon upgrade can retrofit it.
     function test_TheRetirementVetoIsSubscribedFromTheFirstWrap() public view {
-        assertTrue(wrapper.subscriptions().beforeBuy, "or the veto is dead code");
-        assertTrue(slot.hookFlags().beforeBuy, "and the slot cached it at creation");
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).beforeBuy, "or the veto is dead code");
+        assertTrue(slot.scopes().beforeBuy, "and the slot cached it at creation");
     }
 
-    function test_TheHookIsStrict() public view {
-        assertTrue(wrapper.subscriptions().strict, "so the move cannot be starved");
-        assertTrue(wrapper.subscriptions().afterBuy);
-        assertTrue(wrapper.subscriptions().afterRelease);
-        assertTrue(wrapper.subscriptions().afterLiquidate);
+    function test_TheModuleIsStrict() public view {
+        assertTrue(
+            ScopesLib.unpack(wrapper.scopes("")).afterCallbacksMustSucceed,
+            "so the move cannot be starved"
+        );
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterBuy);
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterRelease);
+        assertTrue(ScopesLib.unpack(wrapper.scopes("")).afterLiquidate);
     }
 
     // ── finding a wrapper token from its underlying ─────────────────────────
@@ -339,9 +393,9 @@ contract SlotBoundNFTWrapperTest is Test {
 
         vm.startPrank(alice);
         bad.approve(address(wrapper), 7);
-        (uint256 badId, ) = wrapper.wrap{value: _deposit(VALUATION)}(
-            IERC721(address(bad)), 7, TAX, VALUATION, Mode.Permanent
-        );
+        (uint256 badId,) = wrapper.wrap{
+            value: _deposit(VALUATION)
+        }(IERC721(address(bad)), 7, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
         vm.stopPrank();
 
         assertEq(wrapper.tokenURI(badId), "");
@@ -360,7 +414,7 @@ contract SlotBoundNFTWrapperTest is Test {
         vm.prank(wrapperOwner);
         wrapper.setWrapFee(0.01 ether);
 
-        (uint256 total, uint256 deposit, uint256 fee) = wrapper.quoteWrap(VALUATION, TAX);
+        (uint256 total, uint256 deposit, uint256 fee) = wrapper.quoteWrap(VALUATION, TAX_RATE);
         assertEq(fee, 0.01 ether);
         assertEq(total, deposit + fee, "the quote splits it for the UI");
 
@@ -387,12 +441,10 @@ contract SlotBoundNFTWrapperTest is Test {
 
         vm.startPrank(alice);
         nft.approve(address(wrapper), 2);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISlotBoundNFTWrapper.FeeUnpaid.selector, 1 ether)
-        );
-        wrapper.wrap{value: 0.5 ether}(
-            IERC721(address(nft)), 2, TAX, VALUATION, Mode.Permanent
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISlotBoundNFTWrapper.FeeUnpaid.selector, 1 ether));
+        wrapper.wrap{
+            value: 0.5 ether
+        }(IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -426,7 +478,7 @@ contract SlotBoundNFTWrapperTest is Test {
 
         vm.prank(bob);
         wrapper.setWrapFee(1 ether);
-        (, , uint256 fee) = wrapper.quoteWrap(VALUATION, TAX);
+        (,, uint256 fee) = wrapper.quoteWrap(VALUATION, TAX_RATE);
         assertEq(fee, 1 ether);
     }
 
@@ -437,7 +489,7 @@ contract SlotBoundNFTWrapperTest is Test {
         SlotBoundNFTWrapper free = _deployWrapper(address(0), 0);
 
         assertEq(free.owner(), address(0));
-        (, , uint256 fee) = free.quoteWrap(VALUATION, TAX);
+        (,, uint256 fee) = free.quoteWrap(VALUATION, TAX_RATE);
         assertEq(fee, 0);
 
         vm.prank(wrapperOwner);
@@ -452,11 +504,42 @@ contract SlotBoundNFTWrapperTest is Test {
         SlotBoundNFTWrapper wImpl = new SlotBoundNFTWrapper();
         UpgradeableBeacon beacon = new UpgradeableBeacon(address(wImpl), address(this));
         bytes memory initData = abi.encodeCall(
-            SlotBoundNFTWrapper.initialize,
-            ("Free", "FREE", factory, address(0), uint256(1 ether))
+            SlotBoundNFTWrapper.initialize, ("Free", "FREE", factory, address(0), uint256(1 ether))
         );
 
         vm.expectRevert(ISlotBoundNFTWrapper.NotOwner.selector);
         new BeaconProxy(address(beacon), initData);
+    }
+
+    // ─── what arrived, and what it cost ─────────────────────────────────────
+
+    /// @notice No wrapper token for escrow that never arrived.
+    function test_AnUnderlyingThatDoesNotArriveIsRefused() public {
+        HollowNFT hollow = new HollowNFT();
+        uint256 dep = _deposit(VALUATION);
+        vm.prank(alice);
+        vm.expectRevert(ISlotBoundNFTWrapper.NotReceived.selector);
+        wrapper.wrap{
+            value: dep
+        }(IERC721(address(hollow)), 7, TAX_RATE, VALUATION, Mode.Permanent, type(uint256).max);
+    }
+
+    /// @notice A fee raised after the quote fails the wrap instead of being
+    ///         taken out of the depositor's escrow.
+    function test_AFeeAboveTheCallersCeilingIsRefused() public {
+        (uint256 total,, uint256 quotedFee) = wrapper.quoteWrap(VALUATION, TAX_RATE);
+
+        vm.prank(wrapperOwner);
+        wrapper.setWrapFee(0.1 ether);
+
+        vm.startPrank(alice);
+        nft.approve(address(wrapper), 2);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISlotBoundNFTWrapper.FeeAboveMax.selector, 0.1 ether, quotedFee)
+        );
+        wrapper.wrap{
+            value: total + 0.1 ether
+        }(IERC721(address(nft)), 2, TAX_RATE, VALUATION, Mode.Permanent, quotedFee);
+        vm.stopPrank();
     }
 }

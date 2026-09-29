@@ -24,7 +24,7 @@ import type { EventType } from "@/types";
  *
  * Colours are grouped by what the event DOES rather than picked freshly: money
  * arriving is green-ish, money leaving is warm, governance is indigo/cyan, and
- * anything that means something went wrong is red. `Hook Failed` is the loudest
+ * anything that means something went wrong is red. `Module Failed` is the loudest
  * on purpose — it is the only row in the feed that reports a bug.
  */
 const EVENT_TYPES: Record<EventType, { color: string; icon: ReactNode }> = {
@@ -83,8 +83,8 @@ const EVENT_TYPES: Record<EventType, { color: string; icon: ReactNode }> = {
     icon: <Gavel className="size-3" />,
   },
   // Was "Module Proposed". Same slot in the feed, different protocol concept:
-  // one hook address, not a gallery of modules.
-  "Hook Proposed": {
+  // one module address, not a gallery of modules.
+  "Module Proposed": {
     color: "bg-cyan-500/10 text-cyan-600",
     icon: <Plug className="size-3" />,
   },
@@ -96,7 +96,7 @@ const EVENT_TYPES: Record<EventType, { color: string; icon: ReactNode }> = {
     color: "bg-gray-500/10 text-gray-600",
     icon: <Ban className="size-3" />,
   },
-  "Hook Failed": {
+  "Module Failed": {
     color: "bg-red-500/15 text-red-700 dark:text-red-400",
     icon: <TriangleAlert className="size-3" />,
   },

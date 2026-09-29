@@ -4,7 +4,10 @@ pragma solidity ^0.8.24;
 import {console2} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolConfig} from "./ProtocolConfig.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {AdConfig, ModerationMode} from "../../src/modules/adland/IAdLand.sol";
+import {SlotFactory} from "../../src/SlotFactory.sol";
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
 
 /**
  * @title CreatePrimaryAdSlot
@@ -40,8 +43,9 @@ import {AdLand} from "../../src/hooks/adland/AdLand.sol";
  *
  *      Terms are read off the OUTGOING primary, so this is a like-for-like
  *      replacement unless you say otherwise. Override any of them with env
- *      vars — AD_RECIPIENT, AD_MANAGER, AD_CURRENCY, AD_TAX_BPS,
- *      AD_MIN_DEPOSIT_SECONDS, AD_TENURE_WINDOW — and the log prints what it
+ *      vars — AD_OWNER, AD_CURRENCY, AD_TAX_BPS, AD_MIN_DEPOSIT_SECONDS,
+ *      AD_TENURE_WINDOW, AD_MODERATION (0 Open, 1 FirstPerTenure, 2 Every) —
+ *      and the log prints what it
  *      used either way.
  *
  *      Run:
@@ -57,7 +61,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
     error NoAdLandOnThisChain(uint256 chainId);
     error NoSlotFactoryOnThisChain(uint256 chainId);
     error NotOwner(address owner, address caller);
-    error NoRecipient();
+    error NoOwner();
 
     /// The outgoing primary's terms, or zeroes when there is no primary yet.
     struct Terms {
@@ -65,8 +69,8 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         address recipient;
         address manager;
         address currency;
-        uint256 taxBps;
-        uint256 minDepositSeconds;
+        uint256 taxRateBps;
+        uint256 minRunwaySeconds;
         uint256 tenureWindow;
     }
 
@@ -84,10 +88,10 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         t.recipient = address(uint160(_word(slot, "recipient()")));
         t.manager = address(uint160(_word(slot, "manager()")));
         t.currency = address(uint160(_word(slot, "currency()")));
-        t.taxBps = _word(slot, "taxBps()");
-        t.minDepositSeconds = _word(slot, "minDepositSeconds()");
-        // The hook stores the window as its 32 bytes of config; see
-        // `AdLandCreate.createAdSlot`, which encodes seconds into it.
+        t.taxRateBps = _word(slot, "taxRateBps()");
+        t.minRunwaySeconds = _word(slot, "minRunwaySeconds()");
+        // Only the RETIRED protocol answers this: its hook kept the window as
+        // its 32 bytes of config. A v1 slot misses, and the window stays zero.
         t.tenureWindow = _word(slot, "hookData()");
     }
 
@@ -119,7 +123,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
 
         // Checked before anything is sent. Both writes below are `onlyOwner`,
         // and a broadcast that reverts on the second one has already spent the
-        // first — which for `setSlotFactory` means a half-migrated hook.
+        // first — which for `setSlotFactory` means a half-migrated module.
         address owner = adLand.owner();
         address caller = msg.sender;
         if (owner != caller) revert NotOwner(owner, caller);
@@ -132,50 +136,64 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         // had a primary, where there is nothing to copy.
         Terms memory prev = _termsOf(adLand.primary());
 
-        address recipient = vm.envOr("AD_RECIPIENT", prev.recipient);
-        address manager = vm.envOr("AD_MANAGER", prev.manager);
+        // The owner must sign as manager, so the outgoing manager is the
+        // default, not the outgoing recipient (which may be a contract).
+        address slotOwner = vm.envOr("AD_OWNER", prev.manager);
         // Zero is a legal currency — it means native ETH — so it cannot double
         // as "unset". A chain with no previous primary must be told.
         address currency = vm.envOr("AD_CURRENCY", prev.currency);
-        uint256 taxBps = vm.envOr("AD_TAX_BPS", prev.found ? prev.taxBps : DEFAULT_TAX_BPS);
-        uint256 minDeposit =
-            vm.envOr("AD_MIN_DEPOSIT_SECONDS", prev.found ? prev.minDepositSeconds : DEFAULT_MIN_DEPOSIT_SECONDS);
-        uint256 tenure = vm.envOr("AD_TENURE_WINDOW", prev.found ? prev.tenureWindow : DEFAULT_TENURE_WINDOW);
+        uint256 taxRateBps = vm.envOr("AD_TAX_BPS", prev.found ? prev.taxRateBps : DEFAULT_TAX_BPS);
+        uint256 minDeposit = vm.envOr(
+            "AD_MIN_DEPOSIT_SECONDS",
+            prev.found ? prev.minRunwaySeconds : DEFAULT_MIN_DEPOSIT_SECONDS
+        );
+        uint256 tenure =
+            vm.envOr("AD_TENURE_WINDOW", prev.found ? prev.tenureWindow : DEFAULT_TENURE_WINDOW);
+        uint256 moderation = vm.envOr("AD_MODERATION", uint256(0));
 
-        // No default worth having. Rent goes here forever, and a script that
-        // guessed — the owner, say — would produce a slot that looks right and
-        // pays the wrong address for as long as nobody checks.
-        if (recipient == address(0)) revert NoRecipient();
+        // No default worth having: a guessed owner would receive the rent and
+        // hold the slot.
+        if (slotOwner == address(0)) revert NoOwner();
 
         console2.log("AdLand          ", adLandAddress);
         console2.log("owner           ", owner);
         console2.log("factory (record)", factory);
-        console2.log("factory (hook)  ", adLand.slotFactory());
-        console2.log("recipient       ", recipient);
-        console2.log("manager         ", manager);
+        console2.log("slot owner      ", slotOwner);
         console2.log("currency        ", currency);
-        console2.log("taxBps          ", taxBps);
+        console2.log("taxRateBps      ", taxRateBps);
         console2.log("minDepositSecs  ", minDeposit);
         console2.log("tenureWindow    ", tenure);
+        console2.log("moderation      ", moderation);
 
         vm.startBroadcast();
 
-        // Compared, not null-checked: a hook still pointing at the previous
-        // generation creates slots that work and that the indexer never sees.
-        if (adLand.slotFactory() != factory) {
-            console2.log("setSlotFactory   ->", factory);
-            adLand.setSlotFactory(factory);
-        }
-
-        address slot = adLand.createAdSlot(
-            recipient,
-            IERC20(currency),
-            taxBps,
-            minDeposit,
-            tenure,
-            manager,
-            bytes32(0) // keyless; `primary` is claimed below, delay and all
+        // The slot's whole AdLand configuration, stored on the slot.
+        // Keyless: `primary` is claimed below, delay and all.
+        bytes memory settings = abi.encode(
+            AdConfig({
+                tenureWindow: uint64(tenure),
+                moderation: ModerationMode(moderation),
+                key: bytes32(0)
+            })
         );
+
+        // An ordinary slot from the ordinary factory, with AdLand as its module.
+        address slot = SlotFactory(factory)
+            .createSlot(
+                SlotInit({
+                    currency: IERC20(currency),
+                    manager: slotOwner,
+                    mutableTax: true,
+                    mutableRecipient: true,
+                    mutableModule: false,
+                    taxTerms: TaxTerms({
+                        recipient: slotOwner,
+                        rateBps: uint16(taxRateBps),
+                        minRunwaySeconds: uint32(minDeposit)
+                    }),
+                    moduleTerms: ModuleTerms({module: adLandAddress, settings: settings})
+                })
+            );
 
         address current = adLand.primary();
         adLand.setSlot(adLand.PRIMARY(), slot);
@@ -190,7 +208,7 @@ contract CreatePrimaryAdSlot is ProtocolConfig {
         // different follow-ups, so they are said out loud.
         if (adLand.primary() == slot) {
             console2.log("effect           immediate");
-            console2.log("next             set config.miniapp.slot to the slot above");
+            console2.log("next             set settings.miniapp.slot to the slot above");
         } else {
             console2.log("effect           proposed; ready in (seconds):");
             console2.log("                ", adLand.CHANGE_DELAY());

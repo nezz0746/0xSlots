@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Versioned} from "../../Versioned.sol";
+import {Versioned} from "../../utils/Versioned.sol";
 
 /**
  * @title OfferBookStorage
@@ -34,12 +34,6 @@ abstract contract OfferBookStorage is Versioned {
         bool filled;
     }
 
-    // A nonce and an EIP-712 signature used to sit in `Offer`, because
-    // `Slot.sell` demanded the bidder's signature over the exact terms. The
-    // book now fills the offer itself, and `offer()` is already a transaction
-    // FROM the bidder — posting it is the consent. Both fields, the signature
-    // check and the slot's nonce storage all went with `sell`.
-
     /// @notice slot => offers. Ordering is computed, not stored — see `best`.
 
     mapping(address => Offer[]) internal _offers;
@@ -64,11 +58,7 @@ abstract contract OfferBookStorage is Versioned {
         uint256 deposit,
         uint64 expiry
     );
-    event Cancelled(
-        address indexed slot,
-        address indexed bidder,
-        uint256 indexed id
-    );
+    event Cancelled(address indexed slot, address indexed bidder, uint256 indexed id);
 
     /// @notice A bid was accepted: the occupant repriced to it and the bidder
     ///         was seated.

@@ -3,7 +3,7 @@
 import {
   assertSlotInit,
   type SlotInit,
-  ZERO_HOOK_DATA,
+  NO_SETTINGS,
 } from "@0xslots/sdk/slots";
 import { SplitV2Type } from "@0xsplits/splits-sdk/types";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,8 +30,8 @@ import { FormSection } from "./components/form-section";
 import { MobileBottomBar } from "./components/mobile-bottom-bar";
 import { SectionCurrency } from "./components/section-currency";
 import { SectionEconomics } from "./components/section-economics";
-import { SectionHook } from "./components/section-hook";
-import { SectionPermissions } from "./components/section-permissions";
+import { SectionModule } from "./components/section-module";
+import { SectionMutability } from "./components/section-mutability";
 import { SectionRecipient } from "./components/section-recipient";
 import type { SubmitState } from "./components/submit-button";
 import { SummaryCard } from "./components/summary-card";
@@ -79,32 +79,25 @@ export default function CreatePage() {
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxBps = form.watch("taxBps");
+  const taxRateBps = form.watch("taxRateBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
-  const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const moduleMode = form.watch("moduleMode");
+  const module = form.watch("module");
   const manager = form.watch("manager");
   const mutableTax = form.watch("mutableTax");
-  const mutableHook = form.watch("mutableHook");
+  const mutableRecipient = form.watch("mutableRecipient");
+  const mutableModule = form.watch("mutableModule");
 
   // ENS resolution, for submission and for the preflight below.
   const recipientResolved = useResolveAddress(recipient);
   const currencyResolved = useResolveAddress(customCurrency);
-  const hookResolved = useResolveAddress(hook);
+  const moduleResolved = useResolveAddress(module);
   const managerResolved = useResolveAddress(manager);
 
-  // ── The one invariant a form gets wrong by default ────────────────────────
-  //
-  // A manager is REQUIRED when something is mutable and FORBIDDEN when nothing
-  // is: `initialize` reverts both ways. So the manager field is not "optional"
-  // — it is a function of the two checkboxes above it, and a form that always
-  // sent the connected wallet would revert the moment someone unticked both.
-  //
-  // Enforced HERE, at the single point where the value is produced, rather than
-  // in the section that renders the field: the section can hide an input, but
-  // only this can decide what is sent.
-  const needsManager = mutableTax || mutableHook;
+  // A manager is required when something is mutable and forbidden otherwise,
+  // so an immutable slot sends the zero address whatever sits in the field.
+  const needsManager = mutableTax || mutableRecipient || mutableModule;
   const resolvedManager = (
     needsManager ? managerResolved.resolved : zeroAddress
   ) as Address;
@@ -113,8 +106,8 @@ export default function CreatePage() {
     currencyMode === "preset" ? presetCurrency : currencyResolved.resolved
   ) as Address;
 
-  const resolvedHook = (
-    hookMode === "none" ? zeroAddress : hookResolved.resolved
+  const resolvedModule = (
+    moduleMode === "none" ? zeroAddress : moduleResolved.resolved
   ) as Address;
 
   /**
@@ -140,33 +133,37 @@ export default function CreatePage() {
       return null;
     if (!isAddress(resolvedCurrency, { strict: false })) return null;
     if (
-      resolvedHook !== zeroAddress &&
-      !isAddress(resolvedHook, { strict: false })
+      resolvedModule !== zeroAddress &&
+      !isAddress(resolvedModule, { strict: false })
     )
       return null;
     if (needsManager && !isAddress(resolvedManager, { strict: false }))
       return null;
     return {
-      recipient: previewRecipient,
       currency: resolvedCurrency,
       manager: resolvedManager,
-      hook: resolvedHook,
-      taxBps: percentToBps(taxBps),
-      minDepositSeconds: toSeconds(minDepositValue, minDepositUnit),
       mutableTax,
-      mutableHook,
+      mutableRecipient,
+      mutableModule,
+      taxTerms: {
+        recipient: previewRecipient,
+        rateBps: Number(percentToBps(taxRateBps)),
+        minRunwaySeconds: Number(toSeconds(minDepositValue, minDepositUnit)),
+      },
+      moduleTerms: { module: resolvedModule },
     };
   }, [
     previewRecipient,
     resolvedCurrency,
     resolvedManager,
-    resolvedHook,
+    resolvedModule,
     needsManager,
-    taxBps,
+    taxRateBps,
     minDepositValue,
     minDepositUnit,
     mutableTax,
-    mutableHook,
+    mutableRecipient,
+    mutableModule,
   ]);
 
   /**
@@ -193,7 +190,7 @@ export default function CreatePage() {
   const anyResolving =
     recipientResolved.isResolving ||
     currencyResolved.isResolving ||
-    hookResolved.isResolving ||
+    moduleResolved.isResolving ||
     managerResolved.isResolving;
 
   // The chain's default currency is seeded by SectionCurrency, next to the
@@ -306,57 +303,65 @@ export default function CreatePage() {
     if (!isAddress(recipientAddress, { strict: false })) return;
 
     /**
-     * The hook to attach, and its configuration.
+     * The module to attach, and its configuration.
      *
      * Both, together, because they are one decision. The tenure mode used to
-     * mean "get or deploy a hook for this duration" — a second wallet prompt on
+     * mean "get or deploy a module for this duration" — a second wallet prompt on
      * an unusual number, and a CREATE2 factory to make the address derivable.
-     * The duration now travels as the slot's own `hookData`, so one address
+     * The duration now travels as the slot's own `settings`, so one address
      * serves every window and there is nothing to deploy.
      */
-    const hookAddress = (
-      data.hookMode === "none"
+    const moduleAddress = (
+      data.moduleMode === "none"
         ? zeroAddress
-        : hookResolved.resolved || data.hook
+        : moduleResolved.resolved || data.module
     ) as Address;
 
     /**
-     * The hook's own word, encoded by the form the hook described.
+     * The module's own word, encoded by the form the module described.
      *
-     * One branch, for every hook. Minimum tenure used to have a second one
+     * One branch, for every app. Minimum tenure used to have a second one
      * here — its duration was a pair of form fields converted to seconds at
      * submit — which meant the same `uint256 window` had two encoders and only
-     * the descriptor's was ever put to `validateHookData`. Empty is a legal
-     * answer and stays one: a hook that refuses it says so through the form,
+     * the descriptor's was ever put to `validateSettings`. Empty is a legal
+     * answer and stays one: a module that refuses it says so through the form,
      * which is what disarms the button.
      */
-    const hookData: Hex = (data.customHookData || ZERO_HOOK_DATA) as Hex;
+    const settings: Hex = (data.customSettings || NO_SETTINGS) as Hex;
 
     if (
-      hookAddress !== zeroAddress &&
-      !isAddress(hookAddress, { strict: false })
+      moduleAddress !== zeroAddress &&
+      !isAddress(moduleAddress, { strict: false })
     )
       return;
 
     const managerAddress = (
-      data.mutableTax || data.mutableHook
+      data.mutableTax || data.mutableRecipient || data.mutableModule
         ? managerResolved.resolved || data.manager
         : zeroAddress
     ) as Address;
 
     const slotInit: SlotInit = {
-      recipient: getAddress(recipientAddress),
       currency: getAddress(currency),
       manager:
         managerAddress === zeroAddress
           ? zeroAddress
           : getAddress(managerAddress),
-      hook: hookAddress === zeroAddress ? zeroAddress : getAddress(hookAddress),
-      hookData,
-      taxBps: percentToBps(data.taxBps),
-      minDepositSeconds: toSeconds(data.minDepositValue, data.minDepositUnit),
       mutableTax: data.mutableTax,
-      mutableHook: data.mutableHook,
+      mutableRecipient: data.mutableRecipient,
+      mutableModule: data.mutableModule,
+      taxTerms: {
+        recipient: getAddress(recipientAddress),
+        rateBps: Number(percentToBps(data.taxRateBps)),
+        minRunwaySeconds: Number(
+          toSeconds(data.minDepositValue, data.minDepositUnit),
+        ),
+      },
+      moduleTerms: {
+        module:
+          moduleAddress === zeroAddress ? zeroAddress : getAddress(moduleAddress),
+        settings: moduleAddress === zeroAddress ? NO_SETTINGS : settings,
+      },
     };
 
     // The last gate before gas. `createSlot` asserts this again inside the SDK,
@@ -376,7 +381,7 @@ export default function CreatePage() {
     // A single slot gets a simulation first: the factory returns the address it
     // will deploy to, and a transaction hash carries no return value — so
     // asking now is the only way to land the user on their own slot afterwards
-    // instead of on the index. It also surfaces a hook's veto as that hook's
+    // instead of on the index. It also surfaces a module's veto as that module's
     // own revert reason, which a sent-and-reverted transaction cannot.
     if (slotCount === 1) {
       const predicted = await actions.preflight("Preview slot", () =>
@@ -445,12 +450,12 @@ export default function CreatePage() {
                 <SectionEconomics />
               </FormSection>
 
-              <FormSection meta={SECTION.hook}>
-                <SectionHook />
+              <FormSection meta={SECTION.module}>
+                <SectionModule />
               </FormSection>
 
-              <FormSection meta={SECTION.permissions}>
-                <SectionPermissions />
+              <FormSection meta={SECTION.scopes}>
+                <SectionMutability />
               </FormSection>
             </div>
 

@@ -17,10 +17,14 @@ import {
   rpcOrigin,
 } from "./chains.js";
 import {
+  CODE_SIZE_LIMIT,
+  type CodeSize,
   IMMUTABLES,
+  INITCODE_SIZE_LIMIT,
   PROXIES,
   beaconImplementation,
   cast,
+  codeSizes,
   simulate,
   codeVersion,
   layoutDiff,
@@ -376,6 +380,56 @@ function preflight(mode: Mode, cfg: ChainConfig, step: Step): Preflight {
   return { ...base, rows, standalone, changing, blocked };
 }
 
+// ─── code size ────────────────────────────────────────────────────────────────
+
+const BAR_WIDTH = 20;
+const EIGHTHS = ["", "\u258f", "\u258e", "\u258d", "\u258c", "\u258b", "\u258a", "\u2589"];
+
+/** A bar `BAR_WIDTH` cells wide, filled to `frac` in eighths of a cell. */
+function bar(frac: number): string {
+  const cells = Math.min(1, frac) * BAR_WIDTH;
+  const full = Math.floor(cells);
+  const part = EIGHTHS[Math.round((cells - full) * 8)] ?? "";
+  const used = "\u2588".repeat(full) + part;
+  const tint = frac >= 0.95 ? c.red : frac >= 0.85 ? c.yellow : c.green;
+  return tint(used) + c.dim("\u2591".repeat(BAR_WIDTH - full - (part ? 1 : 0)));
+}
+
+const bytes = (n: number) => n.toLocaleString("en-US");
+
+/**
+ * How full each contract the script deploys is, against EIP-170.
+ *
+ * A fact about the code, not about a chain, so it is measured once per run.
+ * Fullest first: the one closest to the limit is the one worth reading.
+ */
+function sizeReport(sizes: Map<string, CodeSize>): { rows: string[]; over: string[] } {
+  const rows: string[] = [];
+  const over: string[] = [];
+  const sorted = [...sizes].sort(([, a], [, b]) => b.runtime - a.runtime);
+  const width = Math.max(...sorted.map(([name]) => name.length));
+
+  for (const [name, s] of sorted) {
+    const frac = s.runtime / CODE_SIZE_LIMIT;
+    const left = CODE_SIZE_LIMIT - s.runtime;
+    const pct = `${(frac * 100).toFixed(1)}%`;
+    const tint = frac >= 0.95 ? c.red : frac >= 0.85 ? c.yellow : (x: string) => x;
+
+    let margin =
+      left >= 0 ? c.dim(`${bytes(left)} left`) : c.red(c.bold(`${bytes(-left)} OVER`));
+    if (s.init > INITCODE_SIZE_LIMIT) {
+      margin += `  ${c.red(c.bold(`initcode ${bytes(s.init - INITCODE_SIZE_LIMIT)} OVER`))}`;
+    }
+    if (left < 0 || s.init > INITCODE_SIZE_LIMIT) over.push(name);
+
+    rows.push(
+      `${c.bold(name.padEnd(width))} ${bar(frac)} ${tint(pct.padStart(6))}  ` +
+        `${bytes(s.runtime).padStart(6)}  ${margin}`,
+    );
+  }
+  return { rows, over };
+}
+
 /**
  * The key for one chain.
  *
@@ -442,6 +496,18 @@ async function run(mode: Mode | undefined, opts: Options) {
     );
   }
 
+  // ── the code, once ────────────────────────────────────────────────────────
+  //
+  // Measured before any chain is read: a contract past the limit fails to
+  // deploy everywhere, so it is worth knowing before a node is even asked.
+  const targets = Object.fromEntries(
+    [...Object.entries(PROXIES), ...Object.entries(IMMUTABLES)].map(([n, s]) => [n, s.target]),
+  );
+  const sizes = spinnerStep()("Measuring contract sizes", () => codeSizes(targets));
+  const size = sizes ? sizeReport(sizes) : null;
+  if (size) p.note(size.rows.join("\n"), `code size \u00b7 bytes of ${bytes(CODE_SIZE_LIMIT)}`);
+  else p.log.warn("Could not measure contract sizes \u2014 forge build failed.");
+
   // ── read every chain before touching any of them ──────────────────────────
   //
   // All the reading first, then one decision, then all the writing. Interleaving
@@ -490,6 +556,15 @@ async function run(mode: Mode | undefined, opts: Options) {
         "cannot take that back. Append new variables instead of inserting them.",
     );
   }
+
+  // Past EIP-170 the deploy reverts on every chain, so this stops the run like
+  // a moved slot does, rather than letting the broadcast find out.
+  if (size?.over.length)
+    bail(
+      `Over the size limit: ${size.over.join(", ")}.`,
+      `A contract may deploy at most ${bytes(CODE_SIZE_LIMIT)} bytes of code ` +
+        `(${bytes(INITCODE_SIZE_LIMIT)} of initcode). Move reads out, or split it.`,
+    );
 
   const skipped = results.filter((r) => r.skip);
   const actionable = results.filter(

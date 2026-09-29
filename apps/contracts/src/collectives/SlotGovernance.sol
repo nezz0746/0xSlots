@@ -3,38 +3,26 @@ pragma solidity ^0.8.23;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {TaxTerms, ModuleTerms, ModuleFee, Pending} from "../types/SlotTypes.sol";
+import {TermsLib} from "../libraries/TermsLib.sol";
 
-
-/// @notice The subset of `Slot` a collective drives. Declared locally rather
-///         than imported from `Slot.sol` so the collective compiles against a
-///         signature list, not against the slot's implementation — the two are
-///         deployed independently and only ever meet across an ABI boundary.
-///
-/// @dev ── What the hook redesign did to this ─────────────────────────────
-///
-///      Seven of the previous nine functions are gone. `addModule` and
-///      `removeModule` went with modules themselves; `setLiquidationBounty`
-///      went with the bounty; and `proposeTaxUpdate` and `proposePolicyUpdate`
-///      collapsed into one `proposeTerms`, because tax and hook now share one
-///      deferral and one apply.
-///
-///      The old local copy of `UpdateKind` is gone too, and with it the hazard
-///      that justified importing it: an enum passed ACROSS the boundary is
-///      positional, so a local copy drifting by one member would cancel the
-///      wrong dimension. `proposeTerms` and `cancelTerms` take plain bools,
-///      so nothing positional crosses any more. The `Dimension` enum below
-///      never leaves this contract — it labels events and nothing else — which
-///      is why redeclaring it here is safe where the old one was not.
+/// @notice The subset of `Slot` a collective drives.
 interface IManagedSlot {
     function proposeTerms(
-        uint256 newTaxBps,
-        address newHook,
-        bytes32 newHookData,
-        bool changeTax,
-        bool changeHook
+        TaxTerms calldata taxTerms,
+        ModuleTerms calldata terms,
+        uint16 mask
     ) external;
 
-    function cancelTerms(bool cancelTax, bool cancelHook) external;
+    function cancelTerms(uint16 mask) external;
+
+    function acceptFee(ModuleFee calldata expected) external;
+
+    function acceptScopes(uint16 expected) external;
+
+    function fee() external view returns (ModuleFee memory);
+
+    function pending() external view returns (Pending memory);
 
     function collect() external;
 
@@ -42,10 +30,10 @@ interface IManagedSlot {
 }
 
 /// @notice Which lever a relayed event describes. Local to this contract and
-///         never passed to a slot — see the note on `IManagedSlot`.
+///         never passed to a slot.
 enum Dimension {
     Tax,
-    Hook
+    Module
 }
 
 abstract contract SlotGovernance is AccessControl, Initializable {
@@ -54,33 +42,14 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // ═══════════════════════════════════════════════════════════
 
     /// @notice May change the tax rate — what the slot costs to hold.
-    /// @dev The liquidation bounty used to ride along with this role. The
-    ///      protocol no longer has one: liquidation pays nothing, and the
-    ///      reward is the vacancy itself.
     bytes32 public constant TAX_MANAGER_ROLE = keccak256("TAX_MANAGER_ROLE");
 
-    /// @notice May change the hook — both what holding the slot grants and who
+    /// @notice May change the module — both what holding the slot grants and who
     ///         is allowed to hold it.
     ///
-    /// @dev ── Why this is the POLICY role and not the UTILITY one ──────────
-    ///
-    ///      A hook is the old policy and the old utility unified, so the two
-    ///      roles that governed them separately have to collapse into one. The
-    ///      identifier kept is `POLICY_MANAGER_ROLE`, and the choice is not
-    ///      cosmetic: whichever one survives, its existing holders inherit the
-    ///      other's powers on every live collective.
-    ///
-    ///      A policy manager could already decide who may hold a slot, which
-    ///      is the stronger of the two — they gain the ability to change what
-    ///      it does. Keeping `UTILITY_MANAGER_ROLE` instead would run the
-    ///      escalation the other way: someone trusted only to change what a
-    ///      slot does would silently acquire the power to decide who may hold
-    ///      it, and to refuse buys outright. Privileges must not widen because
-    ///      an implementation was refactored underneath them.
-    ///
-    ///      Holders of `UTILITY_MANAGER_ROLE` therefore lose their lever
-    ///      rather than gaining one. That is the safe direction, and it is
-    ///      recoverable by an admin granting them this role deliberately.
+    /// @dev One role, because one module governs both halves: a module decides who
+    ///      may hold a slot AND what holding it does, and nobody can be granted
+    ///      one of those without the other.
     bytes32 public constant POLICY_MANAGER_ROLE = keccak256("POLICY_MANAGER_ROLE");
 
     // ═══════════════════════════════════════════════════════════
@@ -97,13 +66,9 @@ abstract contract SlotGovernance is AccessControl, Initializable {
 
     // ── Why these exist at all ───────────────────────────────────
     //
-    // Not redundancy with the slot's own logs. The slot's propose events carry
-    // NO proposer:
-    //
-    //     event TaxUpdateProposed(uint256 newPercentage);
-    //     event UpdateProposed(Dimension indexed kind, bytes32 value, uint64 proposedAt);
-    //
-    // so from the slot side, who pulled the lever is simply absent.
+    // Not redundancy with the slot's own logs. The slot's `TermsProposed`
+    // carries NO proposer, so from the slot side, who pulled the lever is
+    // simply absent.
     //
     // An indexer cannot recover it from `transaction.from` either. That works
     // only while the role holder is an EOA, and breaks in exactly the cases a
@@ -115,22 +80,21 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // ── One shape for both dimensions ────────────────────────────
     //
     // `value` is the proposed value widened to 32 bytes: raw basis points for
-    // `Tax`, the left-padded address for `Hook`.
+    // `Tax`, the left-padded address for `Module`.
 
     /// @notice A role holder relayed a pending-update proposal to `slot`.
     event TermsRelayed(
-        address indexed slot,
-        address indexed by,
-        Dimension indexed kind,
-        bytes32 value
+        address indexed slot, address indexed by, Dimension indexed kind, bytes32 value
     );
 
     /// @notice A role holder retracted `slot`'s pending update for one dimension.
-    event TermsCancelRelayed(
-        address indexed slot,
-        address indexed by,
-        Dimension indexed kind
-    );
+    event TermsCancelRelayed(address indexed slot, address indexed by, Dimension indexed kind);
+
+    /// @notice A policy manager accepted the attached module's current fee on `slot`.
+    event FeeAcceptRelayed(address indexed slot, address indexed by, ModuleFee fee);
+
+    /// @notice A policy manager accepted the attached module's current scopes on `slot`.
+    event ScopesAcceptRelayed(address indexed slot, address indexed by, uint16 scopes);
 
     /// @notice An admin dropped every pending proposal on `slot` at once.
     /// @dev Distinct from `TermsCancelRelayed`: this is the admin-only reach
@@ -138,8 +102,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     event AllTermsCancelled(address indexed slot, address indexed by);
 
     /// @dev Widens an address to the `bytes32` `TermsRelayed` carries, so one
-    ///      event shape describes a rate and two contract addresses. Mirrors
-    ///      `Slot._asValue`.
+    ///      event shape describes a rate and an address.
     function _asValue(address a) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
     }
@@ -153,11 +116,20 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      out of its own contract until it granted itself every role. This is
     ///      the "ADMIN can run all of them, OR you hold the specific role" rule.
     modifier onlyRoleOrAdmin(bytes32 role) {
+        _requireRoleOrAdmin(role);
+        _;
+    }
+
+    function _requireRoleOrAdmin(bytes32 role) internal view {
         if (!hasRole(role, msg.sender) && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert AccessControlUnauthorizedAccount(msg.sender, role);
         }
-        _;
     }
+
+    /// @dev The role that decides where this engine's revenue goes — the split
+    ///      manager of a split, the pool manager of a stream. Only the engine
+    ///      knows its name.
+    function _payoutRole() internal pure virtual returns (bytes32);
 
     // ═══════════════════════════════════════════════════════════
     // INITIALIZATION
@@ -169,22 +141,17 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///
     ///      Deliberately NOT an `initializer` itself — the engine's entry point
     ///      carries that modifier, and nesting them would revert.
-    /// @dev `hookManagers` receive `POLICY_MANAGER_ROLE` — see that constant
-    ///      for why the identifier still says policy. There is no separate
-    ///      utility role to grant any more; the parameter is gone rather than
-    ///      quietly redirected, because silently granting the hook role to
-    ///      whoever was listed as a utility manager is the escalation the role
-    ///      choice above exists to avoid.
+    /// @dev `policyManagers` receive `POLICY_MANAGER_ROLE`.
     function _initGovernance(
         address admin,
         address[] memory taxManagers,
-        address[] memory hookManagers
+        address[] memory policyManagers
     ) internal {
         if (admin == address(0)) revert AdminRequired();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRoleBatch(TAX_MANAGER_ROLE, taxManagers);
-        _grantRoleBatch(POLICY_MANAGER_ROLE, hookManagers);
+        _grantRoleBatch(POLICY_MANAGER_ROLE, policyManagers);
     }
 
     function _grantRoleBatch(bytes32 role, address[] memory accounts) internal {
@@ -207,13 +174,13 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     // slot that has not named this contract as its manager simply reverts with
     // `NotManager()` on the far side.
 
-    /// @notice Propose a new tax rate on `slot`. Applies on its next occupancy
-    ///         transition, not immediately.
-    function proposeTax(IManagedSlot slot, uint256 newTaxBps)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
-        _proposeTax(slot, newTaxBps);
+    /// @notice Propose a new tax rate on `slot`. Applies at its next buy, not
+    ///         immediately.
+    function proposeTax(
+        IManagedSlot slot,
+        uint16 newTaxRateBps
+    ) external onlyRoleOrAdmin(TAX_MANAGER_ROLE) {
+        _proposeTax(slot, newTaxRateBps);
     }
 
     /// @notice The same rate across many slots, in one transaction.
@@ -223,82 +190,107 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      mistakes, not ordinary states — and swallowing them would report
     ///      success for a portfolio that half moved. The cancels below tolerate
     ///      failure because "nothing queued" IS an ordinary state.
-    function proposeTaxBatch(IManagedSlot[] calldata slots, uint256 newTaxBps)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
-        uint256 length = slots.length;
-        for (uint256 i; i < length; ++i) _proposeTax(slots[i], newTaxBps);
-    }
-
-    function _proposeTax(IManagedSlot slot, uint256 newTaxBps) internal {
-        slot.proposeTerms(newTaxBps, address(0), bytes32(0), true, false);
-        emit TermsRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(newTaxBps));
-    }
-
-    /// @notice Propose a new hook on `slot` — what holding it grants, and who
-    ///         may take it.
-    ///
-    /// @dev Passing `address(0)` detaches. That is a real choice rather than a
-    ///      missing argument, which is why the slot takes an explicit
-    ///      `changeHook` flag and this relay always sets it: there is no way to
-    ///      express "detach" if a zero address means "leave alone".
-    ///
-    ///      The slot validates the hook now — one whose `subscriptions()` does not
-    ///      answer, or which rejects `newHookData`, is refused here rather than
-    ///      attached broken — so this relay does not re-check. One validation,
-    ///      one authority.
-    ///
-    ///      `newHookData` rides with the address because it configures THAT
-    ///      hook. A relay that let the two be set apart would be a way for this
-    ///      role to hand a hook a word meant for its predecessor.
-    function proposeHook(
-        IManagedSlot slot,
-        address newHook,
-        bytes32 newHookData
-    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
-        _proposeHook(slot, newHook, newHookData);
-    }
-
-    /// @notice The same hook and configuration across many slots.
-    /// @dev All-or-nothing, for the reason given on {proposeTaxBatch}. The hook
-    ///      and its data travel together here exactly as they do singly — one
-    ///      word cannot be handed to a hook it was not written for.
-    function proposeHookBatch(
+    function proposeTaxBatch(
         IManagedSlot[] calldata slots,
-        address newHook,
-        bytes32 newHookData
-    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        uint16 newTaxRateBps
+    ) external onlyRoleOrAdmin(TAX_MANAGER_ROLE) {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
-            _proposeHook(slots[i], newHook, newHookData);
+            _proposeTax(slots[i], newTaxRateBps);
         }
     }
 
-    function _proposeHook(
+    function _proposeTax(IManagedSlot slot, uint16 newTaxRateBps) internal {
+        TaxTerms memory taxTerms;
+        taxTerms.rateBps = newTaxRateBps;
+        ModuleTerms memory none;
+        slot.proposeTerms(taxTerms, none, TermsLib.TAX_RATE);
+        emit TermsRelayed(address(slot), msg.sender, Dimension.Tax, bytes32(uint256(newTaxRateBps)));
+    }
+
+    /// @notice Propose a new module on `slot`: its address, configuration and
+    ///         fee, as one decision.
+    ///
+    /// @dev A zero `terms.module` detaches. The slot validates the terms with the
+    ///      module now, so this relay does not re-check. One validation, one
+    ///      authority.
+    function proposeModule(
         IManagedSlot slot,
-        address newHook,
-        bytes32 newHookData
-    ) internal {
-        slot.proposeTerms(0, newHook, newHookData, false, true);
-        emit TermsRelayed(
-            address(slot),
-            msg.sender,
-            Dimension.Hook,
-            _asValue(newHook)
-        );
+        ModuleTerms calldata terms
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        _proposeModule(slot, terms);
+    }
+
+    /// @notice The same module terms across many slots.
+    /// @dev All-or-nothing, for the reason given on {proposeTaxBatch}.
+    function proposeModuleBatch(
+        IManagedSlot[] calldata slots,
+        ModuleTerms calldata terms
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        uint256 length = slots.length;
+        for (uint256 i; i < length; ++i) {
+            _proposeModule(slots[i], terms);
+        }
+    }
+
+    function _proposeModule(IManagedSlot slot, ModuleTerms calldata terms) internal {
+        // A module that takes a fee takes it from the revenue this collective
+        // exists to divide, so attaching one is the payout role's decision as
+        // much as the policy role's. Without this the policy role could send
+        // every slot's rent to a module's fee recipient and the split's members
+        // would receive nothing, with the split itself untouched.
+        //
+        // Checked against the fee the SLOT recorded, after it recorded it, and
+        // never against an answer the module gave this contract. A module's
+        // `fee` is a view that can see who is asking: asked separately, it
+        // could tell this contract nothing and the slot everything.
+        TaxTerms memory none;
+        slot.proposeTerms(none, terms, TermsLib.MODULE);
+        if (slot.pending().nextModule.fee.bps != 0) _requireRoleOrAdmin(_payoutRole());
+        emit TermsRelayed(address(slot), msg.sender, Dimension.Module, _asValue(terms.module));
+    }
+
+    /// @notice Accept the attached module's current fee on `slot`. Applies at once.
+    ///
+    /// @dev The policy manager's decision, like proposing a module — and, for a
+    ///      higher fee or a new fee recipient, the payout role's as well.
+    ///      `expected` is the fee they reviewed; the slot reverts if the module
+    ///      now declares anything else.
+    function acceptFee(
+        IManagedSlot slot,
+        ModuleFee calldata expected
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        // Raising the fee, or sending it somewhere new, is the payout role's
+        // call too, for the reason given in {_proposeModule}. Lowering it to
+        // the same recipient is not.
+        ModuleFee memory current = slot.fee();
+        if (
+            expected.bps > current.bps
+                || (expected.bps != 0 && expected.recipient != current.recipient)
+        ) {
+            _requireRoleOrAdmin(_payoutRole());
+        }
+        slot.acceptFee(expected);
+        emit FeeAcceptRelayed(address(slot), msg.sender, expected);
+    }
+
+    /// @notice Accept the attached module's current scopes on `slot`. They
+    ///         land at the next buy.
+    function acceptScopes(
+        IManagedSlot slot,
+        uint16 expected
+    ) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        slot.acceptScopes(expected);
+        emit ScopesAcceptRelayed(address(slot), msg.sender, expected);
     }
 
     /// @notice Retract this role's own queued tax proposal on `slot`.
     /// @dev Single-dimension, and that is load-bearing rather than tidy. The
-    ///      slot's cancel takes the same two flags its propose does, so a tax
-    ///      manager retracting their own work cannot destroy the hook
+    ///      slot's cancel takes a mask like its propose, so a tax
+    ///      manager retracting their own work cannot destroy the module
     ///      manager's queued change as a side effect.
-    function cancelTaxProposal(IManagedSlot slot)
-        external
-        onlyRoleOrAdmin(TAX_MANAGER_ROLE)
-    {
-        slot.cancelTerms(true, false);
+    function cancelTaxProposal(IManagedSlot slot) external onlyRoleOrAdmin(TAX_MANAGER_ROLE) {
+        slot.cancelTerms(TermsLib.TAX_RATE);
         emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Tax);
     }
 
@@ -314,32 +306,29 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].cancelTerms(true, false) {
+            try slots[i].cancelTerms(TermsLib.TAX_RATE) {
                 emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.Tax);
             } catch {}
         }
     }
 
-    /// @notice Retract this role's own queued hook proposal on `slot`.
-    function cancelHookProposal(IManagedSlot slot)
-        external
-        onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
-    {
-        slot.cancelTerms(false, true);
-        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Hook);
+    /// @notice Retract this role's own queued module proposal on `slot`.
+    function cancelModuleProposal(IManagedSlot slot) external onlyRoleOrAdmin(POLICY_MANAGER_ROLE) {
+        slot.cancelTerms(TermsLib.MODULE);
+        emit TermsCancelRelayed(address(slot), msg.sender, Dimension.Module);
     }
 
-    /// @notice Retract this role's queued hook proposals across many slots.
+    /// @notice Retract this role's queued module proposals across many slots.
     /// @dev Tolerant, for the reason given on {cancelTaxProposalBatch}.
-    function cancelHookProposalBatch(IManagedSlot[] calldata slots)
+    function cancelModuleProposalBatch(IManagedSlot[] calldata slots)
         external
         onlyRoleOrAdmin(POLICY_MANAGER_ROLE)
     {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].cancelTerms(false, true) {
-                emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.Hook);
+            try slots[i].cancelTerms(TermsLib.MODULE) {
+                emit TermsCancelRelayed(address(slots[i]), msg.sender, Dimension.Module);
             } catch {}
         }
     }
@@ -352,24 +341,16 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      single-dimension cancels above, no role needs it to undo its own
     ///      proposal.
     ///
-    ///      Tolerates a slot with only one dimension queued. The slot rejects a
-    ///      cancel for a dimension that holds nothing, so asking for both would
-    ///      revert on exactly the common case; each leg is attempted
-    ///      separately and a nothing-to-cancel is not a failure.
-    function cancelAllProposals(IManagedSlot slot)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    ///      Clears whatever is queued, of any term.
+    function cancelAllProposals(IManagedSlot slot) external onlyRole(DEFAULT_ADMIN_ROLE) {
         // solhint-disable-next-line no-empty-blocks
-        try slot.cancelTerms(true, false) {} catch {}
-        // solhint-disable-next-line no-empty-blocks
-        try slot.cancelTerms(false, true) {} catch {}
+        try slot.cancelTerms(TermsLib.ALL) {} catch {}
         emit AllTermsCancelled(address(slot), msg.sender);
     }
 
     /// @notice Drop every pending proposal across many slots. Admin only.
-    /// @dev Already tolerant singly, and stays so: this is the call reached for
-    ///      when the state of the portfolio is exactly what is not known.
+    /// @dev Tolerant: this is the call reached for when the state of the
+    ///      portfolio is exactly what is not known.
     function cancelAllProposalsBatch(IManagedSlot[] calldata slots)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
@@ -377,9 +358,7 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].cancelTerms(true, false) {} catch {}
-            // solhint-disable-next-line no-empty-blocks
-            try slots[i].cancelTerms(false, true) {} catch {}
+            try slots[i].cancelTerms(TermsLib.ALL) {} catch {}
             emit AllTermsCancelled(address(slots[i]), msg.sender);
         }
     }
@@ -407,6 +386,10 @@ abstract contract SlotGovernance is AccessControl, Initializable {
     ///      to check against `splitHash`, and the pool needs a decision about
     ///      whether the money leaves as a lump or as a rate.
     function sweep(IManagedSlot[] calldata slots) external {
+        _sweep(slots);
+    }
+
+    function _sweep(IManagedSlot[] calldata slots) internal {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks

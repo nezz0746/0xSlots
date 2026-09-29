@@ -1,5 +1,5 @@
 /**
- * The hook-based Slots protocol.
+ * The v1 Slots protocol.
  *
  * A separate entry point from the package root, not more names on it. Both
  * protocols have a `SlotsClient`, a `SlotInit`-shaped creation type and a
@@ -13,22 +13,42 @@
 export { SlotsError } from "../errors";
 export { isNativeCurrency, NATIVE_CURRENCY_ADDRESS } from "../native";
 export {
+  ALL_TERMS,
   assertSlotInit,
   BASIS_POINTS,
+  type BookOffer,
   type BuyParams,
   createSlotsClient,
-  type HookFlags,
+  SCOPE_BITS,
+  type SettingsCheck,
+  type ModuleSettingsParam,
+  type ModuleSettingsSchema,
+  type ModuleMetadata,
+  type ModuleFee,
+  type ModuleUpdate,
+  type SlotConstants,
+  type Scopes,
+  type ModuleTerms,
+  NO_MODULE,
+  type OfferBoard,
   MAX_PRICE,
   MAX_TAX_BPS,
+  MAX_MIN_RUNWAY_SECONDS,
   MONTH_SECONDS,
-  type PendingTerms,
+  type Pending,
+  type PostOfferParams,
   type ProposeTermsParams,
+  type TaxTerms,
   type SlotInit,
   type SlotState,
+  type SlotTerms,
   SlotsClient,
   type SlotsClientConfig,
+  TERMS,
   TERMS_DELAY_SECONDS,
-  ZERO_HOOK_DATA,
+  unpackScopes,
+  packScopes,
+  NO_SETTINGS,
 } from "./client";
 
 export {
@@ -42,3 +62,16 @@ export {
   depositFor,
   type MintQuote,
 } from "./collections";
+
+export {
+  assertCollectiveSplit,
+  COLLECTIVE_ROLES,
+  type CollectiveRole,
+  type CollectiveRoles,
+  type CollectiveSplit,
+  CollectivesClient,
+  type CollectivesClientConfig,
+  createCollectivesClient,
+  type CreateCollectiveParams,
+  SPLITS_NATIVE_TOKEN,
+} from "./collectives";

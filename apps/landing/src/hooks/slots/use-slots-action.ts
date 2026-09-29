@@ -31,7 +31,7 @@ export function useSlotsAction() {
     [refresh],
   );
 
-  // The SDK surfaces a hook's own revert reason here rather than "call
+  // The SDK surfaces a module's own revert reason here rather than "call
   // failed" — a `TenureNotElapsed` or a `NotManager` is the most useful thing
   // this app can say, so it is shown verbatim.
   const onError = useCallback((label: string, error: string) => {

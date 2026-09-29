@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {IManagedSlot} from "../../src/collectives/SlotGovernance.sol";
@@ -21,25 +23,48 @@ contract GovernanceBatchTest is Test {
     function setUp() public {
         Slot impl = new Slot();
         SlotFactory fi = new SlotFactory();
-        factory = SlotFactory(address(new ERC1967Proxy(address(fi),
-            abi.encodeCall(SlotFactory.initialize,(address(this),address(impl))))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(fi),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(impl)))
+                )
+            )
+        );
 
         SplitsWarehouse warehouse = new SplitsWarehouse("Ether", "ETH");
         SlotCollective c = new SlotCollective(address(warehouse));
         SlotCollective.InitialRoles memory roles;
         roles.admin = address(this);
-        gov = SlotCollective(payable(address(new ERC1967Proxy(address(c),
-            abi.encodeCall(
-                SlotCollective.initializeCollective, (_split(), roles)
-            )))));
+        gov = SlotCollective(
+            payable(address(
+                    new ERC1967Proxy(
+                        address(c),
+                        abi.encodeCall(SlotCollective.initializeCollective, (_split(), roles))
+                    )
+                ))
+        );
 
         for (uint256 i; i < 3; ++i) {
-            slots.push(IManagedSlot(factory.createSlot(SlotInit({
-                recipient: address(gov), currency: IERC20(address(0)),
-                manager: address(gov), hook: address(0), hookData: bytes32(0),
-                taxBps: 1000, minDepositSeconds: 1 days,
-                mutableTax: true, mutableHook: true
-            }))));
+            slots.push(
+                IManagedSlot(
+                    factory.createSlot(
+                        SlotInit({
+                            currency: IERC20(address(0)),
+                            manager: address(gov),
+                            mutableTax: true,
+                            mutableRecipient: true,
+                            mutableModule: true,
+                            taxTerms: TaxTerms({
+                                recipient: address(gov),
+                                rateBps: uint16(1000),
+                                minRunwaySeconds: uint32(1 days)
+                            }),
+                            moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                        })
+                    )
+                )
+            );
         }
         vm.warp(1_000_000);
     }
@@ -50,10 +75,7 @@ contract GovernanceBatchTest is Test {
         uint256[] memory alloc = new uint256[](1);
         alloc[0] = 100;
         sp = SplitV2Lib.Split({
-            recipients: to,
-            allocations: alloc,
-            totalAllocation: 100,
-            distributionIncentive: 0
+            recipients: to, allocations: alloc, totalAllocation: 100, distributionIncentive: 0
         });
     }
 
@@ -62,7 +84,7 @@ contract GovernanceBatchTest is Test {
     function test_ATaxBatchMovesEverySlot() public {
         gov.proposeTaxBatch(slots, 2000);
         for (uint256 i; i < slots.length; ++i) {
-            assertEq(Slot(payable(address(slots[i]))).getSlotInfo().pendingTaxBps, 2000);
+            assertEq(Slot(payable(address(slots[i]))).pending().taxTerms.rateBps, 2000);
         }
     }
 
@@ -73,27 +95,37 @@ contract GovernanceBatchTest is Test {
     function test_ATaxBatchIsAllOrNothing() public {
         IManagedSlot[] memory withStranger = new IManagedSlot[](2);
         withStranger[0] = slots[0];
-        withStranger[1] = IManagedSlot(factory.createSlot(SlotInit({
-            recipient: address(this), currency: IERC20(address(0)),
-            manager: address(this),          // not the collective
-            hook: address(0), hookData: bytes32(0),
-            taxBps: 1000, minDepositSeconds: 1 days,
-            mutableTax: true, mutableHook: false
-        })));
+        withStranger[1] = IManagedSlot(
+            factory.createSlot(
+                SlotInit({
+                    currency: IERC20(address(0)),
+                    manager: address(this),
+                    mutableTax: true,
+                    mutableRecipient: true,
+                    mutableModule: false,
+                    taxTerms: TaxTerms({
+                        recipient: address(this),
+                        rateBps: uint16(1000),
+                        minRunwaySeconds: uint32(1 days)
+                    }),
+                    moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                })
+            )
+        );
 
         vm.expectRevert();
         gov.proposeTaxBatch(withStranger, 2000);
         assertEq(
-            Slot(payable(address(slots[0]))).getSlotInfo().pendingTaxBps,
+            Slot(payable(address(slots[0]))).pending().taxTerms.rateBps,
             0,
             "and the good one did not move either"
         );
     }
 
-    function test_AHookBatchMovesEverySlot() public {
-        gov.proposeHookBatch(slots, address(0), bytes32(0));
+    function test_AModuleBatchMovesEverySlot() public {
+        gov.proposeModuleBatch(slots, ModuleTerms({module: address(0), settings: ""}));
         for (uint256 i; i < slots.length; ++i) {
-            assertTrue(Slot(payable(address(slots[i]))).getSlotInfo().pendingHasHook);
+            assertTrue(Slot(payable(address(slots[i]))).pending().mask & 8 != 0);
         }
     }
 
@@ -109,17 +141,17 @@ contract GovernanceBatchTest is Test {
 
         gov.cancelTaxProposalBatch(slots);
         for (uint256 i; i < slots.length; ++i) {
-            assertFalse(Slot(payable(address(slots[i]))).getSlotInfo().pendingHasTax);
+            assertFalse(Slot(payable(address(slots[i]))).pending().mask & 1 != 0);
         }
     }
 
     function test_ACancelAllBatchClearsBothDimensions() public {
         gov.proposeTax(slots[0], 2000);
-        gov.proposeHook(slots[0], address(0), bytes32(0));
+        gov.proposeModule(slots[0], ModuleTerms({module: address(0), settings: ""}));
         gov.cancelAllProposalsBatch(slots);
 
-        assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pendingHasTax);
-        assertFalse(Slot(payable(address(slots[0]))).getSlotInfo().pendingHasHook);
+        assertFalse(Slot(payable(address(slots[0]))).pending().mask & 1 != 0);
+        assertFalse(Slot(payable(address(slots[0]))).pending().mask & 8 != 0);
     }
 
     function test_AStrangerCannotBatch() public {

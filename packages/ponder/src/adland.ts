@@ -13,14 +13,14 @@ import { evtId, lower } from "./helpers";
 /**
  * AdLand: what a slot is showing.
  *
- * The first HOOK this indexer watches, and the reason is narrow: the creative
+ * The first MODULE this indexer watches, and the reason is narrow: the creative
  * is the entire content of an ad space and it lives nowhere else. Every other
- * source here is the core protocol, which every slot shares — a hook is one
+ * source here is the core protocol, which every slot shares — a module is one
  * behaviour among however many people write, and none of the others is indexed.
  *
  * ── Two events, and both are needed ─────────────────────────────────────────
  *
- * `Published` is somebody putting an ad up. `Cleared` is the hook blanking one
+ * `Published` is somebody putting an ad up. `Cleared` is the module blanking one
  * because the slot changed hands — emitted from `afterBuy`, `afterRelease` and
  * `afterLiquidate`, with no publish involved. Watching only the first would
  * leave a slot's last creative showing in the index long after the chain had
@@ -38,7 +38,7 @@ import { evtId, lower } from "./helpers";
 ponder.on("AdLand:Published", async ({ event, context }) => {
   const chainId = context.chain.id;
   const slotAddr = lower(event.args.slot);
-  const hook = lower(event.log.address);
+  const module = lower(event.log.address);
   const tenureId = BigInt(event.args.tenureId);
 
   /**
@@ -63,7 +63,7 @@ ponder.on("AdLand:Published", async ({ event, context }) => {
       id: evtId(event.transaction.hash, event.log.logIndex),
       chainId,
       slot: slotAddr,
-      hook,
+      module,
       uri: event.args.uri,
       tenureId,
       publisher,
@@ -78,7 +78,7 @@ ponder.on("AdLand:Published", async ({ event, context }) => {
     .values({
       slot: slotAddr,
       chainId,
-      hook,
+      module,
       uri: event.args.uri,
       tenureId,
       publisher,
@@ -88,7 +88,7 @@ ponder.on("AdLand:Published", async ({ event, context }) => {
       updatedAt: event.block.timestamp,
     })
     .onConflictDoUpdate((row) => ({
-      hook,
+      module,
       uri: event.args.uri,
       tenureId,
       publisher,
@@ -134,7 +134,7 @@ ponder.on("AdLand:Cleared", async ({ event, context }) => {
       id: evtId(event.transaction.hash, event.log.logIndex),
       chainId,
       slot: slotAddr,
-      hook: lower(event.log.address),
+      module: lower(event.log.address),
       fromTenure: BigInt(event.args.fromTenure),
       toTenure: BigInt(event.args.toTenure),
       timestamp: event.block.timestamp,
@@ -144,7 +144,7 @@ ponder.on("AdLand:Cleared", async ({ event, context }) => {
     .onConflictDoNothing();
 
   // Nothing to clear if this indexer never saw the publish — a slot advertised
-  // on before the hook's start block. `update` on a missing row throws, so the
+  // on before the module's start block. `update` on a missing row throws, so the
   // find is the guard rather than a nicety.
   const current = await context.db.find(creative, { slot: slotAddr, chainId });
   if (!current) return;
@@ -173,7 +173,7 @@ ponder.on("AdLand:Cleared", async ({ event, context }) => {
 ponder.on("AdLand:SlotSet", async ({ event, context }) => {
   const chainId = context.chain.id;
   const key = event.args.key;
-  const hook = lower(event.log.address);
+  const module = lower(event.log.address);
   const target = lower(event.args.slot);
 
   await context.db
@@ -181,7 +181,7 @@ ponder.on("AdLand:SlotSet", async ({ event, context }) => {
     .values({
       key,
       chainId,
-      hook,
+      module,
       slot: target,
       pendingSlot: null,
       pendingReadyAt: null,
@@ -195,7 +195,7 @@ ponder.on("AdLand:SlotSet", async ({ event, context }) => {
     // show a queued repoint that already happened.
     .onConflictDoUpdate((row) => ({
       slot: target,
-      hook,
+      module,
       pendingSlot: null,
       pendingReadyAt: null,
       setCount: row.setCount + 1,

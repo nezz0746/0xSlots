@@ -1,6 +1,6 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { ShieldCheck } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 import { type Address, isAddress } from "viem";
@@ -17,7 +17,7 @@ import type { SectionId } from "../sections";
  * holding the slot feels like, so it must not be visible on only one of them.
  *
  * The terms used to come from a dedicated occupancy policy. They now come from
- * the hook, because the protocol folded policies into hooks — but the row
+ * the module, because the protocol folded policies into modules — but the row
  * stayed, and stayed labelled "Occupancy", because the question a reader is
  * asking here is "can this be taken from me, and when", not "which contract
  * implements that".
@@ -28,19 +28,19 @@ export function OccupancySummaryRows({
   onJump?: (id: SectionId) => void;
 }) {
   const form = useFormContext<CreateSlotFormValues>();
-  const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const moduleMode = form.watch("moduleMode");
+  const module = form.watch("module");
   const { chainId } = useChain();
 
   const label = (() => {
-    if (hookMode === "none" || !hook) {
+    if (moduleMode === "none" || !module) {
       // Always says something: "Instant buy" is itself a term worth confirming
       // before signing, not the absence of one.
       return "Instant buy";
     }
-    const known = findKnownHook(chainId, hook as Address);
+    const known = findKnownModule(chainId, module as Address);
     if (known) return known.name;
-    return isAddress(hook, { strict: false }) ? truncateAddress(hook) : "—";
+    return isAddress(module, { strict: false }) ? truncateAddress(module) : "—";
   })();
 
   const content = (
@@ -57,7 +57,7 @@ export function OccupancySummaryRows({
   return (
     <button
       type="button"
-      onClick={() => onJump("hook")}
+      onClick={() => onJump("module")}
       className="flex w-full justify-between rounded px-1 -mx-1 py-0.5 text-left hover:bg-muted/60 transition-colors"
     >
       {content}

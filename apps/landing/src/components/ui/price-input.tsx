@@ -57,7 +57,7 @@ export function PriceInput({
   onChange,
   decimals,
   label,
-  taxBps,
+  taxRateBps,
   symbol,
   disabled,
   hint,
@@ -70,7 +70,7 @@ export function PriceInput({
   decimals: number;
   label: string;
   /** The slot's monthly rate in basis points — what this price will cost. */
-  taxBps: bigint;
+  taxRateBps: bigint;
   symbol: string;
   disabled?: boolean;
   hint?: string;
@@ -190,10 +190,10 @@ export function PriceInput({
     [value, onChange],
   );
 
-  // `taxBps` is basis points PER MONTH, so this needs no time
+  // `taxRateBps` is basis points PER MONTH, so this needs no time
   // conversion. Off `display` rather than `value`: the whole point is that the
   // bill counts up alongside the price.
-  const perMonth = (display * Number(taxBps)) / 10_000;
+  const perMonth = (display * Number(taxRateBps)) / 10_000;
 
   // Only the monthly cost is shown in dollars. The valuation's own dollar
   // figure sat directly under the field AND again in the buy summary's Purchase

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 
 /**
@@ -24,21 +26,31 @@ contract OperatorTenureTest is Test {
     uint256 dep;
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
-        slot = Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(0xF00D),
-            currency: IERC20(address(0)),
-            manager: address(this),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 1_000,
-            minDepositSeconds: 1 hours,
-            mutableTax: true,
-            mutableHook: true
-        }))));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
+        slot = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(1_000),
+                            minRunwaySeconds: uint32(1 hours)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                    })
+                ))
+        );
         dep = PRICE * 1_000 * 1 hours / (30 days * 10_000) + 1;
         vm.deal(alice, 10 ether);
         vm.deal(bob, 10 ether);

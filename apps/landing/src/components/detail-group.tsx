@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
  *
  * `weight` is what gives the page its hierarchy. The terms decide whether to
  * buy, so they lead and their values are set in the body size. The extension —
- * the hook — is consequential but conditional, present on a minority of slots
+ * the module — is consequential but conditional, present on a minority of slots
  * and meaningless to most readers, so it sits last and quiet rather than
  * competing with the rate.
  */
@@ -105,7 +105,7 @@ export function DetailRow({
 /**
  * Whether a dimension can still be changed after creation.
  *
- * Repeated on the tax and the hook — the two dimensions that survived the
+ * Repeated on the tax and the module — the two dimensions that survived the
  * merge of utility and occupancy policy into one address — so it lives here
  * rather than twice inline. The lock is the whole point of a slot's terms: an
  * immutable rate is a promise, a mutable one is a manager's discretion.

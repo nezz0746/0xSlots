@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee, Pending} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -17,14 +19,14 @@ contract MockSlot {
     address public manager;
 
     uint256 public taxPct;
-    address public hookAddr;
-    bytes32 public hookData;
+    address public moduleAddr;
+    bytes public settings;
 
     bool public hasTax;
-    bool public hasHook;
+    bool public hasModule;
 
     uint256 public taxCancels;
-    uint256 public hookCancels;
+    uint256 public moduleCancels;
 
     error NotManager();
     error NoPendingTerms();
@@ -38,46 +40,56 @@ contract MockSlot {
         _;
     }
 
-    /// @dev Mirrors the real slot: each dimension is set only when its own
-    ///      flag is passed, so two roles can queue independently.
+    /// @dev Mirrors the real slot: each term is queued only when its bit is
+    ///      set, so two roles can queue independently.
     function proposeTerms(
-        uint256 newTaxBps,
-        address newHook,
-        bytes32 newHookData,
-        bool changeTax,
-        bool changeHook
+        TaxTerms calldata taxTerms,
+        ModuleTerms calldata moduleTerms,
+        uint16 mask
     ) external onlyManager {
-        if (changeTax) {
-            taxPct = newTaxBps;
+        if (mask == 0) revert NoPendingTerms();
+        if (mask & 1 != 0) {
+            taxPct = taxTerms.rateBps;
             hasTax = true;
         }
-        if (changeHook) {
-            hookData = newHookData;
-            hookAddr = newHook;
-            hasHook = true;
+        if (mask & 8 != 0) {
+            settings = moduleTerms.settings;
+            moduleAddr = moduleTerms.module;
+            hasModule = true;
+            // Reads the module's fee as ITSELF, as the real slot does, and
+            // keeps it as the reviewed fee `pending()` reports.
+            delete queuedFee;
+            (bool ok, bytes memory ret) = moduleTerms.module
+                .staticcall(abi.encodeWithSignature("fee(bytes)", moduleTerms.settings));
+            if (ok && ret.length >= 64) queuedFee = abi.decode(ret, (ModuleFee));
         }
-        if (!changeTax && !changeHook) revert NoPendingTerms();
     }
 
-    /// @dev Reverts on a dimension holding nothing, as the real slot does —
-    ///      which is what makes the admin's cancel-everything relay need to
-    ///      attempt each leg separately.
-    function cancelTerms(bool cancelTax, bool cancelHook)
-        external
-        onlyManager
-    {
-        if (!cancelTax && !cancelHook) revert NoPendingTerms();
-        if (cancelTax && !hasTax) revert NoPendingTerms();
-        if (cancelHook && !hasHook) revert NoPendingTerms();
+    ModuleFee internal queuedFee;
+
+    /// @dev The queued module and the fee the slot recorded for it.
+    function pending() external view returns (Pending memory p) {
+        if (!hasModule) return p;
+        p.nextModule.module = moduleAddr;
+        p.nextModule.fee = queuedFee;
+        p.mask = 8;
+    }
+
+    /// @dev Clears whichever of `mask` is queued, and reverts only when none
+    ///      was, as the real slot does.
+    function cancelTerms(uint16 mask) external onlyManager {
+        bool cancelTax = mask & 1 != 0 && hasTax;
+        bool cancelModule = mask & 8 != 0 && hasModule;
+        if (!cancelTax && !cancelModule) revert NoPendingTerms();
         if (cancelTax) {
             hasTax = false;
             taxPct = 0;
             taxCancels++;
         }
-        if (cancelHook) {
-            hasHook = false;
-            hookAddr = address(0);
-            hookCancels++;
+        if (cancelModule) {
+            hasModule = false;
+            moduleAddr = address(0);
+            moduleCancels++;
         }
     }
 
@@ -162,8 +174,7 @@ contract SlotStreamCollectiveTest is Test {
     }
 
     function _deploy(uint128 aliceUnits, uint128 bobUnits) internal {
-        SlotStreamCollective impl =
-            new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
+        SlotStreamCollective impl = new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
 
         address[] memory members = new address[](2);
         members[0] = alice;
@@ -178,26 +189,22 @@ contract SlotStreamCollectiveTest is Test {
         address[] memory poolManagers = new address[](1);
         poolManagers[0] = poolMgr;
 
-        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective
-            .InitialRoles({
+        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective.InitialRoles({
             admin: admin,
             taxManagers: taxManagers,
-            hookManagers: new address[](0),
+            policyManagers: new address[](0),
             poolManagers: poolManagers
         });
 
         collective = SlotStreamCollective(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(impl),
                         abi.encodeCall(
-                            SlotStreamCollective.initializeStreamCollective,
-                            (members, units, roles)
+                            SlotStreamCollective.initializeStreamCollective, (members, units, roles)
                         )
                     )
-                )
-            )
+                ))
         );
 
         slot = new MockSlot(address(collective));
@@ -253,9 +260,7 @@ contract SlotStreamCollectiveTest is Test {
 
         // 60:40. Exact, because instant distribution divides once by total units.
         assertEq(
-            uint256(aliceClaim) * 40,
-            uint256(bobClaim) * 60,
-            "payout must follow the unit ratio"
+            uint256(aliceClaim) * 40, uint256(bobClaim) * 60, "payout must follow the unit ratio"
         );
 
         // And it is really theirs — claim moves it to the wallet.
@@ -349,9 +354,7 @@ contract SlotStreamCollectiveTest is Test {
         collective.pool().claimAll(alice);
 
         assertEq(
-            ISuperToken(ETHX).balanceOf(alice),
-            afterClose,
-            "a closed stream must not keep paying"
+            ISuperToken(ETHX).balanceOf(alice), afterClose, "a closed stream must not keep paying"
         );
     }
 
@@ -371,9 +374,7 @@ contract SlotStreamCollectiveTest is Test {
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector,
-                stranger,
-                role
+                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, role
             )
         );
         collective.setMemberUnits(stranger, 1000);
@@ -422,76 +423,70 @@ contract SlotStreamCollectiveTest is Test {
         // not the slot's terms.
         vm.prank(poolMgr);
         vm.expectRevert();
-        collective.proposeHook(IManagedSlot(address(slot)), address(0xBEEF), bytes32(0));
+        collective.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xBEEF), settings: ""})
+        );
 
         // The admin reaches everything, as on the split engine.
         vm.prank(admin);
-        collective.proposeHook(IManagedSlot(address(slot)), address(0xBEEF), bytes32(0));
-        assertEq(slot.hookAddr(), address(0xBEEF));
+        collective.proposeModule(
+            IManagedSlot(address(slot)), ModuleTerms({module: address(0xBEEF), settings: ""})
+        );
+        assertEq(slot.moduleAddr(), address(0xBEEF));
 
         // Retracting one dimension leaves the other standing, on this engine
         // too — the governance half is shared, so this is the same code path.
         vm.prank(admin);
-        collective.cancelHookProposal(IManagedSlot(address(slot)));
+        collective.cancelModuleProposal(IManagedSlot(address(slot)));
         assertTrue(slot.hasTax(), "the tax proposal survived");
-        assertFalse(slot.hasHook());
+        assertFalse(slot.hasModule());
     }
 
     function test_Fork_RejectsEmptyPool() public {
         if (!_fork()) return;
 
-        SlotStreamCollective impl =
-            new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
+        SlotStreamCollective impl = new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
 
         address[] memory members = new address[](1);
         members[0] = alice;
         uint128[] memory units = new uint128[](1);
         units[0] = 0; // totals zero — a recipient that could never pay anyone
 
-        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective
-            .InitialRoles({
+        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective.InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            hookManagers: new address[](0),
+            policyManagers: new address[](0),
             poolManagers: new address[](0)
         });
 
         vm.expectRevert(SlotStreamCollective.EmptyPool.selector);
         new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(
-                SlotStreamCollective.initializeStreamCollective,
-                (members, units, roles)
-            )
+            abi.encodeCall(SlotStreamCollective.initializeStreamCollective, (members, units, roles))
         );
     }
 
     function test_Fork_RejectsZeroAdmin() public {
         if (!_fork()) return;
 
-        SlotStreamCollective impl =
-            new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
+        SlotStreamCollective impl = new SlotStreamCollective(GDA_FORWARDER, ETHX, true);
 
         address[] memory members = new address[](1);
         members[0] = alice;
         uint128[] memory units = new uint128[](1);
         units[0] = 100;
 
-        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective
-            .InitialRoles({
+        SlotStreamCollective.InitialRoles memory roles = SlotStreamCollective.InitialRoles({
             admin: address(0),
             taxManagers: new address[](0),
-            hookManagers: new address[](0),
+            policyManagers: new address[](0),
             poolManagers: new address[](0)
         });
 
         vm.expectRevert(SlotGovernance.AdminRequired.selector);
         new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(
-                SlotStreamCollective.initializeStreamCollective,
-                (members, units, roles)
-            )
+            abi.encodeCall(SlotStreamCollective.initializeStreamCollective, (members, units, roles))
         );
     }
 }

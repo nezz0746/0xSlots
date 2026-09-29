@@ -16,6 +16,13 @@ Chains come from `apps/contracts/deployments/config/*.json`. Adding one is that
 file and nothing else — the picker, `--chain` validation and the error message
 all read it.
 
+## Contract sizes
+
+Every run opens with a bar per deployed contract: how full its runtime code is
+against the EIP-170 limit of 24,576 bytes, fullest first. Yellow from 85%, red
+from 95%. A contract over the limit (or over the 49,152-byte initcode limit)
+stops the run, dry or not, since its deploy would revert on every chain.
+
 ## Several chains at once
 
 The prompt is a multi-select and `--chain` takes a comma-separated list, because

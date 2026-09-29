@@ -1,5 +1,6 @@
 "use client";
 
+import { slotsTestTokenAbi } from "@0xslots/contracts/slots";
 import { getFaucetToken } from "@0xslots/sdk";
 import { Loader2 } from "lucide-react";
 import { erc20Abi, parseUnits } from "viem";
@@ -12,19 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
 import { formatBalance } from "@/utils";
-
-const FAUCET_ABI = [
-  {
-    type: "function",
-    name: "mint",
-    inputs: [
-      { name: "to", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-] as const;
 
 const MINT_AMOUNT = 10_000;
 
@@ -81,7 +69,7 @@ export function TestnetFaucet() {
             writeContract(
               {
                 address: token.address,
-                abi: FAUCET_ABI,
+                abi: slotsTestTokenAbi,
                 functionName: "mint",
                 args: [
                   address,

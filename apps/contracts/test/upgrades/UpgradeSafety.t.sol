@@ -6,7 +6,8 @@ import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {OfferBook} from "../../src/periphery/book/OfferBook.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
 
 /**
@@ -31,8 +32,8 @@ contract UpgradeSafetyTest is Test {
     function test_SlotImplementationIsLocked() public {
         Slot impl = new Slot();
         SlotInit memory init;
-        init.recipient = address(this);
-        init.taxBps = 500;
+        init.taxTerms.recipient = address(this);
+        init.taxTerms.rateBps = 500;
         vm.expectRevert();
         impl.initialize(init);
     }
@@ -47,6 +48,12 @@ contract UpgradeSafetyTest is Test {
         impl.initialize(address(this), slotImpl);
     }
 
+    function test_SlotLensImplementationIsLocked() public {
+        SlotLens impl = new SlotLens();
+        vm.expectRevert();
+        impl.initialize(address(this));
+    }
+
     /// @notice The book has no initializer to lock, and that is the point.
     /// @dev It is not behind a proxy: occupants make it their slot's operator,
     ///      and an operator may reprice. An upgradeable book would mean every
@@ -55,15 +62,13 @@ contract UpgradeSafetyTest is Test {
     ///      fail here rather than in an incident.
     function test_TheOfferBookIsNotUpgradeable() public {
         OfferBook book = new OfferBook();
-        (bool ok, ) = address(book).call(
-            abi.encodeWithSignature("initialize(address)", address(this))
-        );
+        (bool ok,) =
+            address(book).call(abi.encodeWithSignature("initialize(address)", address(this)));
         assertFalse(ok, "no initializer");
-        (ok, ) = address(book).call(
-            abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(1), "")
-        );
+        (ok,) = address(book)
+            .call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(1), ""));
         assertFalse(ok, "no upgrade path");
-        (ok, ) = address(book).call(abi.encodeWithSignature("admin()"));
+        (ok,) = address(book).call(abi.encodeWithSignature("admin()"));
         assertFalse(ok, "and no admin to hold either");
     }
 
@@ -78,7 +83,8 @@ contract UpgradeSafetyTest is Test {
         assertGt(new SlotFactory().version(), 0, "SlotFactory");
         assertGt(new OfferBook().version(), 0, "OfferBook");
         assertGt(new SlotCollectiveFactory().version(), 0, "SlotCollectiveFactory");
-        assertGt(new AdLand().version(), 0, "AdLand");
+        assertGt(new SlotLens().version(), 0, "SlotLens");
+        assertGt(new AdLand(new SlotLens()).version(), 0, "AdLand");
     }
 
     /// @notice And the two numbers do not pretend to be each other.

@@ -5,8 +5,22 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ISellableSlot} from "./ISellableSlot.sol";
 import {OfferBookInternals} from "./OfferBookInternals.sol";
-import {Versioned} from "../../Versioned.sol";
-import "./OfferBookErrors.sol";
+import {Versioned} from "../../utils/Versioned.sol";
+import {
+    NotBidder,
+    AlreadyCancelled,
+    BadExpiry,
+    ZeroPrice,
+    NoSuchOffer,
+    NotOccupant,
+    NotOperator,
+    OfferNotLive,
+    NativeSlotNotSupported,
+    TopUpRequired,
+    FillFailed,
+    PriceBelowMinimum,
+    QuoteAboveOffer
+} from "./OfferBookErrors.sol";
 
 /// @title OfferBook — standing bids, and the fill that settles them
 ///
@@ -16,21 +30,16 @@ import "./OfferBookErrors.sol";
 ///
 /// @dev ── WHY THE BOOK PERFORMS THE FILL ──────────────────────────────────
 ///
-///      The core used to carry `sell`: an occupant submitted a bidder's
-///      EIP-712 order and the slot seated them. That made a SECOND seating
-///      path — it reset `occupiedSince` like `buy` but ran `beforeSell`
-///      instead of `beforeBuy`, so every hook author had two doors to police
-///      and two audit findings were the same mistake of policing one.
-///
-///      It is gone. A consensual sale is now two calls the core already had:
+///      A consensual sale is not a core concern at all. It is two calls the
+///      core already has:
 ///
 ///          slot.selfAssess(price)   // the occupant's own price, restated
 ///          slot.buy(bidder, …)      // the ordinary market path
 ///
-///      In one transaction, so nothing can be sniped between them. The
-///      economics are unchanged: `buy` already refunds the outgoing occupant
-///      their deposit plus the price. What changed is that there is one seating
-///      path, one set of hook checks, and no order machinery in the slot.
+///      In one transaction, so nothing can be sniped between them, and `buy`
+///      already refunds the outgoing occupant their deposit plus the price. The
+///      slot therefore has one seating path and one set of module checks, and a
+///      module author has one door to police rather than two.
 ///
 ///      ── WHAT THE OCCUPANT GRANTS, AND WHY THIS IS NOT A PROXY ──────────
 ///
@@ -67,19 +76,16 @@ import "./OfferBookErrors.sol";
 ///
 ///      ── NO SIGNATURE ───────────────────────────────────────────────────
 ///
-///      An offer used to carry the bidder's EIP-712 signature, because
-///      `Slot.sell` demanded one and `offer` stored the terms and the signature
-///      without binding them. `offer()` is a transaction FROM the bidder:
-///      posting it is the consent, and there is no second artefact left to
-///      disagree with the terms beside it.
+///      `offer()` is a transaction FROM the bidder: posting it is the consent,
+///      and there is no second artefact that can disagree with the terms beside
+///      it.
 contract OfferBook is OfferBookInternals {
     using SafeERC20 for IERC20;
-
 
     /// @inheritdoc Versioned
     /// @dev Bump in the same commit as any change to this contract's code.
     function version() public pure virtual override returns (uint64) {
-        return 2;
+        return 1;
     }
 
     function offer(
@@ -105,7 +111,8 @@ contract OfferBook is OfferBookInternals {
             o.filled = false;
         } else {
             id = _offers[slot].length;
-            _offers[slot].push(
+            _offers[slot]
+            .push(
                 Offer({
                     bidder: msg.sender,
                     price: price,
@@ -134,27 +141,33 @@ contract OfferBook is OfferBookInternals {
      *        1. `selfAssess(price)` — the occupant's own declared price,
      *           restated to what they have agreed to sell at. Needs the
      *           operator grant.
-     *        2. `buy(bidder, price, deposit, price + deposit + arrears)` — the
-     *           ordinary market path. It pays the outgoing occupant their
-     *           deposit plus the price, which is exactly what `sell` used to.
+     *        2. `buy(bidder, price, deposit, price + deposit)` — the
+     *           ordinary market path, which pays the outgoing occupant their
+     *           deposit plus the price.
      *
      *      Atomic, so nothing can take the slot between the reprice and the
      *      fill. If step 2 reverts, step 1 rolls back with it and the occupant
      *      is left at the price they started at.
      *
-     *      The hooks a slot has attached still get their say — `beforeSelfAssess`
+     *      The modules a slot has attached still get their say — `beforeSelfAssess`
      *      on the reprice and `beforeBuy` on the seating — and either may veto.
      *      That is the point of routing a sale through the market path rather
-     *      than around it: there is no second door for a hook to have missed.
+     *      than around it: there is no second door for a module to have missed.
+     *
+     * @param minPrice The lowest price the seller accepts. A bidder edits their
+     *        offer in place under the same id, so without it a bidder could
+     *        reprice to one wei between the seller reading the book and the
+     *        fill landing.
      */
-    function acceptOffer(address slot, uint256 id) external {
+    function acceptOffer(address slot, uint256 id, uint256 minPrice) external {
         Offer storage o = _offers[slot][id];
         if (o.bidder == address(0)) revert NoSuchOffer();
 
         address seller = ISellableSlot(slot).occupant();
         if (msg.sender != seller) revert NotOccupant();
-        if (!ISellableSlot(slot).isOperator(address(this)))
+        if (!ISellableSlot(slot).isOperator(address(this))) {
             revert NotOperator();
+        }
         if (!_live(slot, o, seller)) revert OfferNotLive();
 
         address currency = ISellableSlot(slot).currency();
@@ -163,18 +176,24 @@ contract OfferBook is OfferBookInternals {
         uint256 price = o.price;
         uint256 dep = o.deposit;
         address bidder = o.bidder;
+        if (price < minPrice) revert PriceBelowMinimum(price, minPrice);
 
         // Raising the declared price raises the escrow floor with it, and
         // `selfAssess` enforces that floor against the deposit ALREADY in the
         // slot — the seller's, not the bidder's. Reported here, with the number
         // needed, rather than surfacing from the slot as a bare
         // `InvalidDeposit` that names neither the cause nor the cure.
-        uint256 floor_ = ISellableSlot(slot).minDepositForBuy(price);
-        uint256 held = ISellableSlot(slot).deposit();
+        //
+        // Measured the way `selfAssess` measures it: against the terms in force,
+        // and against the deposit left once the tax owed so far is settled.
+        uint256 floor_ = ISellableSlot(slot).minDepositToHold(price);
+        uint256 deposit_ = ISellableSlot(slot).deposit();
+        uint256 owedTax = ISellableSlot(slot).taxOwed();
+        uint256 held = deposit_ > owedTax ? deposit_ - owedTax : 0;
         if (held < floor_) revert TopUpRequired(floor_ - held);
 
         // Marked before any external call. The book is about to hand control to
-        // the slot, its hooks and an ERC-20, and a re-entrant `acceptOffer` on
+        // the slot, its modules and an ERC-20, and a re-entrant `acceptOffer` on
         // a half-filled row is not a state worth reasoning about.
         o.filled = true;
 
@@ -188,6 +207,16 @@ contract OfferBook is OfferBookInternals {
         // `buy` charges `msg.sender`, and on a fill that is this book — which
         // is why the allowance `_fundable` checks is to the book, not the slot.
         uint256 owed = ISellableSlot(slot).quoteBuy(bidder, dep);
+
+        // Bounded by the offer the bidder signed up to, because `owed` and
+        // `currency` are both answered by `slot` — an address nothing here has
+        // verified is a slot. Unbounded, a counterfeit slot quotes the bidder's
+        // whole standing allowance to this book and spends it. `_fundable`
+        // already treats price + deposit as the bid's true cost; this is the
+        // same ceiling on the paying side.
+        uint256 ceiling = price + dep;
+        if (owed > ceiling) revert QuoteAboveOffer(owed, ceiling);
+
         IERC20(currency).safeTransferFrom(bidder, address(this), owed);
         IERC20(currency).forceApprove(slot, owed);
 
@@ -208,11 +237,10 @@ contract OfferBook is OfferBookInternals {
     /// @dev The client needs this to say "replace your 70" rather than "make an
     ///      offer" — otherwise replacement looks like a bug the first time it
     ///      happens.
-    function offerOf(address slot, address bidder)
-        external
-        view
-        returns (bool has, uint256 id, Offer memory o)
-    {
+    function offerOf(
+        address slot,
+        address bidder
+    ) external view returns (bool has, uint256 id, Offer memory o) {
         uint256 stored = _offerIdOf[slot][bidder];
         if (stored == 0) return (false, 0, o);
         id = stored - 1;
@@ -234,7 +262,6 @@ contract OfferBook is OfferBookInternals {
         emit Cancelled(slot, msg.sender, id);
     }
 
-
     // ═══════════════════════════════════════════════════════════
     // READS
     // ═══════════════════════════════════════════════════════════
@@ -249,15 +276,28 @@ contract OfferBook is OfferBookInternals {
     ///
     ///      Returns `found == false` rather than reverting on an empty board —
     ///      no offers is an ordinary state, not an error.
-    function best(address slot)
-        public
-        view
-        returns (bool found, uint256 id, Offer memory o)
-    {
+    function best(address slot) public view returns (bool found, uint256 id, Offer memory o) {
+        return bestIn(slot, 0, type(uint256).max);
+    }
+
+    /// @notice `best`, over the entries `[start, start + count)` only.
+    ///
+    /// @dev The board only grows — `cancel` sets a flag and nothing removes an
+    ///      entry — and every entry costs four foreign reads to judge, so a few
+    ///      thousand dust bids from fresh addresses would put the whole-board
+    ///      reads past any `eth_call` budget, permanently, on a contract with no
+    ///      admin to prune it. Every whole-board read therefore has a bounded
+    ///      twin, and a client that pages never meets the limit.
+    function bestIn(
+        address slot,
+        uint256 start,
+        uint256 count
+    ) public view returns (bool found, uint256 id, Offer memory o) {
         Offer[] storage list = _offers[slot];
+        (uint256 from, uint256 to) = _window(list.length, start, count);
         address occupant = ISellableSlot(slot).occupant();
         uint256 bestPrice;
-        for (uint256 i; i < list.length; ++i) {
+        for (uint256 i = from; i < to; ++i) {
             Offer storage c = list[i];
             // Price first: `_live` reads three foreign slots, so skipping a
             // loser before asking is worth the extra branch.
@@ -307,9 +347,19 @@ contract OfferBook is OfferBookInternals {
     ///      cancelled, expired and already-filled bids, so counting with it
     ///      overstates the book and never goes back down.
     function liveCount(address slot) external view returns (uint256 n) {
+        return liveCountIn(slot, 0, type(uint256).max);
+    }
+
+    /// @notice `liveCount`, over the entries `[start, start + count)` only.
+    function liveCountIn(
+        address slot,
+        uint256 start,
+        uint256 count
+    ) public view returns (uint256 n) {
         Offer[] storage list = _offers[slot];
+        (uint256 from, uint256 to) = _window(list.length, start, count);
         address occupant = ISellableSlot(slot).occupant();
-        for (uint256 i; i < list.length; ++i) {
+        for (uint256 i = from; i < to; ++i) {
             if (_live(slot, list[i], occupant)) ++n;
         }
     }
@@ -332,18 +382,38 @@ contract OfferBook is OfferBookInternals {
     ///      live one, because being filled sets no flag — the bidder simply
     ///      became the occupant. One predicate, one answer, used by `best` and
     ///      by the board alike.
-    function board(address slot)
-        external
-        view
-        returns (Offer[] memory list, bool[] memory live)
-    {
-        list = _offers[slot];
-        live = new bool[](list.length);
-        address occupant = ISellableSlot(slot).occupant();
+    function board(address slot) external view returns (Offer[] memory list, bool[] memory live) {
+        return boardPage(slot, 0, type(uint256).max);
+    }
+
+    /// @notice `board`, over the entries `[start, start + count)` only. Entry
+    ///         `i` of the result is offer id `start + i`.
+    function boardPage(
+        address slot,
+        uint256 start,
+        uint256 count
+    ) public view returns (Offer[] memory list, bool[] memory live) {
         Offer[] storage stored = _offers[slot];
-        for (uint256 i; i < list.length; ++i) {
-            live[i] = _live(slot, stored[i], occupant);
+        (uint256 from, uint256 to) = _window(stored.length, start, count);
+        list = new Offer[](to - from);
+        live = new bool[](to - from);
+        address occupant = ISellableSlot(slot).occupant();
+        for (uint256 i = from; i < to; ++i) {
+            list[i - from] = stored[i];
+            live[i - from] = _live(slot, stored[i], occupant);
         }
+    }
+
+    /// @dev `[start, start + count)` clipped to `[0, length)`, without the
+    ///      addition overflowing on the "everything" count.
+    function _window(
+        uint256 length,
+        uint256 start,
+        uint256 count
+    ) private pure returns (uint256 from, uint256 to) {
+        if (start >= length) return (length, length);
+        from = start;
+        to = count > length - start ? length : start + count;
     }
 
     /// @dev Can this offer be executed against `slot` right now? Cancelled and

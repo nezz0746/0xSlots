@@ -15,19 +15,12 @@ import {OfferBookStorage} from "./OfferBookStorage.sol";
  *      is the only one a list may filter on. A UI filtering on `_fundable`
  *      renders a filled offer as acceptable, which is a button that lies.
  *
- *      There used to be a third, `_signed`, because `Slot.sell` required the
- *      bidder's EIP-712 signature over the exact terms and `offer` stored the
- *      signature and the terms from separate arguments without binding them.
- *      The book fills offers itself now, and `offer()` is already a transaction
- *      FROM the bidder — so posting IS the consent, and there is no second
- *      artefact that can disagree with the terms beside it.
+ *      Neither asks whether the bid is signed. `offer()` is a transaction FROM
+ *      the bidder, so posting IS the consent, and there is no second artefact
+ *      that can disagree with the terms beside it.
  */
 abstract contract OfferBookInternals is OfferBookStorage {
-    function _live(address slot, Offer storage o, address occupant)
-        internal
-        view
-        returns (bool)
-    {
+    function _live(address slot, Offer storage o, address occupant) internal view returns (bool) {
         if (o.cancelled || o.filled) return false;
         if (o.expiry <= block.timestamp) return false;
         // Unusable: `buy` refuses `CannotBuyFromYourself`. Offered as an exit
@@ -42,15 +35,10 @@ abstract contract OfferBookInternals is OfferBookStorage {
      *      Allowance is checked against THIS BOOK, not against the slot. The
      *      book pulls the payment and then spends it on `buy`, because `buy`
      *      charges `msg.sender` — and on a fill `msg.sender` is the book, not
-     *      the bidder. Before `sell` was removed the allowance went to the slot
-     *      instead; an offer posted under the old arrangement reads as unfunded
-     *      here, which is the correct answer rather than a stale one.
+     *      the bidder. A bidder who approved the slot instead reads as unfunded
+     *      here, which is the correct answer: the fill would revert.
      */
-    function _fundable(address slot, Offer storage o)
-        internal
-        view
-        returns (bool)
-    {
+    function _fundable(address slot, Offer storage o) internal view returns (bool) {
         address currency = ISellableSlot(slot).currency();
         // Native slots cannot be filled: the occupant sends the transaction, so
         // there is no way to reach the bidder's ETH.
@@ -62,12 +50,20 @@ abstract contract OfferBookInternals is OfferBookStorage {
         // `best`, `board`, `liveCount` and `isLive` reverted for that slot for
         // ever — the array has no removal path and `cancel` is bidder-only, so
         // nobody could clear it.
+        //
+        // And a deposit the slot will actually seat. `buy` refuses one below
+        // the escrow floor at the offered price, so an offer under it can never
+        // fill — yet funded, it sat at the top of `best` for as long as its
+        // author liked, and every seller who pressed it lost the gas.
+        if (o.deposit < ISellableSlot(slot).minDepositForBuy(o.price)) return false;
+
         uint256 owed;
-        unchecked { owed = o.price + o.deposit; }
+        unchecked {
+            owed = o.price + o.deposit;
+        }
         if (owed < o.price) return false;
 
-        return
-            IERC20(currency).balanceOf(o.bidder) >= owed &&
-            IERC20(currency).allowance(o.bidder, address(this)) >= owed;
+        return IERC20(currency).balanceOf(o.bidder) >= owed
+            && IERC20(currency).allowance(o.bidder, address(this)) >= owed;
     }
 }

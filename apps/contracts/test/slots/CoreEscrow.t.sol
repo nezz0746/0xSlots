@@ -1,40 +1,78 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
+
 import {Test, Vm} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
-import {SlotMath} from "../../src/SlotMath.sol";
-import "../../src/SlotErrors.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
+import {SlotMath} from "../../src/libraries/SlotMath.sol";
+import "../../src/errors/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
+}
+
+/// @dev Burns 1% of every transfer.
+contract Cut is ERC20 {
+    constructor() ERC20("C", "C") {}
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            uint256 fee = value / 100;
+            super._update(from, address(0), fee);
+            value -= fee;
+        }
+        super._update(from, to, value);
+    }
 }
 
 /// @dev Refuses native ETH, so a push to it must degrade into a credit.
 contract Deaf {
-    receive() external payable { revert("no"); }
+    receive() external payable {
+        revert("no");
+    }
 }
 
 /// @dev Subscribes to `afterBuy` and always reverts there. The slot must
 ///      swallow it and say so.
-contract BrokenAfter is ISlotHook {
-    function validateHookData(bytes32) external pure {}
-    function subscriptions() external pure returns (HookFlags memory f) {
+contract BrokenAfter is AskModule {
+    function validateSettings(bytes calldata) external pure {}
+
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
+        Scopes memory f;
         f.afterBuy = true;
+        o.scopes = ScopesLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
-    function afterBuy(SlotContext calldata) external pure { revert("nope"); }
+
+    function afterBuy(SlotContext calldata) external pure {
+        revert("nope");
+    }
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+
+    function onUninstall(SlotContext calldata) external {}
+
+    function onInstall(SlotContext calldata) external {}
 }
 
 /**
@@ -42,9 +80,9 @@ contract BrokenAfter is ISlotHook {
  *
  * @dev Written because an audit found `withdraw` and `claim` were never called
  *      by ANY test — `SlotEscrow` sat at 8.33% branch coverage — while
- *      `withdraw`'s deposit floor is the thing a minimum-tenure hook explicitly
+ *      `withdraw`'s deposit floor is the thing a minimum-tenure module explicitly
  *      leans on to bound how far an occupant can drain their own escrow. The
- *      arrears carry-forward had no test either, and it is what stops running a
+ *      debt carry-forward had no test either, and it is what stops running a
  *      deposit dry being the cheapest way to hold a slot.
  */
 contract CoreEscrowTest is Test {
@@ -55,14 +93,18 @@ contract CoreEscrowTest is Test {
     address bob = makeAddr("bob");
     address recipient = makeAddr("recipient");
 
-    uint256 constant TAX = 1000;      // 10% / 30 days
+    uint256 constant TAX_RATE = 1000; // 10% / 30 days
     uint256 constant MIN_DEP = 1 days;
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new Tok();
         token.mint(alice, 1_000_000 ether);
         token.mint(bob, 1_000_000 ether);
@@ -71,34 +113,55 @@ contract CoreEscrowTest is Test {
         vm.warp(1_000_000);
     }
 
+    /// @dev Whole units accrued from a standing start, with no carry.
+    function _tax(
+        uint256 price,
+        uint256 taxRateBps,
+        uint256 elapsed
+    ) internal pure returns (uint256 owed) {
+        (owed,) = SlotMath.accrue(price, taxRateBps, elapsed, 0);
+    }
+
     function _slot(address currency) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient,
-            currency: IERC20(currency),
-            manager: address(0),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: TAX,
-            minDepositSeconds: MIN_DEP,
-            mutableTax: false,
-            mutableHook: false
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(currency),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(MIN_DEP)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                    })
+                ))
+        );
     }
 
     /// @dev No deposit floor, so an occupant can be seated on an empty escrow —
-    ///      the state the arrears-grind regression below turns on.
+    ///      the state the debt-grind regression below turns on.
     function _slotNoFloor(address currency) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient,
-            currency: IERC20(currency),
-            manager: address(0),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: TAX,
-            minDepositSeconds: 0,
-            mutableTax: false,
-            mutableHook: false
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(currency),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(0)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, address who, uint256 dep, uint256 price) internal {
@@ -108,12 +171,12 @@ contract CoreEscrowTest is Test {
         vm.stopPrank();
     }
 
-    // ─── withdraw: the floor a hook leans on ────────────────────────────────
+    // ─── withdraw: the floor a module leans on ────────────────────────────────
 
-    /// @notice You may take escrow back, but never below `minDepositSeconds`.
+    /// @notice You may take escrow back, but never below `minRunwaySeconds`.
     function test_WithdrawKeepsTheMinimumFunded() public {
         Slot s = _slot(address(token));
-        uint256 floor_ = SlotMath.depositFor(1 ether, TAX, MIN_DEP);
+        uint256 floor_ = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
         _take(s, alice, floor_ + 5 ether, 1 ether);
 
         // One wei past the floor is refused.
@@ -168,9 +231,7 @@ contract CoreEscrowTest is Test {
         vm.prank(alice);
         s.withdraw(1 ether);
         assertEq(
-            s.deposit(),
-            seated - owed - 1 ether,
-            "the accrual came off before the withdrawal did"
+            s.deposit(), seated - owed - 1 ether, "the accrual came off before the withdrawal did"
         );
     }
 
@@ -195,7 +256,7 @@ contract CoreEscrowTest is Test {
         vm.prank(bob);
         s.buy{value: pay}(bob, 2 ether, bobDep, type(uint256).max);
 
-        uint256 owedToDeaf = s.withdrawableOf(address(deaf));
+        uint256 owedToDeaf = s.claimableOf(address(deaf));
         assertGt(owedToDeaf, 0, "the push failed and became a credit");
 
         // Anyone may claim on their behalf; the funds go to the account.
@@ -204,7 +265,7 @@ contract CoreEscrowTest is Test {
         vm.expectRevert(TransferFailed.selector); // it still refuses ETH
         s.claim(address(deaf));
         assertEq(address(deaf).balance, before, "nothing moved");
-        assertEq(s.withdrawableOf(address(deaf)), owedToDeaf, "credit intact");
+        assertEq(s.claimableOf(address(deaf)), owedToDeaf, "credit intact");
     }
 
     /// @notice Claiming nothing is refused rather than silently succeeding.
@@ -236,48 +297,218 @@ contract CoreEscrowTest is Test {
         s.collect();
     }
 
-    // ─── arrears: defaulting must not be cheap ──────────────────────────────
+    // ─── debt: owed for the tenure, and only the tenure ─────────────────────
 
     /**
-     * @notice Tax that outran the deposit follows the ACCOUNT, not the seat.
+     * @notice Tax that outran the deposit is owed while the occupant holds the
+     *         seat, and ends with the seat.
      *
-     * @dev Without this, running a deposit dry and retaking the vacated slot
-     *      costs less than staying — which makes default the dominant strategy.
+     * @dev It cannot outlive the tenure, because `buy` seats whoever the payer
+     *      names: debt that followed the account could be pinned on anyone.
+     *      Carrying it across tenures only ever stopped a defaulter who would
+     *      not switch addresses anyway.
      */
-    function test_ArrearsFollowTheAccountAcrossTenures() public {
+    function test_DebtEndsWithTheTenure() public {
         Slot s = _slot(address(token));
-        _take(s, alice, SlotMath.depositFor(100 ether, TAX, MIN_DEP), 100 ether);
+        _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
 
         // Run her dry, well past what the escrow covers.
         vm.warp(block.timestamp + 90 days);
+        assertGt(s.taxOwed(), s.deposit(), "she owes more than she holds");
         s.liquidate();
         assertTrue(s.isVacant());
+        assertEq(s.debtOf(alice), 0, "nothing follows her out");
 
-        uint256 debt = s.arrearsOf(alice);
-        assertGt(debt, 0, "unpaid tax was recorded against her");
-
-        // Retaking costs the debt on top of the deposit.
-        uint256 dep = SlotMath.depositFor(1 ether, TAX, MIN_DEP);
-        uint256 quoted = s.quoteBuy(alice, dep);
-        assertEq(quoted, dep + debt, "the quote carries the arrears");
-
+        uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
+        assertEq(s.quoteBuy(alice, dep), dep, "retaking costs only the deposit");
         uint256 spent = token.balanceOf(alice);
         _take(s, alice, dep, 1 ether);
-        assertEq(spent - token.balanceOf(alice), dep + debt, "and she paid it");
-        assertEq(s.arrearsOf(alice), 0, "settled");
+        assertEq(spent - token.balanceOf(alice), dep);
     }
 
-    /// @notice Somebody else's arrears are not charged to a new buyer.
-    function test_ArrearsAreNotInheritedWithTheSeat() public {
+    /// @notice Seating a stranger at a ruinous price cannot leave them owing
+    ///         anything once the seat is gone.
+    function test_SeatingSomebodyElseCannotPinDebtOnThem() public {
+        Slot s = _slotNoFloor(address(token));
+        uint256 maxPrice = s.MAX_PRICE();
+        s.buy(bob, maxPrice, 0, 0);
+
+        vm.warp(block.timestamp + 1 days);
+        s.liquidate();
+
+        assertEq(s.debtOf(bob), 0, "bob owes nothing for a seat he never asked for");
+        assertEq(s.quoteBuy(bob, 1 ether), 1 ether, "and can still buy");
+    }
+
+    /// @notice Somebody else's debt is not charged to a new buyer.
+    function test_DebtIsNotInheritedWithTheSeat() public {
         Slot s = _slot(address(token));
-        _take(s, alice, SlotMath.depositFor(100 ether, TAX, MIN_DEP), 100 ether);
+        _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
         vm.warp(block.timestamp + 90 days);
         s.liquidate();
-        assertGt(s.arrearsOf(alice), 0);
 
-        uint256 dep = SlotMath.depositFor(1 ether, TAX, MIN_DEP);
+        uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
         assertEq(s.quoteBuy(bob, dep), dep, "bob owes only his own deposit");
-        assertEq(s.arrearsOf(bob), 0);
+        assertEq(s.debtOf(bob), 0);
+    }
+
+    /// @dev Alice seated at `price` with `dep`, then run past her escrow without
+    ///      anyone settling, so the next settle records a debt.
+    function _insolvent(uint256 price) internal returns (Slot s, uint256 debt) {
+        s = _slot(address(token));
+        _take(s, alice, SlotMath.depositFor(price, TAX_RATE, MIN_DEP), price);
+        vm.warp(block.timestamp + 10 days);
+        debt = s.taxOwed() - s.deposit();
+        assertGt(debt, 0);
+    }
+
+    /// @notice Debt repaid at a buyout is paid out under the terms it was owed
+    ///         under, not the ones the buyout brings in.
+    function test_DebtRepaidAtATransitionGoesToTheOutgoingRecipient() public {
+        address next = makeAddr("nextRecipient");
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(this),
+                        mutableTax: false,
+                        mutableRecipient: true,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(MIN_DEP)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                    })
+                ))
+        );
+        _take(s, alice, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
+
+        TaxTerms memory t;
+        t.recipient = next;
+        s.proposeTerms(t, ModuleTerms({module: address(0), settings: ""}), 2);
+        vm.warp(block.timestamp + 10 days);
+
+        uint256 owed = s.taxOwed();
+        assertGt(owed, s.deposit(), "alice is insolvent");
+
+        _take(s, bob, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
+
+        assertEq(s.recipient(), next, "the recipient changed at the buyout");
+        assertEq(
+            token.balanceOf(recipient),
+            owed,
+            "all of alice's tax, debt included, went to the old recipient"
+        );
+        assertEq(token.balanceOf(next), 0);
+    }
+
+    /// @notice An insolvent occupant who is bought out pays their debt out of
+    ///         the price, instead of walking away with all of it.
+    function test_ABuyoutPaysTheSellersDebtFirst() public {
+        (Slot s, uint256 debt) = _insolvent(100 ether);
+        assertLt(debt, 100 ether);
+
+        uint256 before = token.balanceOf(alice);
+        _take(s, bob, SlotMath.depositFor(100 ether, TAX_RATE, MIN_DEP), 100 ether);
+
+        assertEq(token.balanceOf(alice) - before, 100 ether - debt, "the price, less her debt");
+        assertEq(s.debtOf(alice), 0, "settled");
+
+        uint256 got = token.balanceOf(recipient);
+        s.collect();
+        assertGt(
+            token.balanceOf(recipient) - got, debt, "and the recipient received it with the tax"
+        );
+    }
+
+    /// @notice A debt larger than the price takes all of it, and what the price
+    ///         did not cover ends with the tenure.
+    function test_ABuyoutSmallerThanTheDebtPaysWhatItCan() public {
+        (Slot s, uint256 debt) = _insolvent(100 ether);
+        vm.warp(block.timestamp + 3650 days);
+        debt = s.taxOwed() - s.deposit();
+        assertGt(debt, 100 ether);
+
+        uint256 before = token.balanceOf(alice);
+        _take(s, bob, SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP), 1 ether);
+
+        assertEq(token.balanceOf(alice), before, "nothing left for her");
+        assertEq(s.debtOf(alice), 0, "the rest ends with her tenure");
+    }
+
+    /// @notice Topping up an empty escrow pays the debt before it funds the
+    ///         seat, so a defaulter cannot buy back solvency for less.
+    function test_ATopUpPaysDebtBeforeTheDeposit() public {
+        (Slot s, uint256 debt) = _insolvent(100 ether);
+
+        vm.prank(alice);
+        s.topUp(debt + 5 ether);
+
+        assertEq(s.debtOf(alice), 0);
+        assertEq(s.deposit(), 5 ether, "only what is left over funds the seat");
+    }
+
+    /// @notice A top-up that does not cover the debt leaves the occupant
+    ///         liquidatable.
+    function test_ATopUpBelowTheDebtLeavesThemLiquidatable() public {
+        (Slot s, uint256 debt) = _insolvent(100 ether);
+
+        vm.prank(alice);
+        s.topUp(debt / 2);
+
+        assertEq(s.deposit(), 0);
+        assertEq(s.debtOf(alice), debt - debt / 2);
+        s.liquidate();
+        assertTrue(s.isVacant());
+    }
+
+    /// @notice Settling every block charges what settling once does.
+    /// @dev REGRESSION. `secondsFor` rounded the clock advance DOWN, so each
+    ///      settle left a paid second on the clock to charge again. At a rate
+    ///      of several wei per second, a settle per block overcharged by half.
+    function test_SettlingEveryBlockChargesWhatSettlingOnceDoes() public {
+        uint256 price = 1 ether;
+        assertGt(_tax(price, TAX_RATE, 1), 1, "several wei per second");
+        uint256 dep = SlotMath.depositFor(price, TAX_RATE, 30 days);
+
+        Slot ground = _slot(address(token));
+        Slot honest = _slot(address(token));
+        _take(ground, alice, dep, price);
+        _take(honest, alice, dep, price);
+
+        uint256 t = vm.getBlockTimestamp();
+        uint256 calls = 1800;
+        for (uint256 i = 0; i < calls; i++) {
+            t += 2;
+            vm.warp(t);
+            vm.prank(bob);
+            ground.topUp(0);
+        }
+        vm.prank(bob);
+        honest.topUp(0);
+
+        uint256 once = honest.collectedTax();
+        uint256 grind = ground.collectedTax();
+        assertLe(grind, once, "never more than settling once");
+        assertGe(grind + calls, once, "short by under a wei per settle");
+        assertEq(ground.lastSettled(), honest.lastSettled(), "and the clocks agree");
+    }
+
+    /// @notice A currency that takes a cut on transfer is refused, so no escrow
+    ///         is ever credited with more than the slot received.
+    function test_ACurrencyThatTakesACutIsRefused() public {
+        Cut cut = new Cut();
+        cut.mint(alice, 1_000 ether);
+        Slot s = _slot(address(cut));
+        uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
+
+        vm.startPrank(alice);
+        cut.approve(address(s), type(uint256).max);
+        vm.expectRevert(abi.encodeWithSelector(CurrencyTakesACut.selector, dep, dep - dep / 100));
+        s.buy(alice, 1 ether, dep, 0);
+        vm.stopPrank();
     }
 
     /**
@@ -289,17 +520,17 @@ contract CoreEscrowTest is Test {
      *      `lastSettled` to now unconditionally, discarding the window instead
      *      of carrying it. `topUp(0)` is a free, permissionless settle, so at a
      *      price low enough that one second floors to zero tax anyone could
-     *      grind the clock forward a second at a time and the arrears never
+     *      grind the clock forward a second at a time and the debt never
      *      accrued at all.
      *
      *      The price below is chosen so ONE second accrues zero while the whole
      *      window accrues something. That gap is the entire bug: without it,
      *      grinding and sitting still are indistinguishable.
      */
-    function test_GrindingAnEmptyEscrowCannotEraseArrears() public {
+    function test_GrindingAnEmptyEscrowCannotEraseDebt() public {
         uint256 price = 1_000_000;
-        assertEq(SlotMath.taxFor(price, TAX, 1), 0, "one second accrues nothing");
-        assertGt(SlotMath.taxFor(price, TAX, 200), 0, "the whole window does");
+        assertEq(_tax(price, TAX_RATE, 1), 0, "one second accrues nothing");
+        assertGt(_tax(price, TAX_RATE, 200), 0, "the whole window does");
 
         Slot ground = _slotNoFloor(address(token));
         Slot honest = _slotNoFloor(address(token));
@@ -317,10 +548,10 @@ contract CoreEscrowTest is Test {
         vm.prank(bob);
         honest.topUp(0); // the same 200 seconds, settled once
 
-        assertGt(honest.arrearsOf(alice), 0, "sitting still owes something");
+        assertGt(honest.debtOf(alice), 0, "sitting still owes something");
         assertEq(
-            ground.arrearsOf(alice),
-            honest.arrearsOf(alice),
+            ground.debtOf(alice),
+            honest.debtOf(alice),
             "grinding the clock costs what sitting still costs"
         );
     }
@@ -347,11 +578,7 @@ contract CoreEscrowTest is Test {
         honest.topUp(0);
 
         assertGt(honest.collectedTax(), 0, "the window is taxable");
-        assertEq(
-            ground.collectedTax(),
-            honest.collectedTax(),
-            "grinding collects the same tax"
-        );
+        assertEq(ground.collectedTax(), honest.collectedTax(), "grinding collects the same tax");
     }
 
     // ─── the guards nothing was asserting ───────────────────────────────────
@@ -362,7 +589,7 @@ contract CoreEscrowTest is Test {
 
         // Funded for the price bob DECLARES — `_requireFunded` runs before the
         // payment cap, so an underfunded buy would revert for the wrong reason.
-        uint256 dep = SlotMath.depositFor(6 ether, TAX, MIN_DEP);
+        uint256 dep = SlotMath.depositFor(6 ether, TAX_RATE, MIN_DEP);
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
         // Alice's asking price is 5 ether; bob will not pay more than 1.
@@ -394,33 +621,34 @@ contract CoreEscrowTest is Test {
         vm.expectRevert(Vacant.selector);
         s.liquidate();
     }
+
     /// @notice Native value sent to a slot outside `buy`/`deposit` is refused.
     function test_TheSlotRefusesStrayEther() public {
         Slot s = _slot(address(0));
         vm.prank(alice);
-        (bool ok, ) = address(s).call{value: 1 ether}("");
+        (bool ok,) = address(s).call{value: 1 ether}("");
         assertFalse(ok, "a bare transfer must not fund anything");
     }
 
     // ─── the initialisations the slot refuses ───────────────────────────────
 
     function _init() internal view returns (SlotInit memory i) {
-        i.recipient = recipient;
+        i.taxTerms.recipient = recipient;
         i.currency = IERC20(address(token));
-        i.taxBps = TAX;
-        i.minDepositSeconds = MIN_DEP;
+        i.taxTerms.rateBps = uint16(TAX_RATE);
+        i.taxTerms.minRunwaySeconds = uint32(MIN_DEP);
     }
 
     function test_AZeroTaxSlotIsRefused() public {
         SlotInit memory i = _init();
-        i.taxBps = 0;
+        i.taxTerms.rateBps = uint16(0);
         vm.expectRevert(InvalidTax.selector);
         factory.createSlot(i);
     }
 
     function test_ATaxAboveTheCeilingIsRefused() public {
         SlotInit memory i = _init();
-        i.taxBps = 10_001;
+        i.taxTerms.rateBps = uint16(10_001);
         vm.expectRevert(InvalidTax.selector);
         factory.createSlot(i);
     }
@@ -435,35 +663,30 @@ contract CoreEscrowTest is Test {
 
     function test_AZeroRecipientIsRefused() public {
         SlotInit memory i = _init();
-        i.recipient = address(0);
+        i.taxTerms.recipient = address(0);
         vm.expectRevert(InvalidRecipient.selector);
         factory.createSlot(i);
     }
 
-    /// @notice A manager on a fully immutable slot is refused — both halves of
-    ///         the rule, so "immutable" is a fact rather than a promise.
-    function test_TheManagerRuleIsEnforcedBothWays() public {
+    /// @notice No manager means nothing can ever be proposed.
+    function test_WithoutAManagerNothingCanBeProposed() public {
         SlotInit memory i = _init();
-        i.manager = alice; // nothing mutable, so a manager is forbidden
+        i.manager = address(0);
+        Slot s = Slot(payable(factory.createSlot(i)));
         vm.expectRevert(NotManager.selector);
-        factory.createSlot(i);
-
-        SlotInit memory j = _init();
-        j.mutableTax = true; // mutable, so a manager is required
-        vm.expectRevert(NotManager.selector);
-        factory.createSlot(j);
+        s.proposeTerms(i.taxTerms, i.moduleTerms, 1);
     }
 
-    // ─── a broken hook is swallowed, and reported ───────────────────────────
+    // ─── a broken module is swallowed, and reported ───────────────────────────
 
-    /// @notice An `after` hook that reverts cannot change the outcome, and the
+    /// @notice An `after` module that reverts cannot change the outcome, and the
     ///         slot logs it rather than failing silently.
-    function test_AFailingAfterHookIsSwallowedAndLogged() public {
+    function test_AFailingAfterModuleIsSwallowedAndLogged() public {
         SlotInit memory i = _init();
-        i.hook = address(new BrokenAfter());
+        i.moduleTerms.module = address(new BrokenAfter());
         Slot s = Slot(payable(factory.createSlot(i)));
 
-        uint256 dep = SlotMath.depositFor(1 ether, TAX, MIN_DEP);
+        uint256 dep = SlotMath.depositFor(1 ether, TAX_RATE, MIN_DEP);
         vm.startPrank(alice);
         token.approve(address(s), type(uint256).max);
         vm.recordLogs();
@@ -472,7 +695,7 @@ contract CoreEscrowTest is Test {
 
         assertEq(s.occupant(), alice, "the buy stood");
         bool logged;
-        bytes32 sig = keccak256("HookCallFailed(address,bytes4)");
+        bytes32 sig = keccak256("ModuleCallFailed(address,bytes4)");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 k; k < logs.length; ++k) {
             if (logs[k].topics[0] == sig) logged = true;

@@ -69,7 +69,7 @@ ponder.on("SlotBoundNFTWrapper:Wrapped", async ({ event, context }) => {
     underlying: lower(event.args.underlying),
     underlyingId: event.args.underlyingId,
     mode: event.args.mode,
-    taxBps: event.args.taxBps,
+    taxRateBps: event.args.taxRateBps,
     fee: event.args.fee,
     retired: false,
     retiredAt: null,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -9,14 +11,12 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {SplitsWarehouse} from "splits-v2/SplitsWarehouse.sol";
 import {SplitV2Lib} from "splits-v2/libraries/SplitV2.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
+import {SlotBoundNFTWrapper} from "../../src/modules/nft/SlotBoundNFTWrapper.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 import {SlotCollective} from "../../src/collectives/SlotCollective.sol";
 import {SlotCollectiveFactory} from "../../src/collectives/SlotCollectiveFactory.sol";
-import {
-    SlotBoundNFTFactory,
-    CollectionInit
-} from "../../src/hooks/nft/SlotBoundNFTFactory.sol";
+import {SlotBoundNFTFactory, CollectionInit} from "../../src/modules/nft/SlotBoundNFTFactory.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
@@ -70,26 +70,39 @@ contract CrossChainAddressesTest is Test {
     function setUp() public {
         token = new Tok();
 
-        slots = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(
-                SlotFactory.initialize, (address(this), address(new Slot()))
+        slots = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
             )
-        )));
+        );
 
         SlotsWarehouseHolder holder = new SlotsWarehouseHolder();
-        collectives = SlotCollectiveFactory(address(new ERC1967Proxy(
-            address(new SlotCollectiveFactory()),
-            abi.encodeCall(
-                SlotCollectiveFactory.initialize,
-                (admin, address(holder.implementation()))
+        holder.deploy();
+        collectives = SlotCollectiveFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotCollectiveFactory()),
+                    abi.encodeCall(
+                        SlotCollectiveFactory.initialize, (admin, address(holder.implementation()))
+                    )
+                )
             )
-        )));
+        );
 
-        collections = SlotBoundNFTFactory(address(new ERC1967Proxy(
-            address(new SlotBoundNFTFactory()),
-            abi.encodeCall(SlotBoundNFTFactory.initialize, (admin, slots))
-        )));
+        collections = SlotBoundNFTFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotBoundNFTFactory()),
+                    abi.encodeCall(
+                        SlotBoundNFTFactory.initialize,
+                        (admin, slots, address(new SlotBoundNFTWrapper()))
+                    )
+                )
+            )
+        );
 
         vm.warp(1_000_000);
     }
@@ -98,15 +111,15 @@ contract CrossChainAddressesTest is Test {
 
     function _slotInit() internal view returns (SlotInit memory) {
         return SlotInit({
-            recipient: recipient,
             currency: IERC20(address(token)),
             manager: address(0),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 1000,
-            minDepositSeconds: 7 days,
             mutableTax: false,
-            mutableHook: false
+            mutableRecipient: false,
+            mutableModule: false,
+            taxTerms: TaxTerms({
+                recipient: recipient, rateBps: uint16(1000), minRunwaySeconds: uint32(7 days)
+            }),
+            moduleTerms: ModuleTerms({module: address(0), settings: ""})
         });
     }
 
@@ -118,18 +131,11 @@ contract CrossChainAddressesTest is Test {
         a[0] = 1;
         a[1] = 1;
         s = SplitV2Lib.Split({
-            recipients: r,
-            allocations: a,
-            totalAllocation: 2,
-            distributionIncentive: 0
+            recipients: r, allocations: a, totalAllocation: 2, distributionIncentive: 0
         });
     }
 
-    function _roles()
-        internal
-        view
-        returns (SlotCollective.InitialRoles memory r)
-    {
+    function _roles() internal view returns (SlotCollective.InitialRoles memory r) {
         r.admin = admin;
     }
 
@@ -139,8 +145,8 @@ contract CrossChainAddressesTest is Test {
             symbol: "BND",
             maxSupply: 3,
             currency: IERC20(address(token)),
-            taxBps: 1000,
-            minDepositSeconds: 7 days,
+            taxRateBps: 1000,
+            minRunwaySeconds: 7 days,
             recipient: recipient,
             manager: address(0),
             owner: admin
@@ -163,10 +169,7 @@ contract CrossChainAddressesTest is Test {
         address onSepolia = slots.createSlot(_slotInit());
 
         assertEq(slots.slotCount(), 1, "both were slot #0");
-        assertTrue(
-            onBase != onSepolia,
-            "slot #0 must not be the same address on two chains"
-        );
+        assertTrue(onBase != onSepolia, "slot #0 must not be the same address on two chains");
     }
 
     /// @notice The same, for collectives.
@@ -246,7 +249,9 @@ contract CrossChainAddressesTest is Test {
 
         vm.chainId(BASE);
         address[3] memory base;
-        for (uint256 i = 0; i < 3; i++) base[i] = slots.createSlot(_slotInit());
+        for (uint256 i = 0; i < 3; i++) {
+            base[i] = slots.createSlot(_slotInit());
+        }
 
         vm.revertToState(snap);
 
@@ -262,12 +267,13 @@ contract CrossChainAddressesTest is Test {
 
 /// @dev `SlotCollective`'s constructor takes the splits warehouse, and the
 ///      warehouse has to exist before the implementation does. Wrapping the
-///      pair keeps `setUp` readable.
+///      pair keeps `setUp` readable. Deployed from a function rather than the
+///      constructor: a contract mid-construction has no code yet, and the
+///      implementation refuses a deployer without code.
 contract SlotsWarehouseHolder {
     SlotCollective public implementation;
 
-    constructor() {
-        implementation =
-            new SlotCollective(address(new SplitsWarehouse("Ether", "ETH")));
+    function deploy() external {
+        implementation = new SlotCollective(address(new SplitsWarehouse("Ether", "ETH")));
     }
 }

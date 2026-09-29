@@ -1,20 +1,27 @@
 import {
-  minimumTenureHookAbi,
+  minimumTenureModuleAbi,
+  offerBookAbi,
+  offerBookAddress,
   slotAbi,
   slotFactoryAbi,
+  slotLensAbi,
+  slotLensAddress,
 } from "@0xslots/contracts/slots";
 import {
+  type AbiParameter,
   type Address,
   type Chain,
+  decodeAbiParameters,
   encodeFunctionData,
   erc20Abi,
   type Hash,
   type Hex,
   type PublicClient,
+  size,
   type WalletClient,
   zeroAddress,
 } from "viem";
-import { SlotsError } from "../errors";
+import { decodedRevert, SlotsError } from "../errors";
 import { isNativeCurrency } from "../native";
 
 // ─── Protocol constants ───────────────────────────────────────────────────────
@@ -28,6 +35,8 @@ import { isNativeCurrency } from "../native";
 export const MAX_PRICE = 2n ** 128n - 1n;
 /** Ceiling on the monthly tax rate, in basis points. */
 export const MAX_TAX_BPS = 10_000n;
+/** `Slot.MAX_MIN_RUNWAY`: a year. The escrow floor scales with the runway. */
+export const MAX_MIN_RUNWAY_SECONDS = 365 * 24 * 60 * 60;
 export const BASIS_POINTS = 10_000n;
 /** The tax period. Basis points are per 30 days, not per year. */
 export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
@@ -40,204 +49,382 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
  * from {@link SlotsClient.hasRipeTerms}, which asks the chain's clock rather
  * than the browser's.
  */
-export const TERMS_DELAY_SECONDS = 24n * 60n * 60n;
+export const TERMS_DELAY_SECONDS = 60n * 60n;
+
+/** "This module configured nothing": empty settings. */
+export const NO_SETTINGS = "0x" as const;
 
 /**
- * "This slot configured nothing" — 32 zero bytes.
- *
- * The counterpart to {@link zeroAddress} for `hookData`, and it means the same
- * thing: absence. A slot with no hook must carry this, and a hook that takes
- * configuration is entitled to refuse it.
+ * Term bits for `proposeTerms` and `cancelTerms`. Mirrors `TermsLib`.
+ * `MODULE` always covers the whole {@link ModuleTerms}. `SCOPES` is never
+ * proposed: it is queued by {@link SlotsClient.acceptScopes}.
  */
-export const ZERO_HOOK_DATA =
-  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+export const TERMS = {
+  TAX_RATE: 1,
+  RECIPIENT: 2,
+  MIN_RUNWAY: 4,
+  MODULE: 8,
+  SCOPES: 16,
+} as const;
+export const ALL_TERMS = 31;
+
+// ─── Terms ────────────────────────────────────────────────────────────────────
+
+/** What the slot charges and who receives it. Mirrors `TaxTerms`. */
+export interface TaxTerms {
+  /** Receives the rent, less any module fee. Never zero. */
+  recipient: Address;
+  /** Basis points of the declared price per 30 days. 1..10000. */
+  rateBps: number;
+  /** Runway a buyer must fund, in seconds. Zero means no minimum. */
+  minRunwaySeconds: number;
+}
+
+/** The slot's module and its configuration. Mirrors `ModuleTerms`. */
+export interface ModuleTerms {
+  /** The module contract. {@link zeroAddress} for none, with `settings` empty too. */
+  module: Address;
+  /**
+   * This slot's settings for the module: `abi.encode` of the fields its
+   * metadata's `x-abi` lists. Opaque to the slot. {@link NO_SETTINGS} for none.
+   */
+  settings: Hex;
+}
+
+/**
+ * A module's share of collected tax, and who receives it. Declared by the
+ * module; the slot keeps a copy from when it attached or its manager last
+ * accepted. Mirrors `ModuleFee`.
+ */
+export interface ModuleFee {
+  /** Basis points of collected tax. 0..10000. */
+  bps: number;
+  recipient: Address;
+}
+
+/** Scope bits a module declares and a slot stores. Mirrors `ScopesLib`. */
+export const SCOPE_BITS = {
+  beforeBuy: 1,
+  beforeSelfAssess: 2,
+  afterBuy: 4,
+  afterRelease: 8,
+  afterLiquidate: 16,
+  afterSettle: 32,
+  afterCallbacksMustSucceed: 64,
+  onInstall: 128,
+  onUninstall: 256,
+} as const;
+
+export const NO_MODULE: ModuleTerms = { module: zeroAddress, settings: NO_SETTINGS };
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
 
 /**
- * Everything a slot needs at birth. Mirrors `SlotInit` in SlotAccounting.sol.
+ * Everything a slot needs at birth. Mirrors `SlotInit`.
  *
- * Two fields are load-bearing in a way the types cannot express, both checked
- * in `initialize`:
- *
- * - `manager` is required exactly when something is mutable and FORBIDDEN
- *   otherwise. "Immutable" is a fact about the slot, not a promise about
- *   somebody's restraint — so a manager on an all-immutable slot reverts rather
- *   than sitting there looking authoritative. {@link assertSlotInit} checks this
- *   before you spend gas finding out.
- * - `taxBps` may not be zero. A zero-tax slot would accrue nothing, so
- *   nobody could ever be liquidated off it.
+ * `manager` is required exactly when any `mutable*` flag is set, and must be
+ * the zero address otherwise. {@link assertSlotInit} checks this before gas.
  */
 export interface SlotInit {
-  /** Where tax goes. Never zero. */
-  recipient: Address;
   /** The token tax and price are denominated in. {@link zeroAddress} = native ETH. */
   currency: Address;
-  /** May change what this slot allows. Zero on a fully immutable slot. */
   manager: Address;
-  /** The single extension point. Zero for none. */
-  hook: Address;
-  /**
-   * This slot's configuration FOR THAT HOOK — 32 bytes the slot stores and
-   * hands back on every callback. Omit for none.
-   *
-   * What lets one hook deployment serve every configuration. A minimum-tenure
-   * hook reads its window here, so a seven-day slot and a thirty-day slot point
-   * at the SAME contract. Meaningless to the slot, which never interprets it.
-   *
-   * Only legal alongside a hook, and only in a form that hook accepts — it is
-   * asked, at creation, and refuses rather than misbehaving later.
-   */
-  hookData?: Hex;
-  /** Basis points per 30 days. 1..10000. */
-  taxBps: bigint;
-  /** Minimum runway, in seconds, a buyer must fund. Zero means no minimum. */
-  minDepositSeconds: bigint;
+  /** Tax rate and minimum runway can change. */
   mutableTax: boolean;
-  mutableHook: boolean;
+  mutableRecipient: boolean;
+  mutableModule: boolean;
+  taxTerms: TaxTerms;
+  /** Omit for no module. */
+  moduleTerms?: Partial<ModuleTerms> & { module: Address };
 }
 
-/**
- * Build the exact tuple the factory expects.
- *
- * viem encodes a struct argument BY COMPONENT NAME, so a stray or misspelled key
- * encodes a zero for the field it was meant to fill and says nothing about it.
- * Listing the nine fields here makes a missing one a type error in this file
- * rather than a zero address on-chain — which is how the previous SDK and its
- * checked-in ABIs once drifted together, agreeing with each other and
- * disagreeing with the chain.
- */
+function fullModuleTerms(terms?: Partial<ModuleTerms> & { module: Address }): ModuleTerms {
+  return {
+    module: terms?.module ?? zeroAddress,
+    settings: terms?.settings ?? NO_SETTINGS,
+  };
+}
+
+/** The exact tuple the factory expects. viem encodes structs by name. */
 function encodeSlotInit(init: SlotInit) {
   return {
-    recipient: init.recipient,
     currency: init.currency,
     manager: init.manager,
-    hook: init.hook,
-    hookData: init.hookData ?? ZERO_HOOK_DATA,
-    taxBps: init.taxBps,
-    minDepositSeconds: init.minDepositSeconds,
     mutableTax: init.mutableTax,
-    mutableHook: init.mutableHook,
+    mutableRecipient: init.mutableRecipient,
+    mutableModule: init.mutableModule,
+    taxTerms: {
+      recipient: init.taxTerms.recipient,
+      rateBps: init.taxTerms.rateBps,
+      minRunwaySeconds: init.taxTerms.minRunwaySeconds,
+    },
+    moduleTerms: fullModuleTerms(init.moduleTerms),
   } as const;
+}
+
+function assertTaxTerms(taxTerms: Partial<TaxTerms>, mask: number, where: string) {
+  if (mask & TERMS.RECIPIENT && (!taxTerms.recipient || taxTerms.recipient === zeroAddress))
+    throw new SlotsError(where, "recipient must not be the zero address");
+  if (mask & TERMS.TAX_RATE) {
+    const tax = taxTerms.rateBps ?? 0;
+    if (tax <= 0 || tax > Number(MAX_TAX_BPS))
+      throw new SlotsError(where, `rateBps must be 1..${MAX_TAX_BPS} basis points per 30 days`);
+  }
+  if (mask & TERMS.MIN_RUNWAY) {
+    const min = taxTerms.minRunwaySeconds ?? 0;
+    if (min < 0 || min > MAX_MIN_RUNWAY_SECONDS)
+      throw new SlotsError(
+        where,
+        `minRunwaySeconds must be 0..${MAX_MIN_RUNWAY_SECONDS} (a year)`,
+      );
+  }
+}
+
+function assertModule(terms: ModuleTerms, where: string) {
+  if (terms.module === zeroAddress && size(terms.settings) !== 0)
+    throw new SlotsError(where, "module settings need a module — pass one, or drop the settings");
 }
 
 /** Throw on the initialisations `Slot.initialize` refuses, before spending gas. */
 export function assertSlotInit(init: SlotInit): void {
-  if (init.recipient === zeroAddress)
-    throw new SlotsError(
-      "createSlot",
-      "recipient must not be the zero address",
-    );
-  if (init.taxBps <= 0n || init.taxBps > MAX_TAX_BPS)
-    throw new SlotsError(
-      "createSlot",
-      `taxBps must be 1..${MAX_TAX_BPS} basis points per 30 days`,
-    );
-
-  const mutable = init.mutableTax || init.mutableHook;
-  if (mutable && init.manager === zeroAddress)
-    throw new SlotsError(
-      "createSlot",
-      "a slot with mutableTax or mutableHook needs a manager",
-    );
-  if (!mutable && init.manager !== zeroAddress)
+  const anyMutable = init.mutableTax || init.mutableRecipient || init.mutableModule;
+  if (anyMutable && init.manager === zeroAddress)
+    throw new SlotsError("createSlot", "a slot with anything mutable needs a manager");
+  if (!anyMutable && init.manager !== zeroAddress)
     throw new SlotsError(
       "createSlot",
       "a fully immutable slot must have no manager — the zero address is what makes it immutable",
     );
-
-  // Configuration for a hook that is not there. Nothing would ever read it, so
-  // it can only be a mistake — and one that goes live the day a hook is
-  // attached without its own data.
-  if (
-    init.hook === zeroAddress &&
-    init.hookData !== undefined &&
-    init.hookData !== ZERO_HOOK_DATA
-  )
-    throw new SlotsError(
-      "createSlot",
-      "hookData needs a hook to interpret it — pass a hook, or drop the data",
-    );
+  assertTaxTerms(init.taxTerms, ALL_TERMS, "createSlot");
+  assertModule(fullModuleTerms(init.moduleTerms), "createSlot");
 }
 
-// ─── Hooks ────────────────────────────────────────────────────────────────────
+// ─── Modules ────────────────────────────────────────────────────────────────────
 
 /**
- * A hook's declared subscriptions, as the slot snapshotted them when it was
- * attached — not as the hook reports them today.
+ * A module's scopes, as the slot accepted them when it was
+ * attached — not as the module reports them today.
  *
  * `before` decides and may refuse; `after` records and cannot. That is the whole
  * interface. A flag being false means the callback is skipped entirely, so an
- * `afterBuy` that never fires is usually a hook that forgot to declare it.
+ * `afterBuy` that never fires is usually a module that forgot to declare it.
  */
-export interface HookFlags {
+export interface Scopes {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
+  onInstall: boolean;
+  onUninstall: boolean;
   /**
-   * Not a callback — a mode. The hook's `after` calls run uncapped and their
+   * Not a callback — a mode. The module's `after` calls run uncapped and their
    * revert propagates, so its writes cannot be silently dropped.
    *
-   * A slot whose hook declares this is only as evictable as that hook: a
+   * A slot whose module declares this is only as evictable as that module: a
    * failing `afterLiquidate` blocks the eviction rather than being swallowed.
    * Surface it wherever a user commits funds to a slot.
    */
-  strict: boolean;
+  afterCallbacksMustSucceed: boolean;
 }
 
-/** Terms the manager has queued, landing at the next occupancy transition. */
-export interface PendingTerms {
-  taxBps: bigint;
-  hook: Address;
-  /** The queued hook's configuration. Travels with `hook`, never apart. */
-  hookData: Hex;
-  hasTax: boolean;
-  hasHook: boolean;
+/** Scope bits (see {@link SCOPE_BITS}) as {@link Scopes}. */
+export function unpackScopes(scopes: number): Scopes {
+  const has = (bit: number) => (scopes & bit) !== 0;
+  return {
+    beforeBuy: has(SCOPE_BITS.beforeBuy),
+    beforeSelfAssess: has(SCOPE_BITS.beforeSelfAssess),
+    afterBuy: has(SCOPE_BITS.afterBuy),
+    afterRelease: has(SCOPE_BITS.afterRelease),
+    afterLiquidate: has(SCOPE_BITS.afterLiquidate),
+    afterSettle: has(SCOPE_BITS.afterSettle),
+    onInstall: has(SCOPE_BITS.onInstall),
+    onUninstall: has(SCOPE_BITS.onUninstall),
+    afterCallbacksMustSucceed: has(SCOPE_BITS.afterCallbacksMustSucceed),
+  };
+}
+
+/** {@link Scopes} back to bits. */
+export function packScopes(scopes: Scopes): number {
+  return (Object.keys(SCOPE_BITS) as (keyof typeof SCOPE_BITS)[]).reduce(
+    (bits, name) => (scopes[name] ? bits | SCOPE_BITS[name] : bits),
+    0,
+  );
+}
+
+/** Everything queued for the next buy. Mirrors `Pending`. */
+export interface Pending {
+  /** Only the fields named by `mask` are meaningful. */
+  taxTerms: TaxTerms;
+  /** Meaningful when `hasModule`. */
+  moduleTerms: ModuleTerms;
+  /**
+   * With `hasModule`: the scopes reviewed for the proposed module. With
+   * `hasScopes`: new scopes accepted from the attached one.
+   */
+  scopes: number;
+  /** With `hasModule`: the fee reviewed for the proposed module. */
+  fee: ModuleFee;
+  /** Which terms are queued. See {@link TERMS}. */
+  mask: number;
+  hasTaxRate: boolean;
+  hasRecipient: boolean;
+  hasMinRunway: boolean;
+  hasModule: boolean;
+  hasScopes: boolean;
   proposedAt: bigint;
   /**
-   * The instant this becomes ripe — `proposedAt + TERMS_DELAY`.
-   *
-   * Zero when nothing is queued. Derived locally, so it is the right thing to
-   * RENDER ("applies after…") and the wrong thing to branch on; branch on
-   * {@link applies}, which the chain answered against its own clock.
+   * The instant this becomes ripe — `proposedAt + TERMS_DELAY`. Zero when
+   * nothing is queued. Render it; branch on {@link applies}.
    */
   appliesAt: bigint;
   /**
-   * `hasRipeTerms()` — whether the next occupancy transition will actually
-   * land these terms.
-   *
-   * FALSE IS THE INTERESTING CASE and it is new. A proposal used to bind the
-   * moment it was made, so "queued" and "in force at the next transition" were
-   * the same fact; `TERMS_DELAY` split them. A buyer told "buying now applies
-   * these to you" inside the delay window is being told something the contract
-   * will refuse to do.
+   * `hasRipeTerms()` — whether the next buy will actually land these terms,
+   * answered against the chain's clock.
    */
   applies: boolean;
-  /** True when nothing is queued — both `hasTax` and `hasHook` are false. */
+  /** True when nothing is queued. */
   isEmpty: boolean;
 }
 
 /**
- * A change of terms to queue.
- *
- * Presence is the signal, not truthiness: `{ hook: zeroAddress }` means "detach
- * the hook", which is a real intention and the exact case a `if (params.hook)`
- * check would silently drop.
+ * A change of terms to queue. Presence is the signal, not truthiness:
+ * `{ moduleTerms: NO_MODULE }` means "detach the module".
  */
 export interface ProposeTermsParams {
-  /** Basis points per 30 days. Omit to leave the tax alone. */
-  taxBps?: bigint;
-  /** The new hook, or {@link zeroAddress} to detach. Omit to leave it alone. */
-  hook?: Address;
+  /** Basis points per 30 days. */
+  taxRateBps?: number;
+  recipient?: Address;
+  minRunwaySeconds?: number;
+  /** The whole module terms. Its scopes and fee are the module's own, read when it attaches. */
+  moduleTerms?: Partial<ModuleTerms> & { module: Address };
+}
+
+/** Every term in force. Mirrors `Terms`. */
+export interface SlotTerms {
+  taxTerms: TaxTerms;
+  moduleTerms: ModuleTerms;
+}
+
+/**
+ * `metadata()`, declared here rather than taken from a generated ABI.
+ *
+ * Optional surface that any module may implement, so borrowing one module's
+ * ABI to call it on another would tie this to whichever module happened to be
+ * generated.
+ */
+const moduleMetadataAbi = [
+  {
+    type: "function",
+    name: "metadata",
+    stateMutability: "pure",
+    inputs: [],
+    outputs: [{ type: "string" }],
+  },
+] as const;
+
+/** One `x-abi` entry: viem's own `AbiParameter`, in encoding order. */
+export interface ModuleSettingsParam {
+  name: string;
+  type: string;
+}
+
+/**
+ * The configuration half of a module's metadata: a JSON Schema 2020-12
+ * document, passable to `react-jsonschema-form` or AJV untouched, plus the
+ * `x-` conventions the protocol adds.
+ *
+ * Every value is a string — a `uint64` bound does not survive `JSON.parse` as a
+ * number — so ranges travel as `x-minimum` / `x-maximum` strings and the
+ * module's own `validateSettings` remains the authority on what is accepted.
+ */
+export interface ModuleSettingsSchema {
+  $schema: string;
+  title: string;
+  type: "object";
+  properties: Record<string, Record<string, unknown>>;
+  required: string[];
+  /** Whether a slot may carry no configuration at all. */
+  "x-optional"?: boolean;
+  "x-abi": ModuleSettingsParam[];
+}
+
+/** What a module says it is. `IModuleMetadata.metadata`, parsed. */
+export interface ModuleMetadata {
+  version: number;
+  title: string;
+  description: string;
+  docs?: string;
+  /** Absent for a module that takes no settings. */
+  settings?: ModuleSettingsSchema;
+}
+
+/** Whether a module accepts a configuration, and why not. */
+export type SettingsCheck = { ok: true } | { ok: false; reason: string };
+
+/** One entry on the OfferBook. `id` is what `acceptOffer` and `cancelOffer` take. */
+export interface BookOffer {
+  id: bigint;
+  bidder: Address;
+  price: bigint;
+  deposit: bigint;
+  expiry: bigint;
+  cancelled: boolean;
+  filled: boolean;
+}
+
+/** A slot's standing offers, as the book judges them. */
+export interface OfferBoard {
+  /** Live offers only, highest price first. */
+  offers: BookOffer[];
+  /** `liveCount`: what a badge should show. */
+  liveCount: bigint;
+  /** The book's best live, funded offer, if any. */
+  best?: BookOffer;
+}
+
+/** A standing bid to post. Posting moves no funds. */
+export interface PostOfferParams {
+  slot: Address;
+  price: bigint;
+  /** The escrow the bidder will fund if accepted. */
+  deposit: bigint;
+  /** Unix seconds. */
+  expiry: bigint;
+}
+
+/** Every constant a slot runs under, as `SlotLens.getSlotConstants` reports them. */
+export interface SlotConstants {
+  maxPrice: bigint;
+  maxTaxBps: bigint;
+  basisPoints: bigint;
+  month: bigint;
+  moduleCallbackGasLimit: bigint;
+  nativePayoutGasLimit: bigint;
+  termsDelay: bigint;
+  maxMinRunway: bigint;
+  /** `TERM_*` bits for `proposeTerms` and `cancelTerms`. */
+  termTaxRate: number;
+  termRecipient: number;
+  termMinRunway: number;
+  termModule: number;
+  termScopes: number;
+}
+
+/** What the attached module declares today, beside what the slot copied. */
+export interface ModuleUpdate {
+  current: { scopes: number; fee: ModuleFee };
+  /** `null` when there is no module, or it does not answer. */
+  declared: { scopes: number; fee: ModuleFee } | null;
+  /** {@link SlotsClient.acceptFee} would change the fee, at once (a rise needs `mutableRecipient`). */
+  feeDiffers: boolean;
   /**
-   * The new hook's configuration. Only meaningful alongside `hook`, and read
-   * only when `hook` is present — the two are one decision, and setting data
-   * for a hook you did not name is setting a word meant for its predecessor.
+   * {@link SlotsClient.acceptScopes} would queue new scopes for the next buy.
+   * False when the module is immutable, those scopes are already queued, or a
+   * new module is queued.
    */
-  hookData?: Hex;
+  scopesDiffer: boolean;
 }
 
 // ─── Selling ──────────────────────────────────────────────────────────────────
@@ -245,7 +432,7 @@ export interface ProposeTermsParams {
 // There is no `SellOrder` any more. The core carried `sell` — an occupant
 // submitting a buyer's EIP-712 order — and it was a SECOND seating path: it
 // reset the tenure like `buy` but ran `beforeSell` instead of `beforeBuy`, so a
-// hook author had two doors to police.
+// module author had two doors to police.
 //
 // A consensual sale is now `selfAssess` then `buy`, performed by the OfferBook
 // inside the occupant's own transaction. The occupant makes the book their
@@ -293,30 +480,22 @@ export interface SlotState {
   /** `2^256 - 1` when the occupant can never run dry, or the slot is vacant. */
   secondsUntilLiquidation: bigint;
   currency: Address;
-  taxBps: bigint;
-  minDepositSeconds: bigint;
+  taxRateBps: bigint;
+  minRunwaySeconds: bigint;
   recipient: Address;
+  /** Zero means nothing can ever change. */
   manager: Address;
-  hook: Address;
-  /**
-   * The 32 bytes this slot hands its hook on every callback.
-   *
-   * Where a hook's per-slot configuration lives — a minimum-tenure window, say.
-   * Opaque here: only the hook knows what it means, and a slot with no hook has
-   * none.
-   */
-  hookData: Hex;
-  hookFlags: HookFlags;
-  pending: PendingTerms;
-  /**
-   * Which terms the manager may propose a change to.
-   *
-   * Part of the state rather than something a caller reads separately, because
-   * these two decide whether `manager` is meaningful at all: a slot with both
-   * false HAS no manager, and one with either true is required to have one.
-   */
   mutableTax: boolean;
-  mutableHook: boolean;
+  mutableRecipient: boolean;
+  mutableModule: boolean;
+  module: Address;
+  /** The module's configuration: bytes only the module can interpret. */
+  settings: Hex;
+  /** The module's callbacks, as this slot accepted them. */
+  scopes: Scopes;
+  /** The module's share of collected tax, as this slot accepted it. */
+  fee: ModuleFee;
+  pending: Pending;
   /** Unix seconds. Zero when vacant. What a tenure window is measured from. */
   occupiedSince: bigint;
   /**
@@ -335,7 +514,7 @@ export interface SlotState {
    *
    * Exposed because `taxOwed` is a pure function of it and the block timestamp:
    *
-   *   price * taxBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
+   *   price * taxRateBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
    *
    * so a client holding this can reproduce the figure for any instant without
    * asking the chain again. That is what lets a runway actually count down
@@ -350,8 +529,19 @@ export interface SlotState {
 }
 
 export interface SlotsClientConfig {
-  /** The hook-protocol `SlotFactory`. Only `createSlot` needs it. */
+  /** The v1 `SlotFactory`. Only `createSlot` needs it. */
   factoryAddress?: Address;
+  /**
+   * The `OfferBook`. Only {@link SlotsClient.acceptOffer} needs it, and it
+   * defaults to the book deployed on the wallet's chain.
+   */
+  offerBookAddress?: Address;
+  /**
+   * The `SlotLens`. {@link SlotsClient.slotState}, {@link SlotsClient.slotStates}
+   * and {@link SlotsClient.moduleUpdate} read through it, and it defaults to
+   * the lens deployed on the chain.
+   */
+  lensAddress?: Address;
   publicClient?: PublicClient;
   walletClient?: WalletClient;
 }
@@ -359,25 +549,31 @@ export interface SlotsClientConfig {
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 /**
- * `slotAbi` plus every hook error this package can name.
+ * `slotAbi` plus every module error this package can name.
  *
- * A hook's veto reverts with the HOOK'S error, and viem decodes an error only
+ * A module's veto reverts with the MODULE'S error, and viem decodes an error only
  * if it is in the ABI it was handed — so simulating against `slotAbi` alone
  * yields a bare four-byte selector, which is a hex string nobody can act on.
  * Extra error entries cost nothing: the function being called is still resolved
  * by name out of `slotAbi`.
  *
- * A hook this package has never heard of still degrades to the selector. That
+ * A module this package has never heard of still degrades to the selector. That
  * is the honest floor for an open extension point, and it is strictly more than
  * a mined revert with no reason at all.
  */
+/** `OfferBook.Offer` as viem decodes it. */
+type RawOffer = Omit<BookOffer, "id">;
+
+/** Board entries read per `boardPage` call. Far under any RPC's gas budget. */
+const BOARD_PAGE = 200n;
+
 const SIMULATION_ABI = [
   ...slotAbi,
-  ...minimumTenureHookAbi.filter((entry) => entry.type === "error"),
+  ...minimumTenureModuleAbi.filter((entry) => entry.type === "error"),
 ] as const;
 
 /**
- * Client for the hook-based Slots protocol.
+ * Client for the v1 Slots protocol.
  *
  * Reads go straight to the chain. There is no indexer namespace here on purpose:
  * the ponder deployment indexes the previous protocol, and a read method that
@@ -393,11 +589,15 @@ export class SlotsClient {
   private readonly _publicClient?: PublicClient;
   private readonly _walletClient?: WalletClient;
   private readonly _factory?: Address;
+  private readonly _offerBook?: Address;
+  private readonly _lens?: Address;
 
   constructor(config: SlotsClientConfig) {
     this._publicClient = config.publicClient;
     this._walletClient = config.walletClient;
     this._factory = config.factoryAddress;
+    this._offerBook = config.offerBookAddress;
+    this._lens = config.lensAddress;
   }
 
   // ─── Accessors ──────────────────────────────────────────────────────────────
@@ -418,6 +618,32 @@ export class SlotsClient {
     if (!this._factory)
       throw new SlotsError("SlotsClient", "No factoryAddress provided");
     return this._factory;
+  }
+
+  /** The SlotLens this client reads through. */
+  private get lens(): Address {
+    const lens = this._lens ?? slotLensAddress[this.chain.id];
+    if (!lens)
+      throw new SlotsError("SlotsClient", "No lensAddress provided or deployed on this chain");
+    return lens;
+  }
+
+  /** A read on the lens. */
+  private readLens<T>(functionName: string, args: readonly unknown[]) {
+    return this.publicClient.readContract({
+      address: this.lens,
+      abi: slotLensAbi,
+      functionName,
+      args,
+    } as never) as Promise<T>;
+  }
+
+  /** The OfferBook this client sends to. */
+  private get offerBook(): Address {
+    const book = this._offerBook ?? offerBookAddress[this.chain.id];
+    if (!book)
+      throw new SlotsError("SlotsClient", "No offerBookAddress provided or deployed on this chain");
+    return book;
   }
 
   private get account(): Address {
@@ -544,18 +770,12 @@ export class SlotsClient {
   }
 
   /**
-   * Tax `account` still owes from an occupancy their deposit could not cover.
-   *
-   * Charged on RE-ENTRY, which is the point: settling can only take what the
-   * deposit holds, and the remainder used to be written off — so running dry
-   * and retaking the vacated seat was the cheapest way to hold a slot. It is
-   * carried on the ACCOUNT, not on the seat, and it is part of
-   * {@link quoteBuy}'s answer for that account. Quote for the address being
-   * SEATED, not for the one paying: they need not be the same, and the debt
-   * follows the seat's occupant.
+   * Tax the occupant owes beyond an emptied deposit, this tenure. A top-up
+   * pays it first, and so does the price a buyer pays them. It ends with the
+   * tenure, so it is zero for anyone not seated and never part of a quote.
    */
-  arrearsOf(slot: Address, account: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "arrearsOf", [account]);
+  debtOf(slot: Address, account: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "debtOf", [account]);
   }
 
   /**
@@ -574,51 +794,36 @@ export class SlotsClient {
   }
 
   /** The slot's single extension point. {@link zeroAddress} when there is none. */
-  hook(slot: Address): Promise<Address> {
-    return this.read<Address>(slot, "hook");
+  module(slot: Address): Promise<Address> {
+    return this.read<Address>(slot, "module");
   }
 
   /**
-   * The hook's subscriptions AS SNAPSHOTTED when it was attached.
+   * The module's scopes AS ACCEPTED by this slot.
    *
-   * Not what the hook's own `hooks()` says today: the snapshot is deliberate, so
-   * a hook cannot widen its reach mid-tenure and start spending an occupant's
+   * Not what the module's own `modules()` says today: the snapshot is deliberate, so
+   * a module cannot widen its reach mid-tenure and start spending an occupant's
    * gas on callbacks they never agreed to.
    */
-  hookFlags(slot: Address): Promise<HookFlags> {
-    return this.read<HookFlags>(slot, "hookFlags");
+  scopes(slot: Address): Promise<Scopes> {
+    return this.read<Scopes>(slot, "scopes");
   }
 
   /**
-   * Terms the manager has queued for the next occupancy transition.
+   * Terms the manager has queued for the next buy.
    *
    * Two reads, not one, and the second is the whole reason: the struct says
-   * WHAT is queued and `hasRipeTerms()` says whether the next transition will
+   * WHAT is queued and `hasRipeTerms()` says whether the next buy will
    * take it. Those were the same fact until `TERMS_DELAY` was wired up, and a
    * caller left to infer the second from `proposedAt` and its own clock is
    * inferring it against the wrong clock.
    */
-  async pending(slot: Address): Promise<PendingTerms> {
-    const [[taxBps, hook, hasTax, hasHook, proposedAt, hookData], applies] =
-      await Promise.all([
-        this.read<readonly [bigint, Address, boolean, boolean, bigint, Hex]>(
-          slot,
-          "pending",
-        ),
-        this.hasRipeTerms(slot),
-      ]);
-    const isEmpty = !hasTax && !hasHook;
-    return {
-      taxBps,
-      hook,
-      hookData,
-      hasTax,
-      hasHook,
-      proposedAt,
-      appliesAt: isEmpty ? 0n : proposedAt + TERMS_DELAY_SECONDS,
-      applies,
-      isEmpty,
-    };
+  async pending(slot: Address): Promise<Pending> {
+    const [p, ripe] = await Promise.all([
+      this.read<PendingResult>(slot, "pending"),
+      this.hasRipeTerms(slot),
+    ]);
+    return toPending(p, ripe);
   }
 
   /** The token this slot is denominated in. {@link zeroAddress} means native ETH. */
@@ -627,13 +832,13 @@ export class SlotsClient {
   }
 
   /** Basis points per 30 days. */
-  taxBps(slot: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "taxBps");
+  taxRateBps(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "taxRateBps");
   }
 
   /** Owed to an address a push payment could not reach. Take it with {@link claim}. */
-  withdrawableOf(slot: Address, account?: Address): Promise<bigint> {
-    return this.read<bigint>(slot, "withdrawableOf", [account ?? this.account]);
+  claimableOf(slot: Address, account?: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "claimableOf", [account ?? this.account]);
   }
 
   /**
@@ -664,84 +869,191 @@ export class SlotsClient {
     return this.read<bigint>(slot, "tenureId");
   }
 
-  /** Everything above, in parallel. */
-  async slotState(slot: Address): Promise<SlotState> {
-    const [
-      occupant,
-      price,
-      deposit,
-      taxOwed,
-      isVacant,
-      isInsolvent,
-      secondsUntilLiquidation,
-      currency,
-      taxBps,
-      minDepositSeconds,
-      recipient,
-      manager,
-      hook,
-      hookData,
-      hookFlags,
-      pending,
-      mutableTax,
-      mutableHook,
-      occupiedSince,
-      lastSettled,
-      collectedTax,
-      tenureId,
-    ] = await Promise.all([
-      this.occupant(slot),
-      this.price(slot),
-      this.deposit(slot),
-      this.taxOwed(slot),
-      this.isVacant(slot),
-      this.isInsolvent(slot),
-      this.secondsUntilLiquidation(slot),
-      this.currency(slot),
-      this.taxBps(slot),
-      this.read<bigint>(slot, "minDepositSeconds"),
-      this.read<Address>(slot, "recipient"),
-      this.read<Address>(slot, "manager"),
-      this.hook(slot),
-      this.read<Hex>(slot, "hookData"),
-      this.hookFlags(slot),
-      this.pending(slot),
-      this.read<boolean>(slot, "mutableTax"),
-      this.read<boolean>(slot, "mutableHook"),
-      this.read<bigint>(slot, "occupiedSince"),
-      this.read<bigint>(slot, "lastSettled"),
-      this.read<bigint>(slot, "collectedTax"),
-      this.tenureId(slot),
-    ]);
+  /** Every term in force: tax terms and module terms. */
+  terms(slot: Address): Promise<SlotTerms> {
+    return this.read<SlotTerms>(slot, "terms");
+  }
 
-    return {
-      occupant,
-      price,
-      deposit,
-      taxOwed,
-      isVacant,
-      isInsolvent,
-      secondsUntilLiquidation,
-      currency,
-      taxBps,
-      minDepositSeconds,
-      recipient,
-      manager,
-      hook,
-      hookData,
-      hookFlags,
-      pending,
-      mutableTax,
-      mutableHook,
-      occupiedSince,
-      lastSettled,
-      collectedTax,
-      tenureId,
-    };
+  /** The module's fee as this slot accepted it. What payouts use. */
+  fee(slot: Address): Promise<ModuleFee> {
+    return this.read<ModuleFee>(slot, "fee");
+  }
+
+  /** Who may propose terms. Zero when nothing about the slot can change. */
+  manager(slot: Address): Promise<Address> {
+    return this.read<Address>(slot, "manager");
+  }
+
+  /** Tax settled into the slot and not yet paid out. */
+  collectedTax(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "collectedTax");
+  }
+
+  /** Unix seconds tax has been settled up to. */
+  lastSettled(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "lastSettled");
+  }
+
+  /** Unix seconds the current tenure began. Zero when vacant. */
+  occupiedSince(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "occupiedSince");
   }
 
   /**
-   * The smallest deposit `minDepositSeconds` requires at `price`.
+   * The escrow floor at `price` under the terms in force: what `selfAssess` and
+   * `withdraw` enforce. {@link minDepositForBuy} uses ripe queued terms instead.
+   */
+  minDepositToHold(slot: Address, price: bigint): Promise<bigint> {
+    return this.read<bigint>(slot, "minDepositToHold", [price]);
+  }
+
+  /** Runway a buyer must fund, in seconds. */
+  minRunwaySeconds(slot: Address): Promise<bigint> {
+    return this.read<bigint>(slot, "minRunwaySeconds");
+  }
+
+  // ─── Modules ──────────────────────────────────────────────────────────────────
+
+  /**
+   * The scopes `module` asks for on a slot configured with `settings`, as it
+   * declares them today. Not what any slot accepted: that is {@link scopes}.
+   */
+  readScopes(module: Address, settings: Hex = NO_SETTINGS): Promise<number> {
+    return this.publicClient.readContract({
+      address: module,
+      abi: minimumTenureModuleAbi,
+      functionName: "scopes",
+      args: [settings],
+    }) as Promise<number>;
+  }
+
+  /**
+   * The fee `module` asks for on a slot configured with `settings`, as it
+   * declares it today. Not what any slot accepted: that is {@link fee}.
+   */
+  readFee(module: Address, settings: Hex = NO_SETTINGS): Promise<ModuleFee> {
+    return this.publicClient.readContract({
+      address: module,
+      abi: minimumTenureModuleAbi,
+      functionName: "fee",
+      args: [settings],
+    }) as Promise<ModuleFee>;
+  }
+
+  /**
+   * Ask `module` whether it accepts `settings`, the same check a slot runs when the
+   * module is proposed or attached. Resolves with the module's reason instead of
+   * throwing, so a form can show it.
+   */
+  async validateSettings(module: Address, settings: Hex): Promise<SettingsCheck> {
+    try {
+      await this.publicClient.readContract({
+        address: module,
+        abi: minimumTenureModuleAbi,
+        functionName: "validateSettings",
+        args: [settings],
+      });
+      return { ok: true };
+    } catch (error) {
+      const short = (error as { shortMessage?: unknown }).shortMessage;
+      return {
+        ok: false,
+        reason:
+          decodedRevert(error) ??
+          (typeof short === "string" ? short : String(error).split("\n")[0]),
+      };
+    }
+  }
+
+  /**
+   * What a module says it is (`IModuleMetadata.metadata`), parsed.
+   *
+   * `null` for a module that does not describe itself, that reverts, or that
+   * answers with something that is not JSON — all of which are legal. The
+   * caller falls back to the scopes, which still say whether the module may
+   * refuse a buy.
+   *
+   * The answer is fixed by the module's code, so it can be cached by address
+   * indefinitely.
+   */
+  async moduleMetadata(module: Address): Promise<ModuleMetadata | null> {
+    try {
+      const raw = await this.publicClient.readContract({
+        address: module,
+        abi: moduleMetadataAbi,
+        functionName: "metadata",
+      });
+      return JSON.parse(raw) as ModuleMetadata;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A slot's module settings, decoded against the schema's `x-abi` — how a
+   * client reads back a configuration it did not write, for any module.
+   *
+   * `null` when the settings are empty or do not decode.
+   */
+  moduleSettings(
+    schema: ModuleSettingsSchema,
+    settings: Hex,
+  ): Record<string, string> | null {
+    if (size(settings) === 0) return null;
+    try {
+      const values = decodeAbiParameters(
+        schema["x-abi"] as readonly AbiParameter[],
+        settings,
+      );
+      return Object.fromEntries(
+        schema["x-abi"].map((p, i) => [p.name, String(values[i])]),
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /** The whole slot, as of one block, in one call. */
+  async slotState(slot: Address): Promise<SlotState> {
+    return toSlotState(await this.readLens<SlotInfoResult>("getSlotInfo", [slot]));
+  }
+
+  /** Several slots, as of one block, in one call. Throws if any is not a slot. */
+  /**
+   * Every constant `slot` runs under, asked of the slot through the lens, so
+   * a beacon upgrade can never leave a client on old numbers.
+   */
+  slotConstants(slot: Address): Promise<SlotConstants> {
+    return this.readLens<SlotConstants>("getSlotConstants", [slot]);
+  }
+
+  /** Whether `slot` was created by this client's factory. */
+  isSlot(slot: Address): Promise<boolean> {
+    return this.publicClient.readContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "isSlot",
+      args: [slot],
+    });
+  }
+
+  /** How many slots this client's factory has created. */
+  slotCount(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.factory,
+      abi: slotFactoryAbi,
+      functionName: "slotCount",
+    });
+  }
+
+  async slotStates(slots: readonly Address[]): Promise<SlotState[]> {
+    if (slots.length === 0) return [];
+    const infos = await this.readLens<readonly SlotInfoResult[]>("getSlotInfos", [slots]);
+    return infos.map(toSlotState);
+  }
+
+  /**
+   * The smallest deposit `minRunwaySeconds` requires at `price`.
    *
    * Local arithmetic, matching `_minDepositFor` including its `ceilDiv` — a
    * short window on a low price rounds DOWN to zero, and rounding down is what
@@ -752,9 +1064,8 @@ export class SlotsClient {
    * slot itself.
    *
    * Prefer this over {@link minDepositFor} anywhere a BUY is being sized.
-   * Entry is an occupancy transition, so `_applyPending` runs before the
-   * funding check — a buyer funds the terms they are buying INTO, not the ones
-   * currently on display. Sizing from `taxBps()` underquotes through
+   * A buy applies queued terms before its funding check — a buyer funds the
+   * terms they are buying INTO, not the ones currently on display. Sizing from `taxRateBps()` underquotes through
    * exactly the window where a tax rise is queued, and the buy then reverts
    * `InvalidDeposit` for reasons nothing on screen explains.
    *
@@ -768,11 +1079,11 @@ export class SlotsClient {
 
   minDepositFor(
     price: bigint,
-    taxBps: bigint,
-    minDepositSeconds: bigint,
+    taxRateBps: bigint,
+    minRunwaySeconds: bigint,
   ): bigint {
-    if (minDepositSeconds === 0n) return 0n;
-    const numerator = price * taxBps * minDepositSeconds;
+    if (minRunwaySeconds === 0n) return 0n;
+    const numerator = price * taxRateBps * minRunwaySeconds;
     const denominator = MONTH_SECONDS * BASIS_POINTS;
     return (numerator + denominator - 1n) / denominator;
   }
@@ -829,15 +1140,15 @@ export class SlotsClient {
    * this is a gas convenience and not an authority.
    *
    * Each collection is isolated on chain. A slot that reverts —
-   * `NothingToCollect` on one already flushed, or a `strict` hook that reverts
+   * `NothingToCollect` on one already flushed, or an `afterCallbacksMustSucceed` module that reverts
    * in `afterSettle` — leaves a zero in the result rather than failing the batch
    * for every other recipient. Addresses the factory did not create are skipped.
    *
    * ── Size it yourself ──────────────────────────────────────────────────────
    *
    * There is no cap here, and that is deliberate: the real limit is the block
-   * gas limit, which differs per chain and per slot — a slot with a `strict`
-   * hook costs far more to settle than a bare one. Call
+   * gas limit, which differs per chain and per slot — a slot with an `afterCallbacksMustSucceed`
+   * module costs far more to settle than a bare one. Call
    * {@link simulateCollectAll} first; it fails the same way the transaction
    * would, for free.
    */
@@ -863,7 +1174,8 @@ export class SlotsClient {
    *
    * Amounts are capped by each slot's deposit rather than being its raw
    * `taxOwed`: an insolvent slot pays what escrow it has and the remainder is
-   * carried as arrears against the occupant, never transferred to the recipient.
+   * carried as debt against the occupant for the rest of their tenure, never
+   * transferred to the recipient.
    */
   async simulateCollectAll(slots: readonly Address[]): Promise<bigint[]> {
     this.assertSomeSlots(slots, "simulateCollectAll");
@@ -941,9 +1253,6 @@ export class SlotsClient {
     if (params.account === zeroAddress)
       throw new SlotsError("buy", "account must not be the zero address");
 
-    // Quoted for the account being SEATED. Arrears live on that account, and
-    // quoting for the payer instead would miss a debt the buy is about to
-    // charge — or invent one the seated account does not owe.
     const amount = await this.quoteBuy(
       params.slot,
       params.account,
@@ -968,7 +1277,7 @@ export class SlotsClient {
   /**
    * Ask the chain what {@link buy} would do, WITHOUT sending it.
    *
-   * A hook's veto is a `view` revert carrying the hook's own error —
+   * A module's veto is a `view` revert carrying the module's own error —
    * `TenureNotElapsed(availableAt)`, not "execution reverted" — and that reason
    * is readable only from a simulation. Sent blind, the same veto arrives as a
    * MINED, reverted transaction whose receipt carries no reason at all, and the
@@ -1049,18 +1358,57 @@ export class SlotsClient {
   /**
    * Evict an occupant whose deposit is empty. Anyone may call.
    *
-   * There is no bounty — the reward is the slot, and claiming it is a second
-   * transaction. Evicting without wanting the slot hands the vacancy to whoever
-   * is watching the mempool.
-   *
-   * An atomic evict-and-take used to live here, through a periphery `SlotTaker`
-   * on native slots and the slot's own `multicall` on ERC-20 ones. Both are
-   * gone: `liquidate()` and `buy(…)` are public, so anyone who wants them in one
-   * transaction can compose them — and on an ERC-20 slot the slot's inherited
-   * `multicall` still does exactly that, without this client's help.
+   * There is no bounty — the reward is the slot. Evicting without taking it
+   * hands the vacancy to whoever is watching the mempool; see
+   * {@link liquidateAndBuy}.
    */
   liquidate(slot: Address): Promise<Hash> {
     return this.write(slot, "liquidate", []);
+  }
+
+  /**
+   * Evict an insolvent occupant and take the slot in one transaction, through
+   * the slot's `multicall`. ERC-20 slots only: `multicall` is not payable, so a
+   * native slot needs `liquidate` then `buy`.
+   *
+   * The vacated slot charges the deposit alone, and that figure is pinned as
+   * `maxPayment`.
+   */
+  async liquidateAndBuy(params: BuyParams): Promise<Hash> {
+    this.assertPositive(params.depositAmount, "depositAmount");
+    this.assertPrice(params.selfAssessedPrice, "selfAssessedPrice");
+    if (params.account === zeroAddress)
+      throw new SlotsError("liquidateAndBuy", "account must not be the zero address");
+
+    const [currency, insolvent] = await Promise.all([
+      this.currency(params.slot),
+      this.isInsolvent(params.slot),
+    ]);
+    if (isNativeCurrency(currency))
+      throw new SlotsError(
+        "liquidateAndBuy",
+        "native slots cannot batch a payable buy; call liquidate, then buy",
+      );
+    if (!insolvent)
+      throw new SlotsError("liquidateAndBuy", "the occupant is not insolvent");
+
+    const amount = params.depositAmount;
+    await this.ensureAllowance(currency, params.slot, amount);
+    return this.write(params.slot, "multicall", [
+      [
+        encodeFunctionData({ abi: slotAbi, functionName: "liquidate" }),
+        encodeFunctionData({
+          abi: slotAbi,
+          functionName: "buy",
+          args: [
+            params.account,
+            params.selfAssessedPrice,
+            params.depositAmount,
+            params.maxPayment ?? amount,
+          ],
+        }),
+      ],
+    ]);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1092,7 +1440,7 @@ export class SlotsClient {
     });
   }
 
-  /** Take back part of your escrow, keeping whatever `minDepositSeconds` requires. */
+  /** Take back part of your escrow, keeping whatever `minRunwaySeconds` requires. */
   async withdraw(slot: Address, amount: bigint): Promise<Hash> {
     this.assertPositive(amount, "amount");
     return this.write(slot, "withdraw", [amount]);
@@ -1112,6 +1460,162 @@ export class SlotsClient {
     allowed: boolean,
   ): Promise<Hash> {
     return this.write(slot, "setOperator", [operator, allowed]);
+  }
+
+  // ─── OfferBook ──────────────────────────────────────────────────────────────
+
+  private bookRead<T>(functionName: string, args: readonly unknown[]) {
+    return this.publicClient.readContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName,
+      args,
+    } as never) as Promise<T>;
+  }
+
+  /**
+   * A slot's live offers, the book's live count and its best funded offer, as
+   * the book itself judges them. Filled, cancelled and expired offers are left
+   * out by the book's own verdict, never recomputed here.
+   */
+  async offerBoard(slot: Address): Promise<OfferBoard> {
+    // Paged, because the board only grows and every entry costs the book four
+    // foreign reads to judge: a few thousand dust bids would put a whole-board
+    // `board()` past the RPC's gas budget for ever. `best` and `liveCount` come
+    // from the same pages rather than two more whole-board calls.
+    const count = await this.bookRead<bigint>("offerCount", [slot]);
+    const pages: Promise<readonly [readonly RawOffer[], readonly boolean[]]>[] = [];
+    for (let start = 0n; start < count; start += BOARD_PAGE) {
+      pages.push(
+        this.bookRead<readonly [readonly RawOffer[], readonly boolean[]]>(
+          "boardPage",
+          [slot, start, BOARD_PAGE],
+        ),
+      );
+    }
+
+    const live: BookOffer[] = [];
+    let id = 0n;
+    for (const [list, isLive] of await Promise.all(pages)) {
+      list.forEach((o, i) => {
+        if (isLive[i] === true) live.push({ ...o, id: id + BigInt(i) });
+      });
+      id += BigInt(list.length);
+    }
+
+    // The book's own rule: the highest price, and the lowest id among equals —
+    // `bestIn` only moves on a strictly higher price.
+    let best: BookOffer | undefined;
+    for (const o of live) if (!best || o.price > best.price) best = o;
+
+    const offers = [...live].sort((a, b) =>
+      b.price > a.price ? 1 : b.price < a.price ? -1 : 0,
+    );
+    return {
+      offers,
+      liveCount: BigInt(live.length),
+      ...(best ? { best } : {}),
+    };
+  }
+
+  /** One offer by id, whatever its state. */
+  async offerAt(slot: Address, id: bigint): Promise<BookOffer> {
+    const o = await this.bookRead<RawOffer>("offerAt", [slot, id]);
+    return { ...o, id };
+  }
+
+  /** Whether the bidder's balance and allowance to the book still cover the offer. */
+  isOfferFundable(slot: Address, id: bigint): Promise<boolean> {
+    return this.bookRead<boolean>("isFundable", [slot, id]);
+  }
+
+  /**
+   * What accepting an offer at `price` and `deposit` would pull from the
+   * bidder: the price and the deposit. The bidder's allowance to the book must
+   * cover it. `slot` and `bidder` are kept for callers written when a bidder's
+   * debt was part of the cost; debt now ends with the tenure.
+   */
+  async offerCost(
+    _slot: Address,
+    _bidder: Address,
+    price: bigint,
+    deposit: bigint,
+  ): Promise<bigint> {
+    return price + deposit;
+  }
+
+  /**
+   * Post or replace the connected account's standing bid on `slot`. Posting
+   * moves nothing; the book pulls payment only when the occupant accepts, so
+   * {@link approveOfferBook} for {@link offerCost} first or the offer is not
+   * fundable. Replacing keeps the same id.
+   */
+  async postOffer(params: PostOfferParams): Promise<Hash> {
+    this.assertPrice(params.price, "price");
+    if (params.deposit < 0n)
+      throw new SlotsError("postOffer", "deposit must not be negative");
+    if (params.expiry <= BigInt(Math.floor(Date.now() / 1000)))
+      throw new SlotsError("postOffer", "expiry must be in the future");
+    return this.wallet.writeContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName: "offer",
+      args: [params.slot, params.price, params.deposit, params.expiry],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /** Withdraw the connected account's offer. Bidder only. */
+  cancelOffer(slot: Address, id: bigint): Promise<Hash> {
+    return this.wallet.writeContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName: "cancel",
+      args: [slot, id],
+      account: this.account,
+      chain: this.chain,
+    });
+  }
+
+  /**
+   * Let the book pull up to `amount` of the slot's currency from the connected
+   * account when an offer is accepted. Waits until the allowance is visible.
+   */
+  async approveOfferBook(slot: Address, amount: bigint): Promise<void> {
+    this.assertPositive(amount, "amount");
+    const currency = await this.currency(slot);
+    if (isNativeCurrency(currency))
+      throw new SlotsError("approveOfferBook", "the OfferBook does not trade native slots");
+    await this.ensureAllowance(currency, this.offerBook, amount);
+  }
+
+  /**
+   * Make the book the occupant's operator, so it can reprice the slot when an
+   * offer is accepted. Lapses when the tenure ends.
+   */
+  authorizeOfferBook(slot: Address): Promise<Hash> {
+    return this.setOperator(slot, this.offerBook, true);
+  }
+
+  /**
+   * Sell the slot to a standing offer on the OfferBook. Occupant only, and the
+   * book must be the occupant's operator ({@link setOperator}).
+   *
+   * `minPrice` is the price the seller reviewed. A bidder edits an offer in
+   * place under the same id, so the fill reverts `PriceBelowMinimum` if the
+   * offer has been lowered since. Pass the offer's price as it was shown.
+   */
+  async acceptOffer(slot: Address, id: bigint, minPrice: bigint): Promise<Hash> {
+    this.assertPositive(minPrice, "minPrice");
+    return this.wallet.writeContract({
+      address: this.offerBook,
+      abi: offerBookAbi,
+      functionName: "acceptOffer",
+      args: [slot, id, minPrice],
+      account: this.account,
+      chain: this.chain,
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1140,67 +1644,109 @@ export class SlotsClient {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Queue a change of terms. It lands at the next occupancy transition, never
-   * immediately — the terms an occupant bought into hold for their whole tenure.
+   * Queue a change of terms. It lands at the next buy, never immediately —
+   * the terms an occupant bought into hold for their whole tenure.
    *
    * Both dimensions travel in one call because they share one deferral and one
-   * apply. Omit a field to leave it alone; pass `hook: zeroAddress` to detach the
-   * hook, which is why presence rather than truthiness decides.
+   * apply. Omit a field to leave it alone; pass `module: zeroAddress` to detach the
+   * module, which is why presence rather than truthiness decides.
    */
   async proposeTerms(slot: Address, params: ProposeTermsParams): Promise<Hash> {
-    const changeTax = params.taxBps !== undefined;
-    const changeHook = params.hook !== undefined;
-    if (!changeTax && !changeHook)
+    const mask =
+      (params.taxRateBps !== undefined ? TERMS.TAX_RATE : 0) |
+      (params.recipient !== undefined ? TERMS.RECIPIENT : 0) |
+      (params.minRunwaySeconds !== undefined ? TERMS.MIN_RUNWAY : 0) |
+      (params.moduleTerms !== undefined ? TERMS.MODULE : 0);
+    if (mask === 0)
       throw new SlotsError(
         "proposeTerms",
-        "nothing to propose — pass taxBps, hook, or both",
+        "nothing to propose — pass taxRateBps, recipient, minRunwaySeconds or moduleTerms",
       );
-    if (changeTax) {
-      const tax = params.taxBps as bigint;
-      if (tax <= 0n || tax > MAX_TAX_BPS)
-        throw new SlotsError(
-          "proposeTerms",
-          `taxBps must be 1..${MAX_TAX_BPS} basis points per 30 days`,
-        );
-    }
-    if (!changeHook && params.hookData !== undefined)
-      throw new SlotsError(
-        "proposeTerms",
-        "hookData travels with hook — name the hook it configures",
-      );
-    return this.write(slot, "proposeTerms", [
-      params.taxBps ?? 0n,
-      params.hook ?? zeroAddress,
-      params.hookData ?? ZERO_HOOK_DATA,
-      changeTax,
-      changeHook,
-    ]);
+    const taxTerms: TaxTerms = {
+      recipient: params.recipient ?? zeroAddress,
+      rateBps: params.taxRateBps ?? 0,
+      minRunwaySeconds: params.minRunwaySeconds ?? 0,
+    };
+    assertTaxTerms(taxTerms, mask, "proposeTerms");
+    const moduleTerms = fullModuleTerms(params.moduleTerms);
+    if (mask & TERMS.MODULE) assertModule(moduleTerms, "proposeTerms");
+    return this.write(slot, "proposeTerms", [taxTerms, moduleTerms, mask]);
   }
 
   /**
-   * Retract queued terms, one dimension at a time. Manager only.
+   * What the attached module declares today, beside what the slot copied, and
+   * whether `acceptFee` / `acceptScopes` would change anything. Never throws
+   * for a module that will not answer: `declared` is `null`.
    *
-   * Two flags rather than an all-or-nothing cancel, mirroring the contract:
-   * the two dimensions are proposed independently and may belong to different
-   * people. A collective splits tax and hook across separate roles, and a
-   * blanket cancel would let the hook manager destroy the tax manager's queued
-   * change as a side effect of retracting their own, with nothing to signal it
-   * happened. Cancelling must not reach further than proposing does.
-   *
-   * Defaults to both, which is the right answer for the single-manager case
-   * and matches what a caller passing nothing plainly means.
+   * Asks the lens, so the answer is the contract's own.
    */
-  async cancelTerms(
-    slot: Address,
-    cancelTax = true,
-    cancelHook = true,
-  ): Promise<Hash> {
-    if (!cancelTax && !cancelHook)
-      throw new SlotsError(
-        "cancelTerms",
-        "nothing to cancel — pass cancelTax, cancelHook, or both",
-      );
-    return this.write(slot, "cancelTerms", [cancelTax, cancelHook]);
+  async moduleUpdate(slot: Address): Promise<ModuleUpdate> {
+    const u = await this.readLens<{
+      currentScopes: number;
+      currentFee: ModuleFee;
+      answered: boolean;
+      declaredScopes: number;
+      declaredFee: ModuleFee;
+      feeDiffers: boolean;
+      scopesDiffer: boolean;
+    }>("moduleUpdate", [slot]);
+    return {
+      current: { scopes: u.currentScopes, fee: u.currentFee },
+      declared: u.answered ? { scopes: u.declaredScopes, fee: u.declaredFee } : null,
+      feeDiffers: u.feeDiffers,
+      scopesDiffer: u.scopesDiffer,
+    };
+  }
+
+  /**
+   * Accept the fee the attached module declares today. Manager only. Applies
+   * at once; tax collected so far is paid out at the old fee first. `expected`
+   * is the fee the manager reviewed: the call reverts `FeeChanged` if the
+   * module declares anything else by then, `NothingToAccept` if it is the
+   * current fee, `NotMutable` for a rise or a new fee recipient on a slot with
+   * a fixed recipient, and `DebtOutstanding` while the occupant owes debt.
+   */
+  async acceptFee(slot: Address, expected: ModuleFee): Promise<Hash> {
+    return this.write(slot, "acceptFee", [expected]);
+  }
+
+  /**
+   * Accept the scopes the attached module declares today. Manager only. They
+   * queue and land at the next buy, only when the slot's module is mutable.
+   * Reverts `ScopesChanged` if the module declares anything else by then, and
+   * `ModuleChangeQueued` while a new module is queued.
+   */
+  async acceptScopes(slot: Address, expected: number): Promise<Hash> {
+    return this.write(slot, "acceptScopes", [expected]);
+  }
+
+  /**
+   * Land ripe queued terms now, without waiting for a buy. The occupant's call
+   * while the slot is held; anyone's once it is vacant. Reverts
+   * `NoPendingTerms` when nothing is ripe and `DebtOutstanding` while the
+   * occupant owes debt — a top-up pays it off first.
+   */
+  async applyTerms(slot: Address): Promise<Hash> {
+    return this.write(slot, "applyTerms", []);
+  }
+
+  /** Hand the slot to another manager, immediately. Manager only. */
+  async setManager(slot: Address, manager: Address): Promise<Hash> {
+    if (manager === zeroAddress)
+      throw new SlotsError("setManager", "manager cannot be zero");
+    return this.write(slot, "setManager", [manager]);
+  }
+
+  /**
+   * Retract queued terms. Manager only.
+   *
+   * Clears whichever of `mask` is queued and leaves the rest, so one party
+   * retracting their change never erases another's. Defaults to everything.
+   */
+  async cancelTerms(slot: Address, mask: number = ALL_TERMS): Promise<Hash> {
+    if (mask === 0)
+      throw new SlotsError("cancelTerms", "nothing to cancel — pass a mask");
+    return this.write(slot, "cancelTerms", [mask]);
   }
 
   /**
@@ -1385,7 +1931,7 @@ export class SlotsClient {
      * transaction looks like it will work.
      *
      * The poll above proves the approve is visible on `publicClient` — the
-     * app's own RPC. The buy that follows is submitted through the WALLET,
+     * module's own RPC. The buy that follows is submitted through the WALLET,
      * and a wallet estimates gas against its own provider: MetaMask's Infura,
      * not ours. Two nodes, two views, and the approve reaches them at
      * different moments.
@@ -1458,4 +2004,95 @@ export class SlotsClient {
 
 export function createSlotsClient(config: SlotsClientConfig): SlotsClient {
   return new SlotsClient(config);
+}
+
+/** `pending()` as viem decodes it. */
+interface PendingResult {
+  taxTerms: TaxTerms;
+  nextModule: InstalledModuleResult;
+  mask: number;
+  proposedAt: bigint;
+}
+
+/** `InstalledModule` as viem decodes it. */
+interface InstalledModuleResult {
+  module: Address;
+  scopes: number;
+  fee: ModuleFee;
+  settings: Hex;
+}
+
+/** `SlotLens.getSlotInfo` as the client hands it out. */
+function toSlotState(i: SlotInfoResult): SlotState {
+  return {
+    occupant: i.occupant,
+    price: i.price,
+    deposit: i.deposit,
+    taxOwed: i.taxOwed,
+    isVacant: i.isVacant,
+    isInsolvent: i.isInsolvent,
+    secondsUntilLiquidation: i.secondsUntilLiquidation,
+    currency: i.currency,
+    taxRateBps: BigInt(i.terms.taxTerms.rateBps),
+    minRunwaySeconds: BigInt(i.terms.taxTerms.minRunwaySeconds),
+    recipient: i.terms.taxTerms.recipient,
+    manager: i.manager,
+    mutableTax: i.mutableTax,
+    mutableRecipient: i.mutableRecipient,
+    mutableModule: i.mutableModule,
+    module: i.terms.moduleTerms.module,
+    settings: i.terms.moduleTerms.settings,
+    scopes: i.scopes,
+    fee: i.fee,
+    pending: toPending(i.pending, i.hasRipeTerms),
+    occupiedSince: i.occupiedSince,
+    lastSettled: i.lastSettled,
+    collectedTax: i.collectedTax,
+    tenureId: i.tenureId,
+  };
+}
+
+/** `SlotLens.getSlotInfo` as viem decodes it. */
+interface SlotInfoResult {
+  currency: Address;
+  manager: Address;
+  mutableTax: boolean;
+  mutableRecipient: boolean;
+  mutableModule: boolean;
+  terms: { taxTerms: TaxTerms; moduleTerms: ModuleTerms };
+  scopes: Scopes;
+  fee: ModuleFee;
+  occupant: Address;
+  price: bigint;
+  deposit: bigint;
+  occupiedSince: bigint;
+  tenureId: bigint;
+  lastSettled: bigint;
+  taxOwed: bigint;
+  collectedTax: bigint;
+  isVacant: boolean;
+  isInsolvent: boolean;
+  secondsUntilLiquidation: bigint;
+  pending: PendingResult;
+  hasRipeTerms: boolean;
+}
+
+function toPending(p: PendingResult, ripe: boolean): Pending {
+  const isEmpty = p.mask === 0;
+  return {
+    taxTerms: p.taxTerms,
+    moduleTerms: { module: p.nextModule.module, settings: p.nextModule.settings },
+    scopes: p.nextModule.scopes,
+    fee: p.nextModule.fee,
+    mask: p.mask,
+    hasTaxRate: (p.mask & TERMS.TAX_RATE) !== 0,
+    hasRecipient: (p.mask & TERMS.RECIPIENT) !== 0,
+    hasMinRunway: (p.mask & TERMS.MIN_RUNWAY) !== 0,
+    hasModule: (p.mask & TERMS.MODULE) !== 0,
+    hasScopes: (p.mask & TERMS.SCOPES) !== 0,
+    proposedAt: p.proposedAt,
+    appliesAt: isEmpty ? 0n : p.proposedAt + TERMS_DELAY_SECONDS,
+    applies: ripe,
+    isEmpty,
+  };
 }

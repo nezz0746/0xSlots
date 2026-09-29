@@ -30,9 +30,7 @@ interface ISuperfluidPool {
     /// @notice Set a member's share. Pool admin only.
     /// @dev Raising total units dilutes every other member, exactly as
     ///      rewriting a split's allocations does.
-    function updateMemberUnits(address memberAddr, uint128 newUnits)
-        external
-        returns (bool);
+    function updateMemberUnits(address memberAddr, uint128 newUnits) external returns (bool);
 
     function getUnits(address memberAddr) external view returns (uint128);
 
@@ -50,10 +48,7 @@ interface ISuperfluidPool {
         returns (int256 claimableBalance, uint256 timestamp);
 
     /// @notice Lifetime total this member has received from the pool.
-    function getTotalAmountReceivedByMember(address memberAddr)
-        external
-        view
-        returns (uint256);
+    function getTotalAmountReceivedByMember(address memberAddr) external view returns (uint256);
 
     function admin() external view returns (address);
 
@@ -74,9 +69,11 @@ interface IGDAv1Forwarder {
         bool distributionFromAnyAddress;
     }
 
-    function createPool(address token, address admin, PoolConfig memory config)
-        external
-        returns (bool success, ISuperfluidPool pool);
+    function createPool(
+        address token,
+        address admin,
+        PoolConfig memory settings
+    ) external returns (bool success, ISuperfluidPool pool);
 
     /// @notice One-off distribution of `requestedAmount` from `from` to `pool`.
     function distribute(
@@ -107,10 +104,11 @@ interface IGDAv1Forwarder {
         uint256 requestedAmount
     ) external view returns (uint256);
 
-    function getFlowDistributionFlowRate(address token, address from, address to)
-        external
-        view
-        returns (int96);
+    function getFlowDistributionFlowRate(
+        address token,
+        address from,
+        address to
+    ) external view returns (int96);
 }
 
 /// @notice A SuperToken. ERC-20 on the surface, with wrap/unwrap underneath.
@@ -129,6 +127,7 @@ interface ISuperToken is IERC20 {
     function upgrade(uint256 amount) external;
 
     /// @notice Wrap the attached native value. Only on native wrappers (ETHx).
+    // forge-lint: disable-next-line(mixed-case-function)
     function upgradeByETH() external payable;
 
     function downgrade(uint256 amount) external;

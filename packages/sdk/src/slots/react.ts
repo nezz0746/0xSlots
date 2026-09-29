@@ -7,20 +7,31 @@ import {
   useWaitForTransactionReceipt,
   useWalletClient,
 } from "wagmi";
-import type { BuyParams, ProposeTermsParams, SlotInit } from "./client";
+import type {
+  BuyParams,
+  ModuleFee,
+  PostOfferParams,
+  ProposeTermsParams,
+  SlotInit,
+} from "./client";
+import { decodedRevert } from "../errors";
+import { ALL_TERMS, TERMS } from "./client";
 import { SlotsClient } from "./client";
+import { CollectivesClient } from "./collectives";
 
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 export interface UseSlotsClientConfig {
   /**
-   * The hook-protocol `SlotFactory`.
+   * The v1 `SlotFactory`.
    *
    * Passed in rather than looked up: there is no address registry for this
-   * factory yet, and a hook that silently resolved the PREVIOUS protocol's
+   * factory yet, and an app that silently resolved the PREVIOUS protocol's
    * factory would deploy the wrong kind of slot without complaining.
    */
   factoryAddress?: Address;
+  /** The `OfferBook`. Defaults to the one deployed on the connected chain. */
+  offerBookAddress?: Address;
   /** Chain override. Defaults to the connected chain. */
   chainId?: number;
 }
@@ -34,6 +45,32 @@ export function useSlotsClient(config: UseSlotsClientConfig = {}): SlotsClient {
     () =>
       new SlotsClient({
         factoryAddress: config.factoryAddress,
+        offerBookAddress: config.offerBookAddress,
+        publicClient: publicClient ?? undefined,
+        walletClient: walletClient ?? undefined,
+      }),
+    [config.factoryAddress, config.offerBookAddress, publicClient, walletClient],
+  );
+}
+
+export interface UseCollectivesClientConfig {
+  /** The `SlotCollectiveFactory`. Defaults to the one deployed on the connected chain. */
+  factoryAddress?: Address;
+  /** Chain override. Defaults to the connected chain. */
+  chainId?: number;
+}
+
+/** A memoized {@link CollectivesClient} built from wagmi's public and wallet clients. */
+export function useCollectivesClient(
+  config: UseCollectivesClientConfig = {},
+): CollectivesClient {
+  const publicClient = usePublicClient({ chainId: config.chainId });
+  const { data: walletClient } = useWalletClient({ chainId: config.chainId });
+
+  return useMemo(
+    () =>
+      new CollectivesClient({
+        factoryAddress: config.factoryAddress,
         publicClient: publicClient ?? undefined,
         walletClient: walletClient ?? undefined,
       }),
@@ -42,31 +79,6 @@ export function useSlotsClient(config: UseSlotsClientConfig = {}): SlotsClient {
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
-
-/**
- * The custom error a revert actually carried, if viem could decode one.
- *
- * viem puts the decoded error on a `ContractFunctionRevertedError` several
- * links down the cause chain, and leaves `shortMessage` at the useless
- * `The contract function "buy" reverted.` — so a hook's `TenureNotElapsed`
- * reads identically to running out of gas unless this is dug out. Walks the
- * chain rather than reaching for a fixed depth, because how deep it sits
- * depends on whether the call was a simulation or a send.
- */
-function decodedRevert(error: unknown): string | undefined {
-  let node = error as Record<string, unknown> | undefined;
-  for (let depth = 0; node && typeof node === "object" && depth < 8; depth++) {
-    const data = node.data as Record<string, unknown> | undefined;
-    if (data && typeof data.errorName === "string") {
-      const args = Array.isArray(data.args) ? data.args : [];
-      return args.length
-        ? `${data.errorName}(${args.map((a) => String(a)).join(", ")})`
-        : data.errorName;
-    }
-    node = node.cause as Record<string, unknown> | undefined;
-  }
-  return undefined;
-}
 
 /**
  * Reverts whose SELECTOR is not the useful part of the answer.
@@ -102,7 +114,7 @@ function extractErrorMessage(error: unknown): string {
   if (decoded) return NAMED_REVERTS[decoded] ?? decoded;
 
   // viem ContractFunctionExecutionError: prefer the shortMessage or reason.
-  // A hook's veto arrives here — `_before` bubbles the hook's own revert reason
+  // A module's veto arrives here — `_before` bubbles the module's own revert reason
   // rather than "call failed", and this is where that pays off.
   const err = error as Record<string, unknown> | undefined;
   if (err && typeof err === "object") {
@@ -236,6 +248,11 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     (slot: Address) => exec("Liquidate", () => client.liquidate(slot)),
     [exec, client],
   );
+  const liquidateAndBuy = useCallback(
+    (params: BuyParams) =>
+      exec("Liquidate and buy", () => client.liquidateAndBuy(params)),
+    [exec, client],
+  );
 
   // ─── Holding ──────────────────────────────────────────────────────────────
 
@@ -302,7 +319,9 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
   const collectAll = useCallback(
     (slots: readonly Address[]) =>
       exec(
-        slots.length === 1 ? "Collect tax" : `Collect tax from ${slots.length} slots`,
+        slots.length === 1
+          ? "Collect tax"
+          : `Collect tax from ${slots.length} slots`,
         () => client.collectAll(slots),
       ),
     [exec, client],
@@ -315,6 +334,47 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
 
   // ─── Manager ──────────────────────────────────────────────────────────────
 
+  const setManager = useCallback(
+    (slot: Address, manager: Address) =>
+      exec("Set manager", () => client.setManager(slot, manager)),
+    [exec, client],
+  );
+
+  const acceptOffer = useCallback(
+    (slot: Address, id: bigint, minPrice: bigint) =>
+      exec("Accept offer", () => client.acceptOffer(slot, id, minPrice)),
+    [exec, client],
+  );
+
+  const postOffer = useCallback(
+    (params: PostOfferParams) => exec("Post offer", () => client.postOffer(params)),
+    [exec, client],
+  );
+
+  const cancelOffer = useCallback(
+    (slot: Address, id: bigint) =>
+      exec("Cancel offer", () => client.cancelOffer(slot, id)),
+    [exec, client],
+  );
+
+  const authorizeOfferBook = useCallback(
+    (slot: Address) =>
+      exec("Authorize offer book", () => client.authorizeOfferBook(slot)),
+    [exec, client],
+  );
+
+  const acceptFee = useCallback(
+    (slot: Address, expected: ModuleFee) =>
+      exec("Accept module fee", () => client.acceptFee(slot, expected)),
+    [exec, client],
+  );
+
+  const acceptScopes = useCallback(
+    (slot: Address, expected: number) =>
+      exec("Accept module scopes", () => client.acceptScopes(slot, expected)),
+    [exec, client],
+  );
+
   const proposeTerms = useCallback(
     (slot: Address, params: ProposeTermsParams) =>
       exec("Propose terms", () => client.proposeTerms(slot, params)),
@@ -325,19 +385,12 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
    *
    * Labelled by dimension rather than one "Cancel proposal" for all three
    * shapes, because the label is what a per-row spinner keys off: a tax row and
-   * a hook row cancelling under one shared label spin together, and the reader
+   * a module row cancelling under one shared label spin together, and the reader
    * cannot tell which retraction is actually in flight.
    */
   const cancelTerms = useCallback(
-    (slot: Address, cancelTax = true, cancelHook = true) =>
-      exec(
-        cancelTax && cancelHook
-          ? "Cancel proposal"
-          : cancelTax
-            ? "Cancel tax update"
-            : "Cancel hook update",
-        () => client.cancelTerms(slot, cancelTax, cancelHook),
-      ),
+    (slot: Address, mask: number = ALL_TERMS) =>
+      exec(cancelLabel(mask), () => client.cancelTerms(slot, mask)),
     [exec, client],
   );
 
@@ -355,6 +408,7 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     buy,
     release,
     liquidate,
+    liquidateAndBuy,
     // Holding
     selfAssess,
     topUp,
@@ -368,7 +422,14 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     // Manager
     proposeTerms,
     cancelTerms,
+    acceptFee,
+    acceptScopes,
+    setManager,
     // Orders
+    postOffer,
+    cancelOffer,
+    authorizeOfferBook,
+    acceptOffer,
     // Escape hatches
     client,
     exec,
@@ -380,4 +441,25 @@ export function useSlotAction(opts: SlotActionCallbacks = {}) {
     isSuccess,
     activeAction,
   };
+}
+
+/**
+ * The label `activeAction` reports for a cancel, so a per-term spinner lands on
+ * the retraction actually in flight.
+ */
+export function cancelLabel(mask: number): string {
+  switch (mask) {
+    case TERMS.TAX_RATE:
+      return "Cancel tax update";
+    case TERMS.RECIPIENT:
+      return "Cancel recipient update";
+    case TERMS.MIN_RUNWAY:
+      return "Cancel minimum deposit update";
+    case TERMS.MODULE:
+      return "Cancel module update";
+    case TERMS.SCOPES:
+      return "Cancel module scopes update";
+    default:
+      return "Cancel proposal";
+  }
 }

@@ -1,4 +1,4 @@
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { getChainTokens } from "@0xslots/sdk";
 import { Clock, Coins, HandCoins, KeyRound, Plug } from "lucide-react";
 import { useFormContext } from "react-hook-form";
@@ -44,14 +44,15 @@ export function SummaryCard({
   const currencyMode = form.watch("currencyMode");
   const presetCurrency = form.watch("presetCurrency");
   const customCurrency = form.watch("customCurrency");
-  const taxBps = form.watch("taxBps");
+  const taxRateBps = form.watch("taxRateBps");
   const minDepositValue = form.watch("minDepositValue");
   const minDepositUnit = form.watch("minDepositUnit");
   const splitRecipients = form.watch("splitRecipients");
-  const hookMode = form.watch("hookMode");
-  const hook = form.watch("hook");
+  const moduleMode = form.watch("moduleMode");
+  const module = form.watch("module");
   const mutableTax = form.watch("mutableTax");
-  const mutableHook = form.watch("mutableHook");
+  const mutableRecipient = form.watch("mutableRecipient");
+  const mutableModule = form.watch("mutableModule");
   const manager = form.watch("manager");
 
   const recipientResolved = useResolveAddress(recipient);
@@ -75,8 +76,8 @@ export function SummaryCard({
         ? erc20.data.name
         : null;
 
-  const knownHook = findKnownHook(chainId, hook as Address);
-  const hasMutable = mutableTax || mutableHook;
+  const knownModule = findKnownModule(chainId, module as Address);
+  const hasMutable = mutableTax || mutableRecipient || mutableModule;
 
   return (
     // `self-stretch` is what makes the `sticky` below actually stick. A sticky
@@ -152,7 +153,7 @@ export function SummaryCard({
               label="Tax Rate"
               icon={<HandCoins className="size-3" />}
             >
-              {taxBps || "0"}% / 30d
+              {taxRateBps || "0"}% / 30d
             </SummaryRow>
 
             {/* Min Deposit */}
@@ -164,18 +165,18 @@ export function SummaryCard({
               {formatValueUnit(minDepositValue || "0", minDepositUnit)}
             </SummaryRow>
 
-            {/* Hook — the address; the row below says what it MEANS. */}
+            {/* Module — the address; the row below says what it MEANS. */}
             <SummaryRow
-              section="hook"
-              label="Hook"
+              section="module"
+              label="Module"
               icon={<Plug className="size-3" />}
             >
               <span className="truncate max-w-32 inline-block align-bottom">
-                {hookMode === "none" || !hook
+                {moduleMode === "none" || !module
                   ? "None"
-                  : (knownHook?.name ??
-                    (isAddress(hook, { strict: false })
-                      ? truncateAddress(hook)
+                  : (knownModule?.name ??
+                    (isAddress(module, { strict: false })
+                      ? truncateAddress(module)
                       : "—"))}
               </span>
             </SummaryRow>
@@ -185,21 +186,23 @@ export function SummaryCard({
             {/* Mutability. Always stated, both ways round: "No manager" is the
                 stronger promise of the two and the one worth reading twice. */}
             <SummaryRow
-              section="permissions"
+              section="scopes"
               label="Mutable"
               icon={<KeyRound className="size-3" />}
             >
               {hasMutable
-                ? mutableTax && mutableHook
-                  ? "Tax + Hook"
-                  : mutableTax
-                    ? "Tax"
-                    : "Hook"
-                : "Nothing — immutable"}
+                ? [
+                    mutableTax && "Tax",
+                    mutableRecipient && "Recipient",
+                    mutableModule && "Module",
+                  ]
+                    .filter(Boolean)
+                    .join(", ")
+                : "Nothing — fixed forever"}
             </SummaryRow>
 
             {hasMutable && (
-              <SummaryRow section="permissions" label="Manager">
+              <SummaryRow section="scopes" label="Manager">
                 <span className="truncate max-w-32 inline-block align-bottom">
                   {isAddress(manager, { strict: false })
                     ? truncateAddress(manager)

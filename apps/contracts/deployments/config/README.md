@@ -5,10 +5,13 @@ script changes.
 
 | Field | Meaning |
 |---|---|
+| `name`, `chainId` | What `pnpm protocol --chain` accepts. |
 | `admin` | Owns every upgrade on this chain. **Must be the same address on every chain** for CREATE2 address parity — see below. |
-| `rpcEnv` | Name of the env var holding the RPC URL. The value never lives here. |
-| `explorerVerify` | Whether the deploy script attempts source verification. |
-| `testnet` | Gates what CI is allowed to do unattended. A mainnet entry is never upgraded by CI. |
+| `splitsWarehouse` | The 0xSplits warehouse collectives are built on. Zero on a testnet means the deploy script deploys one; on a mainnet it is refused. |
+| `rpcEnv` | Name of the env var holding the RPC URL. |
+| `rpcUrl` | Optional public fallback the `protocol` CLI uses when `rpcEnv` is unset. |
+| `explorerVerify` | Whether to attempt source verification. Read by the deploy script, not yet acted on. |
+| `testnet` | Orders chains local → testnets → mainnets, and makes the `protocol` CLI call mainnets out separately before it sends anything. |
 
 ## Why the admin must match across chains
 
@@ -21,5 +24,5 @@ Use one Safe address (or one EOA) everywhere. If a chain genuinely needs a
 different owner, deploy with the shared admin and `transferAdmin` afterwards —
 that changes who controls it without moving the address.
 
-The mainnet entries ship with a zero admin on purpose: the deploy refuses it,
-so nobody deploys to mainnet with a placeholder by accident.
+A zero `admin` is refused before anything is sent, so a placeholder config
+cannot be deployed by accident.

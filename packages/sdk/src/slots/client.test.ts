@@ -2,21 +2,37 @@ import { slotAbi } from "@0xslots/contracts/slots";
 import { encodeFunctionData } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { NATIVE_CURRENCY_ADDRESS } from "../native";
+import { decodeFunctionData } from "viem";
 import {
+  ALL_TERMS,
   assertSlotInit,
+  NO_MODULE,
+  SCOPE_BITS,
+  TERMS,
   type SlotInit,
   SlotsClient,
-  ZERO_HOOK_DATA,
+  unpackScopes,
+  packScopes,
+  NO_SETTINGS,
 } from "./client";
+
+const TAX_TERMS_NONE = {
+  recipient: "0x0000000000000000000000000000000000000000" as const,
+  rateBps: 0,
+  minRunwaySeconds: 0,
+};
 
 const SLOT = "0x1111111111111111111111111111111111111111" as const;
 const ACCOUNT = "0x2222222222222222222222222222222222222222" as const;
 const ERC20 = "0x3333333333333333333333333333333333333333" as const;
-const HOOK = "0x4444444444444444444444444444444444444444" as const;
+const MODULE = "0x4444444444444444444444444444444444444444" as const;
+const ID = "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
 const FACTORY = "0x5555555555555555555555555555555555555555" as const;
 const MANAGER = "0x6666666666666666666666666666666666666666" as const;
 const TAKER = "0x9999999999999999999999999999999999999999" as const;
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
+const OFFER_BOOK = "0x8888888888888888888888888888888888888888" as const;
+const LENS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
 
 const CHAIN_ID = 8453;
 
@@ -66,6 +82,8 @@ function harness(
 
   const client = new SlotsClient({
     factoryAddress: FACTORY,
+    offerBookAddress: OFFER_BOOK,
+    lensAddress: LENS,
     // Evict-and-take is periphery now. Wired here so every test exercises the
     // real routing rather than a client that quietly has nowhere to send it.
     publicClient: {
@@ -87,7 +105,7 @@ function harness(
 /**
  * A client whose WALLET answers `eth_call` from a node of its own.
  *
- * The whole point of the seam under test: `publicClient` is the app's RPC and
+ * The whole point of the seam under test: `publicClient` is the module's RPC and
  * `walletClient` is the user's, and the approve reaches them at different
  * moments. `walletAllowanceSeq` is what the wallet's node reports on each
  * successive read — `[0n, 0n, AMOUNT]` is a node two polls behind.
@@ -382,7 +400,7 @@ describe("native ETH slots", () => {
       (c: any[]) => c[0].functionName === "quoteBuy",
     )![0];
     // Account FIRST, mirroring the contract. `quoteBuy` carries the seated
-    // account's arrears now, so quoting for anyone else answers a different
+    // account's debt now, so quoting for anyone else answers a different
     // question — and on a native slot, where msg.value is checked for
     // EQUALITY, answering it means the buy reverts.
     expect(quote.args).toEqual([ACCOUNT, 5n * 10n ** 17n]);
@@ -405,7 +423,7 @@ describe("native ETH slots", () => {
     const quote = readContract.mock.calls.find(
       (c: any[]) => c[0].functionName === "quoteBuy",
     )![0];
-    // The connected wallet pays; `seated` occupies and owes any arrears. A
+    // The connected wallet pays; `seated` occupies and owes any debt. A
     // client quoting `this.account` here under-quotes a debtor's re-entry and
     // invents a debt for a payer who owes nothing.
     expect(quote.args[0]).toBe(seated);
@@ -500,46 +518,54 @@ describe("ERC-20 slots", () => {
 });
 
 describe("manager terms", () => {
-  it("proposeTerms flags only the dimensions given", async () => {
+  const TAX0 = { recipient: ZERO, rateBps: 0, minRunwaySeconds: 0 };
+
+  it("proposeTerms masks only the terms given", async () => {
     const { client, writeContract } = harness({});
 
-    await client.proposeTerms(SLOT, { taxBps: 250n });
+    await client.proposeTerms(SLOT, { taxRateBps: 250 });
 
     expect(sent(writeContract, "proposeTerms").args).toEqual([
-      250n,
-      ZERO,
-      ZERO_HOOK_DATA,
-      true,
-      false,
+      { ...TAX0, rateBps: 250 },
+      NO_MODULE,
+      TERMS.TAX_RATE,
     ]);
   });
 
-  it("proposeTerms treats a zero-address hook as DETACH, not as absent", async () => {
+  it("proposeTerms treats a zero-address module as DETACH, not as absent", async () => {
     const { client, writeContract } = harness({});
 
-    await client.proposeTerms(SLOT, { hook: ZERO });
+    await client.proposeTerms(SLOT, { moduleTerms: NO_MODULE });
 
-    // Presence decides, never truthiness. A `if (params.hook)` check would drop
-    // the one intention that is spelled with a zero address.
+    // Presence decides, never truthiness.
     expect(sent(writeContract, "proposeTerms").args).toEqual([
-      0n,
-      ZERO,
-      ZERO_HOOK_DATA,
-      false,
-      true,
+      TAX0,
+      NO_MODULE,
+      TERMS.MODULE,
     ]);
   });
 
-  it("proposeTerms sends both when both are given", async () => {
+  it("proposeTerms combines terms into one mask", async () => {
     const { client, writeContract } = harness({});
-    await client.proposeTerms(SLOT, { taxBps: 100n, hook: HOOK });
+    await client.proposeTerms(SLOT, {
+      taxRateBps: 100,
+      recipient: MANAGER,
+      moduleTerms: { module: MODULE },
+    });
     expect(sent(writeContract, "proposeTerms").args).toEqual([
-      100n,
-      HOOK,
-      ZERO_HOOK_DATA,
-      true,
-      true,
+      { recipient: MANAGER, rateBps: 100, minRunwaySeconds: 0 },
+      { module: MODULE, settings: NO_SETTINGS },
+      TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.MODULE,
     ]);
+  });
+
+  it("module data without a module is refused before it costs gas", async () => {
+    const { client } = harness({});
+    await expect(
+      client.proposeTerms(SLOT, {
+        moduleTerms: { module: ZERO, settings: `0x${"1".padStart(64, "0")}` },
+      }),
+    ).rejects.toThrow(/need a module/);
   });
 
   it("proposeTerms refuses an empty proposal rather than reverting on-chain", async () => {
@@ -553,97 +579,99 @@ describe("manager terms", () => {
 
 describe("creation", () => {
   const base: SlotInit = {
-    recipient: ACCOUNT,
     currency: ERC20,
     manager: ZERO,
-    hook: ZERO,
-    taxBps: 500n,
-    minDepositSeconds: 86_400n,
     mutableTax: false,
-    mutableHook: false,
+    mutableRecipient: false,
+    mutableModule: false,
+    taxTerms: { recipient: ACCOUNT, rateBps: 500, minRunwaySeconds: 86_400 },
   };
 
-  it("createSlot sends the nine-field tuple to the factory", async () => {
+  it("createSlot sends the full tuple to the factory", async () => {
     const { client, writeContract } = harness({});
 
-    await client.createSlot({ ...base, hook: HOOK });
+    await client.createSlot({ ...base, moduleTerms: { module: MODULE } });
 
     const call = sent(writeContract, "createSlot");
     expect(call.address).toBe(FACTORY);
     expect(call.args[0]).toEqual({
       ...base,
-      hook: HOOK,
-      // Supplied by `encodeSlotInit`, not by the caller — viem encodes a struct
-      // BY NAME, so a missing key would silently encode a zero.
-      hookData: ZERO_HOOK_DATA,
+      // Filled by `encodeSlotInit`: viem encodes a struct BY NAME, so a missing
+      // key would silently encode a zero.
+      moduleTerms: { module: MODULE, settings: NO_SETTINGS },
     });
   });
 
-  it("a mutable slot without a manager is refused before it costs gas", async () => {
-    // `initialize` reverts on this, and the revert names no field.
+  it("a mutable slot without a manager is refused before it costs gas", () => {
     expect(() => assertSlotInit({ ...base, mutableTax: true })).toThrow(
       /needs a manager/i,
     );
   });
 
-  it("an immutable slot WITH a manager is refused too", async () => {
-    // The symmetric half, and the surprising one: immutability is a fact about
-    // the slot, not a promise about somebody's restraint, so a manager on an
-    // all-immutable slot is rejected rather than left there looking
-    // authoritative.
+  it("an immutable slot WITH a manager is refused too", () => {
     expect(() => assertSlotInit({ ...base, manager: MANAGER })).toThrow(
       /must have no manager/i,
     );
   });
 
   it("a zero tax is refused — nobody could ever be liquidated off it", () => {
-    expect(() => assertSlotInit({ ...base, taxBps: 0n })).toThrow(/taxBps/i);
-    expect(() => assertSlotInit({ ...base, taxBps: 10_001n })).toThrow(
-      /taxBps/i,
-    );
+    expect(() =>
+      assertSlotInit({ ...base, taxTerms: { ...base.taxTerms, rateBps: 0 } }),
+    ).toThrow(/rateBps/i);
+    expect(() =>
+      assertSlotInit({ ...base, taxTerms: { ...base.taxTerms, rateBps: 10_001 } }),
+    ).toThrow(/rateBps/i);
   });
 });
 
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pending: [0n, ZERO, false, false, 0n],
+      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS }, mask: 0, proposedAt: 0n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
     expect(pending.isEmpty).toBe(true);
-    expect(pending.hook).toBe(ZERO);
+    expect(pending.hasModule).toBe(false);
     expect(pending.applies).toBe(false);
     // Nothing queued has no ripening date to show.
     expect(pending.appliesAt).toBe(0n);
   });
 
-  it("pending unpacks a queued hook change", async () => {
+  it("pending unpacks a queued module change", async () => {
+    const module = { ...NO_MODULE, module: MODULE };
     const { client } = harness({
-      pending: [0n, HOOK, false, true, 1234n],
+      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { ...module, scopes: 0, fee: { bps: 0, recipient: ZERO } }, mask: TERMS.MODULE, proposedAt: 1234n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
     expect(pending).toEqual({
-      taxBps: 0n,
-      hook: HOOK,
-      hasTax: false,
-      hasHook: true,
+      taxTerms: TAX_TERMS_NONE,
+      moduleTerms: module,
+      scopes: 0,
+      fee: { bps: 0, recipient: ZERO },
+      mask: TERMS.MODULE,
+      hasTaxRate: false,
+      hasRecipient: false,
+      hasMinRunway: false,
+      hasModule: true,
+      hasScopes: false,
       proposedAt: 1234n,
-      // proposedAt + TERMS_DELAY (1 day).
-      appliesAt: 1234n + 86_400n,
+      // proposedAt + TERMS_DELAY (1 hour).
+      appliesAt: 1234n + 3_600n,
       applies: false,
       isEmpty: false,
     });
   });
 
   it("pending asks the CHAIN whether the queued terms are ripe", async () => {
-    // `TERMS_DELAY` split two facts that used to be one: what is queued, and
-    // whether the next transition will take it. A client inferring the second
-    // from `proposedAt` infers it against the browser's clock, which is not the
-    // clock `_applyPending` reads.
     const { client, readContract } = harness({
-      pending: [500n, ZERO, true, false, 1234n],
+      pending: {
+        taxTerms: { ...TAX_TERMS_NONE, rateBps: 500 },
+        nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+        mask: TERMS.TAX_RATE,
+        proposedAt: 1234n,
+      },
       hasRipeTerms: true,
     });
 
@@ -651,31 +679,86 @@ describe("reads", () => {
     expect(pending.applies).toBe(true);
     expect(
       readContract.mock.calls.map((c: any[]) => c[0].functionName),
-    ).toContain("hasRipeTerms");
+    ).toEqual(expect.arrayContaining(["pending", "hasRipeTerms"]));
   });
 
-  it("arrearsOf is asked per account", async () => {
-    const { client, readContract } = harness({ arrearsOf: 42n });
-    expect(await client.arrearsOf(SLOT, MANAGER)).toBe(42n);
+  it("debtOf is asked per account", async () => {
+    const { client, readContract } = harness({ debtOf: 42n });
+    expect(await client.debtOf(SLOT, MANAGER)).toBe(42n);
     const read = readContract.mock.calls.find(
-      (c: any[]) => c[0].functionName === "arrearsOf",
+      (c: any[]) => c[0].functionName === "debtOf",
     )![0];
     // The debt follows the ACCOUNT, not the seat.
     expect(read.args).toEqual([MANAGER]);
   });
 
-  it("hookFlags passes the snapshotted struct through", async () => {
-    const flags = {
+  it("scopes passes the accepted struct through", async () => {
+    const scopes = {
       beforeBuy: true,
       beforeSelfAssess: true,
       afterBuy: false,
       afterRelease: false,
       afterLiquidate: false,
       afterSettle: false,
-      strict: false,
+      afterCallbacksMustSucceed: false,
     };
-    const { client } = harness({ hookFlags: flags });
-    expect(await client.hookFlags(SLOT)).toEqual(flags);
+    const { client } = harness({ scopes: scopes });
+    expect(await client.scopes(SLOT)).toEqual(scopes);
+  });
+
+  it("moduleUpdate takes the lens's answer", async () => {
+    const { client, readContract } = harness(
+      {
+        moduleUpdate: {
+          currentScopes: SCOPE_BITS.afterSettle,
+          currentFee: { bps: 100, recipient: MODULE },
+          answered: true,
+          declaredScopes: SCOPE_BITS.afterSettle,
+          declaredFee: { bps: 200, recipient: MODULE },
+          feeDiffers: false, // a rise the slot's fixed recipient refuses
+          scopesDiffer: false,
+        },
+      },
+    );
+    expect(await client.moduleUpdate(SLOT)).toEqual({
+      current: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 100, recipient: MODULE } },
+      declared: { scopes: SCOPE_BITS.afterSettle, fee: { bps: 200, recipient: MODULE } },
+      feeDiffers: false,
+      scopesDiffer: false,
+    });
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
+      address: LENS,
+      functionName: "moduleUpdate",
+      args: [SLOT],
+    });
+  });
+
+  it("acceptFee and acceptScopes send what the manager reviewed", async () => {
+    const { client, writeContract } = harness({});
+    const fee = { bps: 100, recipient: MODULE };
+    await client.acceptFee(SLOT, fee);
+    expect(sent(writeContract, "acceptFee").args).toEqual([fee]);
+    await client.acceptScopes(SLOT, SCOPE_BITS.afterBuy);
+    expect(sent(writeContract, "acceptScopes").args).toEqual([SCOPE_BITS.afterBuy]);
+  });
+
+  it("packScopes undoes unpackScopes", () => {
+    const bits = SCOPE_BITS.beforeBuy | SCOPE_BITS.onInstall | SCOPE_BITS.afterCallbacksMustSucceed;
+    expect(packScopes(unpackScopes(bits))).toBe(bits);
+  });
+
+  it("unpackScopes follows ScopesLib's bit order", () => {
+    expect(unpackScopes(SCOPE_BITS.beforeBuy | SCOPE_BITS.afterCallbacksMustSucceed)).toEqual({
+      beforeBuy: true,
+      beforeSelfAssess: false,
+      afterBuy: false,
+      afterRelease: false,
+      afterLiquidate: false,
+      afterSettle: false,
+      onInstall: false,
+      onUninstall: false,
+      afterCallbacksMustSucceed: true,
+    });
   });
 
   it("minDepositFor rounds UP, matching _minDepositFor's ceilDiv", () => {
@@ -796,41 +879,104 @@ describe("operator approvals belong to a tenure, not to an address", () => {
   });
 
   it("slotState carries tenureId, so a cache can be keyed on it", async () => {
-    const { client } = harness({
-      occupant: ACCOUNT,
-      price: 1n,
-      deposit: 1n,
-      taxOwed: 0n,
-      isVacant: false,
-      isInsolvent: false,
-      secondsUntilLiquidation: 10n,
-      currency: ERC20,
-      taxBps: 250n,
-      minDepositSeconds: 0n,
-      recipient: ACCOUNT,
-      manager: ZERO,
-      hook: ZERO,
-      hookData: ZERO_HOOK_DATA,
-      hookFlags: {
-        beforeBuy: false,
-        beforeSelfAssess: false,
-        afterBuy: false,
-        afterRelease: false,
-        afterLiquidate: false,
-        afterSettle: false,
-        strict: false,
+    const { client, readContract } = harness({
+      getSlotInfo: {
+        currency: ERC20,
+        manager: ZERO,
+        mutableTax: false,
+        mutableRecipient: false,
+        mutableModule: false,
+        terms: {
+          taxTerms: { recipient: ACCOUNT, rateBps: 250, minRunwaySeconds: 0 },
+          moduleTerms: NO_MODULE,
+        },
+        scopes: {
+          beforeBuy: false,
+          beforeSelfAssess: false,
+          afterBuy: false,
+          afterRelease: false,
+          afterLiquidate: false,
+          afterSettle: false,
+          afterCallbacksMustSucceed: false,
+        },
+        occupant: ACCOUNT,
+        price: 1n,
+        deposit: 1n,
+        occupiedSince: 1700000000n,
+        tenureId: 12n,
+        lastSettled: 1700000000n,
+        taxOwed: 0n,
+        collectedTax: 0n,
+        isVacant: false,
+        isInsolvent: false,
+        secondsUntilLiquidation: 10n,
+        fee: { bps: 0, recipient: ZERO },
+        pending: {
+          taxTerms: TAX_TERMS_NONE,
+          nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+          mask: 0,
+          proposedAt: 0n,
+        },
+        hasRipeTerms: false,
       },
-      pending: [0n, ZERO, false, false, 0n],
-      hasRipeTerms: false,
-      mutableTax: false,
-      mutableHook: false,
-      occupiedSince: 1700000000n,
-      lastSettled: 1700000000n,
-      collectedTax: 0n,
-      tenureId: 12n,
     });
 
-    expect((await client.slotState(SLOT)).tenureId).toBe(12n);
+    const state = await client.slotState(SLOT);
+    expect(state.tenureId).toBe(12n);
+    expect(state.taxRateBps).toBe(250n);
+    expect(state.pending.isEmpty).toBe(true);
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({
+      address: LENS,
+      functionName: "getSlotInfo",
+      args: [SLOT],
+    });
+  });
+
+  it("slotStates reads many slots in one lens call", async () => {
+    const { client: one, readContract: single } = harness({});
+    expect(await one.slotStates([])).toEqual([]);
+    expect(single).not.toHaveBeenCalled();
+
+    const info = (tenureId: bigint) => ({
+      currency: ERC20,
+      manager: ZERO,
+      mutableTax: false,
+      mutableRecipient: false,
+      mutableModule: false,
+      terms: {
+        taxTerms: { recipient: ACCOUNT, rateBps: 250, minRunwaySeconds: 0 },
+        moduleTerms: NO_MODULE,
+      },
+      scopes: unpackScopes(0),
+      occupant: ZERO,
+      price: 0n,
+      deposit: 0n,
+      occupiedSince: 0n,
+      tenureId,
+      lastSettled: 0n,
+      taxOwed: 0n,
+      collectedTax: 0n,
+      isVacant: true,
+      isInsolvent: false,
+      secondsUntilLiquidation: 0n,
+      fee: { bps: 0, recipient: ZERO },
+      pending: {
+        taxTerms: TAX_TERMS_NONE,
+        nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+        mask: 0,
+        proposedAt: 0n,
+      },
+      hasRipeTerms: false,
+    });
+    const { client, readContract } = harness({ getSlotInfos: [info(1n), info(2n)] });
+    const states = await client.slotStates([SLOT, SLOT_B]);
+    expect(states.map((s) => s.tenureId)).toEqual([1n, 2n]);
+    expect(readContract).toHaveBeenCalledTimes(1);
+    expect(readContract.mock.calls[0]![0]).toMatchObject({
+      address: LENS,
+      functionName: "getSlotInfos",
+      args: [[SLOT, SLOT_B]],
+    });
   });
 });
 
@@ -902,27 +1048,25 @@ describe("manageTerms batches a reprice with a deposit move", () => {
 });
 
 /**
- * Cancelling is PER-DIMENSION on chain — `cancelTerms(bool,bool)`. The SDK
- * used to send no arguments at all, which cannot even encode. Pinned because
- * the two dimensions may belong to different people and a blanket cancel would
- * let one manager destroy the other's queued change silently.
+ * Cancelling takes a mask and clears only those terms, so one role retracting
+ * its change never erases another's.
  */
-describe("cancelTerms is per-dimension", () => {
-  it("sends both flags by default", async () => {
+describe("cancelTerms takes a mask", () => {
+  it("cancels everything by default", async () => {
     const { client, writeContract } = harness({});
     await client.cancelTerms(SLOT);
-    expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([true, true]);
+    expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([ALL_TERMS]);
   });
 
-  it("cancels the tax alone without touching the hook", async () => {
+  it("cancels one term alone", async () => {
     const { client, writeContract } = harness({});
-    await client.cancelTerms(SLOT, true, false);
-    expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([true, false]);
+    await client.cancelTerms(SLOT, TERMS.TAX_RATE);
+    expect(writeContract.mock.calls.at(-1)?.[0].args).toEqual([TERMS.TAX_RATE]);
   });
 
   it("refuses to cancel nothing", async () => {
     const { client } = harness({});
-    await expect(client.cancelTerms(SLOT, false, false)).rejects.toThrow(
+    await expect(client.cancelTerms(SLOT, 0)).rejects.toThrow(
       /nothing to cancel/,
     );
   });
@@ -991,5 +1135,248 @@ describe("simulateBuy — the balance guard", () => {
         selfAssessedPrice: 990n,
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("acceptOffer", () => {
+  const BOOK = "0x7777777777777777777777777777777777777777" as const;
+
+  function bookClient() {
+    const writeContract = vi.fn(async () => "0xhash");
+    const client = new SlotsClient({
+      offerBookAddress: BOOK,
+      walletClient: {
+        writeContract,
+        account: { address: ACCOUNT },
+        chain: { id: CHAIN_ID },
+      } as any,
+    });
+    return { client, writeContract };
+  }
+
+  it("sends the fill to the book with the seller's minimum price", async () => {
+    const { client, writeContract } = bookClient();
+    await client.acceptOffer(SLOT, 3n, 90n);
+    const call = (writeContract.mock.calls.at(-1) as any[])[0];
+    expect(call.address).toBe(BOOK);
+    expect(call.functionName).toBe("acceptOffer");
+    expect(call.args).toEqual([SLOT, 3n, 90n]);
+  });
+
+  it("refuses an unpinned price rather than accepting any repricing", async () => {
+    const { client, writeContract } = bookClient();
+    await expect(client.acceptOffer(SLOT, 3n, 0n)).rejects.toThrow(/minPrice/);
+    expect(writeContract).not.toHaveBeenCalled();
+  });
+});
+
+describe("offer book", () => {
+  const raw = (bidder: string, price: bigint) => ({
+    bidder,
+    price,
+    deposit: 10n,
+    expiry: 9_999_999_999n,
+    cancelled: false,
+    filled: false,
+  });
+
+  it("offerBoard keeps the book's live verdict and sorts by price", async () => {
+    const { client, readContract } = harness({
+      offerCount: 3n,
+      boardPage: [[raw(ACCOUNT, 50n), raw(MANAGER, 90n), raw(TAKER, 70n)], [true, true, false]],
+    });
+    const board = await client.offerBoard(SLOT);
+    expect(board.offers.map((o) => o.id)).toEqual([1n, 0n]);
+    expect(board.liveCount).toBe(2n);
+    expect(board.best).toMatchObject({ id: 1n, bidder: MANAGER, price: 90n });
+    expect(readContract.mock.calls.every((c: any[]) => c[0].address === OFFER_BOOK)).toBe(true);
+  });
+
+  it("offerBoard has no best when the book found none", async () => {
+    const { client } = harness({ offerCount: 0n });
+    expect((await client.offerBoard(SLOT)).best).toBeUndefined();
+  });
+
+  it("offerBoard pages a long board and keeps ids across pages", async () => {
+    const { client, readContract } = harness({});
+    // 450 entries: pages of 200, 200 and 50. Only two are live — one on the
+    // first page, the best on the last — so a board read in one call would
+    // be the only way to find it if the SDK did not page.
+    readContract.mockImplementation(async ({ functionName, args }: any) => {
+      if (functionName === "offerCount") return 450n;
+      if (functionName !== "boardPage") throw new Error(`unexpected read: ${functionName}`);
+      const [, start, count] = args as [unknown, bigint, bigint];
+      const n = Math.min(Number(count), 450 - Number(start));
+      const list = Array.from({ length: n }, (_, i) => raw(ACCOUNT, BigInt(Number(start) + i + 1)));
+      const live = list.map((_, i) => {
+        const id = Number(start) + i;
+        return id === 7 || id === 440;
+      });
+      return [list, live];
+    });
+
+    const board = await client.offerBoard(SLOT);
+    expect(board.liveCount).toBe(2n);
+    expect(board.offers.map((o) => o.id)).toEqual([440n, 7n]);
+    expect(board.best).toMatchObject({ id: 440n, price: 441n });
+    const pages = readContract.mock.calls.filter((c: any[]) => c[0].functionName === "boardPage");
+    expect(pages.map((c: any[]) => c[0].args[1])).toEqual([0n, 200n, 400n]);
+  });
+
+  it("postOffer sends to the book and refuses a past expiry", async () => {
+    const { client, writeContract } = harness({});
+    await client.postOffer({ slot: SLOT, price: 100n, deposit: 5n, expiry: 9_999_999_999n });
+    expect(sent(writeContract, "offer")).toMatchObject({
+      address: OFFER_BOOK,
+      args: [SLOT, 100n, 5n, 9_999_999_999n],
+    });
+    await expect(
+      client.postOffer({ slot: SLOT, price: 100n, deposit: 5n, expiry: 1n }),
+    ).rejects.toThrow(/expiry/);
+  });
+
+  it("offerCost is the price plus the deposit: debt ends with the tenure", async () => {
+    const { client } = harness({});
+    expect(await client.offerCost(SLOT, ACCOUNT, 100n, 5n)).toBe(105n);
+  });
+
+  it("authorizeOfferBook makes the book the occupant's operator", async () => {
+    const { client, writeContract } = harness({});
+    await client.authorizeOfferBook(SLOT);
+    expect(sent(writeContract, "setOperator")).toMatchObject({
+      address: SLOT,
+      args: [OFFER_BOOK, true],
+    });
+  });
+
+  it("approveOfferBook approves the book, not the slot", async () => {
+    const { client, writeContract } = harness({ currency: ERC20, allowance: 0n });
+    await client.approveOfferBook(SLOT, 100n);
+    expect(sent(writeContract, "approve")).toMatchObject({ address: ERC20, args: [OFFER_BOOK, 100n] });
+  });
+});
+
+describe("module reads", () => {
+  it("validateSettings resolves ok when the module accepts", async () => {
+    const { client } = harness({ validateSettings: undefined });
+    expect(await client.validateSettings(MODULE, NO_SETTINGS)).toEqual({ ok: true });
+  });
+
+  it("validateSettings resolves with the reason when the module refuses", async () => {
+    const { client } = harness({});
+    const check = await client.validateSettings(MODULE, NO_SETTINGS);
+    expect(check.ok).toBe(false);
+  });
+
+  it("moduleMetadata is null for a module that does not describe itself", async () => {
+    const { client } = harness({});
+    expect(await client.moduleMetadata(MODULE)).toBeNull();
+  });
+
+  it("moduleMetadata parses what the module answered", async () => {
+    const definition = {
+      version: 1,
+      title: "Minimum tenure",
+      description: "…",
+      settings: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        title: "Minimum tenure",
+        type: "object",
+        properties: { window: { type: "string", "x-maximum": "31536000" } },
+        required: ["window"],
+        "x-abi": [{ name: "window", type: "uint256" }],
+      },
+    };
+    const { client } = harness({ metadata: JSON.stringify(definition) });
+    expect(await client.moduleMetadata(MODULE)).toEqual(definition);
+  });
+
+  it("moduleMetadata is null when the module answers something that is not JSON", async () => {
+    const { client } = harness({ metadata: "not json" });
+    expect(await client.moduleMetadata(MODULE)).toBeNull();
+  });
+
+  it("moduleSettings decodes the slot's settings against x-abi", () => {
+    const { client } = harness({});
+    const schema = { "x-abi": [{ name: "window", type: "uint256" }] } as never;
+    expect(
+      client.moduleSettings(schema, `0x${(604800).toString(16).padStart(64, "0")}`),
+    ).toEqual({ window: "604800" });
+  });
+
+  it("moduleSettings is null for empty settings", () => {
+    const { client } = harness({});
+    const schema = { "x-abi": [{ name: "window", type: "uint256" }] } as never;
+    expect(client.moduleSettings(schema, NO_SETTINGS)).toBeNull();
+  });
+
+  it("readScopes and readFee ask the module about its settings", async () => {
+    const fee = { bps: 0, recipient: ZERO };
+    const { client, readContract } = harness({ scopes: 4, fee });
+    expect(await client.readScopes(MODULE, NO_SETTINGS)).toBe(4);
+    expect(await client.readFee(MODULE, NO_SETTINGS)).toEqual(fee);
+    const call = readContract.mock.calls.at(-1)![0];
+    expect(call.address).toBe(MODULE);
+    expect(call.functionName).toBe("fee");
+    expect(call.args).toEqual([NO_SETTINGS]);
+  });
+});
+
+describe("liquidateAndBuy", () => {
+  const params = {
+    slot: SLOT,
+    account: TAKER,
+    depositAmount: 100n,
+    selfAssessedPrice: 1_000n,
+  };
+
+  it("batches liquidate and buy, pinning the deposit", async () => {
+    const { client, writeContract } = harness({
+      currency: ERC20,
+      isInsolvent: true,
+      allowance: 10n ** 30n,
+    });
+    await client.liquidateAndBuy(params);
+    const call = sent(writeContract, "multicall");
+    expect(call.address).toBe(SLOT);
+    const [liq, buy] = call.args[0].map((data: `0x${string}`) =>
+      decodeFunctionData({ abi: slotAbi, data }),
+    );
+    expect(liq.functionName).toBe("liquidate");
+    expect(buy.functionName).toBe("buy");
+    expect(buy.args).toEqual([TAKER, 1_000n, 100n, 100n]);
+  });
+
+  it("refuses a native slot, whose buy cannot ride a multicall", async () => {
+    const { client, writeContract } = harness({ currency: ZERO, isInsolvent: true });
+    await expect(client.liquidateAndBuy(params)).rejects.toThrow(/native/);
+    expect(writeContract).not.toHaveBeenCalled();
+  });
+
+  it("refuses a solvent occupant before sending", async () => {
+    const { client } = harness({ currency: ERC20, isInsolvent: false });
+    await expect(client.liquidateAndBuy(params)).rejects.toThrow(/not insolvent/);
+  });
+});
+
+describe("the rest of the slot, lens and factory surface", () => {
+  it("applyTerms lands ripe terms on the slot", async () => {
+    const { client, writeContract } = harness({});
+    await client.applyTerms(SLOT);
+    expect(sent(writeContract, "applyTerms")).toMatchObject({ address: SLOT, args: [] });
+  });
+
+  it("slotConstants asks the lens about that slot", async () => {
+    const constants = { maxPrice: 1n, termScopes: 16 };
+    const { client, readContract } = harness({ getSlotConstants: constants });
+    expect(await client.slotConstants(SLOT)).toBe(constants);
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({ address: LENS, args: [SLOT] });
+  });
+
+  it("isSlot and slotCount read the factory", async () => {
+    const { client, readContract } = harness({ isSlot: true, slotCount: 3n });
+    expect(await client.isSlot(SLOT)).toBe(true);
+    expect(readContract.mock.calls.at(-1)![0]).toMatchObject({ address: FACTORY, args: [SLOT] });
+    expect(await client.slotCount()).toBe(3n);
   });
 });

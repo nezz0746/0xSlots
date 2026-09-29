@@ -7,26 +7,25 @@ import {
 } from "ponder";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// THE HOOK-BASED SLOTS PROTOCOL
+// THE V1 SLOTS PROTOCOL
 //
-// One `hook` address per slot. There is no policy table and no module table,
-// because there are no policies and no modules — the three extension surfaces
-// the previous protocol had (occupancy policy, utility head, module gallery)
-// collapsed into a single address with one interface. A slot wanting several
-// behaviours points at one hook that implements all of them, so the indexer
+// One `module` address per slot. The three extension surfaces the previous
+// protocol had (occupancy policy, utility head, module gallery) collapsed into
+// a single address with one interface. A slot wanting several
+// behaviours points at one module that implements all of them, so the indexer
 // sees exactly one address and there is no tree to reconstruct.
 //
 // Two things follow from that and shape everything below:
 //
-//   1. `hook` is a first-class entity, not a column. It is shared across slots
-//      (MinimumTenureHook is a stateless singleton — ONE deploy, every
-//      duration, since the window is the slot's `hookData`),
-//      and it carries a declared flag set. It wants a row of its own.
+//   1. `module` is a first-class entity, not a column. It is shared across slots
+//      (MinimumTenureModule is a stateless singleton — ONE deploy, every
+//      duration, since the window is the slot's `settings`),
+//      and it carries its declared scopes. It wants a row of its own.
 //
-//   2. A slot stores a SNAPSHOT of the hook's flags taken when it was
-//      attached, and the hook's own `hooks()` can drift from it afterwards —
-//      a hook may be a proxy, and the snapshot is deliberately never re-read.
-//      Both sides are stored, on `slot` and on `hook`, precisely so the drift
+//   2. A slot stores a COPY of the module's scopes taken when it was
+//      attached, and the module's own `manifest()` can drift from it afterwards —
+//      a module may be a proxy, and the snapshot is deliberately never re-read.
+//      Both sides are stored, on `slot` and on `module`, precisely so the drift
 //      is visible rather than averaged away.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -117,7 +116,7 @@ export const accountChain = onchainTable(
 /**
  * An ERC-20, or the native-ETH sentinel at the zero address.
  *
- * Chain-scoped for the same reason `hook` is: a token is code. The same
+ * Chain-scoped for the same reason `module` is: a token is code. The same
  * address on two chains is two deployments, and `name`/`symbol`/`decimals`
  * are read off whichever one this row belongs to — merging them would label a
  * slot's price in another network's token.
@@ -169,25 +168,25 @@ export const factory = onchainTable(
 );
 
 /**
- * A hook contract.
+ * A module contract.
  *
- * Chain-scoped by primary key, unlike `account` and `currency`. A hook is code
+ * Chain-scoped by primary key, unlike `account` and `currency`. A module is code
  * rather than an identity: the same address on two chains is two deployments
  * that may differ in code or in constructor arguments, each with its own
  * declaration and its own slots. Merging the two rows would merge those facts.
  *
- * The `declared*` flags are read from the hook's own `hooks()` the first time
+ * The `declared*` scopes are read from the module's own `manifest()` the first time
  * it is seen. They are NOT what any particular slot obeys: a slot obeys the
  * snapshot it took at attach time, stored on `slot`. Comparing the two is how
- * you find a hook that changed its declaration after slots had already
+ * you find a module that changed its declaration after slots had already
  * committed to it.
  */
-export const hook = onchainTable(
-  "hook",
+export const module = onchainTable(
+  "module",
   (t) => ({
     id: t.hex().notNull(),
     chainId: t.integer().notNull(),
-    /// False when `hooks()` did not answer — a hook that cannot be attached.
+    /// False when `manifest()` did not answer — a module that cannot be attached.
     /// The columns below are then all false rather than unknown, so read this
     /// one before trusting them.
     declaredKnown: t.boolean().notNull(),
@@ -198,11 +197,11 @@ export const hook = onchainTable(
     declaredAfterLiquidate: t.boolean().notNull(),
     declaredAfterSettle: t.boolean().notNull(),
     /// Not a callback — a mode. `after` calls run uncapped and their revert
-    /// propagates, so a slot attaching this hook is only as evictable as it is.
-    declaredStrict: t.boolean().notNull(),
-    /// Slots pointing at this hook right now.
+    /// propagates, so a slot attaching this module is only as evictable as it is.
+    declaredAfterCallbacksMustSucceed: t.boolean().notNull(),
+    /// Slots pointing at this module right now.
     slotCount: t.integer().notNull(),
-    /// `after` callbacks that reverted and were swallowed. A hook accumulating
+    /// `after` callbacks that reverted and were swallowed. A module accumulating
     /// these is broken in a way nothing on chain will ever tell its users.
     failedCallCount: t.integer().notNull(),
     firstSeenAt: t.bigint().notNull(),
@@ -240,8 +239,8 @@ export const collection = onchainTable(
     /// The terms every slot this collection mints is created with.
     currency: t.hex().notNull(),
     recipient: t.hex().notNull(),
-    taxBps: t.bigint(),
-    minDepositSeconds: t.bigint(),
+    taxRateBps: t.bigint(),
+    minRunwaySeconds: t.bigint(),
     /// Zero when the rent is fixed forever.
     manager: t.hex(),
     /// Holds the metadata, and nothing else.
@@ -333,7 +332,7 @@ export const wrappedToken = onchainTable(
     /// 0 Permanent — never leaves. 1 Reclaimable — the depositor may withdraw
     /// it when nobody else is occupying. Fixed at wrap.
     mode: t.integer().notNull(),
-    taxBps: t.bigint().notNull(),
+    taxRateBps: t.bigint().notNull(),
     /// What this wrap paid the owner, fixed at the moment it happened. The
     /// wrapper's current fee may since have moved.
     fee: t.bigint().notNull(),
@@ -382,7 +381,7 @@ export const collectionToken = onchainTable(
  * One Harberger-taxed slot.
  *
  * Most of this row cannot be read from `SlotCreated`, which carries only
- * recipient, creator, currency and hook. The terms — tax, minimum deposit,
+ * recipient, creator, currency and module. The terms — tax, minimum deposit,
  * which dimensions are mutable, the manager — are read back from the slot with
  * an eth_call at creation. See `readSlotTerms` in src/helpers.ts.
  */
@@ -399,41 +398,50 @@ export const slot = onchainTable(
     recipientAccount: t.hex().notNull(),
     /// Zero address means native ETH; the `currency` row names it "ETH".
     currency: t.hex().notNull(),
-    /// NULL on a fully immutable slot. The contract enforces the pairing: a
-    /// manager exists exactly when something is mutable.
+    /// NULL when nothing about the slot can ever change.
     manager: t.hex(),
     creator: t.hex().notNull(),
+    mutableTax: t.boolean().notNull(),
+    mutableRecipient: t.boolean().notNull(),
+    mutableModule: t.boolean().notNull(),
 
     // ── terms ─────────────────────────────────────────────────────────────
     /// Basis points per 30 days.
-    taxBps: t.bigint().notNull(),
+    taxRateBps: t.bigint().notNull(),
     /// Minimum runway, in seconds, a buyer must fund. Zero means no minimum.
-    minDepositSeconds: t.bigint().notNull(),
-    mutableTax: t.boolean().notNull(),
-    mutableHook: t.boolean().notNull(),
+    minRunwaySeconds: t.bigint().notNull(),
 
-    // ── the hook, and the flags THIS SLOT obeys ───────────────────────────
-    /// NULL when the slot has no hook at all — which is the plain Harberger
+    // ── the module, and the scopes THIS SLOT obeys ───────────────────────────
+    /// NULL when the slot has no module at all — which is the plain common-ownership
     /// slot, and a perfectly ordinary configuration rather than a gap.
-    hook: t.hex(),
-    /// This slot's configuration FOR THAT HOOK, 32 bytes, handed back on every
-    /// callback. Opaque here — only the hook knows what it means. A
-    /// minimum-tenure window lives here, which is why one hook deployment can
-    /// serve every duration. NULL when there is no hook.
-    hookData: t.hex(),
-    /// Snapshotted when the hook was attached and never re-read, so a hook
-    /// cannot widen its own reach mid-tenure. Compare against the `declared*`
-    /// columns on `hook` to see whether it has since tried.
-    hookBeforeBuy: t.boolean().notNull(),
-    hookBeforeSelfAssess: t.boolean().notNull(),
-    hookAfterBuy: t.boolean().notNull(),
-    hookAfterRelease: t.boolean().notNull(),
-    hookAfterLiquidate: t.boolean().notNull(),
-    hookAfterSettle: t.boolean().notNull(),
+    module: t.hex(),
+    /// This slot's settings FOR THAT MODULE, any length, handed back on every
+    /// callback. Opaque here — only the module knows what it means. A
+    /// minimum-tenure window lives here, which is why one module deployment can
+    /// serve every duration. NULL when there is no module.
+    settings: t.hex(),
+    /// The module's fee as the slot accepted it, in basis points. Taken when the
+    /// module attached, or when the manager last granted its manifest.
+    moduleFeeBps: t.integer().notNull(),
+    moduleFeeRecipient: t.hex(),
+    /// Every wei ever paid out as the module's fee.
+    moduleFeesTotal: t.bigint().notNull(),
+    /// Every wei of debt repaid into collected tax, out of the occupant's
+    /// top-up or out of what a buyout paid them. Debt ends with the tenure.
+    debtRepaidTotal: t.bigint().notNull(),
+    /// Accepted when the module attached and changed only by a manager accepting
+    /// new ones, at the next buy, so a module cannot widen its own reach
+    /// mid-tenure. Compare against the `declared*` columns on `module`.
+    scopeBeforeBuy: t.boolean().notNull(),
+    scopeBeforeSelfAssess: t.boolean().notNull(),
+    scopeAfterBuy: t.boolean().notNull(),
+    scopeAfterRelease: t.boolean().notNull(),
+    scopeAfterLiquidate: t.boolean().notNull(),
+    scopeAfterSettle: t.boolean().notNull(),
     /// The one flag that changes what the SLOT promises rather than what the
-    /// hook hears about. Snapshotted like the rest: a hook cannot become strict
-    /// under a sitting occupant.
-    hookStrict: t.boolean().notNull(),
+    /// module hears about. Accepted like the rest: a module cannot start
+    /// requiring its after callbacks to succeed under a sitting occupant.
+    scopeAfterCallbacksMustSucceed: t.boolean().notNull(),
 
     // ── occupancy ─────────────────────────────────────────────────────────
     occupant: t.hex(),
@@ -460,7 +468,7 @@ export const slot = onchainTable(
     /// `deposit`, mirrored from the chain rather than derived.
     ///
     /// The anchor for accrual: tax owed right now is
-    /// `price * taxBps * (now - lastSettled) / (30 days * 10_000)`, so a client
+    /// `price * taxRateBps * (now - lastSettled) / (30 days * 10_000)`, so a client
     /// can show solvency from an indexed row without asking the chain.
     ///
     /// `updatedAt` is NOT a substitute and using it is a correctness bug, not
@@ -491,19 +499,23 @@ export const slot = onchainTable(
 
     // ── deferred terms ────────────────────────────────────────────────────
     //
-    // Two independent dimensions sharing one deferral, mirroring `Pending` in
-    // SlotStorage exactly. The booleans are not redundant with the values:
-    // a queued hook change TO the zero address means "detach the hook", which
-    // is a real change somebody proposed, and is indistinguishable from "no
-    // hook change queued" if you only look at `pendingHook`.
-    pendingHasTax: t.boolean().notNull(),
-    pendingTaxBps: t.bigint(),
-    pendingHasHook: t.boolean().notNull(),
-    pendingHook: t.hex(),
-    /// Queued alongside `pendingHook` and only meaningful with it — the
-    /// contract proposes the two under one flag, because a hook and the word
-    /// meant for it are one decision.
-    pendingHookData: t.hex(),
+    // Mirrors the slot's queue: `pendingMask` says which terms are queued, and
+    // the booleans spell it out for queries. A queued module TO the zero address
+    // means "detach", which is why `pendingHasModule` exists.
+    pendingMask: t.integer().notNull(),
+    pendingHasTaxRate: t.boolean().notNull(),
+    pendingTaxRateBps: t.bigint(),
+    pendingHasRecipient: t.boolean().notNull(),
+    pendingRecipient: t.hex(),
+    pendingHasMinRunway: t.boolean().notNull(),
+    pendingMinRunwaySeconds: t.bigint(),
+    pendingHasModule: t.boolean().notNull(),
+    pendingModule: t.hex(),
+    pendingModuleSettings: t.hex(),
+    /// Subscriptions the manager accepted from the attached module, waiting for
+    /// the next buy.
+    pendingHasScopes: t.boolean().notNull(),
+    pendingScopes: t.integer(),
     pendingProposedAt: t.bigint(),
 
     // ── bookkeeping ───────────────────────────────────────────────────────
@@ -520,7 +532,7 @@ export const slot = onchainTable(
     pk: primaryKey({ columns: [table.id, table.chainId] }),
     chainIdx: index().on(table.chainId),
     factoryIdx: index().on(table.factory),
-    hookIdx: index().on(table.hook),
+    moduleIdx: index().on(table.module),
     recipientIdx: index().on(table.recipient),
     occupantIdx: index().on(table.occupant),
   }),
@@ -676,12 +688,12 @@ export const cancelledOrder = onchainTable(
  *
  * ── Why this is a table and not a column on `slot` ──────────────────────────
  *
- * Because the creative belongs to the HOOK, not to the slot. A slot's row is
+ * Because the creative belongs to the MODULE, not to the slot. A slot's row is
  * assembled from the core protocol's own events, and every column on it is
- * something `Slot` emits; a creative is one hook's idea of what a slot is for,
- * and AdLand is one hook among however many people write. Putting `uri` on
+ * something `Slot` emits; a creative is one module's idea of what a slot is for,
+ * and AdLand is one module among however many people write. Putting `uri` on
  * `slot` would make the core schema carry a field that is null for every slot
- * running any other hook — and would have to grow another for the next hook
+ * running any other module — and would have to grow another for the next module
  * that stores something.
  *
  * ── Why `tenureId` is stored beside the URI ─────────────────────────────────
@@ -698,9 +710,9 @@ export const creative = onchainTable(
   (t) => ({
     slot: t.hex().notNull(),
     chainId: t.integer().notNull(),
-    /// The hook holding it. A slot may be repointed, and then this is the
+    /// The module holding it. A slot may be repointed, and then this is the
     /// contract that answered when it was last published to.
-    hook: t.hex().notNull(),
+    module: t.hex().notNull(),
     /// Empty after a clear. Not deleted — see `clearedAt`.
     uri: t.text().notNull(),
     /// The tenure this creative was published in.
@@ -722,7 +734,7 @@ export const creative = onchainTable(
     // different slots. The chain is part of the identity, here and everywhere.
     pk: primaryKey({ columns: [table.slot, table.chainId] }),
     chainIdx: index().on(table.chainId),
-    hookIdx: index().on(table.hook),
+    moduleIdx: index().on(table.module),
     publisherIdx: index().on(table.publisher),
   }),
 );
@@ -742,7 +754,7 @@ export const publishedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    module: t.hex().notNull(),
     uri: t.text().notNull(),
     tenureId: t.bigint().notNull(),
     /// The occupant at the moment of publishing. Null when this indexer has no
@@ -762,10 +774,10 @@ export const publishedEvent = onchainTable(
 /**
  * A creative going blank because the slot changed hands.
  *
- * Emitted by the hook's `afterBuy`, `afterRelease` and `afterLiquidate`, and
+ * Emitted by the module's `afterBuy`, `afterRelease` and `afterLiquidate`, and
  * worth its own table rather than being inferred from `boughtEvent`: whether a
  * buy actually cleared anything depends on whether a creative was showing, and
- * that is the hook's answer, not something to recompute from the core's events.
+ * that is the module's answer, not something to recompute from the core's events.
  */
 export const clearedEvent = onchainTable(
   "cleared_event",
@@ -773,7 +785,7 @@ export const clearedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    module: t.hex().notNull(),
     fromTenure: t.bigint().notNull(),
     toTenure: t.bigint().notNull(),
     timestamp: t.bigint().notNull(),
@@ -815,7 +827,7 @@ export const adKey = onchainTable(
     chainId: t.integer().notNull(),
     /// The AdLand deployment holding it — one per chain, but stored rather
     /// than assumed, so a second one does not silently merge into the first.
-    hook: t.hex().notNull(),
+    module: t.hex().notNull(),
     /// What it resolves to right now.
     slot: t.hex().notNull(),
     /// A queued repoint, waiting out `CHANGE_DELAY`. Null when none.
@@ -849,15 +861,18 @@ export const slotCreatedEvent = onchainTable(
     /// collective or a router may create a slot on someone's behalf.
     creator: t.hex().notNull(),
     currency: t.hex().notNull(),
-    /// Zero address when the slot has no hook.
-    hook: t.hex().notNull(),
-    /// The hook's configuration at creation. Read back from the slot.
-    hookData: t.hex().notNull(),
+    /// Zero address when the slot has no module.
+    module: t.hex().notNull(),
+    /// The module's configuration at creation. Read back from the slot.
+    settings: t.hex().notNull(),
     /// Read back from the slot, not carried by the event. See `readSlotTerms`.
-    taxBps: t.bigint().notNull(),
-    minDepositSeconds: t.bigint().notNull(),
+    taxRateBps: t.bigint().notNull(),
+    minRunwaySeconds: t.bigint().notNull(),
     mutableTax: t.boolean().notNull(),
-    mutableHook: t.boolean().notNull(),
+    mutableRecipient: t.boolean().notNull(),
+    mutableModule: t.boolean().notNull(),
+    moduleFeeBps: t.integer().notNull(),
+    moduleFeeRecipient: t.hex(),
     manager: t.hex(),
     deployer: t.hex().notNull(),
     timestamp: t.bigint().notNull(),
@@ -1211,12 +1226,8 @@ export const operatorSetEvent = onchainTable(
 );
 
 /**
- * Terms queued by the manager, landing at the next occupancy transition.
- *
- * `changeTax` / `changeHook` are what make this readable. The event carries
- * both `taxBps` and `hook` on every emission regardless of which one
- * the manager actually touched, so the value columns are only meaningful when
- * their flag is true.
+ * Terms queued by the manager, landing at the next buy.
+ * Value columns are meaningful only when their `change*` flag is true.
  */
 export const termsProposedEvent = onchainTable(
   "terms_proposed_event",
@@ -1225,15 +1236,17 @@ export const termsProposedEvent = onchainTable(
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
     manager: t.hex().notNull(),
+    mask: t.integer().notNull(),
     changeTax: t.boolean().notNull(),
-    changeHook: t.boolean().notNull(),
-    /// Meaningful only when `changeTax`.
-    taxBps: t.bigint().notNull(),
-    /// Meaningful only when `changeHook`. Zero means "detach the hook".
-    hook: t.hex().notNull(),
-    /// Meaningful only when `changeHook`, and always zero when `hook` is —
-    /// detaching takes the configuration with it.
-    hookData: t.hex().notNull(),
+    changeRecipient: t.boolean().notNull(),
+    changeMinDeposit: t.boolean().notNull(),
+    changeModule: t.boolean().notNull(),
+    taxRateBps: t.bigint().notNull(),
+    recipient: t.hex().notNull(),
+    minRunwaySeconds: t.bigint().notNull(),
+    /// Zero means "detach the module".
+    module: t.hex().notNull(),
+    settings: t.hex().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),
@@ -1245,11 +1258,8 @@ export const termsProposedEvent = onchainTable(
 );
 
 /**
- * Queued terms landing.
- *
- * Reports the slot's FINAL values, including the dimension that did not
- * change — so unlike `termsProposedEvent` both columns are always true, and
- * `taxChanged` / `hookChanged` are computed here by diffing against the row.
+ * Queued terms landing. Carries the terms now in force; `mask` says which
+ * changed, and the `previous*` columns are what they replaced.
  */
 export const termsAppliedEvent = onchainTable(
   "terms_applied_event",
@@ -1257,19 +1267,23 @@ export const termsAppliedEvent = onchainTable(
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    taxBps: t.bigint().notNull(),
-    hook: t.hex().notNull(),
-    hookData: t.hex().notNull(),
+    mask: t.integer().notNull(),
+    taxRateBps: t.bigint().notNull(),
+    recipient: t.hex().notNull(),
+    minRunwaySeconds: t.bigint().notNull(),
+    module: t.hex().notNull(),
+    settings: t.hex().notNull(),
+    scopes: t.integer().notNull(),
+    moduleFeeBps: t.integer().notNull(),
+    moduleFeeRecipient: t.hex().notNull(),
     previousTaxPercentage: t.bigint().notNull(),
-    previousHook: t.hex().notNull(),
-    previousHookData: t.hex().notNull(),
+    previousRecipient: t.hex().notNull(),
+    previousModule: t.hex().notNull(),
+    previousModuleSettings: t.hex().notNull(),
     taxChanged: t.boolean().notNull(),
-    hookChanged: t.boolean().notNull(),
-    /// Separate from `hookChanged`, because re-proposing the SAME hook with new
-    /// configuration is now the only way to change a window — and it leaves the
-    /// address untouched, so a consumer diffing on `hookChanged` alone sees
-    /// nothing happen.
-    hookDataChanged: t.boolean().notNull(),
+    recipientChanged: t.boolean().notNull(),
+    moduleChanged: t.boolean().notNull(),
+    settingsChanged: t.boolean().notNull(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),
@@ -1281,17 +1295,8 @@ export const termsAppliedEvent = onchainTable(
 );
 
 /**
- * A queued proposal retracted, per dimension.
- *
- * `cancelTerms` takes the same two flags `proposeTerms` does, which is what
- * lets a collective's tax manager and hook manager retract their own work
- * without destroying each other's — so the flags here say WHICH dimension was
- * dropped, and a row with only one of them true is the normal case rather than
- * a partial write.
- *
- * The slot's event carries no canceller: `cancelTerms` is `onlyManager`, so
- * the manager is the slot's own column, and when that manager is a collective
- * the actual role holder is in `collectiveActionEvent.by` and nowhere else.
+ * A queued proposal retracted. `mask` is what was actually dropped, so one
+ * role retracting its change leaves another's standing.
  */
 export const termsCancelledEvent = onchainTable(
   "terms_cancelled_event",
@@ -1301,12 +1306,15 @@ export const termsCancelledEvent = onchainTable(
     slot: t.hex().notNull(),
     /// The slot's manager at the time. The only party allowed to emit this.
     manager: t.hex().notNull(),
+    mask: t.integer().notNull(),
     cancelTax: t.boolean().notNull(),
-    cancelHook: t.boolean().notNull(),
-    /// What was dropped, captured before the pending columns were cleared —
-    /// otherwise a retraction leaves no record of what it retracted.
+    cancelRecipient: t.boolean().notNull(),
+    cancelMinDeposit: t.boolean().notNull(),
+    cancelModule: t.boolean().notNull(),
+    /// What was dropped, captured before the pending columns were cleared.
     cancelledTaxPercentage: t.bigint(),
-    cancelledHook: t.hex(),
+    cancelledRecipient: t.hex(),
+    cancelledModule: t.hex(),
     timestamp: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
     tx: t.hex().notNull(),
@@ -1314,6 +1322,52 @@ export const termsCancelledEvent = onchainTable(
   (table) => ({
     chainIdx: index().on(table.chainId),
     slotIdx: index().on(table.slot),
+  }),
+);
+
+/**
+ * Debt paid into collected tax. `account` is the debtor; the tax reaches the
+ * recipient with the slot's next payout.
+ */
+export const debtRepaidEvent = onchainTable(
+  "debt_repaid_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    account: t.hex().notNull(),
+    currency: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    accountIdx: index().on(table.account),
+  }),
+);
+
+/** A module's fee, paid out of collected rent. */
+export const moduleFeePaidEvent = onchainTable(
+  "module_fee_paid_event",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    slot: t.hex().notNull(),
+    module: t.hex().notNull(),
+    recipient: t.hex().notNull(),
+    currency: t.hex().notNull(),
+    amount: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    tx: t.hex().notNull(),
+  }),
+  (table) => ({
+    chainIdx: index().on(table.chainId),
+    slotIdx: index().on(table.slot),
+    moduleIdx: index().on(table.module),
   }),
 );
 
@@ -1353,9 +1407,9 @@ export const factoryRelations = relations(factory, ({ many }) => ({
   upgrades: many(beaconUpgradedEvent),
 }));
 
-export const hookRelations = relations(hook, ({ many }) => ({
+export const moduleRelations = relations(module, ({ many }) => ({
   slots: many(slot),
-  failures: many(hookCallFailedEvent),
+  failures: many(moduleCallFailedEvent),
 }));
 
 export const slotOperatorRelations = relations(slotOperator, ({ one }) => ({
@@ -1619,12 +1673,12 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
     fields: [slot.factory, slot.chainId],
     references: [factory.id, factory.chainId],
   }),
-  // Two columns, because `hook` is chain-scoped by primary key — the same
+  // Two columns, because `module` is chain-scoped by primary key — the same
   // address on two chains is two deployments with possibly different
   // constructor arguments.
-  hookRef: one(hook, {
-    fields: [slot.hook, slot.chainId],
-    references: [hook.id, hook.chainId],
+  moduleRef: one(module, {
+    fields: [slot.module, slot.chainId],
+    references: [module.id, module.chainId],
   }),
 
   // A slot names two addresses, and a SlotCollective can be BOTH of them. Each
@@ -1669,24 +1723,24 @@ export const slotRelations = relations(slot, ({ one, many }) => ({
   termsProposals: many(termsProposedEvent),
   termsApplications: many(termsAppliedEvent),
   termsCancellations: many(termsCancelledEvent),
-  hookFailures: many(hookCallFailedEvent),
+  moduleFailures: many(moduleCallFailedEvent),
 }));
 
 /**
  * An `after` callback reverted and was swallowed.
  *
- * The protocol's only observability into a broken hook. Nothing on chain
- * reverts, nothing retries, and the action the hook was watching succeeded
- * anyway — so if this is not indexed, a hook that stopped working is
+ * The protocol's only observability into a broken module. Nothing on chain
+ * reverts, nothing retries, and the action the module was watching succeeded
+ * anyway — so if this is not indexed, a module that stopped working is
  * completely silent.
  */
-export const hookCallFailedEvent = onchainTable(
-  "hook_call_failed_event",
+export const moduleCallFailedEvent = onchainTable(
+  "module_call_failed_event",
   (t) => ({
     id: t.text().primaryKey(),
     chainId: t.integer().notNull(),
     slot: t.hex().notNull(),
-    hook: t.hex().notNull(),
+    module: t.hex().notNull(),
     /// The 4-byte selector of the callback that failed, as hex.
     selector: t.hex().notNull(),
     timestamp: t.bigint().notNull(),
@@ -1696,20 +1750,20 @@ export const hookCallFailedEvent = onchainTable(
   (table) => ({
     chainIdx: index().on(table.chainId),
     slotIdx: index().on(table.slot),
-    hookIdx: index().on(table.hook),
+    moduleIdx: index().on(table.module),
   }),
 );
 
-export const hookCallFailedEventRelations = relations(
-  hookCallFailedEvent,
+export const moduleCallFailedEventRelations = relations(
+  moduleCallFailedEvent,
   ({ one }) => ({
     slotRef: one(slot, {
-      fields: [hookCallFailedEvent.slot, hookCallFailedEvent.chainId],
+      fields: [moduleCallFailedEvent.slot, moduleCallFailedEvent.chainId],
       references: [slot.id, slot.chainId],
     }),
-    hookRef: one(hook, {
-      fields: [hookCallFailedEvent.hook, hookCallFailedEvent.chainId],
-      references: [hook.id, hook.chainId],
+    moduleRef: one(module, {
+      fields: [moduleCallFailedEvent.module, moduleCallFailedEvent.chainId],
+      references: [module.id, module.chainId],
     }),
   }),
 );
@@ -1719,7 +1773,7 @@ export const hookCallFailedEventRelations = relations(
 // ═══════════════════════════════════════════════════════════
 //
 // A SlotCollective fills BOTH of a slot's named addresses at once: `recipient`
-// (tax flows to it) and `manager` (it may propose tax and hook changes).
+// (tax flows to it) and `manager` (it may propose tax and module changes).
 // Indexed here so those two columns on `slot` stop being opaque addresses and
 // become a join — "who governs this slot, and who actually gets paid".
 //
@@ -1727,19 +1781,19 @@ export const hookCallFailedEventRelations = relations(
 // without replaying logs: `splitHash` is a hash, and AccessControl keeps no
 // enumerable member list. Both are reconstructed below.
 //
-// ── What the port to the hook-based Slot changed here ──────────────────────
+// ── What the port to the app-based Slot changed here ──────────────────────
 //
 // TWO manager roles, not three. `UTILITY_MANAGER_ROLE` is gone with the
-// utility head it governed; a hook is the old policy and the old utility
+// utility head it governed; a module is the old policy and the old utility
 // unified, and `POLICY_MANAGER_ROLE` is the identifier that survived. So
-// wherever this schema says "policy", read HOOK — the label is preserved
+// wherever this schema says "policy", read MODULE — the label is preserved
 // deliberately (renaming a `keccak256` constant would move the role on every
 // live collective) and only the meaning moved.
 //
 // The relay events narrowed with it: `Dimension` has two members where
 // `UpdateKind` had three, and `LiquidationBountyRelayed` is gone entirely
 // along with the bounty. `collectiveActionEvent.kind` is therefore
-// "Tax" | "Hook", and its `action` no longer has a "bounty" value.
+// "Tax" | "Module", and its `action` no longer has a "bounty" value.
 
 export const slotCollective = onchainTable(
   "slot_collective",
@@ -1790,7 +1844,7 @@ export const collectiveRole = onchainTable(
     chainId: t.integer().notNull(),
     granted: t.boolean().notNull(),
     /// Human-readable role name where the hash is one of the known ones.
-    /// "POLICY_MANAGER" is the HOOK role — see the section note. Null for any
+    /// "POLICY_MANAGER" is the MODULE role — see the section note. Null for any
     /// role added later, rather than a guess.
     label: t.text(),
     grantedAt: t.bigint(),
@@ -1886,11 +1940,11 @@ export const collectiveActionEvent = onchainTable(
     /// "propose" | "cancel" | "cancelAll". The old "bounty" value went with
     /// `LiquidationBountyRelayed`.
     action: t.text().notNull(),
-    /// "Tax" | "Hook" — null for cancelAll, which reaches across both.
+    /// "Tax" | "Module" — null for cancelAll, which reaches across both.
     /// `Dimension` is positional across the ABI boundary, so an unrecognised
     /// ordinal stays null rather than being guessed at.
     kind: t.text(),
-    /// Raw basis points for Tax, the left-padded address for Hook. Left as the
+    /// Raw basis points for Tax, the left-padded address for Module. Left as the
     /// widened bytes32 the event carries; null on every cancel, which carries
     /// no value.
     value: t.hex(),

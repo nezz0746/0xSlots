@@ -1,12 +1,12 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
-import type { HookFlags, SlotState } from "@0xslots/sdk/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
+import type { Scopes, SlotState } from "@0xslots/sdk/slots";
 import { AlertTriangle, Clock, ShieldCheck } from "lucide-react";
 import { zeroAddress } from "viem";
 import { MutabilityChip } from "@/components/detail-group";
 import { EnsIdentity } from "@/components/ens-identity";
-import { HookFlagRow } from "@/components/hook-flags";
+import { ModuleScopeRow } from "@/components/module-scopes";
 import { TenureMeter } from "@/components/occupancy-timeline";
 import { Badge } from "@/components/ui/badge";
 import { useChain } from "@/context/chain";
@@ -14,6 +14,10 @@ import type { CurrencyMeta } from "@/hooks/slots/use-slots";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
 import { useNow } from "@/hooks/use-duration";
 import type { LiveAccrual } from "@/hooks/use-live-accrual";
+import {
+  describeSettings,
+  useModuleDefinition,
+} from "@/hooks/use-module-schema";
 import { useTenureWindow } from "@/hooks/use-tenure-window";
 import { cn } from "@/lib/utils";
 import { HoldingCost } from "./holding-cost";
@@ -40,7 +44,7 @@ function boughtAgo(occupiedSince: bigint, chainNow: number): string {
 }
 
 /**
- * @param insolvent Overrides the snapshot's own flag with the interpolated one,
+ * @param insolvent Overrides the snapshot's own permission with the interpolated one,
  *   so a slot that tips over while the page is open says so on the same tick
  *   the runway hits zero rather than at the next poll. Omit to trust the read.
  */
@@ -70,11 +74,11 @@ export function SlotStatus({
   );
 }
 
-const _DECIDES: [keyof HookFlags, string][] = [
+const _DECIDES: [keyof Scopes, string][] = [
   ["beforeBuy", "beforeBuy"],
   ["beforeSelfAssess", "beforeSelfAssess"],
 ];
-const _RECORDS: [keyof HookFlags, string][] = [
+const _RECORDS: [keyof Scopes, string][] = [
   ["afterBuy", "afterBuy"],
   ["afterRelease", "afterRelease"],
   ["afterLiquidate", "afterLiquidate"],
@@ -82,18 +86,18 @@ const _RECORDS: [keyof HookFlags, string][] = [
 ];
 
 /**
- * A hook's declared subscriptions, struck through where it did not subscribe.
+ * A module's declared scopes, struck through where it was not granted one.
  *
  * Both halves are always drawn, present and absent alike. A list of only what a
- * hook DOES leaves the reader unable to tell "this hook cannot refuse a buy"
+ * module DOES leaves the reader unable to tell "this module cannot refuse a buy"
  * from "this app did not check" — and the first is a guarantee worth having.
  */
-function _FlagList({
-  flags,
+function _ScopeList({
+  scopes,
   entries,
 }: {
-  flags: HookFlags;
-  entries: [keyof HookFlags, string][];
+  scopes: Scopes;
+  entries: [keyof Scopes, string][];
 }) {
   return (
     <div className="flex flex-wrap gap-1">
@@ -102,7 +106,7 @@ function _FlagList({
           key={key}
           className={cn(
             "px-1.5 py-0.5 text-[10px]",
-            flags[key]
+            scopes[key]
               ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
               : "bg-muted/60 text-muted-foreground/50 line-through",
           )}
@@ -123,7 +127,7 @@ function _FlagList({
  * form once can find any value here without hunting.
  *
  * Hierarchy is carried by `weight` rather than by position alone. The terms
- * decide whether to buy, so they lead at body size; the hook is consequential
+ * decide whether to buy, so they lead at body size; the module is consequential
  * but conditional — absent from most slots and meaningless to most readers —
  * so it sits last and quiet rather than competing with the rate.
  *
@@ -135,8 +139,8 @@ function _FlagList({
 /**
  * Everything the slot IS, cut by who can change it.
  *
- * This was six sections — Terms, Currency, Recipient, Occupancy, Permissions,
- * Hook — each an icon tile over a list of rows, every one looking identical. The
+ * This was six sections — Terms, Currency, Recipient, Occupancy, Scopes,
+ * Module — each an icon tile over a list of rows, every one looking identical. The
  * shape of the page carried no information, and the one distinction that decides
  * whether to buy was a padlock chip on two rows.
  *
@@ -161,7 +165,7 @@ export function SlotDetails({
   currency: CurrencyMeta;
   /** Interpolated between polls, so the accruing figures move. */
   accrual: LiveAccrual;
-  /** The deposit `minDepositSeconds` demands at the CURRENT price. */
+  /** The deposit `minRunwaySeconds` demands at the CURRENT price. */
   minDeposit: bigint;
   isManager: boolean;
   isOccupant: boolean;
@@ -174,11 +178,18 @@ export function SlotDetails({
   banner?: React.ReactNode;
 }) {
   const { chainId } = useChain();
-  const attached = state.hook !== zeroAddress;
-  const known = findKnownHook(chainId, attached ? state.hook : undefined);
+  const attached = state.module !== zeroAddress;
+  const known = findKnownModule(chainId, attached ? state.module : undefined);
+  // What the module says it is, and what this slot configured it with — both
+  // read from the module's own on-chain metadata, labelled by its schema.
+  const { definition } = useModuleDefinition(attached ? state.module : "");
+  const configured =
+    attached && definition?.settings?.fields.length
+      ? describeSettings(definition.settings, state.settings)
+      : null;
   const tenureSeconds = useTenureWindow(
-    attached ? state.hook : undefined,
-    attached ? state.hookData : undefined,
+    attached ? state.module : undefined,
+    attached ? state.settings : undefined,
   );
   const now = useNow(!!tenureSeconds && !state.isVacant, 1000);
   /**
@@ -190,7 +201,7 @@ export function SlotDetails({
   const skew = useChainTimeSkew();
   const chainNow = Math.floor(Date.now() / 1000) + skew;
 
-  const mutableTerms = state.mutableTax || state.mutableHook;
+  const managed = state.manager !== zeroAddress;
 
   return (
     /**
@@ -274,7 +285,7 @@ export function SlotDetails({
 
       <HoldingCost
         price={state.price}
-        taxBps={state.taxBps}
+        taxRateBps={state.taxRateBps}
         decimals={currency.decimals}
         symbol={currency.symbol}
         deposit={state.deposit}
@@ -284,7 +295,7 @@ export function SlotDetails({
         isVacant={state.isVacant}
         isInsolvent={accrual.insolvent}
         rising={accrual.rising}
-        minDepositSeconds={state.minDepositSeconds}
+        minRunwaySeconds={state.minRunwaySeconds}
         minDeposit={minDeposit}
         taxLock={<MutabilityChip mutable={state.mutableTax} what="tax rate" />}
         className="border-b-0"
@@ -298,21 +309,30 @@ export function SlotDetails({
           check". */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-y px-3 py-2.5 sm:px-4">
         <Term
-          label="Hook"
-          lock={<MutabilityChip mutable={state.mutableHook} what="hook" />}
+          label="Module"
+          lock={<MutabilityChip mutable={state.mutableModule} what="module" />}
         >
           {attached ? (
             <span className="inline-flex items-center gap-1.5">
-              {known?.name ?? "unrecognised"}
-              <AddressText address={state.hook} />
+              {definition?.title || known?.name || "unrecognised"}
+              <AddressText address={state.module} />
             </span>
           ) : (
             <span className="text-muted-foreground">none</span>
           )}
         </Term>
 
+        <Term
+          label="Recipient"
+          lock={
+            <MutabilityChip mutable={state.mutableRecipient} what="recipient" />
+          }
+        >
+          <AddressText address={state.recipient} className="text-foreground" />
+        </Term>
+
         <Term label="Manager">
-          {mutableTerms ? (
+          {managed ? (
             <span className="inline-flex items-center gap-1.5">
               <AddressText
                 address={state.manager}
@@ -327,17 +347,33 @@ export function SlotDetails({
           )}
         </Term>
 
-        {/* What the hook may DO, in the same words the create form uses when
-            you attach one. Naming it was never enough: "MinimumTenureHook" does
+        {/* What the module may DO, in the same words the create form uses when
+            you attach one. Naming it was never enough: "MinimumTenureModule" does
             not say whether it can refuse your buy, and that is the only
             question a buyer has. Read from the slot's snapshot, so it describes
-            what this slot obeys rather than what the hook currently claims. */}
+            what this slot obeys rather than what the module currently claims. */}
         {attached && (
           <div className="w-full space-y-1">
-            <HookFlagRow flags={state.hookFlags} />
+            <ModuleScopeRow scopes={state.scopes} fee={state.fee} />
+            {configured && configured.length > 0 && (
+              <dl className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                {configured.map((e) => (
+                  <div
+                    key={e.name}
+                    className="flex gap-1.5"
+                    title={e.description}
+                  >
+                    <dt className="text-muted-foreground">{e.title}</dt>
+                    <dd className={e.display ? "" : "text-muted-foreground"}>
+                      {e.display || "none"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             {!known && (
               <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-400">
-                Unrecognised hook — read its code before buying.
+                Unrecognised module — read its code before buying.
               </p>
             )}
           </div>
