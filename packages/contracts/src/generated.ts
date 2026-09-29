@@ -1386,8 +1386,8 @@ export const adLandConfig = { address: adLandAddress, abi: adLandAbi } as const
 
 /**
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  */
 export const minimumTenureModuleAbi = [
   {
@@ -1777,19 +1777,19 @@ export const minimumTenureModuleAbi = [
 
 /**
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  */
 export const minimumTenureModuleAddress = {
   31337: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
-  84532: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
-  11155111: '0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048',
+  84532: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
+  11155111: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
 } as const
 
 /**
  * -
- * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
- * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xfe1C478EaA1CE048A7Edc71529745cAbC9D9D048)
+ * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
+ * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  */
 export const minimumTenureModuleConfig = {
   address: minimumTenureModuleAddress,
@@ -7823,8 +7823,8 @@ export const deployBlocks = {
   },
   MinimumTenureModule: {
     '31337': 0,
-    '84532': 47415623,
-    '11155111': 11800602,
+    '84532': 47459211,
+    '11155111': 11807737,
   },
   OfferBook: {
     '31337': 0,
