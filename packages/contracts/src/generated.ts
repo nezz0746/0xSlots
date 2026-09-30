@@ -3,6 +3,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x0B3050f7448d0478e0b884262c3cC41a012d8db1)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
@@ -1377,17 +1378,20 @@ export const adLandAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x0B3050f7448d0478e0b884262c3cC41a012d8db1)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  */
 export const adLandAddress = {
+  8453: '0x0B3050f7448d0478e0b884262c3cC41a012d8db1',
   31337: '0x5a3572EaA407861f24ec5713F3A0657d5d26e877',
   84532: '0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B',
   11155111: '0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x0B3050f7448d0478e0b884262c3cC41a012d8db1)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xCE7d6a6AFca496e2B5d0c5eFb93506Cf96a8906B)
@@ -1399,6 +1403,7 @@ export const adLandConfig = { address: adLandAddress, abi: adLandAbi } as const
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
@@ -1790,17 +1795,20 @@ export const minimumTenureModuleAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  */
 export const minimumTenureModuleAddress = {
+  8453: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
   31337: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
   84532: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
   11155111: '0xDe167Dd908f9b83BF8A5f880D525965131b2442C',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xDe167Dd908f9b83BF8A5f880D525965131b2442C)
@@ -1815,6 +1823,7 @@ export const minimumTenureModuleConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
@@ -2194,17 +2203,20 @@ export const offerBookAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  */
 export const offerBookAddress = {
+  8453: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
   31337: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
   84532: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
   11155111: '0x9d59B43895BAA9e53df3439eA77369132e0b167F',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x9d59B43895BAA9e53df3439eA77369132e0b167F)
@@ -2219,6 +2231,7 @@ export const offerBookConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
@@ -3493,17 +3506,20 @@ export const slotAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  */
 export const slotAddress = {
+  8453: '0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24',
   31337: '0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24',
   84532: '0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24',
   11155111: '0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x80d64Cd0827afdF63E67534c9326E6Bb2266EA24)
@@ -4314,6 +4330,7 @@ export const slotBoundNftAbi = [
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x0b5778cA67C3b5bdF2678694085a61F44d7381AB)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
@@ -4642,17 +4659,20 @@ export const slotBoundNftFactoryAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x0b5778cA67C3b5bdF2678694085a61F44d7381AB)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  */
 export const slotBoundNftFactoryAddress = {
+  8453: '0x0b5778cA67C3b5bdF2678694085a61F44d7381AB',
   31337: '0x94AaBBF5a03222777cEE1D9C1d98F97C657c890c',
   84532: '0x930B546078c110E43Bbf8A6c18651120c8a7b820',
   11155111: '0x930B546078c110E43Bbf8A6c18651120c8a7b820',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x0b5778cA67C3b5bdF2678694085a61F44d7381AB)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x930B546078c110E43Bbf8A6c18651120c8a7b820)
@@ -4667,6 +4687,7 @@ export const slotBoundNftFactoryConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
@@ -5523,17 +5544,20 @@ export const slotBoundNftWrapperAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  */
 export const slotBoundNftWrapperAddress = {
+  8453: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
   31337: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
   84532: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
   11155111: '0x508C83eefCEC4FfeEa64De5f7581892644068e6e',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x508C83eefCEC4FfeEa64De5f7581892644068e6e)
@@ -5548,6 +5572,7 @@ export const slotBoundNftWrapperConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
@@ -6496,17 +6521,20 @@ export const slotCollectiveAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  */
 export const slotCollectiveAddress = {
+  8453: '0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8',
   31337: '0x72Ad59c282DC2a1A52B5baF56799Ab7026EbA4Ac',
   84532: '0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8',
   11155111: '0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x62573eE9D87Da6a8A88D381400Eb97A53017D8d8)
@@ -6521,6 +6549,7 @@ export const slotCollectiveConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x3fbF9AB71a281d2c5C90e0D1C7bcdFc18dEdd34b)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
@@ -6784,17 +6813,20 @@ export const slotCollectiveFactoryAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x3fbF9AB71a281d2c5C90e0D1C7bcdFc18dEdd34b)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  */
 export const slotCollectiveFactoryAddress = {
+  8453: '0x3fbF9AB71a281d2c5C90e0D1C7bcdFc18dEdd34b',
   31337: '0xd2d75567c3cB8a95bA601D5206EADeEa52dDB0c2',
   84532: '0x019a3a241e5326e79Bc31F1F2008866737468e5d',
   11155111: '0x019a3a241e5326e79Bc31F1F2008866737468e5d',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x3fbF9AB71a281d2c5C90e0D1C7bcdFc18dEdd34b)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0x019a3a241e5326e79Bc31F1F2008866737468e5d)
@@ -6809,6 +6841,7 @@ export const slotCollectiveFactoryConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2311148612ee1A7474545E63498ecc7d7D226c48)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
@@ -7093,17 +7126,20 @@ export const slotFactoryAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2311148612ee1A7474545E63498ecc7d7D226c48)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  */
 export const slotFactoryAddress = {
+  8453: '0x2311148612ee1A7474545E63498ecc7d7D226c48',
   31337: '0xC772D552ec8aC7BeB9a4a801470c349949246d89',
   84532: '0xc696f795584cFbbC837B04A69746E8DAC2b1B76c',
   11155111: '0xc696f795584cFbbC837B04A69746E8DAC2b1B76c',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x2311148612ee1A7474545E63498ecc7d7D226c48)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xc696f795584cFbbC837B04A69746E8DAC2b1B76c)
@@ -7118,6 +7154,7 @@ export const slotFactoryConfig = {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x95f1BcFd19dACdABc22a3d7731938900515DcB57)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
@@ -7638,17 +7675,20 @@ export const slotLensAbi = [
 ] as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x95f1BcFd19dACdABc22a3d7731938900515DcB57)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
  */
 export const slotLensAddress = {
+  8453: '0x95f1BcFd19dACdABc22a3d7731938900515DcB57',
   31337: '0x381B47ABe29Dd2846633574aC084832C23b3201a',
   84532: '0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2',
   11155111: '0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2',
 } as const
 
 /**
+ * - [__View Contract on Base Basescan__](https://basescan.org/address/0x95f1BcFd19dACdABc22a3d7731938900515DcB57)
  * -
  * - [__View Contract on Base Sepolia Basescan__](https://sepolia.basescan.org/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
  * - [__View Contract on Sepolia Etherscan__](https://sepolia.etherscan.io/address/0xAD9Bb2Af916eE7FA92371b143c3eBDD52f0825E2)
@@ -7860,51 +7900,61 @@ export const slotsTestTokenConfig = {
  */
 export const deployBlocks = {
   AdLand: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   MinimumTenureModule: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47459211,
     '11155111': 11807737,
   },
   OfferBook: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   Slot: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47496025,
     '11155111': 11813753,
   },
   SlotBoundNFTFactory: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotBoundNFTWrapper: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotCollective: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47496025,
     '11155111': 11813753,
   },
   SlotCollectiveFactory: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotFactory: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
   },
   SlotLens: {
+    '8453': 51992101,
     '31337': 0,
     '84532': 47415623,
     '11155111': 11800602,
