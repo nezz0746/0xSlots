@@ -25,6 +25,8 @@ import { type PoolLabel, rpcPool } from "./rpc";
  */
 const CHAINS = {
   baseSepolia: { id: 84532, pool: "base_sepolia", env: "BASE_SEPOLIA" },
+  // Protocol v1 on Base mainnet since block 51992101 (2026-09-30), read from
+  // apps/contracts/deployments/8453 like every other chain.
   base: { id: 8453, pool: "base", env: "BASE" },
   sepolia: { id: 11155111, pool: "sepolia", env: "SEPOLIA" },
 } as const satisfies Record<

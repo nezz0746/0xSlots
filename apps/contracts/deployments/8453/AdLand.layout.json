@@ -1,0 +1,32 @@
+[
+  {
+    "label": "slotOf",
+    "slot": "0",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "pendingOf",
+    "slot": "1",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "_claimedFor",
+    "slot": "2",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "_creative",
+    "slot": "3",
+    "offset": 0,
+    "bytes": 32
+  },
+  {
+    "label": "_pendingCreative",
+    "slot": "4",
+    "offset": 0,
+    "bytes": 32
+  }
+]
