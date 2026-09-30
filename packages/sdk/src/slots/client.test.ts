@@ -90,6 +90,10 @@ function harness(
       readContract,
       simulateContract: vi.fn(async () => ({ result: simulateResult })),
       waitForTransactionReceipt: vi.fn(async () => ({ status: "success" })),
+      // The chain's clock, for ripeness. `blockTimestamp` in `reads` moves it.
+      getBlock: vi.fn(async () => ({
+        timestamp: (state.blockTimestamp as bigint | undefined) ?? 0n,
+      })),
     } as any,
     walletClient: {
       writeContract,
@@ -627,7 +631,7 @@ describe("creation", () => {
 describe("reads", () => {
   it("pending reports isEmpty when nothing is queued", async () => {
     const { client } = harness({
-      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS }, mask: 0, proposedAt: 0n },
+      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS }, mask: 0, proposedAt: 0n, moduleProposedAt: 0n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
@@ -641,7 +645,7 @@ describe("reads", () => {
   it("pending unpacks a queued module change", async () => {
     const module = { ...NO_MODULE, module: MODULE };
     const { client } = harness({
-      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { ...module, scopes: 0, fee: { bps: 0, recipient: ZERO } }, mask: TERMS.MODULE, proposedAt: 1234n },
+      pending: { taxTerms: TAX_TERMS_NONE, nextModule: { ...module, scopes: 0, fee: { bps: 0, recipient: ZERO } }, mask: TERMS.MODULE, proposedAt: 0n, moduleProposedAt: 1234n },
       hasRipeTerms: false,
     });
     const pending = await client.pending(SLOT);
@@ -656,10 +660,15 @@ describe("reads", () => {
       hasMinRunway: false,
       hasModule: true,
       hasScopes: false,
-      proposedAt: 1234n,
-      // proposedAt + TERMS_DELAY (1 hour).
+      proposedAt: 0n,
+      moduleProposedAt: 1234n,
+      taxAppliesAt: 0n,
+      // The module's own clock: moduleProposedAt + TERMS_DELAY (1 hour).
+      moduleAppliesAt: 1234n + 3_600n,
       appliesAt: 1234n + 3_600n,
       applies: false,
+      taxApplies: false,
+      moduleApplies: false,
       isEmpty: false,
     });
   });
@@ -671,15 +680,37 @@ describe("reads", () => {
         nextModule: { module: ZERO, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
         mask: TERMS.TAX_RATE,
         proposedAt: 1234n,
+        moduleProposedAt: 0n,
       },
       hasRipeTerms: true,
+      blockTimestamp: 1234n + 3_600n,
     });
 
     const pending = await client.pending(SLOT);
     expect(pending.applies).toBe(true);
+    expect(pending.taxApplies).toBe(true);
     expect(
       readContract.mock.calls.map((c: any[]) => c[0].functionName),
     ).toEqual(expect.arrayContaining(["pending", "hasRipeTerms"]));
+  });
+
+  it("pending ripens tax terms and the module on separate clocks", async () => {
+    const { client } = harness({
+      pending: {
+        taxTerms: { ...TAX_TERMS_NONE, rateBps: 700 },
+        nextModule: { module: MODULE, scopes: 0, fee: { bps: 0, recipient: ZERO }, settings: NO_SETTINGS },
+        mask: TERMS.TAX_RATE | TERMS.MODULE,
+        proposedAt: 5_000n,
+        moduleProposedAt: 1_000n,
+      },
+      hasRipeTerms: true,
+      blockTimestamp: 1_000n + 3_600n,
+    });
+    const pending = await client.pending(SLOT);
+    expect(pending.moduleApplies).toBe(true);
+    expect(pending.taxApplies).toBe(false);
+    expect(pending.appliesAt).toBe(1_000n + 3_600n);
+    expect(pending.taxAppliesAt).toBe(5_000n + 3_600n);
   });
 
   it("debtOf is asked per account", async () => {

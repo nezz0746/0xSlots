@@ -15,6 +15,7 @@ import {
 import {SlotViews} from "./SlotViews.sol";
 import {Occupancy} from "./SlotStorage.sol";
 import {TermsLib} from "../libraries/TermsLib.sol";
+import {Pending} from "../types/SlotTypes.sol";
 
 /**
  * @title SlotOccupancy
@@ -25,6 +26,8 @@ import {TermsLib} from "../libraries/TermsLib.sol";
  *      terms, ask the module, take the money, seat, notify.
  */
 abstract contract SlotOccupancy is SlotViews {
+    using TermsLib for Pending;
+
     // ─── occupancy ──────────────────────────────────────────────────────────
 
     /**
@@ -91,10 +94,7 @@ abstract contract SlotOccupancy is SlotViews {
         // new scopes from the same module that no longer ask to judge a buy.
         // Only when somebody is being displaced; a vacant slot has nobody to
         // protect.
-        if (
-            prev != address(0) && _pending().mask & (TermsLib.MODULE | TermsLib.SCOPES) != 0
-                && hasRipeTerms()
-        ) {
+        if (prev != address(0) && _pending().ripe(TERMS_DELAY) & TermsLib.MODULE_TERMS != 0) {
             _before(
                 ScopesLib.BEFORE_BUY,
                 abi.encodeCall(

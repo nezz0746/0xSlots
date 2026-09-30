@@ -13,10 +13,7 @@ import { Input } from "@/components/ui/input";
 import { PriceInput } from "@/components/ui/price-input";
 import { useChain } from "@/context/chain";
 import type { CurrencyMeta } from "@/hooks/slots/use-slots";
-import {
-  useMinDepositForBuy,
-  useTakeQuote,
-} from "@/hooks/slots/use-slots";
+import { useMinDepositForBuy, useTakeQuote } from "@/hooks/slots/use-slots";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { useSlotBounds } from "@/hooks/use-slot-bounds";
 import { formatUsd, useUsdPrice } from "@/hooks/use-usd-price";
@@ -239,7 +236,11 @@ export function BuySection({
   // paths without this panel having to know the rule: an eviction charges the
   // deposit alone and the purchase half is simply zero.
   const quotedPurchase =
-    quote === undefined ? ZERO : quote - deposit < ZERO ? ZERO : quote - deposit;
+    quote === undefined
+      ? ZERO
+      : quote - deposit < ZERO
+        ? ZERO
+        : quote - deposit;
   // An offer pays what YOU named; a purchase pays what the occupant named.
   const purchase = isOffer ? price : quotedPurchase;
   const total = isOffer ? price + deposit : (quote ?? ZERO);
@@ -427,7 +428,7 @@ export function BuySection({
           // buy is funded at the rate already on display, and the banner under
           // the figures has said what is queued and when. A note here too was
           // the same sentence three times on one screen.
-          state.pending.hasTaxRate && state.pending.applies
+          state.pending.hasTaxRate && state.pending.taxApplies
             ? `Sized at the queued ${formatBps(
                 state.pending.taxTerms.rateBps,
               )}/mo, which takes effect on this buy`

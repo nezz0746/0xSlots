@@ -110,15 +110,26 @@ abstract contract SlotModules is SlotStorage {
 
     // ─── install and remove ─────────────────────────────────────────────────
 
-    /// @dev Tell a newly attached module, if it asked to be told. Only ever
-    ///      called where a seat is taken, never on an eviction.
+    /**
+     * @dev Tell a module attached by queued terms, if it asked to be told.
+     *      Only ever called where a seat is taken, never on an eviction.
+     *
+     *      Capped and swallowed even for an `afterCallbacksMustSucceed`
+     *      module, like {_onUninstall}. This runs inside every buy that lands
+     *      the queue, and the queue stays ripe until something lands it — so a
+     *      module able to revert here could refuse every buy for as long as
+     *      nobody cancelled it. At creation the slot calls it strictly
+     *      instead: refusing there fails only the creator's own transaction.
+     */
     function _onInstall(address account, uint256 price_, uint256 depositAmount) internal {
-        _after(
-            ScopesLib.ON_INSTALL,
-            abi.encodeCall(
-                ISlotModule.onInstall, (_ctx(msg.sender, account, price_, depositAmount))
-            )
+        InstalledModule storage m = _module();
+        if (!m.has(ScopesLib.ON_INSTALL)) return;
+        bytes memory call = abi.encodeCall(
+            ISlotModule.onInstall, (_ctx(msg.sender, account, price_, depositAmount))
         );
+        if (!ModuleLib.callCapped(m.module, call, MODULE_CALLBACK_GAS_LIMIT)) {
+            emit ModuleCallFailed(m.module, ISlotModule.onInstall.selector);
+        }
     }
 
     /**

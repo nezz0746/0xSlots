@@ -155,12 +155,13 @@
 
     <tbody>
       <tr>
-        <td class="group" rowspan="4"><span class="ns">slots.pending</span><span class="struct">Pending</span><span class="role">Stored exactly as <code>pending()</code> returns it. Lands at the next buy or <code>applyTerms</code>, 1 hour after proposal.</span></td>
+        <td class="group" rowspan="5"><span class="ns">slots.pending</span><span class="struct">Pending</span><span class="role">Stored exactly as <code>pending()</code> returns it. Lands at the next buy or <code>applyTerms</code>, 1 hour after proposal.</span></td>
         <td class="field">taxTerms</td><td class="type mono">TaxTerms</td><td>Proposed tax values. Only the fields named in <code>mask</code> count.</td><td class="when">proposeTerms · cancel · land</td>
       </tr>
       <tr><td class="field">nextModule</td><td class="type mono">InstalledModule</td><td>A proposed module with the scopes and fee reviewed for it, or only newly accepted <code>scopes</code>. Checked again when it lands.</td><td class="when">proposeTerms · acceptScopes · cancel · land</td></tr>
       <tr><td class="field">mask</td><td class="type mono">uint16</td><td>TAX_RATE 1 · RECIPIENT 2 · MIN_RUNWAY 4 · MODULE 8 · SCOPES 16 (never with MODULE).</td><td class="when">propose · acceptScopes · cancel · land</td></tr>
-      <tr><td class="field">proposedAt</td><td class="type mono">uint64</td><td>Start of the delay. Any new proposal restarts it.</td><td class="when">proposeTerms · acceptScopes</td></tr>
+      <tr><td class="field">proposedAt</td><td class="type mono">uint64</td><td>Start of the tax terms' delay. Proposing tax terms restarts it.</td><td class="when">proposeTerms</td></tr>
+      <tr><td class="field">moduleProposedAt</td><td class="type mono">uint64</td><td>Start of the module's delay, on its own clock.</td><td class="when">proposeTerms · acceptScopes</td></tr>
     </tbody>
 
     <tbody>
@@ -260,7 +261,7 @@
       <tr><td class="sig"><b>fee</b><span class="args">(bytes settings)</span><span class="tag">view</span></td><td>Its share of the tax and who receives it. At proposal, install and acceptFee.</td></tr>
       <tr><td class="sig"><b>beforeBuy</b> · <b>beforeSelfAssess</b><span class="args">(ctx)</span><span class="tag">view</span></td><td>Veto by reverting. Uncapped gas.</td></tr>
       <tr><td class="sig"><b>afterBuy</b> · <b>afterRelease</b> · <b>afterLiquidate</b> · <b>afterSettle</b><span class="args">(ctx)</span></td><td>Told after the fact. 500k gas, always in full (<code>ModuleGasTooLow</code> otherwise); a revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
-      <tr><td class="sig"><b>onInstall</b><span class="args">(ctx)</span></td><td>Attached. A revert is ignored unless <code>afterCallbacksMustSucceed</code>.</td></tr>
+      <tr><td class="sig"><b>onInstall</b><span class="args">(ctx)</span></td><td>Attached. At creation a revert is ignored unless <code>afterCallbacksMustSucceed</code>; attached by queued terms, it is always capped and ignored.</td></tr>
       <tr><td class="sig"><b>onUninstall</b><span class="args">(ctx)</span></td><td>Being replaced or removed. Always capped, a revert always ignored.</td></tr>
       <tr><td class="sig"><b>metadata</b><span class="args">()</span><span class="tag">optional</span></td><td>JSON for UIs (<code>IModuleMetadata</code>). The slot never calls it.</td></tr>
     </tbody>
@@ -307,7 +308,7 @@
         <td class="group" rowspan="2"><span class="struct">Queue</span></td>
         <td class="sig"><b>pending</b><span class="args">()</span></td><td class="type mono">Pending</td><td>Everything queued for the next buy, as stored.</td>
       </tr>
-      <tr><td class="sig"><b>hasRipeTerms</b><span class="args">()</span></td><td class="type mono">bool</td><td>Whether the queue lands at the next buy.</td></tr>
+      <tr><td class="sig"><b>hasRipeTerms</b><span class="args">()</span></td><td class="type mono">bool</td><td>Whether anything queued lands at the next buy. Tax terms and the module ripen on separate clocks.</td></tr>
     </tbody>
 
     <tbody>
@@ -416,7 +417,7 @@
         <td class="group" rowspan="3"><span class="struct">Anyone</span></td>
         <td class="sig"><b>createSlot</b><span class="args">(SlotInit init)</span></td><td class="type mono">address</td><td>Deploy a <code>BeaconProxy</code> at a CREATE2 address, initialize it, record it. Emits <code>SlotCreated</code>.</td>
       </tr>
-      <tr><td class="sig"><b>collectAll</b><span class="args">(address[] slots)</span></td><td class="type mono">uint256[]</td><td>Pay out collected tax from many slots. Each one is isolated: a failure reads 0.</td></tr>
+      <tr><td class="sig"><b>collectAll</b><span class="args">(address[] slots)</span></td><td class="type mono">uint256[]</td><td>Pay out collected tax from many slots. Each one is isolated and gets at most <code>COLLECT_GAS</code> (1.5M): a failure reads 0.</td></tr>
       <tr><td class="sig"><b>collectFrom</b><span class="args">(slot)</span></td><td class="type mono">uint256</td><td>Pay out one slot and return what moved. Reverts <code>NotASlot</code> for a slot it did not create.</td></tr>
     </tbody>
 

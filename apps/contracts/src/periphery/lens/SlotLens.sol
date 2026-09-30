@@ -39,8 +39,13 @@ struct SlotInfo {
     bool isInsolvent;
     uint256 secondsUntilLiquidation;
     Pending pending;
-    /// Whether `pending` lands at the next buy.
+    /// Whether anything in `pending` lands at the next buy.
     bool hasRipeTerms;
+    /// Whether the queued tax terms (rate, recipient, runway) have ripened.
+    /// They and the module each ripen on their own clock.
+    bool taxTermsRipe;
+    /// Whether the queued module, or accepted scopes, have ripened.
+    bool moduleTermsRipe;
 }
 
 /// @notice A slot's fixed numbers, in one call.
@@ -203,6 +208,12 @@ contract SlotLens is VersionedUUPS {
 
         info.pending = s.pending();
         info.hasRipeTerms = s.hasRipeTerms();
+        uint64 delay = s.TERMS_DELAY();
+        Pending memory p = info.pending;
+        info.taxTermsRipe =
+            p.mask & TermsLib.TAX_TERMS != 0 && block.timestamp >= p.proposedAt + delay;
+        info.moduleTermsRipe =
+            p.mask & TermsLib.MODULE_TERMS != 0 && block.timestamp >= p.moduleProposedAt + delay;
     }
 
     /// @notice Several slots, whole, in one call. Reverts if any one is not a slot.

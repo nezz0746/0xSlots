@@ -32,7 +32,7 @@ struct SlotInfo {
     // money, as of this block
     uint256 taxOwed; uint256 collectedTax;
     bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
-    Pending pending;      // { taxTerms, nextModule: { module, scopes, fee, settings }, mask, proposedAt }
+    Pending pending;      // { taxTerms, nextModule: { module, scopes, fee, settings }, mask, proposedAt, moduleProposedAt }
     bool hasRipeTerms;    // whether `pending` lands at the next buy
 }
 ```

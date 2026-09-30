@@ -57,24 +57,22 @@ library SlotMath {
     }
 
     /**
-     * @notice How many seconds `amount` of tax buys at `price`.
+     * @notice Seconds until `amount` more whole units have accrued, when
+     *         `carry` of the next unit already has.
      *
-     * @dev The inverse of `accrue`, in the same numerator space rather than
-     *      via a per-second rate. A rate divides before it multiplies, so it
-     *      floors to zero whenever `price * taxRateBps < MONTH * BASIS_POINTS` —
-     *      and a caller then reads "never runs out" for a position that is
-     *      insolvent inside the month.
-     *
-     *      A zero rate really is forever: nothing accrues, so nothing expires.
+     * @dev The exact inverse of {accrue}: the first second at which a settle
+     *      would take `amount` more units. Ignoring the carry reported a time
+     *      up to one unit's worth of seconds too late.
      */
-    function secondsFor(
+    function secondsUntilOwed(
         uint256 amount,
+        uint256 carry,
         uint256 price,
         uint256 taxRateBps
     ) internal pure returns (uint256) {
         uint256 rate = price * taxRateBps;
-        if (rate == 0) return type(uint256).max;
-        return Math.mulDiv(amount, DEN, rate);
+        if (rate == 0 || amount > type(uint256).max / DEN) return type(uint256).max;
+        return Math.ceilDiv(amount * DEN - carry, rate);
     }
 
     /**

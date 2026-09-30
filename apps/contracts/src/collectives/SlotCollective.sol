@@ -227,22 +227,33 @@ contract SlotCollective is PushSplit, SlotGovernance, Multicall, Versioned {
     ///        reaches the collective in time to be paid under `current`. A slot
     ///        left out pays what it holds under `next`.
     ///
-    /// @dev Reverts while paused, because distributing does. Routed through the
-    ///      inherited `updateSplit` by external self-call: `Ownable.onlyOwner`
-    ///      admits `msg.sender == address(this)`, so the hash, validation and
-    ///      event logic stay upstream's.
+    /// @dev While paused nothing is swept or paid: the split is only
+    ///      rewritten. A pause is how a manager stops money leaving under a
+    ///      split that is wrong, and paying out under it on the way to fixing
+    ///      it would defeat that. The self-call would otherwise slip past the
+    ///      pause, because upstream's `pausable` admits `address(this)`.
+    ///
+    ///      `next` is held to the same rules as the split set at creation — no
+    ///      recipients, or a total of zero, would leave rent with nowhere to go.
+    ///
+    ///      Routed through the inherited `updateSplit` by external self-call:
+    ///      `Ownable.onlyOwner` admits `msg.sender == address(this)`, so the
+    ///      hash, validation and event logic stay upstream's.
     function setSplit(
         SplitV2Lib.Split calldata current,
         SplitV2Lib.Split calldata next,
         address[] calldata tokens,
         IManagedSlot[] calldata slots
     ) external onlyRoleOrAdmin(SPLIT_MANAGER_ROLE) {
-        _sweep(slots);
-        uint256 length = tokens.length;
-        for (uint256 i; i < length; ++i) {
-            (uint256 held, uint256 warehoused) = getSplitBalance(tokens[i]);
-            // `distribute` leaves one unit behind, so one unit is nothing to pay.
-            if (held > 1 || warehoused > 1) this.distribute(current, tokens[i], msg.sender);
+        _validateSplitMemory(next);
+        if (!paused) {
+            _sweep(slots);
+            uint256 length = tokens.length;
+            for (uint256 i; i < length; ++i) {
+                (uint256 held, uint256 warehoused) = getSplitBalance(tokens[i]);
+                // `distribute` leaves one unit behind, so one unit is nothing to pay.
+                if (held > 1 || warehoused > 1) this.distribute(current, tokens[i], msg.sender);
+            }
         }
         this.updateSplit(next);
     }

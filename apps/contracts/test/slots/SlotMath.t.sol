@@ -46,18 +46,25 @@ contract SlotMathTest is Test {
 
     // ── the inverse ───────────────────────────────────────────────────────
 
-    /// @notice `secondsFor` inverts `accrue` — the property the old
-    ///         per-second rate broke by dividing before multiplying.
-    function testFuzz_SecondsForInvertsTaxFor(
+    /// @notice `secondsUntilOwed` inverts `accrue` exactly, carry included:
+    ///         the first second at which `k` more units are owed, and not one
+    ///         second earlier.
+    function testFuzz_SecondsUntilOwedIsExact(
         uint128 price,
         uint16 taxRateBps,
-        uint32 elapsed
+        uint32 elapsed,
+        uint8 k
     ) public pure {
-        vm.assume(price > 0 && taxRateBps > 0 && taxRateBps <= 10_000);
-        uint256 owed = _tax(price, taxRateBps, elapsed);
-        uint256 back = SlotMath.secondsFor(owed, price, taxRateBps);
-        // Never claims MORE time than was paid for.
-        assertLe(back, uint256(elapsed));
+        vm.assume(price > 0 && taxRateBps > 0 && taxRateBps <= 10_000 && k > 0);
+        (, uint256 carry) = SlotMath.accrue(price, taxRateBps, elapsed, 0);
+        uint256 t = SlotMath.secondsUntilOwed(k, carry, price, taxRateBps);
+
+        (uint256 owedAt,) = SlotMath.accrue(price, taxRateBps, t, carry);
+        assertGe(owedAt, k, "owed by then");
+        if (t > 0) {
+            (uint256 owedBefore,) = SlotMath.accrue(price, taxRateBps, t - 1, carry);
+            assertLt(owedBefore, k, "and not a second sooner");
+        }
     }
 
     /// @notice The bug this replaced: a per-second rate floors to zero and
@@ -67,14 +74,14 @@ contract SlotMathTest is Test {
         uint256 taxRateBps = 100; // 1%/month
         assertEq(Math.mulDiv(price, taxRateBps, DEN), 0, "per-second rate is zero");
 
-        uint256 runway = SlotMath.secondsFor(1e6, price, taxRateBps);
+        uint256 runway = SlotMath.secondsUntilOwed(1e6, 0, price, taxRateBps);
         assertLt(runway, type(uint256).max, "must be a real number");
         assertGt(_tax(price, taxRateBps, runway + 1), 0, "and it drains");
     }
 
     function test_AZeroRateIsForever() public pure {
-        assertEq(SlotMath.secondsFor(1e18, 0, 500), type(uint256).max);
-        assertEq(SlotMath.secondsFor(1e18, 1e18, 0), type(uint256).max);
+        assertEq(SlotMath.secondsUntilOwed(1e18, 0, 0, 500), type(uint256).max);
+        assertEq(SlotMath.secondsUntilOwed(1e18, 0, 1e18, 0), type(uint256).max);
     }
 
     // ── overflow, the reason `mulDiv` is used at all ──────────────────────

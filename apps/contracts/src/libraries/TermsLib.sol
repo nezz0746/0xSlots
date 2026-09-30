@@ -25,10 +25,13 @@ library TermsLib {
     uint16 internal constant SCOPES = 1 << 4;
 
     uint16 internal constant TAX_TERMS = TAX_RATE | RECIPIENT | MIN_RUNWAY;
+    /// The terms that share the module's clock.
+    uint16 internal constant MODULE_TERMS = MODULE | SCOPES;
     uint16 internal constant PROPOSABLE = TAX_TERMS | MODULE;
     uint16 internal constant ALL = PROPOSABLE | SCOPES;
 
-    /// @dev Copy the masked fields into the queue and restart the clock.
+    /// @dev Copy the masked fields into the queue and restart the clock of
+    ///      each group proposed — tax terms, the module — and only those.
     function propose(
         Pending storage p,
         TaxTerms calldata taxTerms,
@@ -48,14 +51,18 @@ library TermsLib {
             p.mask &= ~SCOPES;
         }
         p.mask |= mask;
-        p.proposedAt = uint64(block.timestamp);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (mask & TAX_TERMS != 0) p.proposedAt = uint64(block.timestamp);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (mask & MODULE != 0) p.moduleProposedAt = uint64(block.timestamp);
     }
 
-    /// @dev Queue the attached module's scopes and restart the clock.
+    /// @dev Queue the attached module's scopes and restart the module's clock.
     function queueScopes(Pending storage p, uint16 scopes) internal {
         p.nextModule.scopes = scopes;
         p.mask |= SCOPES;
-        p.proposedAt = uint64(block.timestamp);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        p.moduleProposedAt = uint64(block.timestamp);
     }
 
     /// @dev Drop whichever of `mask` is queued. Returns what was dropped.
@@ -63,27 +70,48 @@ library TermsLib {
         dropped = p.mask & mask;
         clear(p, dropped);
         p.mask &= ~dropped;
-        if (p.mask == 0) p.proposedAt = 0;
+        _resetEmptyClocks(p);
+    }
+
+    /// @dev The queued bits whose group has sat out `delay`. Each group ripens
+    ///      on its own clock and lands on its own.
+    function ripe(Pending storage p, uint64 delay) internal view returns (uint16 bits) {
+        uint16 mask = p.mask;
+        if (mask & TAX_TERMS != 0 && block.timestamp >= p.proposedAt + delay) {
+            bits |= mask & TAX_TERMS;
+        }
+        if (mask & MODULE_TERMS != 0 && block.timestamp >= p.moduleProposedAt + delay) {
+            bits |= mask & MODULE_TERMS;
+        }
     }
 
     function isRipe(Pending storage p, uint64 delay) internal view returns (bool) {
-        return p.mask != 0 && block.timestamp >= p.proposedAt + delay;
+        return ripe(p, delay) != 0;
     }
 
-    /// @dev Copy the queued tax terms into the live ones and empty the queue.
-    ///      Returns what was queued. The module is the slot's to install: it
-    ///      reads `p.nextModule` before calling this, and checks it first.
+    /// @dev Copy the queued tax terms named by `bits` into the live ones and
+    ///      empty those from the queue; anything else queued stays, on its own
+    ///      clock. Returns what was applied. The module is the slot's to
+    ///      install: it reads `p.nextModule` before calling this, and checks it
+    ///      first.
     function applyQueued(
         Pending storage p,
-        TaxTerms storage liveTaxTerms
+        TaxTerms storage liveTaxTerms,
+        uint16 bits
     ) internal returns (uint16 applied) {
-        applied = p.mask;
+        applied = p.mask & bits;
         if (applied & TAX_RATE != 0) liveTaxTerms.rateBps = p.taxTerms.rateBps;
         if (applied & RECIPIENT != 0) liveTaxTerms.recipient = p.taxTerms.recipient;
         if (applied & MIN_RUNWAY != 0) liveTaxTerms.minRunwaySeconds = p.taxTerms.minRunwaySeconds;
         clear(p, applied);
-        p.mask = 0;
-        p.proposedAt = 0;
+        p.mask &= ~applied;
+        _resetEmptyClocks(p);
+    }
+
+    /// @dev A group with nothing queued has no clock running.
+    function _resetEmptyClocks(Pending storage p) private {
+        if (p.mask & TAX_TERMS == 0) p.proposedAt = 0;
+        if (p.mask & MODULE_TERMS == 0) p.moduleProposedAt = 0;
     }
 
     /// @dev Empty the queued fields named by `mask`.

@@ -84,8 +84,9 @@ function setManager(address next) external;               // immediate, one step
 Fields outside the mask are ignored. Proposals are validated now — a module is
 asked `validateSettings`, `scopes` and `fee` at proposal — and then **queue**: they
 ripen after `TERMS_DELAY` (one hour) and land at the next `buy`, or earlier
-through `applyTerms`. Proposing again overwrites the named terms, keeps the rest
-queued, and restarts the delay. `cancelTerms` drops whichever of `mask` is
+through `applyTerms`. Tax terms and the module ripen on separate clocks, so one
+role's change never holds another's back. Proposing again overwrites the named
+terms, keeps the rest queued, and restarts the delay of the group it touched. `cancelTerms` drops whichever of `mask` is
 queued and leaves the rest.
 
 ## Modules

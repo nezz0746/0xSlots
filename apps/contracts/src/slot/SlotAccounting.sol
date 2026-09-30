@@ -38,7 +38,8 @@ abstract contract SlotAccounting is SlotModules {
         TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 scopes, ModuleFee fee, uint16 mask
     );
     /// @notice A queued module could not be attached and was dropped instead of
-    ///         being allowed to block the transition.
+    ///         being allowed to block the transition. The slot keeps the module
+    ///         it had.
     event ModuleDropped(address indexed module);
     /// @notice Accepted scopes were not applied, because the module no
     ///         longer declares them. The slot keeps the scopes it had.
@@ -139,7 +140,8 @@ abstract contract SlotAccounting is SlotModules {
         _after(ScopesLib.AFTER_SETTLE, abi.encodeCall(ISlotModule.afterSettle, (ctx)));
     }
 
-    /// @notice Whether queued terms have sat long enough to land.
+    /// @notice Whether any queued terms have sat long enough to land. Tax
+    ///         terms and the module each ripen on their own clock.
     /// @dev `buy` and `applyTerms` are WHERE terms land; the delay is WHEN they
     ///      may. Public because a buyer has to be able to ask: anything sizing a
     ///      deposit against queued terms has to agree with `_applyPending`
@@ -171,11 +173,13 @@ abstract contract SlotAccounting is SlotModules {
      */
     function _applyPending() internal returns (bool attached) {
         Pending storage q = _pending();
-        if (!q.isRipe(TERMS_DELAY)) return false;
+        // Only what is ripe lands; a group still inside its delay stays queued.
+        uint16 ripe = q.ripe(TERMS_DELAY);
+        if (ripe == 0) return false;
 
-        bool moduleChanges = q.mask & TermsLib.MODULE != 0;
+        bool moduleChanges = ripe & TermsLib.MODULE != 0;
         // Never both: a queued module brings its own scopes.
-        bool scopesChange = q.mask & TermsLib.SCOPES != 0;
+        bool scopesChange = ripe & TermsLib.SCOPES != 0;
         // What the manager reviewed: the whole proposed module, or only the
         // scopes accepted from the current one. Copied out before the queue
         // is emptied.
@@ -199,27 +203,26 @@ abstract contract SlotAccounting is SlotModules {
             (ok, declaredScopes,) = _tryReadModule(live.terms());
         }
 
+        // Dropped rather than installed when the module no longer declares
+        // what the manager reviewed. The re-read is what makes an upgraded
+        // module honest; the comparison is what stops it being a second,
+        // unreviewed proposal. A dropped change moves nothing: the slot keeps
+        // the module it had, and that module is never told it was removed.
+        bool dropped =
+            moduleChanges && next.module != address(0)
+            && (!ok || declaredScopes != next.scopes || !ModuleLib.sameFee(declaredFee, next.fee));
+
         // The outgoing module is told BEFORE anything moves, while the record
         // and the tax terms still describe the slot it served, so it is handed
         // its own settings. Never fatal.
-        if (moduleChanges) _onUninstall();
+        if (moduleChanges && !dropped) _onUninstall();
 
-        uint16 applied = q.applyQueued(_taxTerms());
+        uint16 applied = q.applyQueued(_taxTerms(), ripe);
 
-        if (moduleChanges) {
-            // Dropped rather than installed when the module no longer declares
-            // what the manager reviewed. The re-read is what makes an upgraded
-            // module honest; the comparison is what stops it being a second,
-            // unreviewed proposal.
-            if (
-                next.module != address(0)
-                    && (!ok
-                        || declaredScopes != next.scopes
-                        || !ModuleLib.sameFee(declaredFee, next.fee))
-            ) {
-                emit ModuleDropped(next.module);
-                delete next;
-            }
+        if (dropped) {
+            applied &= ~TermsLib.MODULE;
+            emit ModuleDropped(next.module);
+        } else if (moduleChanges) {
             live.install(next);
             attached = next.module != address(0);
         } else if (scopesChange) {

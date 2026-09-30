@@ -13,6 +13,7 @@ import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTy
 import {SlotContext} from "../../src/interfaces/ISlotModule.sol";
 import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
 import {NotMutable, ModuleGasTooLow} from "../../src/errors/SlotErrors.sol";
+import {TermsLib} from "../../src/libraries/TermsLib.sol";
 
 /// @dev Refuses any buy that would displace a sitting occupant, for as long as
 ///      it declares `beforeBuy`. Its owner can stop declaring it.
@@ -40,6 +41,51 @@ contract KeepSeat is AskModule {
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
     function afterSettle(SlotContext calldata) external {}
+    function onInstall(SlotContext calldata) external {}
+    function onUninstall(SlotContext calldata) external {}
+}
+
+/// @dev Must-succeed, and refuses to be told it was attached by a buy. Harmless
+///      at creation, where its refusal would only fail the creator.
+contract InstallBomb is AskModule {
+    function _ask(bytes calldata) internal pure override returns (Ask memory a) {
+        a.scopes = ScopesLib.ON_INSTALL | ScopesLib.AFTER_CALLBACKS_MUST_SUCCEED;
+    }
+
+    function validateSettings(bytes calldata) external pure {}
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+    function afterSettle(SlotContext calldata) external {}
+
+    function onInstall(SlotContext calldata c) external pure {
+        if (c.account != address(0)) revert("no");
+    }
+
+    function onUninstall(SlotContext calldata) external {}
+}
+
+/// @dev Must-succeed, and burns every unit of gas it is given on a settle.
+contract SettleBurner is AskModule {
+    uint256 public sink;
+
+    function _ask(bytes calldata) internal pure override returns (Ask memory a) {
+        a.scopes = ScopesLib.AFTER_SETTLE | ScopesLib.AFTER_CALLBACKS_MUST_SUCCEED;
+    }
+
+    function validateSettings(bytes calldata) external pure {}
+    function beforeBuy(SlotContext calldata) external view {}
+    function beforeSelfAssess(SlotContext calldata) external view {}
+    function afterBuy(SlotContext calldata) external {}
+    function afterRelease(SlotContext calldata) external {}
+    function afterLiquidate(SlotContext calldata) external {}
+
+    function afterSettle(SlotContext calldata) external {
+        while (true) sink++;
+    }
+
     function onInstall(SlotContext calldata) external {}
     function onUninstall(SlotContext calldata) external {}
 }
@@ -143,5 +189,90 @@ contract ModuleGuardsTest is Test {
 
         s.liquidate();
         assertTrue(s.isVacant());
+    }
+
+    /// @notice A queued module that refuses `onInstall` cannot refuse every
+    ///         buy: the call is capped and swallowed, and the buy seats.
+    function test_AQueuedModuleCannotRefuseItsOwnInstall() public {
+        Slot s = _slot(address(0), true);
+        InstallBomb bomb = new InstallBomb();
+        TaxTerms memory none;
+        s.proposeTerms(none, ModuleTerms({module: address(bomb), settings: ""}), s.TERM_MODULE());
+        vm.warp(block.timestamp + s.TERMS_DELAY());
+
+        _seat(s, bob, 1 ether);
+        assertEq(s.occupant(), bob, "the buy went through");
+        assertEq(s.module(), address(bomb), "and the module attached");
+    }
+
+    /// @notice A queued module that no longer declares what was reviewed is
+    ///         dropped, and the slot keeps the module it had.
+    function test_ADroppedModuleLeavesTheOldOneInstalled() public {
+        LensModule current = new LensModule();
+        Slot s = _slot(address(current), true);
+        LensModule next = new LensModule();
+        TaxTerms memory none;
+        s.proposeTerms(none, ModuleTerms({module: address(next), settings: ""}), s.TERM_MODULE());
+        next.set(1_000, author); // now asks for a fee nobody reviewed
+        vm.warp(block.timestamp + s.TERMS_DELAY());
+
+        s.applyTerms();
+        assertEq(s.module(), address(current), "the old module stays");
+        assertEq(s.pending().mask, 0, "and the change is gone from the queue");
+    }
+
+    /// @notice One role re-proposing its own terms does not hold another
+    ///         role's change back: each group ripens on its own clock.
+    function test_TaxProposalsDoNotResetTheModuleClock() public {
+        Slot s = _slot(address(0), true);
+        LensModule next = new LensModule();
+        TaxTerms memory none;
+        s.proposeTerms(none, ModuleTerms({module: address(next), settings: ""}), s.TERM_MODULE());
+
+        vm.warp(block.timestamp + s.TERMS_DELAY() - 60);
+        TaxTerms memory rate;
+        rate.rateBps = 700;
+        ModuleTerms memory noModule;
+        s.proposeTerms(rate, noModule, s.TERM_TAX_RATE());
+
+        vm.warp(block.timestamp + 61);
+        s.applyTerms();
+        assertEq(s.module(), address(next), "the module landed on its own clock");
+        assertEq(s.pending().mask, s.TERM_TAX_RATE(), "the tax change waits for its own");
+        assertEq(s.taxRateBps(), 500);
+        assertFalse(s.hasRipeTerms());
+    }
+
+    /// @notice The reported runway is exact: insolvent on that second, not a
+    ///         second before.
+    function test_SecondsUntilLiquidationIsExact() public {
+        Slot s = _slot(address(0), true);
+        _seat(s, alice, 1 ether);
+        vm.warp(block.timestamp + 12 hours + 17); // leave a carried fraction
+        s.topUp(0);
+
+        uint256 left = s.secondsUntilLiquidation();
+        assertGt(left, 1);
+        vm.warp(block.timestamp + left - 1);
+        assertFalse(s.isInsolvent(), "a second early, still solvent");
+        vm.warp(block.timestamp + 1);
+        assertTrue(s.isInsolvent(), "on the second");
+    }
+
+    /// @notice One slot that burns every unit of gas it is given cannot sink a
+    ///         whole collection run.
+    function test_CollectAllSurvivesASlotThatBurnsAllItsGas() public {
+        Slot bad = _slot(address(new SettleBurner()), true);
+        Slot good = _slot(address(0), true);
+        _seat(bad, alice, 1 ether);
+        _seat(good, bob, 1 ether);
+        vm.warp(block.timestamp + 1 days);
+
+        address[] memory slots = new address[](2);
+        slots[0] = address(bad);
+        slots[1] = address(good);
+        uint256[] memory collected = factory.collectAll(slots);
+        assertEq(collected[0], 0, "the burner is skipped");
+        assertGt(collected[1], 0, "the rest is collected");
     }
 }

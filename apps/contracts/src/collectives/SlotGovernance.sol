@@ -389,15 +389,20 @@ abstract contract SlotGovernance is AccessControl, Initializable {
         _sweep(slots);
     }
 
+    /// @notice The most gas one slot's leg of a sweep may spend. A slot whose
+    ///         module burns everything it is given costs this much and no
+    ///         more, so it cannot sink the rest of the batch.
+    uint256 public constant SWEEP_GAS = 1_500_000;
+
     function _sweep(IManagedSlot[] calldata slots) internal {
         uint256 length = slots.length;
         for (uint256 i; i < length; ++i) {
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].collect() {} catch {}
+            try slots[i].collect{gas: SWEEP_GAS}() {} catch {}
             // Recovers tax that was pushed while this contract could not accept
             // it and got booked as a credit instead.
             // solhint-disable-next-line no-empty-blocks
-            try slots[i].claim(address(this)) {} catch {}
+            try slots[i].claim{gas: SWEEP_GAS}(address(this)) {} catch {}
         }
     }
 }

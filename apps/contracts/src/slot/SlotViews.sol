@@ -29,6 +29,7 @@ import {TermsLib} from "../libraries/TermsLib.sol";
  *      slots, or the constants, in one call.
  */
 abstract contract SlotViews is SlotAccounting {
+    using TermsLib for Pending;
     using ModuleLib for InstalledModule;
 
     // ─── governance ─────────────────────────────────────────────────────────
@@ -150,12 +151,14 @@ abstract contract SlotViews is SlotAccounting {
     function secondsUntilLiquidation() public view returns (uint256) {
         Occupancy storage o = _occupancy();
         if (o.occupant == address(0)) return type(uint256).max;
-        uint256 owed = taxOwed();
+        uint256 rate = _taxTerms().rateBps;
+        (uint256 owed, uint256 carry) =
+            SlotMath.accrue(o.price, rate, block.timestamp - o.lastSettled, o.taxCarry);
         if (owed >= o.deposit) return 0;
-        // Inverted from the same numerator space `taxOwed` uses rather than via
-        // a per-second rate, which floors to zero and reads "never" for a
-        // position that is insolvent inside the month.
-        return SlotMath.secondsFor(o.deposit - owed, o.price, _taxTerms().rateBps);
+        // Inverted from the same numerator space a settle uses, carry
+        // included, rather than via a per-second rate, which floors to zero
+        // and reads "never" for a position that is insolvent inside the month.
+        return SlotMath.secondsUntilOwed(o.deposit - owed, carry, o.price, rate);
     }
 
     /**
@@ -178,13 +181,10 @@ abstract contract SlotViews is SlotAccounting {
      */
     function minDepositForBuy(uint256 price_) public view returns (uint256) {
         TaxTerms memory r = _taxTerms();
-        if (hasRipeTerms()) {
-            Pending storage q = _pending();
-            if (q.mask & TermsLib.TAX_RATE != 0) r.rateBps = q.taxTerms.rateBps;
-            if (q.mask & TermsLib.MIN_RUNWAY != 0) {
-                r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;
-            }
-        }
+        Pending storage q = _pending();
+        uint16 ripe = q.ripe(TERMS_DELAY);
+        if (ripe & TermsLib.TAX_RATE != 0) r.rateBps = q.taxTerms.rateBps;
+        if (ripe & TermsLib.MIN_RUNWAY != 0) r.minRunwaySeconds = q.taxTerms.minRunwaySeconds;
         return SlotMath.depositFor(price_, r.rateBps, r.minRunwaySeconds);
     }
 

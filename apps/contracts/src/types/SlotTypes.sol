@@ -103,6 +103,11 @@ struct Pending {
     InstalledModule nextModule;
     /// Which terms are queued: `TERM_*` bits.
     uint16 mask;
-    /// When the delay started. Every proposal restarts it.
+    /// When the delay started for the queued TAX terms — rate, recipient and
+    /// runway. Proposing any of them restarts it; nothing else does.
     uint64 proposedAt;
+    /// When the delay started for the queued MODULE or SCOPES. Separate, so
+    /// one role re-proposing its own terms can never hold another role's
+    /// change back.
+    uint64 moduleProposedAt;
 }

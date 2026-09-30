@@ -158,6 +158,21 @@ export function pendingChanges(
   return rows;
 }
 
+/**
+ * When one row lands. Tax terms and the module ripen on separate clocks, so a
+ * row reads its own: module and scopes from the module's, the rest from the
+ * tax terms'. Ripeness comes from the chain, never this browser's clock.
+ */
+function rowTiming(
+  row: PendingRow,
+  pending: SlotState["pending"],
+): { ripe: boolean; at: bigint } {
+  const moduleRow = row.dimension === "module" || row.dimension === "scopes";
+  return moduleRow
+    ? { ripe: pending.moduleApplies, at: pending.moduleAppliesAt }
+    : { ripe: pending.taxApplies, at: pending.taxAppliesAt };
+}
+
 /** Must match the labels `useSlotAction` reports through `activeAction`, so a
  *  per-row spinner lands on the retraction actually in flight rather than on
  *  both at once. See `cancelTerms` in the SDK's react bindings. */
@@ -251,13 +266,12 @@ export function PendingTermsBanner({
    * browser's clock. The contract decides against ITS clock.
    */
   const ripe = state.pending.applies;
-  const { appliesAt } = state.pending;
   const tax = rows.find((r) => r.dimension === "tax");
 
   // One consequence line, and it turns on ripeness. Ripe: the reader's own buy
   // is the transition that lands this. Unripe: it cannot be, whatever they do.
   const consequence = ripe
-    ? tax
+    ? tax && state.pending.taxApplies
       ? `Applies at the next buy — including yours, at ${tax.next}.`
       : "Applies at the next buy — including yours."
     : tax
@@ -293,9 +307,9 @@ export function PendingTermsBanner({
               </span>
               <NextValue row={row} />
               <span className="ml-auto shrink-0 font-medium tabular-nums text-sky-700 dark:text-sky-300">
-                {ripe
+                {rowTiming(row, state.pending).ripe
                   ? "eligible now"
-                  : `in ${eligibleIn(appliesAt, chainNow)}`}
+                  : `in ${eligibleIn(rowTiming(row, state.pending).at, chainNow)}`}
               </span>
             </div>
           ))}
@@ -342,8 +356,12 @@ export function QueuedTermsControls({
   if (rows.length === 0) return null;
 
   const chainNow = nowSecondsOf(skew);
-  const ripe = state.pending.applies;
-  const { appliesAt } = state.pending;
+  // The header speaks for the whole queue: every row ripe, or the soonest one.
+  const allRipe = rows.every((r) => rowTiming(r, state.pending).ripe);
+  const soonest = rows
+    .filter((r) => !rowTiming(r, state.pending).ripe)
+    .map((r) => rowTiming(r, state.pending).at)
+    .reduce((a, b) => (a < b ? a : b), 0n);
 
   return (
     <div className="space-y-2 border border-sky-500/30 bg-sky-500/[0.06] p-3">
@@ -352,9 +370,9 @@ export function QueuedTermsControls({
           Queued
         </h4>
         <span className="text-[10px] font-medium tabular-nums text-sky-700 dark:text-sky-300">
-          {ripe
+          {allRipe
             ? "eligible now"
-            : `eligible in ${eligibleIn(appliesAt, chainNow)}`}
+            : `${rows.some((r) => rowTiming(r, state.pending).ripe) ? "part eligible now, rest" : "eligible"} in ${eligibleIn(soonest, chainNow)}`}
         </span>
       </div>
 

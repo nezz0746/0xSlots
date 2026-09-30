@@ -43,11 +43,12 @@ export const MONTH_SECONDS = 30n * 24n * 60n * 60n;
 /**
  * How long queued terms must sit before a transition may apply them.
  *
- * `pending.proposedAt + TERMS_DELAY` is the instant `hasRipeTerms()` starts
- * answering true. Mirrored here so a UI can say WHEN a queued change becomes
- * ripe without a second round trip — but whether it IS ripe should still come
- * from {@link SlotsClient.hasRipeTerms}, which asks the chain's clock rather
- * than the browser's.
+ * Tax terms ripen at `pending.proposedAt + TERMS_DELAY` and the module at
+ * `pending.moduleProposedAt + TERMS_DELAY` — two clocks, so one change never
+ * holds the other back. Mirrored here so a UI can say WHEN a queued change
+ * becomes ripe without a second round trip — but whether it IS ripe should
+ * still come from the chain's clock, as `Pending.taxApplies` /
+ * `moduleApplies` do, rather than the browser's.
  */
 export const TERMS_DELAY_SECONDS = 60n * 60n;
 
@@ -273,17 +274,28 @@ export interface Pending {
   hasMinRunway: boolean;
   hasModule: boolean;
   hasScopes: boolean;
+  /** When the queued TAX terms' delay started. They ripen on their own clock. */
   proposedAt: bigint;
+  /** When the queued module's (or accepted scopes') delay started. */
+  moduleProposedAt: bigint;
+  /** When the queued tax terms ripen. Zero when none are queued. */
+  taxAppliesAt: bigint;
+  /** When the queued module or scopes ripen. Zero when neither is queued. */
+  moduleAppliesAt: bigint;
   /**
-   * The instant this becomes ripe — `proposedAt + TERMS_DELAY`. Zero when
-   * nothing is queued. Render it; branch on {@link applies}.
+   * The earliest instant anything queued ripens. Zero when nothing is queued.
+   * Render it; branch on {@link applies}.
    */
   appliesAt: bigint;
   /**
-   * `hasRipeTerms()` — whether the next buy will actually land these terms,
+   * `hasRipeTerms()` — whether the next buy will land anything queued,
    * answered against the chain's clock.
    */
   applies: boolean;
+  /** Whether the queued tax terms land at the next buy. */
+  taxApplies: boolean;
+  /** Whether the queued module or scopes land at the next buy. */
+  moduleApplies: boolean;
   /** True when nothing is queued. */
   isEmpty: boolean;
 }
@@ -812,18 +824,23 @@ export class SlotsClient {
   /**
    * Terms the manager has queued for the next buy.
    *
-   * Two reads, not one, and the second is the whole reason: the struct says
-   * WHAT is queued and `hasRipeTerms()` says whether the next buy will
-   * take it. Those were the same fact until `TERMS_DELAY` was wired up, and a
-   * caller left to infer the second from `proposedAt` and its own clock is
-   * inferring it against the wrong clock.
+   * The struct says WHAT is queued; whether the next buy will take it is
+   * measured against the CHAIN's clock — the latest block — never this
+   * machine's, which on a warped local chain reads days out. Tax terms and
+   * the module ripen on separate clocks, so each is answered on its own.
    */
   async pending(slot: Address): Promise<Pending> {
-    const [p, ripe] = await Promise.all([
+    const [p, ripe, block] = await Promise.all([
       this.read<PendingResult>(slot, "pending"),
       this.hasRipeTerms(slot),
+      this.publicClient.getBlock(),
     ]);
-    return toPending(p, ripe);
+    const due = pendingDue(p);
+    return toPending(p, {
+      any: ripe,
+      tax: due.tax !== 0n && block.timestamp >= due.tax,
+      module: due.module !== 0n && block.timestamp >= due.module,
+    });
   }
 
   /** The token this slot is denominated in. {@link zeroAddress} means native ETH. */
@@ -2012,6 +2029,7 @@ interface PendingResult {
   nextModule: InstalledModuleResult;
   mask: number;
   proposedAt: bigint;
+  moduleProposedAt: bigint;
 }
 
 /** `InstalledModule` as viem decodes it. */
@@ -2044,7 +2062,11 @@ function toSlotState(i: SlotInfoResult): SlotState {
     settings: i.terms.moduleTerms.settings,
     scopes: i.scopes,
     fee: i.fee,
-    pending: toPending(i.pending, i.hasRipeTerms),
+    pending: toPending(i.pending, {
+      any: i.hasRipeTerms,
+      tax: i.taxTermsRipe,
+      module: i.moduleTermsRipe,
+    }),
     occupiedSince: i.occupiedSince,
     lastSettled: i.lastSettled,
     collectedTax: i.collectedTax,
@@ -2075,10 +2097,29 @@ interface SlotInfoResult {
   secondsUntilLiquidation: bigint;
   pending: PendingResult;
   hasRipeTerms: boolean;
+  taxTermsRipe: boolean;
+  moduleTermsRipe: boolean;
 }
 
-function toPending(p: PendingResult, ripe: boolean): Pending {
+const TAX_TERM_BITS = TERMS.TAX_RATE | TERMS.RECIPIENT | TERMS.MIN_RUNWAY;
+const MODULE_TERM_BITS = TERMS.MODULE | TERMS.SCOPES;
+
+/** When each queued group ripens, zero for a group with nothing queued. */
+function pendingDue(p: PendingResult): { tax: bigint; module: bigint } {
+  return {
+    tax: p.mask & TAX_TERM_BITS ? p.proposedAt + TERMS_DELAY_SECONDS : 0n,
+    module:
+      p.mask & MODULE_TERM_BITS ? p.moduleProposedAt + TERMS_DELAY_SECONDS : 0n,
+  };
+}
+
+function toPending(
+  p: PendingResult,
+  ripe: { any: boolean; tax: boolean; module: boolean },
+): Pending {
   const isEmpty = p.mask === 0;
+  const due = pendingDue(p);
+  const queued = [due.tax, due.module].filter((t) => t !== 0n);
   return {
     taxTerms: p.taxTerms,
     moduleTerms: { module: p.nextModule.module, settings: p.nextModule.settings },
@@ -2091,8 +2132,13 @@ function toPending(p: PendingResult, ripe: boolean): Pending {
     hasModule: (p.mask & TERMS.MODULE) !== 0,
     hasScopes: (p.mask & TERMS.SCOPES) !== 0,
     proposedAt: p.proposedAt,
-    appliesAt: isEmpty ? 0n : p.proposedAt + TERMS_DELAY_SECONDS,
-    applies: ripe,
+    moduleProposedAt: p.moduleProposedAt,
+    taxAppliesAt: due.tax,
+    moduleAppliesAt: due.module,
+    appliesAt: queued.length ? queued.reduce((a, b) => (a < b ? a : b)) : 0n,
+    applies: ripe.any,
+    taxApplies: ripe.tax,
+    moduleApplies: ripe.module,
     isEmpty,
   };
 }

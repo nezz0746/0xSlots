@@ -454,6 +454,45 @@ contract SlotCollectiveTest is Test {
     }
 
     /// @notice The split in force must be the one passed as current.
+    /// @notice While paused, rewriting the split pays nobody: a pause is how a
+    ///         manager stops money leaving under a split that is wrong.
+    function test_rewritingTheSplitWhilePausedPaysNothing() public {
+        vm.deal(address(mgr), 1 ether);
+        vm.prank(splitMgr);
+        mgr.setPaused(true);
+
+        address[] memory r = new address[](1);
+        r[0] = payeeA;
+        uint256[] memory a = new uint256[](1);
+        a[0] = 100;
+        SplitV2Lib.Split memory allToA = SplitV2Lib.Split({
+            recipients: r, allocations: a, totalAllocation: 100, distributionIncentive: 0
+        });
+        address[] memory tokens = new address[](1);
+        tokens[0] = mgr.NATIVE_TOKEN();
+
+        vm.prank(splitMgr);
+        mgr.setSplit(_split(), allToA, tokens, new IManagedSlot[](0));
+
+        assertEq(payeeA.balance, 0, "nothing paid while paused");
+        assertEq(payeeB.balance, 0);
+        assertEq(address(mgr).balance, 1 ether, "the rent stays put");
+        assertEq(mgr.splitHash(), keccak256(abi.encode(allToA)), "and the split changed");
+    }
+
+    /// @notice A split with nobody in it would leave rent with nowhere to go.
+    function test_rewritingTheSplitRefusesAnEmptyOne() public {
+        SplitV2Lib.Split memory empty = SplitV2Lib.Split({
+            recipients: new address[](0),
+            allocations: new uint256[](0),
+            totalAllocation: 0,
+            distributionIncentive: 0
+        });
+        vm.prank(splitMgr);
+        vm.expectRevert(SlotCollective.EmptySplit.selector);
+        mgr.setSplit(_split(), empty, new address[](0), new IManagedSlot[](0));
+    }
+
     function test_rewritingTheSplitNeedsTheCurrentSplit() public {
         vm.deal(address(mgr), 1 ether);
         SplitV2Lib.Split memory wrong = _split();

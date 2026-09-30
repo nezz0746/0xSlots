@@ -155,12 +155,23 @@ contract SlotFactory is VersionedUUPS {
      *      rejected, for the same reason: a stale entry in a caller's list is
      *      not worth failing a batch over.
      *
+     *      Each collection gets at most {COLLECT_GAS}. Without a limit a slot
+     *      whose must-succeed module burns every unit of gas in `afterSettle`
+     *      would take the whole batch down with it — 63/64 of what is left
+     *      goes into the call, and 1/64 is not enough to finish the loop. A
+     *      slot that genuinely needs more is still collected by calling it
+     *      directly.
+     *
      * @return collected What each slot actually paid out, indexed as passed in.
      *         Zero means skipped, already flushed, or reverted — deliberately
      *         not distinguished, because the caller's next move is the same for
      *         all three. Simulate this call to price the button before showing
      *         it; the per-slot `TaxCollected` events carry the recipients.
      */
+    /// @notice The most gas one collection in {collectAll} may spend: two
+    ///         module callbacks at their stipend and both payouts, with room.
+    uint256 public constant COLLECT_GAS = 1_500_000;
+
     function collectAll(address[] calldata slots) external returns (uint256[] memory collected) {
         collected = new uint256[](slots.length);
         for (uint256 i; i < slots.length; ++i) {
@@ -168,7 +179,7 @@ contract SlotFactory is VersionedUUPS {
             // a revert: `try` guards the call in its own expression and nothing
             // in the success block, so the amount has to be read on the far
             // side of the same boundary the failure is caught at.
-            try this.collectFrom(slots[i]) returns (uint256 amount) {
+            try this.collectFrom{gas: COLLECT_GAS}(slots[i]) returns (uint256 amount) {
                 collected[i] = amount;
             } catch {}
         }
