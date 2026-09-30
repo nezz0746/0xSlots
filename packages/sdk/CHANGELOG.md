@@ -1,5 +1,12 @@
 # @0xslots/sdk
 
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies [dc99b8a]
+  - @0xslots/contracts@1.1.0
+
 ## 1.0.0
 
 ### Major Changes
