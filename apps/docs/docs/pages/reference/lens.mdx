@@ -1,0 +1,62 @@
+# SlotLens
+
+Reads about slots that the slot has no room for. It asks each slot through the
+slot's own getters, so it never holds a copy of a slot's state, and every
+answer comes from one block.
+
+Periphery, like the book. A UUPS proxy like the factories, so a new read keeps
+the same address. Its admin can upgrade it and nothing else.
+
+```solidity
+function getSlotInfo(address slot) external view returns (SlotInfo memory);
+function getSlotInfos(address[] calldata slots) external view returns (SlotInfo[] memory);
+function getSlotConstants(address slot) external view returns (SlotConstantsInfo memory);
+function moduleUpdate(address slot) external view returns (ModuleUpdate memory);
+```
+
+## `getSlotInfo` / `getSlotInfos`
+
+One slot, or many, whole. `getSlotInfos` reverts if any address is not a slot.
+
+```solidity
+struct SlotInfo {
+    // governance
+    IERC20 currency; address manager;
+    bool mutableTax; bool mutableRecipient; bool mutableModule;
+    Terms terms;          // { TaxTerms taxTerms; ModuleTerms moduleTerms; }
+    Scopes scopes;
+    ModuleFee fee;
+    // occupancy
+    address occupant; uint256 price; uint256 deposit;
+    uint64 occupiedSince; uint64 tenureId; uint64 lastSettled;
+    // money, as of this block
+    uint256 taxOwed; uint256 collectedTax;
+    bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
+    Pending pending;      // { taxTerms, nextModule: { module, scopes, fee, settings }, mask, proposedAt, moduleProposedAt }
+    bool hasRipeTerms;    // whether `pending` lands at the next buy
+}
+```
+
+## `getSlotConstants`
+
+Every constant the slot runs under (`MAX_PRICE`, `TERMS_DELAY`,
+`MODULE_CALLBACK_GAS_LIMIT`, the `TERM_*` bits, …). Read from the slot, so a
+beacon upgrade that changes one shows up here.
+
+## `moduleUpdate`
+
+What the slot's module declares today beside the slot's copy:
+
+```solidity
+struct ModuleUpdate {
+    uint16 currentScopes; ModuleFee currentFee;   // the slot's copy
+    bool answered;                                // false: no module, a revert, or out of range
+    uint16 declaredScopes; ModuleFee declaredFee; // what the module says now
+    bool feeDiffers;                              // acceptFee would change it
+    bool scopesDiffer;                            // acceptScopes would queue it
+}
+```
+
+It reads the module the way the slot would when it lands (fail-open, under a
+third of `MODULE_CALLBACK_GAS_LIMIT` per read) and applies the accept rules. It
+never reverts on a module that misbehaves.

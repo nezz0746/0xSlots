@@ -33,15 +33,15 @@ ponder.on("SlotBoundNFTFactory:CollectionCreated", async ({ event, context }) =>
   let terms: {
     name: string | null;
     symbol: string | null;
-    taxBps: bigint | null;
-    minDepositSeconds: bigint | null;
+    taxRateBps: bigint | null;
+    minRunwaySeconds: bigint | null;
     manager: `0x${string}` | null;
     owner: `0x${string}` | null;
   } = {
     name: null,
     symbol: null,
-    taxBps: null,
-    minDepositSeconds: null,
+    taxRateBps: null,
+    minRunwaySeconds: null,
     manager: null,
     owner: null,
   };
@@ -72,8 +72,8 @@ ponder.on("SlotBoundNFTFactory:CollectionCreated", async ({ event, context }) =>
     terms = {
       name,
       symbol,
-      taxBps: t.taxBps,
-      minDepositSeconds: t.minDepositSeconds,
+      taxRateBps: BigInt(t.taxTerms.rateBps),
+      minRunwaySeconds: BigInt(t.taxTerms.minRunwaySeconds),
       manager: lower(t.manager),
       owner: lower(owner),
     };
@@ -93,8 +93,8 @@ ponder.on("SlotBoundNFTFactory:CollectionCreated", async ({ event, context }) =>
     totalMinted: 0,
     currency: lower(event.args.currency),
     recipient: lower(event.args.recipient),
-    taxBps: terms.taxBps,
-    minDepositSeconds: terms.minDepositSeconds,
+    taxRateBps: terms.taxRateBps,
+    minRunwaySeconds: terms.minRunwaySeconds,
     manager: terms.manager,
     owner: terms.owner,
     baseURI: null,

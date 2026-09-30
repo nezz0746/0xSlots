@@ -67,21 +67,17 @@ contract SlotCollectiveLayoutTest is Test {
         SlotCollective.InitialRoles memory roles = SlotCollective.InitialRoles({
             admin: admin,
             taxManagers: new address[](0),
-            hookManagers: new address[](0),
+            policyManagers: new address[](0),
             splitManagers: new address[](0)
         });
 
         collective = SlotCollective(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(impl),
-                        abi.encodeCall(
-                            SlotCollective.initializeCollective, (split, roles)
-                        )
+                        abi.encodeCall(SlotCollective.initializeCollective, (split, roles))
                     )
-                )
-            )
+                ))
         );
     }
 
@@ -150,10 +146,7 @@ contract SlotCollectiveLayoutTest is Test {
             1,
             "admin's role bit must be reachable from slot 5"
         );
-        assertTrue(
-            collective.hasRole(role, admin),
-            "fixture: admin must hold DEFAULT_ADMIN_ROLE"
-        );
+        assertTrue(collective.hasRole(role, admin), "fixture: admin must hold DEFAULT_ADMIN_ROLE");
 
         // And the negative: a non-holder must read as false through the same
         // derivation, so the assertion above cannot pass on a stray non-zero.

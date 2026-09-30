@@ -108,10 +108,10 @@ importers:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
       vite:
-        specifier: ^8.1.5
+        specifier: 8.1.5
         version: 8.1.5(@types/node@24.13.3)(esbuild@0.27.4)(jiti@2.7.0)(terser@5.49.1)(tsx@4.21.0)(yaml@2.8.3)
       vocs:
-        specifier: ^2.8.2
+        specifier: 2.8.2
         version: 2.8.2(@types/react@19.2.14)(@vocs/twoslash-rust@0.1.0)(@vue/compiler-sfc@3.5.40)(axios@1.13.6)(change-case@5.4.4)(date-fns@4.1.0)(esbuild@0.27.4)(idb-keyval@6.2.2)(mermaid@11.13.0)(next@16.3.4(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(qrcode@1.5.4)(react-dom@19.2.4(react@19.2.4))(react-router@7.13.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-server-dom-webpack@19.2.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(webpack@5.109.2(esbuild@0.27.4)))(react@19.2.4)(rolldown@1.1.5)(rollup@4.59.1)(typescript@5.9.3)(vite@8.1.5(@types/node@24.13.3)(esbuild@0.27.4)(jiti@2.7.0)(terser@5.49.1)(tsx@4.21.0)(yaml@2.8.3))(waku@1.0.0-beta.8(@types/node@24.13.3)(esbuild@0.27.4)(jiti@2.7.0)(react-dom@19.2.4(react@19.2.4))(react-server-dom-webpack@19.2.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(webpack@5.109.2(esbuild@0.27.4)))(react@19.2.4)(terser@5.49.1)(tsx@4.21.0)(yaml@2.8.3))(webpack@5.109.2(esbuild@0.27.4))
       waku:
         specifier: 1.0.0-beta.8
@@ -310,8 +310,8 @@ importers:
         specifier: ^4.6.13
         version: 4.12.8
       ponder:
-        specifier: 0.17.8
-        version: 0.17.8(@opentelemetry/api@1.9.1)(@types/node@20.19.37)(bufferutil@4.1.0)(hono@4.12.8)(lightningcss@1.32.0)(postgres@3.4.8)(terser@5.49.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(viem@2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(zod@3.25.76)
+        specifier: 0.17.10
+        version: 0.17.10(@opentelemetry/api@1.9.1)(@types/node@20.19.37)(bufferutil@4.1.0)(hono@4.12.8)(lightningcss@1.32.0)(postgres@3.4.8)(terser@5.49.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(viem@2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(zod@3.25.76)
       viem:
         specifier: 2.50.4
         version: 2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
@@ -8454,8 +8454,8 @@ packages:
   points-on-path@0.2.1:
     resolution: {integrity: sha512-25ClnWWuw7JbWZcgqY/gJ4FQWadKxGWk+3kR/7kD0tCaDtPPMj7oHu2ToLaVhfpnHrZzYby2w6tUA0eOIuUg8g==}
 
-  ponder@0.17.8:
-    resolution: {integrity: sha512-EauWI2Ls/FDohOONyiEbu2PpSytf2D/VAV5BTK9Azjd4wGG2Swnr3UBUBrebzOVoVp2kZlnCkLZ0Y336yzYS5A==}
+  ponder@0.17.10:
+    resolution: {integrity: sha512-PP+VBmXuEtu6Is6T/U+v72pHj81Zs/agBAlFW3Yw4pjksKFmINLTAhDDqxGdjnkJo5Ve3TIlRXMYnU7QGJjUSA==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -16118,7 +16118,7 @@ snapshots:
 
   '@svgr/hast-util-to-babel-ast@8.0.0':
     dependencies:
-      '@babel/types': 7.29.0
+      '@babel/types': 7.29.8
       entities: 4.5.0
 
   '@svgr/plugin-jsx@8.1.0(@svgr/core@8.1.0(typescript@5.9.3))':
@@ -22209,7 +22209,7 @@ snapshots:
       path-data-parser: 0.1.0
       points-on-curve: 0.2.0
 
-  ponder@0.17.8(@opentelemetry/api@1.9.1)(@types/node@20.19.37)(bufferutil@4.1.0)(hono@4.12.8)(lightningcss@1.32.0)(postgres@3.4.8)(terser@5.49.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(viem@2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(zod@3.25.76):
+  ponder@0.17.10(@opentelemetry/api@1.9.1)(@types/node@20.19.37)(bufferutil@4.1.0)(hono@4.12.8)(lightningcss@1.32.0)(postgres@3.4.8)(terser@5.49.1)(typescript@5.9.3)(utf-8-validate@6.0.6)(viem@2.50.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(zod@3.25.76):
     dependencies:
       '@babel/code-frame': 7.29.0
       '@commander-js/extra-typings': 12.1.0(commander@12.1.0)

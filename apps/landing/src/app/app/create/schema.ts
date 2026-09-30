@@ -35,7 +35,7 @@ export const splitRecipientSchema = z.object({
 export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
 
 /**
- * How the hook field is being filled.
+ * How the module field is being filled.
  *
  * The old form had this same trio for *modules*, and the shape survives the
  * protocol change unchanged because the question is the same one: none, one we
@@ -44,13 +44,13 @@ export type SplitRecipientInput = z.infer<typeof splitRecipientSchema>;
  * rather than a way of opting out of a list.
  *
  * `tenure` is the successor to the old occupancy-policy picker. The creator
- * names a duration, which becomes the slot's `hookData` — the hook itself is
+ * names a duration, which becomes the slot's `settings` — the module itself is
  * one fixed address per chain serving every window. It is its own mode rather
  * than an entry in the known list because it asks a QUESTION: the known list is
  * addresses you attach as they are, and this one needs a number first.
  */
-export const hookModes = ["none", "known", "custom"] as const;
-export type HookMode = (typeof hookModes)[number];
+export const moduleModes = ["none", "known", "custom"] as const;
+export type ModuleMode = (typeof moduleModes)[number];
 
 export const createSlotSchema = z
   .object({
@@ -73,7 +73,7 @@ export const createSlotSchema = z
     // The FLOOR is the one worth stating out loud: a zero-tax slot accrues
     // nothing, so nobody could ever be liquidated off it — it would be a slot
     // that can be taken once and then held for free forever.
-    taxBps: z
+    taxRateBps: z
       .string()
       .min(1, "Required")
       .refine(
@@ -93,50 +93,47 @@ export const createSlotSchema = z
         "Must be a non-negative number",
       ),
     minDepositUnit: z.enum(timeUnits),
-    hookMode: z.enum(hookModes),
-    hook: z.string().refine(isValidAddressOrEns, {
+    moduleMode: z.enum(moduleModes),
+    module: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
     /**
-     * A CUSTOM hook's configuration, already encoded to its word.
+     * A CUSTOM module's configuration, already encoded to its word.
      *
-     * Written by the form the hook itself described, not typed. Empty when the
-     * hook publishes no schema or takes no configuration — which is most of
+     * Written by the form the module itself described, not typed. Empty when the
+     * module publishes no schema or takes no configuration — which is most of
      * them, and is why this is not required.
      */
-    customHookData: z.string(),
+    customSettings: z.string(),
     /**
-     * Whether the hook has ACCEPTED the word above.
+     * Whether the module has ACCEPTED the word above.
      *
-     * Written by the configuration form from `validateHookData` on chain —
+     * Written by the configuration form from `validateSettings` on chain —
      * the same function the slot runs at attach — and true when there is
      * nothing to configure. A boolean rather than a rule, because the rule
-     * belongs to the hook and this schema cannot know it: what counts as a
-     * valid word is different for every hook, and for some of them an empty
+     * belongs to the module and this schema cannot know it: what counts as a
+     * valid word is different for every module, and for some of them an empty
      * one is fine.
      *
      * It exists so a refusal reaches the SUBMIT BUTTON. Without it the form
-     * showed the hook's error beside the field and armed anyway, and the
+     * showed the module's error beside the field and armed anyway, and the
      * refusal arrived as a reverted transaction.
      */
-    hookDataOk: z.boolean(),
+    settingsOk: z.boolean(),
+    /** Tax rate and minimum runway. */
     mutableTax: z.boolean(),
-    mutableHook: z.boolean(),
+    mutableRecipient: z.boolean(),
+    mutableModule: z.boolean(),
     manager: z.string().refine(isValidAddressOrEns, {
       message: "Enter a valid address (0x…) or ENS name",
     }),
   })
-  // The manager rule, in the only form a schema can express it.
-  //
-  // `assertSlotInit` enforces BOTH halves — a manager is required when
-  // something is mutable and forbidden when nothing is. Only the first half
-  // belongs here: the second is satisfied by construction, because the form
-  // sends `zeroAddress` rather than whatever is sitting in a hidden field.
+  // A manager is required when something is mutable. The other half, no manager
+  // when nothing is, holds by construction: the form sends the zero address.
   .refine(
-    (d) => {
-      if (d.mutableTax || d.mutableHook) return d.manager.trim().length > 0;
-      return true;
-    },
+    (d) =>
+      !(d.mutableTax || d.mutableRecipient || d.mutableModule) ||
+      d.manager.trim().length > 0,
     {
       message: "A manager is required when something is mutable",
       path: ["manager"],
@@ -150,24 +147,24 @@ export const createSlotSchema = z
     },
     { message: "Currency is required", path: ["presetCurrency"] },
   )
-  // A hook chosen by address must actually be one. The factory rejects an
-  // address with no code, and a hook subscribing to no callbacks at all is
+  // A module chosen by address must actually be one. The factory rejects an
+  // address with no code, and a module subscribing to no callbacks at all is
   // rejected outright — but neither is knowable from a string, so all this
   // layer can insist on is that something was entered.
   .refine(
     (d) => {
-      if (d.hookMode === "none") return true;
-      return d.hook.trim().length > 0;
+      if (d.moduleMode === "none") return true;
+      return d.module.trim().length > 0;
     },
-    { message: "Choose a hook or switch to none", path: ["hook"] },
+    { message: "Choose a module or switch to none", path: ["module"] },
   )
-  // And a hook that was chosen must also be CONFIGURED — by its own rules,
-  // which only it can apply. `hookDataOk` carries its answer; the message is
+  // And a module that was chosen must also be CONFIGURED — by its own rules,
+  // which only it can apply. `settingsOk` carries its answer; the message is
   // deliberately vague because the specific one is already on the field,
   // straight from the revert.
-  .refine((d) => d.hookDataOk, {
-    message: "This hook has not accepted its configuration",
-    path: ["customHookData"],
+  .refine((d) => d.settingsOk, {
+    message: "This module has not accepted its settings",
+    path: ["customSettings"],
   })
   .refine(
     (d) => {
@@ -239,19 +236,20 @@ export const defaultValues: CreateSlotFormValues = {
   customCurrency: "",
   // 1% per 30 days, funded a day ahead: a slot that plainly works, and every
   // number visible on first paint rather than a form of empty required fields.
-  taxBps: "1",
+  taxRateBps: "1",
   minDepositValue: "1",
   minDepositUnit: "days",
-  // No hook — a plain instant-buy slot. An untouched form produces the
+  // No module — a plain instant-buy slot. An untouched form produces the
   // simplest thing the protocol can make, which is also the one whose rules a
   // reader can hold in their head.
-  hookMode: "none",
-  customHookData: "",
+  moduleMode: "none",
+  customSettings: "",
   // Nothing to configure is not a failure to configure.
-  hookDataOk: true,
-  hook: "",
+  settingsOk: true,
+  module: "",
   mutableTax: false,
-  mutableHook: false,
+  mutableRecipient: false,
+  mutableModule: false,
   manager: "",
 };
 

@@ -54,7 +54,7 @@ export default defineConfig({
       text: "Concepts",
       items: [
         { text: "How a slot works", link: "/concepts/slots" },
-        { text: "Hooks", link: "/concepts/hooks" },
+        { text: "Modules", link: "/concepts/modules" },
       ],
     },
     {
@@ -63,7 +63,8 @@ export default defineConfig({
         { text: "SlotFactory", link: "/reference/factory" },
         { text: "Slot", link: "/reference/slot" },
         { text: "OfferBook", link: "/reference/book" },
-        { text: "Hooks", link: "/reference/hooks" },
+        { text: "SlotLens", link: "/reference/lens" },
+        { text: "Modules", link: "/reference/modules" },
       ],
     },
     {

@@ -25,7 +25,7 @@ export function DepositChoice({
   note,
 }: {
   label: string;
-  /** The slot's `minDepositSeconds` — the unit every option is a multiple of. */
+  /** The slot's `minRunwaySeconds` — the unit every option is a multiple of. */
   base: bigint;
   mult: number;
   onPick: (m: number) => void;

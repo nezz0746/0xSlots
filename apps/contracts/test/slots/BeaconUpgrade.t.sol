@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
 
 /// @dev A distinguishable implementation, so an upgrade is observable rather
@@ -33,27 +35,30 @@ contract BeaconUpgradeTest is Test {
             address(
                 new ERC1967Proxy(
                     address(new SlotFactory()),
-                    abi.encodeCall(
-                        SlotFactory.initialize,
-                        (admin, address(new Slot()))
-                    )
+                    abi.encodeCall(SlotFactory.initialize, (admin, address(new Slot())))
                 )
             )
         );
     }
 
     function _slot() internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(0xF00D),
-            currency: IERC20(address(0)),
-            manager: admin,
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 1_000,
-            minDepositSeconds: 1 hours,
-            mutableTax: true,
-            mutableHook: true
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: admin,
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(0xF00D),
+                            rateBps: uint16(1_000),
+                            minRunwaySeconds: uint32(1 hours)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                    })
+                ))
+        );
     }
 
     /// @notice The admin can upgrade every slot at once.

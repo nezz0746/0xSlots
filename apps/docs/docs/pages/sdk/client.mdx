@@ -1,250 +1,177 @@
-import { Callout } from 'vocs'
-
 # SlotsClient
 
-The main entry point for interacting with 0xSlots. [Source](https://github.com/nezz0746/0xSlots/blob/main/packages/sdk/src/client.ts)
+The main entry point for reading and writing slots. It talks to the contracts
+over RPC — it does not query the [indexer](/indexer).
+[Source](https://github.com/nezz0746/0xSlots/blob/main/packages/sdk/src/slots/client.ts)
 
 ## Constructor
 
 ```ts
-import { SlotsClient, SlotsChain } from "@0xslots/sdk";
+import { SlotsClient } from "@0xslots/sdk";
 
 const client = new SlotsClient({
-  chainId: SlotsChain.BASE,  // BASE (8453), BASE_SEPOLIA (84532), ANVIL (31337)
-  publicClient,              // viem PublicClient
-  walletClient,              // viem WalletClient (for writes)
-  apiUrl,                    // optional — defaults to DEFAULT_API_URL
-  headers,                   // optional — extra request headers
+  publicClient,      // viem PublicClient — every read
+  walletClient,      // viem WalletClient — every write; needs an account and a chain
+  factoryAddress,    // SlotFactory — only createSlot and the collectAll family
+  offerBookAddress,  // OfferBook — defaults to the one recorded for the wallet's chain
+  lensAddress,       // SlotLens — slotState, slotStates, moduleUpdate; same default
 });
 ```
 
-<Callout type="warning">
-`chainId` no longer selects an endpoint. One [indexer](/indexer) deployment holds
-every chain, so this is a `where: { chainId }` filter merged into every list
-query. Every read method applies it for you — an unfiltered query returns base
-and base-sepolia rows interleaved, which is worse than an error because it looks
-like a result. Passing `chainId` explicitly in `where` still wins, for the rare
-cross-chain read.
-</Callout>
+Every field is optional; a method that needs a missing one throws a
+`SlotsError` naming it. `createSlotsClient(config)` is the same thing as a
+function.
 
-### Endpoints
+## Reads
 
 ```ts
-import { DEFAULT_API_URL, LOCAL_API_URL } from "@0xslots/sdk";
+const state = await client.slotState(slot);
+// occupant, price, deposit, taxOwed, isVacant, isInsolvent,
+// secondsUntilLiquidation, currency, taxRateBps, minRunwaySeconds, recipient,
+// manager, mutableTax, mutableRecipient, mutableModule, module, settings,
+// fee, scopes, pending, occupiedSince, lastSettled, collectedTax, tenureId
 ```
 
-`DEFAULT_API_URL` is the hosted indexer, used when `apiUrl` is omitted.
-`LOCAL_API_URL` (`http://localhost:42069/graphql`) is what `pnpm dev:local`
-starts, for chain 31337.
+`slotState` is one `SlotLens.getSlotInfo` call, and `slotStates(slots)` reads
+many in one call. Individual reads exist for the common
+fields (`occupant`, `price`, `deposit`, `taxOwed`, `module`, `scopes`,
+`fee`, `terms`, `tenureId`, …), plus:
 
-### There is no `apiKey`
+| Method | Returns |
+|---|---|
+| `quoteBuy(slot, account, deposit)` | what `buy` will charge, including `account`'s debt |
+| `minDepositForBuy(slot, price)` | the smallest deposit a buy accepts, under ripe queued terms |
+| `minDepositToHold(slot, price)` | the floor `selfAssess` and `withdraw` enforce |
+| `pending(slot)` | queued terms, with `appliesAt` and `applies` |
+| `hasRipeTerms(slot)` | whether the next buy lands them — the chain's clock, not yours |
+| `fee(slot)` / `scopes(slot)` | the module's fee and scopes, as the slot copied them |
+| `moduleUpdate(slot)` | `{ current, declared, feeDiffers, scopesDiffer }`, from the lens |
+| `debtOf(slot, account)` / `claimableOf(slot, account?)` | debt carried / credits to `claim` |
+| `isOperator(slot, operator)` | live, per tenure |
 
-The indexer serves GraphQL unauthenticated, so a key bought nothing — and
-consumers wired it through `NEXT_PUBLIC_*`, which Next inlines into the client
-bundle. The option was removed rather than ignored. If you have put your own
-deployment behind auth, `headers` carries it and is now the only path:
-
-```ts
-new SlotsClient({
-  chainId,
-  apiUrl,
-  headers: { Authorization: `Bearer ${token}` },
-});
-```
-
-## Indexer queries
-
-```ts
-const { slots } = await client.getSlots({ limit: 10 });
-const { slot } = await client.getSlot({ id: "0x..." });
-const { slots } = await client.getSlotsByRecipient({ recipient: "0x..." });
-const { slots } = await client.getSlotsByOccupant({ occupant: "0x..." });
-const { factory } = await client.getFactory();
-const activity = await client.getSlotActivity({ slot: "0x..." });
-const events = await client.getRecentEvents({ limit: 20 });
-```
-
-### Result shape
-
-Lists return `{ items, totalCount, pageInfo }` — not a bare array. Callers that
-iterated a response directly need `.items`; the failure mode is
-`object is not iterable` at the call site.
-
-```ts
-const { items, totalCount, pageInfo } = (await client.getSlots({ limit: 10 })).slots;
-```
-
-Pagination is `limit` with either `offset` or the `after` / `before` cursors from
-`pageInfo`. The subgraph's `first` / `skip` are gone, as is its `block:`
-time-travel argument, which has no equivalent.
-
-### Accounts
-
-`getAccounts` returns protocol-wide totals; `getAccountChains` returns the same
-counters **scoped to one chain**. Reach for the second whenever you are showing a
-per-chain view — an account has no `chainId`, so the unscoped list will happily
-show one chain's recipients with another chain's counts.
-
-```ts
-const { accounts } = await client.getAccounts({ limit: 20 });
-const { accountChains } = await client.getAccountChains({ limit: 20 });
-// accountChain: { slotCount, occupiedCount, occupiedAsRecipient }
-```
-
-`occupiedAsRecipient` is the only honest numerator for an occupancy percentage:
-`occupiedCount` counts slots the account *occupies*, `slotCount` counts slots
-where it is the *recipient*. They describe different roles, and pairing them as a
-ratio is a category error however much they look like a pair.
-
-### Indexing status
-
-```ts
-const { _meta } = await client.getMeta();  // { status: Record<string, ChainStatus> }
-```
-
-There is no `hasIndexingErrors` counterpart: the indexer stops rather than
-serving stale rows behind a flag, so an erroring indexer is a failed request, not
-a `true` here.
-
-## RPC reads
-
-```ts
-const info = await client.getSlotInfo("0x...");
-// terms (recipient, currency, taxBps, mutableTax, mutableHook), the
-// attached hook and its snapshotted flags, live occupancy and financials
-// (occupant, price, deposit, taxOwed, secondsUntilLiquidation, isInsolvent),
-// and any queued terms (pendingTaxBps, pendingHook, hasRipeTerms).
-
-const infos = await client.getSlotsInfo(["0x...", "0x..."]);  // multicall
-const p = await client.pending("0x...");   // just the queued terms
-const s = await client.slotState("0x..."); // just the live occupancy
-```
-
-## Write methods
+## Writes
 
 All return `Promise<Hash>`. ERC-20 approval is handled automatically.
 
 ```ts
-// Create — one struct, no batch variant
-await client.createSlot({
-  recipient, currency, manager, hook,   // hook: a hook address, or ZERO for none
-  taxBps: 100n, minDepositSeconds: 0n,
-  mutableTax: true, mutableHook: false,
-});
+await client.createSlot(init);                 // see SlotInit below
+await client.simulateCreateSlot(init);         // the address it would get
 
-// Occupant interactions
 await client.buy({ slot, account, selfAssessedPrice, depositAmount /*, maxPayment */ });
+await client.simulateBuy(params);              // throws the module's own error on refusal
+await client.liquidateAndBuy(params);          // ERC-20 slots, one multicall
+
 await client.selfAssess(slot, newPrice);
 await client.topUp(slot, amount);
 await client.withdraw(slot, amount);
+await client.manageTerms(slot, { newPrice, topUpAmount, withdrawAmount });
+await client.setOperator(slot, operator, true);
 await client.release(slot);
-await client.collect(slot);      // permissionless
-await client.liquidate(slot);    // permissionless — no bounty
-await client.claim(slot);        // pull a credited refund
+
+await client.collect(slot);                    // permissionless
+await client.collectAll(slots);                // through the factory
+await client.simulateCollectAll(slots);        // what each would pay out
+await client.liquidate(slot);                  // permissionless — no bounty
+await client.claim(slot, account);             // pull a credited payout
 ```
 
-`buy` takes an `account` — who becomes occupant. It need not be the signer, so
-you can buy on someone's behalf. The SDK takes named params, but note the
-on-chain order is `(account, selfAssessedPrice, depositAmount, maxPayment)` —
-price before deposit, matching every other pair in the protocol. Pass `maxPayment` to cap what an ERC-20 buy can
-cost against the occupant raising the price between your quote and your inclusion.
+`buy` takes an `account` — who becomes occupant; it need not be the signer. It
+sends the quote it just read as `maxPayment` unless you pass one, so the
+transaction pays what it was quoted or reverts. `maxPayment: 0n` disables the
+ceiling on purpose.
+
+`manageTerms` reprices and moves the deposit as one submission, in the only
+order that passes both funding checks: top up, reprice, withdraw. A native
+top-up goes first as its own transaction, because `multicall` is not payable.
 
 ### SlotInit
 
-The create tuple is a single `SlotInit`. viem encodes a struct **by component
-name**, so the SDK exposes a typed shape — a missing or stray field is a compile
-error rather than a silent zero address on-chain.
-
 ```ts
-type SlotInit = {
-  recipient: Address; currency: Address;   // currency ZERO = native ETH
-  manager: Address; hook: Address;          // both ZERO for immutable, hookless
-  taxBps: bigint; minDepositSeconds: bigint;
-  mutableTax: boolean; mutableHook: boolean;
-};
+import { zeroAddress } from "viem";
+
+await client.createSlot({
+  currency: zeroAddress,           // native ETH
+  manager: "0x...",                // required exactly when something is mutable
+  mutableTax: true,
+  mutableRecipient: false,
+  mutableModule: true,
+  taxTerms: { recipient: "0x...", rateBps: 100, minRunwaySeconds: 86_400 },
+  moduleTerms: { module, settings }, // omit for no module
+});
 ```
+
+viem encodes a struct **by component name**, so the SDK takes a typed shape and
+`assertSlotInit` refuses what the contract would refuse before any gas is spent.
 
 ### Manager operations
 
-Tax and hook are the two mutable dimensions, proposed and cancelled
-independently. Proposed terms apply after a one-day delay.
-
 ```ts
-await client.proposeTerms(slot, { taxBps: 200n });      // just the tax
-await client.proposeTerms(slot, { hook: newHook });            // just the hook
-await client.proposeTerms(slot, { taxBps: 200n, hook: newHook });
-await client.proposeTerms(slot, { hook: ZERO_ADDRESS });       // detach the hook
+await client.proposeTerms(slot, { taxRateBps: 200 });
+await client.proposeTerms(slot, { recipient, minRunwaySeconds: 3_600 });
+await client.proposeTerms(slot, { moduleTerms: { module, settings } });
+await client.proposeTerms(slot, { moduleTerms: NO_MODULE });   // remove the module
 
-await client.cancelTerms(slot, true, false);   // just the tax
-await client.cancelTerms(slot);                 // both (cancelTax/cancelHook default true)
+await client.cancelTerms(slot, TERMS.MODULE);  // one term
+await client.cancelTerms(slot);                // everything (ALL_TERMS)
+
+const update = await client.moduleUpdate(slot);
+if (update.feeDiffers) await client.acceptFee(slot, update.declared!.fee);          // now
+if (update.scopesDiffer) await client.acceptScopes(slot, update.declared!.scopes);  // next buy
+
+await client.setManager(slot, next);
 ```
 
-### Selling into an offer
+Presence, not truthiness, decides what `proposeTerms` queues. Terms land at the
+next buy after the one-hour delay — see [How a slot works](/concepts/slots#terms-do-not-move-under-an-occupant).
 
-`client.sell`, `makeSellOrder` and `cancelSellOrder` are gone with `Slot.sell`.
-Nothing is signed off-chain any more: a bid is an on-chain row in the [OfferBook](/reference/book),
-and the book performs the sale itself.
-
-```ts
-// as the bidder — one transaction, funds stay in your wallet
-await book.offer(slot, price, deposit, expiry);
-
-// as the occupant — grant once per tenure, then accept
-await client.setOperator(slot, book, true);
-await book.acceptOffer(slot, id);
-```
-
-`acceptOffer` reprices the slot to the bid and seats the bidder in one
-transaction, which is why the book needs the operator grant. That grant is keyed
-by tenure on the slot's side, so it lapses when the slot changes hands and cannot
-be inherited by the next occupant.
-
-The bidder approves the **book** for `price + deposit`, not the slot: `buy`
-charges `msg.sender`, and on a fill that is the book.
-
-### Configuring a hook
-
-A hook's per-slot settings live on the SLOT, as `hookData` — 32 bytes the slot
-stores at creation and hands back on every callback. That is what lets one
-deployment serve every configuration: a seven-day minimum tenure and a thirty-day
-one point at the same contract.
+## Modules
 
 ```ts
-import { minimumTenureHookAddress } from "@0xslots/contracts/slots";
+import { minimumTenureModuleAddress } from "@0xslots/contracts";
 import { toHex } from "viem";
 
-await client.createSlot({
-  // …
-  hook: minimumTenureHookAddress[chainId],
-  hookData: toHex(7n * 24n * 3600n, { size: 32 }),   // the window, in seconds
-});
+const module = minimumTenureModuleAddress[chainId];
+const settings = toHex(7n * 24n * 3600n, { size: 32 });  // abi.encode(uint256 window)
+
+await client.validateSettings(module, settings); // { ok: true } | { ok: false, reason }
+await client.readScopes(module, settings);       // what the module asks, today
+await client.readFee(module, settings);
+await client.moduleMetadata(module);             // parsed metadata() JSON, or null
 ```
 
-There used to be a `predictTenureHook` / `getOrDeployTenureHook` pair here,
-because a duration meant a whole contract at a derived address — an unusual
-number cost a second transaction. It costs nothing now, and those functions are
-gone.
+`validateSettings` runs the same check the slot runs at proposal and resolves with
+the module's own reason rather than throwing, so a form can show it.
 
-`hookData` travels with `hook` and only with it. Passing data alongside no hook
-is refused, and so is data the hook itself rejects — a `MinimumTenureHook` given
-a zero window says so at creation rather than vetoing every buy afterwards.
+Constants: `TERMS`, `ALL_TERMS`, `SCOPE_BITS`, `unpackScopes`, `NO_MODULE`,
+`NO_SETTINGS`, `MAX_PRICE`, `MAX_TAX_BPS`, `BASIS_POINTS`, `MONTH_SECONDS`,
+`TERMS_DELAY_SECONDS`.
+
+## Selling through the OfferBook
 
 ```ts
-await client.proposeTerms(slot, {
-  hook: minimumTenureHookAddress[chainId],
-  hookData: toHex(30n * 24n * 3600n, { size: 32 }),
-});
+// as the bidder — posting moves nothing; approve the book first
+await client.approveOfferBook(slot, await client.offerCost(slot, me, price, deposit));
+await client.postOffer({ slot, price, deposit, expiry });
+
+// as the occupant — grant once per tenure, then accept
+await client.authorizeOfferBook(slot);
+const { best } = await client.offerBoard(slot);
+if (best) await client.acceptOffer(slot, best.id, best.price);
 ```
 
-A slot wanting more than one behaviour points at one hook that implements all of
-them. That hook owns the whole 32 bytes and may pack several fields into a
-single word — the layout is its own, and `validateHookData` is where it says so.
+`offerBoard` returns only live offers, highest first, as the book itself judges
+them. See [OfferBook](/reference/book).
 
-### Multicall
+## Collections and collectives
 
-```ts
-await client.multicall(slot, [
-  { functionName: "selfAssess", args: [newPrice] },
-  { functionName: "topUp", args: [amount] },
-]);
-```
+Two more clients ship beside `SlotsClient`:
+
+- **`CollectionsClient`** creates and mints slot-bound NFT collections
+  (`createCollection`, `quoteMint`, `approveMint`, `mint`, `setBaseURI`).
+- **`CollectivesClient`** creates and governs `SlotCollective`s — a split
+  recipient with role-gated management. `COLLECTIVE_ROLES` names the roles:
+  `tax` proposes tax rates, `policy` proposes modules and accepts their updates
+  (`proposeModule`, `acceptFee`, `acceptScopes`, `cancelModuleProposal`), `split`
+  edits the payout.
+  Holders are set at creation with `taxManagers`, `policyManagers` and
+  `splitManagers`.

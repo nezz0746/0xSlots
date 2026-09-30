@@ -3,11 +3,20 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {SlotMath} from "../../src/SlotMath.sol";
+import {SlotMath} from "../../src/libraries/SlotMath.sol";
 
 /// @notice The arithmetic on its own, where the properties are visible.
 contract SlotMathTest is Test {
     uint256 constant DEN = 30 days * 10_000;
+
+    /// @dev Whole units accrued from a standing start, with no carry.
+    function _tax(
+        uint256 price,
+        uint256 taxRateBps,
+        uint256 elapsed
+    ) internal pure returns (uint256 owed) {
+        (owed,) = SlotMath.accrue(price, taxRateBps, elapsed, 0);
+    }
 
     // ── the two rounding directions, and why each is what it is ───────────
 
@@ -15,9 +24,9 @@ contract SlotMathTest is Test {
     ///         hold the slot.
     function test_TaxFloors() public pure {
         // one second at a price too small to price one unit
-        assertEq(SlotMath.taxFor(1, 1, 1), 0);
+        assertEq(_tax(1, 1, 1), 0);
         // and exactly a month at 100% is the price
-        assertEq(SlotMath.taxFor(1e18, 10_000, 30 days), 1e18);
+        assertEq(_tax(1e18, 10_000, 30 days), 1e18);
     }
 
     /// @notice The requirement ceils: a window can never be funded for nothing.
@@ -26,7 +35,7 @@ contract SlotMathTest is Test {
         assertEq(SlotMath.depositFor(1, 1, 1), 1, "never zero for a real ask");
         assertGe(
             SlotMath.depositFor(1e18, 500, 7 days),
-            SlotMath.taxFor(1e18, 500, 7 days),
+            _tax(1e18, 500, 7 days),
             "the deposit must cover the tax it is sized against"
         );
     }
@@ -37,35 +46,42 @@ contract SlotMathTest is Test {
 
     // ── the inverse ───────────────────────────────────────────────────────
 
-    /// @notice `secondsFor` inverts `taxFor` — the property the old
-    ///         per-second rate broke by dividing before multiplying.
-    function testFuzz_SecondsForInvertsTaxFor(
+    /// @notice `secondsUntilOwed` inverts `accrue` exactly, carry included:
+    ///         the first second at which `k` more units are owed, and not one
+    ///         second earlier.
+    function testFuzz_SecondsUntilOwedIsExact(
         uint128 price,
-        uint16 taxBps,
-        uint32 elapsed
+        uint16 taxRateBps,
+        uint32 elapsed,
+        uint8 k
     ) public pure {
-        vm.assume(price > 0 && taxBps > 0 && taxBps <= 10_000);
-        uint256 owed = SlotMath.taxFor(price, taxBps, elapsed);
-        uint256 back = SlotMath.secondsFor(owed, price, taxBps);
-        // Never claims MORE time than was paid for.
-        assertLe(back, uint256(elapsed));
+        vm.assume(price > 0 && taxRateBps > 0 && taxRateBps <= 10_000 && k > 0);
+        (, uint256 carry) = SlotMath.accrue(price, taxRateBps, elapsed, 0);
+        uint256 t = SlotMath.secondsUntilOwed(k, carry, price, taxRateBps);
+
+        (uint256 owedAt,) = SlotMath.accrue(price, taxRateBps, t, carry);
+        assertGe(owedAt, k, "owed by then");
+        if (t > 0) {
+            (uint256 owedBefore,) = SlotMath.accrue(price, taxRateBps, t - 1, carry);
+            assertLt(owedBefore, k, "and not a second sooner");
+        }
     }
 
     /// @notice The bug this replaced: a per-second rate floors to zero and
     ///         reports "never" for a position that is genuinely draining.
     function test_ANaiveRateWouldSayNeverHereAndThisDoesNot() public pure {
-        uint256 price = 100e6;   // 100 USDC
-        uint256 taxBps = 100;    // 1%/month
-        assertEq(Math.mulDiv(price, taxBps, DEN), 0, "per-second rate is zero");
+        uint256 price = 100e6; // 100 USDC
+        uint256 taxRateBps = 100; // 1%/month
+        assertEq(Math.mulDiv(price, taxRateBps, DEN), 0, "per-second rate is zero");
 
-        uint256 runway = SlotMath.secondsFor(1e6, price, taxBps);
+        uint256 runway = SlotMath.secondsUntilOwed(1e6, 0, price, taxRateBps);
         assertLt(runway, type(uint256).max, "must be a real number");
-        assertGt(SlotMath.taxFor(price, taxBps, runway + 1), 0, "and it drains");
+        assertGt(_tax(price, taxRateBps, runway + 1), 0, "and it drains");
     }
 
     function test_AZeroRateIsForever() public pure {
-        assertEq(SlotMath.secondsFor(1e18, 0, 500), type(uint256).max);
-        assertEq(SlotMath.secondsFor(1e18, 1e18, 0), type(uint256).max);
+        assertEq(SlotMath.secondsUntilOwed(1e18, 0, 0, 500), type(uint256).max);
+        assertEq(SlotMath.secondsUntilOwed(1e18, 0, 1e18, 0), type(uint256).max);
     }
 
     // ── overflow, the reason `mulDiv` is used at all ──────────────────────
@@ -74,32 +90,30 @@ contract SlotMathTest is Test {
     ///         stating, because it is why the old plain-multiply sites were a
     ///         latent asymmetry rather than a live bug.
     function test_TheNaiveProductIsFineAtRealisticBounds() public pure {
-        uint256 price = type(uint128).max;   // MAX_PRICE
-        uint256 taxBps = 10_000;             // MAX_TAX_BPS
-        uint256 window = 3650 days;          // ten years
+        uint256 price = type(uint128).max; // MAX_PRICE
+        uint256 taxRateBps = 10_000; // MAX_TAX_BPS
+        uint256 window = 3650 days; // ten years
 
         unchecked {
-            uint256 naive = price * taxBps * window;
-            assertEq(naive / taxBps / window, price, "no wrap at these bounds");
+            uint256 naive = price * taxRateBps * window;
+            assertEq(naive / taxRateBps / window, price, "no wrap at these bounds");
         }
-        assertGt(SlotMath.depositFor(price, taxBps, window), 0);
+        assertGt(SlotMath.depositFor(price, taxRateBps, window), 0);
     }
 
     /// @notice But `mulDiv` survives where the plain form would wrap, and the
     ///         window is an unbounded constructor/init argument — so the
-    ///         guarantee is worth having even though no sane config reaches it.
+    ///         guarantee is worth having even though no sane settings reaches it.
     function test_SurvivesAProductThatWouldOverflow() public pure {
         uint256 price = type(uint128).max;
-        uint256 taxBps = 10_000;
-        uint256 window = 1e35;               // past 2^256 / (price * taxBps)
+        uint256 taxRateBps = 10_000;
+        uint256 window = 1e35; // past 2^256 / (price * taxRateBps)
 
         unchecked {
-            uint256 naive = price * taxBps * window;
-            assertTrue(naive / taxBps / window != price, "the plain form wraps");
+            uint256 naive = price * taxRateBps * window;
+            assertTrue(naive / taxRateBps / window != price, "the plain form wraps");
         }
 
-        assertGt(SlotMath.depositFor(price, taxBps, window), 0, "mulDiv does not");
-        assertGt(SlotMath.taxFor(price, taxBps, window), 0);
+        assertGt(SlotMath.depositFor(price, taxRateBps, window), 0, "mulDiv does not");
     }
-
 }

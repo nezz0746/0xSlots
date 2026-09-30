@@ -1,6 +1,6 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
 import { isNativeCurrency, NATIVE_CURRENCY } from "@0xslots/sdk";
 import { formatDistanceToNow } from "date-fns";
 import { TriangleAlert } from "lucide-react";
@@ -85,8 +85,8 @@ export function SlotRow({
       : null);
 
   const decimals = slot.currencyRef?.decimals ?? 18;
-  const knownHook = findKnownHook(chainId, slot.hook as Address | undefined);
-  const pending = slot.pendingHasTax || slot.pendingHasHook;
+  const knownModule = findKnownModule(chainId, slot.module as Address | undefined);
+  const pending = slot.pendingMask !== 0;
 
   return (
     <TableRow className="cursor-pointer" onClick={() => onSelect(slot.id)}>
@@ -131,16 +131,16 @@ export function SlotRow({
           {currencySymbol}
         </span>
         <span className="text-muted-foreground text-[10px] ml-1">
-          ({Number(slot.taxBps) / 100}%/mo)
+          ({Number(slot.taxRateBps) / 100}%/mo)
         </span>
       </TableCell>
 
-      {/* Was "Utility", and listed the slot's module. There is exactly one hook
-          per slot now, so this names it rather than counting a gallery. No hook
-          is a perfectly ordinary configuration — the plain Harberger slot — so
+      {/* Was "Utility", and listed the slot's module. There is exactly one module
+          per slot now, so this names it rather than counting a gallery. No module
+          is a perfectly ordinary configuration — the plain common-ownership slot — so
           it reads as a dash, not as a gap. */}
       <TableCell className="text-xs text-muted-foreground">
-        {slot.hook ? (
+        {slot.module ? (
           <span className="inline-flex items-center gap-1 text-foreground">
             {/* A filled dot, not a word: the column is scanned down, and
                 "attached" repeated forty times is noise where a mark is a
@@ -150,17 +150,17 @@ export function SlotRow({
               aria-hidden
               className="size-1.5 shrink-0 rounded-full bg-foreground/60"
             />
-            {knownHook?.name ?? truncateAddress(slot.hook)}
+            {knownModule?.name ?? truncateAddress(slot.module)}
             {/* `after` callbacks that reverted and were swallowed. Nothing on
-                chain will ever tell this hook's users that it is broken. */}
-            {(slot.hookRef?.failedCallCount ?? 0) > 0 && (
+                chain will ever tell this module's users that it is broken. */}
+            {(slot.moduleRef?.failedCallCount ?? 0) > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <TriangleAlert className="size-3 text-red-600" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  {slot.hookRef?.failedCallCount} swallowed hook failure
-                  {slot.hookRef?.failedCallCount === 1 ? "" : "s"}
+                  {slot.moduleRef?.failedCallCount} swallowed module failure
+                  {slot.moduleRef?.failedCallCount === 1 ? "" : "s"}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -181,8 +181,8 @@ export function SlotRow({
             <MutabilityChip mutable={slot.mutableTax} what="tax rate" />
           </span>
           <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-            Hook
-            <MutabilityChip mutable={slot.mutableHook} what="hook" />
+            Module
+            <MutabilityChip mutable={slot.mutableModule} what="module" />
           </span>
           {/* A queued change, already proposed and waiting out its delay. The
               loudest flag here, because it is the one with a deadline. */}

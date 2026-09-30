@@ -1,14 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {SlotMath} from "../../src/libraries/SlotMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {AdLand} from "../../src/hooks/adland/AdLand.sol";
-import {AdView} from "../../src/hooks/adland/IAdLand.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
+import {AdLand} from "../../src/modules/adland/AdLand.sol";
+import {SlotLens} from "../../src/periphery/lens/SlotLens.sol";
+import {AdView} from "../../src/modules/adland/IAdLand.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
+
+contract AdTok is ERC20 {
+    constructor() ERC20("A", "A") {}
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
+}
 
 /// @dev Smoke coverage for the draft: the stamp, the wipe, the lens, the key.
 contract AdLandTest is Test {
@@ -27,30 +40,33 @@ contract AdLandTest is Test {
         // consume a pending prank or expectRevert before the call under test.
         SlotFactory factoryImpl = new SlotFactory();
         Slot slotImpl = new Slot();
-        bytes memory fInit = abi.encodeCall(
-            SlotFactory.initialize,
-            (address(this), address(slotImpl))
-        );
+        bytes memory fInit =
+            abi.encodeCall(SlotFactory.initialize, (address(this), address(slotImpl)));
         ERC1967Proxy fProxy = new ERC1967Proxy(address(factoryImpl), fInit);
         factory = SlotFactory(address(fProxy));
 
-        AdLand adImpl = new AdLand();
+        AdLand adImpl = new AdLand(new SlotLens());
         bytes memory aInit = abi.encodeCall(AdLand.initialize, (owner));
         ERC1967Proxy aProxy = new ERC1967Proxy(address(adImpl), aInit);
         adland = AdLand(address(aProxy));
 
-
-        slot = Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(this),
-            currency: IERC20(address(0)),
-            manager: address(this),
-            hook: address(adland),
-            hookData: bytes32(0),
-            taxBps: 500,
-            minDepositSeconds: 7 days,
-            mutableTax: true,
-            mutableHook: true
-        }))));
+        slot = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(adland), settings: ""})
+                    })
+                ))
+        );
 
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
@@ -59,9 +75,9 @@ contract AdLandTest is Test {
     function _seat(address who, uint256 price) internal {
         uint256 dep = slot.minDepositForBuy(price);
         vm.prank(who);
-        slot.buy{value: dep + (slot.occupant() == address(0) ? 0 : slot.price())}(
-            who, price, dep, type(uint256).max
-        );
+        slot.buy{
+            value: dep + (slot.occupant() == address(0) ? 0 : slot.price())
+        }(who, price, dep, type(uint256).max);
     }
 
     function test_OccupantPublishesAndItReads() public {
@@ -86,7 +102,7 @@ contract AdLandTest is Test {
         _seat(bob, 1 ether);
 
         assertEq(adland.creativeOf(address(slot)), "", "bob must not inherit it");
-        (string memory raw, ) = adland.rawCreativeOf(address(slot));
+        (string memory raw,) = adland.rawCreativeOf(address(slot));
         assertEq(raw, "", "afterBuy wiped it");
     }
 
@@ -97,18 +113,18 @@ contract AdLandTest is Test {
         vm.prank(alice);
         adland.publish(address(slot), "alice's ad");
 
-        // Detach the hook, so no `afterBuy` can possibly run, then reseat.
-        slot.proposeTerms(0, address(0), bytes32(0), false, true);
+        // Detach the module, so no `afterBuy` can possibly run, then reseat.
+        slot.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(0), minRunwaySeconds: 0}),
+            ModuleTerms({module: address(0), settings: ""}),
+            uint16(8)
+        );
         vm.warp(block.timestamp + 8 days);
         _seat(bob, 1 ether);
 
-        (string memory raw, ) = adland.rawCreativeOf(address(slot));
+        (string memory raw,) = adland.rawCreativeOf(address(slot));
         assertEq(raw, "alice's ad", "fixture: the wipe must not have run");
-        assertEq(
-            adland.creativeOf(address(slot)),
-            "",
-            "the stamp alone must retire it"
-        );
+        assertEq(adland.creativeOf(address(slot)), "", "the stamp alone must retire it");
     }
 
     function test_AVacatedSlotShowsNothing() public {
@@ -125,9 +141,7 @@ contract AdLandTest is Test {
     function test_BuyAndPublishIsOneCall() public {
         uint256 dep = slot.minDepositForBuy(1 ether);
         vm.prank(bob);
-        adland.buyAndPublish{value: dep}(
-            address(slot), 1 ether, dep, type(uint256).max, "bob's ad"
-        );
+        adland.buyAndPublish{value: dep}(address(slot), 1 ether, dep, type(uint256).max, "bob's ad");
 
         assertEq(slot.occupant(), bob, "bob is seated");
         assertEq(adland.creativeOf(address(slot)), "bob's ad");
@@ -144,7 +158,7 @@ contract AdLandTest is Test {
         assertEq(v.uri, "alice's ad");
         assertEq(v.info.occupant, alice);
         assertEq(v.info.price, 1 ether);
-        assertEq(v.info.taxBps, 500);
+        assertEq(v.info.terms.taxTerms.rateBps, 500);
     }
 
     function test_TheLensNeverRevertsOnRubbish() public {
@@ -201,7 +215,6 @@ contract AdLandTest is Test {
 
     // ─── the wipe is keyed by the slot, not by the caller ───────────────────
 
-
     /// @notice And a forged context still cannot clear a creative that is live.
     ///
     /// @dev The reason the wipe was keyed on `msg.sender` in the first place.
@@ -237,7 +250,7 @@ contract AdLandTest is Test {
     ///
     /// @dev The trade the new keying makes. Two ways a row outlives its tenure:
     ///      the wipe is gas-capped and swallowed so it CAN be missed, and a slot
-    ///      may use AdLand as a plain registry with some other hook — in which
+    ///      may use AdLand as a plain registry with some other module — in which
     ///      case no callback ever arrives at all. This is that second case.
     ///
     ///      Landing it late changes no answer, because the stamp retired the row
@@ -252,9 +265,9 @@ contract AdLandTest is Test {
         vm.prank(alice);
         un.release();
 
-        // No hook, so nothing was called and the row is still sitting there —
+        // No module, so nothing was called and the row is still sitting there —
         // already invisible to the lens, and still costing storage.
-        (string memory raw, ) = adland.rawCreativeOf(address(un));
+        (string memory raw,) = adland.rawCreativeOf(address(un));
         assertEq(raw, "alice's ad", "fixture: no callback can have run");
         assertEq(adland.creativeOf(address(un)), "", "but the stamp retired it");
 
@@ -266,32 +279,80 @@ contract AdLandTest is Test {
         vm.prank(bob);
         adland.afterRelease(ctx);
 
-        (string memory after_, ) = adland.rawCreativeOf(address(un));
+        (string memory after_,) = adland.rawCreativeOf(address(un));
         assertEq(after_, "", "a dead row is anybody's to collect");
     }
 
-
-    /// @dev AdLand as a plain registry: the slot's hook is nobody, so no
+    /// @dev AdLand as a plain registry: the slot's module is nobody, so no
     ///      callback ever arrives and the stamp does all the work.
     function _unmanagedSlot() internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            recipient: address(this),
-            currency: IERC20(address(0)),
-            manager: address(this),
-            hook: address(0),
-            hookData: bytes32(0),
-            taxBps: 500,
-            minDepositSeconds: 7 days,
-            mutableTax: true,
-            mutableHook: true
-        }))));
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(0)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(0), settings: ""})
+                    })
+                ))
+        );
     }
 
     function _seatOn(Slot s, address who, uint256 price) internal {
         uint256 dep = s.minDepositForBuy(price);
         vm.prank(who);
-        s.buy{value: dep + (s.occupant() == address(0) ? 0 : s.price())}(
-            who, price, dep, type(uint256).max
+        s.buy{
+            value: dep + (s.occupant() == address(0) ? 0 : s.price())
+        }(who, price, dep, type(uint256).max);
+    }
+
+    /// @notice Buy-and-publish approves what the slot will actually charge. A
+    ///         sponsor who once defaulted pays only the deposit again: their
+    ///         debt ended with their tenure.
+    function test_BuyAndPublishAfterADefaultChargesOnlyTheDeposit() public {
+        AdTok tok = new AdTok();
+        tok.mint(alice, 1_000 ether);
+        Slot s = Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(tok)),
+                        manager: address(this),
+                        mutableTax: true,
+                        mutableRecipient: true,
+                        mutableModule: true,
+                        taxTerms: TaxTerms({
+                            recipient: address(this),
+                            rateBps: uint16(500),
+                            minRunwaySeconds: uint32(7 days)
+                        }),
+                        moduleTerms: ModuleTerms({module: address(adland), settings: ""})
+                    })
+                ))
         );
+        uint256 dep = SlotMath.depositFor(1 ether, 500, 7 days);
+
+        vm.startPrank(alice);
+        tok.approve(address(s), type(uint256).max);
+        s.buy(alice, 1 ether, dep, 0);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 365 days);
+        s.liquidate();
+        assertEq(s.debtOf(alice), 0, "nothing followed her out");
+
+        vm.startPrank(alice);
+        tok.approve(address(adland), dep);
+        adland.buyAndPublish(address(s), 1 ether, dep, 0, "data:text/plain,back");
+        vm.stopPrank();
+
+        assertEq(s.occupant(), alice);
+        assertEq(adland.creativeOf(address(s)), "data:text/plain,back");
     }
 }

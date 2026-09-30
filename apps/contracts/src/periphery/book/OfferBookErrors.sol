@@ -31,3 +31,8 @@ error TopUpRequired(uint256 shortfall);
 /// @dev The fill did not seat the bidder. Cannot happen against a canonical
 ///      slot; asserted because the book is repricing somebody else's position.
 error FillFailed();
+error PriceBelowMinimum(uint256 price, uint256 minPrice);
+/// @dev The slot quoted more than the offer's own price and deposit. On a
+///      canonical slot the two agree; a quote above them means `slot` is not one,
+///      and filling would spend the bidder's allowance beyond what they bid.
+error QuoteAboveOffer(uint256 owed, uint256 ceiling);

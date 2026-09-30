@@ -47,8 +47,7 @@ contract SlotCollectiveFactoryTest is Test {
                 new ERC1967Proxy(
                     address(factoryImpl),
                     abi.encodeCall(
-                        SlotCollectiveFactory.initialize,
-                        (factoryAdmin, address(implementation))
+                        SlotCollectiveFactory.initialize, (factoryAdmin, address(implementation))
                     )
                 )
             )
@@ -74,11 +73,7 @@ contract SlotCollectiveFactoryTest is Test {
         });
     }
 
-    function _roles(address admin_)
-        internal
-        pure
-        returns (SlotCollective.InitialRoles memory r)
-    {
+    function _roles(address admin_) internal pure returns (SlotCollective.InitialRoles memory r) {
         r.admin = admin_;
     }
 
@@ -223,19 +218,13 @@ contract SlotCollectiveFactoryTest is Test {
         vm.expectRevert(SlotCollectiveFactory.AdminRequired.selector);
         new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(
-                SlotCollectiveFactory.initialize,
-                (address(0), address(implementation))
-            )
+            abi.encodeCall(SlotCollectiveFactory.initialize, (address(0), address(implementation)))
         );
 
         vm.expectRevert(SlotCollectiveFactory.ImplementationRequired.selector);
         new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(
-                SlotCollectiveFactory.initialize,
-                (factoryAdmin, makeAddr("noCode"))
-            )
+            abi.encodeCall(SlotCollectiveFactory.initialize, (factoryAdmin, makeAddr("noCode")))
         );
     }
 
@@ -270,7 +259,7 @@ contract SlotCollectiveFactoryTest is Test {
     ///      arrives via `Slot._payOrCredit`'s `call{gas: 30_000}`, and a
     ///      BeaconProxy adds a staticcall to the beacon plus a delegatecall
     ///      before `receive()` even runs. If that no longer fits, every native
-    ///      push silently degrades into a `withdrawableOf` credit needing a
+    ///      push silently degrades into a `claimableOf` credit needing a
     ///      manual claim.
     function test_nativeTaxStillFitsThe30kCapThroughTheProxy() public {
         SlotCollective mgr = _create(managerAdmin);

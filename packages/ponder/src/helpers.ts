@@ -4,7 +4,7 @@ import {
   accountChain,
   accountSlot,
   currency,
-  hook,
+  module,
 } from "ponder:schema";
 import {
   type Abi,
@@ -13,7 +13,7 @@ import {
   type Hex,
   toFunctionSelector,
 } from "viem";
-import { ERC20Abi, SlotAbi, SlotHookAbi } from "../abis";
+import { ERC20Abi, SlotAbi, SlotModuleAbi } from "../abis";
 
 // Function selector for splitHash() — used to detect 0xSplits contracts
 // by scanning bytecode (avoids noisy failed eth_calls on non-Splits contracts).
@@ -22,9 +22,8 @@ const SPLIT_HASH_SELECTOR = toFunctionSelector("splitHash()").slice(2);
 export const ZERO_ADDR =
   "0x0000000000000000000000000000000000000000" as const satisfies Hex;
 
-/// "This slot configured nothing" — the `hookData` counterpart to ZERO_ADDR.
-export const ZERO_DATA =
-  "0x0000000000000000000000000000000000000000000000000000000000000000" as const satisfies Hex;
+/// "This slot configured nothing": empty `settings`.
+export const NO_SETTINGS = "0x" as const satisfies Hex;
 
 export const evtId = (txHash: Hex, logIndex: number | bigint): string =>
   `${txHash}-${logIndex.toString()}`;
@@ -263,41 +262,43 @@ export async function getOrCreateCurrency(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HOOKS, AND THE STATE `SlotCreated` DOES NOT CARRY
+// MODULES, AND THE STATE `SlotCreated` DOES NOT CARRY
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** The eight subscriptions a hook may declare. */
-export type HookFlagSet = {
+/** The scopes a module may declare. */
+export type ScopeSet = {
   beforeBuy: boolean;
   beforeSelfAssess: boolean;
   afterBuy: boolean;
   afterRelease: boolean;
   afterLiquidate: boolean;
   afterSettle: boolean;
-  strict: boolean;
+  afterCallbacksMustSucceed: boolean;
 };
 
-/** What a slot with no hook obeys: nothing. */
-export const NO_HOOK_FLAGS: HookFlagSet = {
+/** What a slot with no module obeys: nothing. */
+export const NO_SCOPES: ScopeSet = {
   beforeBuy: false,
   beforeSelfAssess: false,
   afterBuy: false,
   afterRelease: false,
   afterLiquidate: false,
   afterSettle: false,
-  strict: false,
+  afterCallbacksMustSucceed: false,
 };
 
-function asFlags(value: unknown): HookFlagSet | null {
-  if (typeof value !== "object" || value === null) return null;
-  const v = value as Record<string, unknown>;
-  const keys = Object.keys(NO_HOOK_FLAGS) as (keyof HookFlagSet)[];
-  const out = { ...NO_HOOK_FLAGS };
-  for (const k of keys) {
-    if (typeof v[k] !== "boolean") return null;
-    out[k] = v[k] as boolean;
-  }
-  return out;
+/** Scope bits as a set. Bits follow `ScopesLib`. */
+export function unpackScopes(scopes: number): ScopeSet {
+  const has = (bit: number) => (scopes & bit) !== 0;
+  return {
+    beforeBuy: has(1),
+    beforeSelfAssess: has(2),
+    afterBuy: has(4),
+    afterRelease: has(8),
+    afterLiquidate: has(16),
+    afterSettle: has(32),
+    afterCallbacksMustSucceed: has(64),
+  };
 }
 
 /**
@@ -356,96 +357,107 @@ async function readMany(
 }
 
 /**
- * A hook's own declaration of what it subscribes to.
+ * A module's own declaration of its scopes, for empty settings.
  *
- * `null` when `hooks()` does not answer. That is not a hypothetical: a hook
- * whose `hooks()` reverts is REFUSED at attach time — `_readHookFlags` is
- * deliberately fail-closed — so seeing null here means either a hook that was
+ * `null` when `scopes` does not answer. A module whose `scopes` reverts is
+ * REFUSED at attach time, so seeing null here means either a module that was
  * seen but never attached, or one that has since been upgraded into
  * something that no longer answers.
  */
-export async function readHookFlags(
+export async function readScopes(
   ctx: Context,
-  hookAddr: Hex,
-): Promise<HookFlagSet | null> {
-  const [raw] = await readMany(
-    ctx,
-    getAddress(lower(hookAddr)),
-    SlotHookAbi as unknown as Abi,
-    ["subscriptions"],
-  );
-  return asFlags(raw);
+  moduleAddr: Hex,
+): Promise<ScopeSet | null> {
+  try {
+    const bits = (await ctx.client.readContract({
+      address: getAddress(lower(moduleAddr)),
+      abi: SlotModuleAbi,
+      functionName: "scopes",
+      args: [NO_SETTINGS],
+    })) as number;
+    return unpackScopes(bits);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * The terms `SlotCreated` leaves out.
- *
- * The event carries slot, recipient, creator, currency and hook — and nothing
- * about the economics. Tax, the deposit floor, which dimensions are mutable and
- * who may move them all have to be read back from the slot itself.
- *
- * This is six eth_calls per slot creation, at the event's own block, so the
- * answer is the state as of birth and ponder caches it like any other read.
- * It is also the single most avoidable cost in this indexer — see the note in
- * src/factory.ts.
+ * The terms `SlotCreated` leaves out, read back from the slot at the event's
+ * block: rent, module terms, manager, lock and the scopes snapshot.
  */
 export async function readSlotTerms(ctx: Context, slotAddr: Hex) {
   const address = getAddress(lower(slotAddr));
-  const [tax, minDeposit, mutTax, mutHook, manager, flags, hookData] =
+  const [taxTerms, moduleTerms, manager, mutTax, mutRecipient, mutModule, scopesRead, feeRead] =
     await readMany(ctx, address, SlotAbi as unknown as Abi, [
-      "taxBps",
-      "minDepositSeconds",
-      "mutableTax",
-      "mutableHook",
+      "taxTerms",
+      "moduleTerms",
       "manager",
-      "hookFlags",
-      "hookData",
+      "mutableTax",
+      "mutableRecipient",
+      "mutableModule",
+      "scopes",
+      "fee",
     ]);
 
+  const r = taxTerms as
+    | { recipient: Hex; rateBps: number; minRunwaySeconds: number }
+    | undefined;
+  const h = moduleTerms as { module: Hex; settings: Hex } | undefined;
+  const sc = scopesRead as ScopeSet | undefined;
+  const f = feeRead as { bps: number; recipient: Hex } | undefined;
   const managerAddr =
     typeof manager === "string" && lower(manager as Hex) !== ZERO_ADDR
       ? lower(manager as Hex)
       : null;
 
   return {
-    taxBps: typeof tax === "bigint" ? tax : 0n,
-    minDepositSeconds: typeof minDeposit === "bigint" ? minDeposit : 0n,
-    mutableTax: mutTax === true,
-    mutableHook: mutHook === true,
-    /// NULL means every term is frozen forever. The contract enforces the
-    /// pairing — `initialize` reverts if a manager is set with nothing mutable,
-    /// and reverts if something is mutable with no manager — so this is a fact
-    /// about the slot, not missing data.
+    taxRateBps: BigInt(r?.rateBps ?? 0),
+    minRunwaySeconds: BigInt(r?.minRunwaySeconds ?? 0),
+    /// NULL means nothing about the slot can ever change.
     manager: managerAddr,
-    /// The snapshot THIS SLOT obeys, which is what `hookFlags()` returns and
-    /// is not re-read from the hook afterwards.
-    flags: asFlags(flags) ?? NO_HOOK_FLAGS,
-    /// Read rather than taken from the event, for the same reason the flags
-    /// are: `SlotCreated` does not carry it, and the slot is the authority.
-    hookData: typeof hookData === "string" ? lower(hookData as Hex) : ZERO_DATA,
+    mutableTax: mutTax === true,
+    mutableRecipient: mutRecipient === true,
+    mutableModule: mutModule === true,
+    /// The module's fee, as the slot accepted it.
+    moduleFeeBps: f?.bps ?? 0,
+    moduleFeeRecipient:
+      f && lower(f.recipient) !== ZERO_ADDR ? lower(f.recipient) : null,
+    /// The scopes THIS SLOT obeys, as it accepted them.
+    scopes: sc
+      ? {
+          beforeBuy: sc.beforeBuy,
+          beforeSelfAssess: sc.beforeSelfAssess,
+          afterBuy: sc.afterBuy,
+          afterRelease: sc.afterRelease,
+          afterLiquidate: sc.afterLiquidate,
+          afterSettle: sc.afterSettle,
+          afterCallbacksMustSucceed: sc.afterCallbacksMustSucceed,
+        }
+      : NO_SCOPES,
+    settings: h ? lower(h.settings) : NO_SETTINGS,
   };
 }
 
 /**
- * The `hook` row, created on first sight with its declared flags read once.
+ * The `module` row, created on first sight with its declared scopes read once.
  *
- * Keyed by (address, chainId): a hook is code, not an identity, and the same
+ * Keyed by (address, chainId): a module is code, not an identity, and the same
  * address on two chains is two deployments whose immutables may differ.
  */
-export async function getOrCreateHook(
+export async function getOrCreateModule(
   ctx: Context,
-  hookAddrRaw: Hex,
+  moduleAddrRaw: Hex,
   timestamp: bigint,
 ) {
-  const id = lower(hookAddrRaw);
+  const id = lower(moduleAddrRaw);
   const chainId = ctx.chain.id;
-  const existing = await ctx.db.find(hook, { id, chainId });
+  const existing = await ctx.db.find(module, { id, chainId });
   if (existing) return existing;
 
-  const declared = await readHookFlags(ctx, id);
-  const f = declared ?? NO_HOOK_FLAGS;
+  const declared = await readScopes(ctx, id);
+  const f = declared ?? NO_SCOPES;
 
-  return ctx.db.insert(hook).values({
+  return ctx.db.insert(module).values({
     id,
     chainId,
     declaredKnown: declared !== null,
@@ -455,7 +467,7 @@ export async function getOrCreateHook(
     declaredAfterRelease: f.afterRelease,
     declaredAfterLiquidate: f.afterLiquidate,
     declaredAfterSettle: f.afterSettle,
-    declaredStrict: f.strict,
+    declaredAfterCallbacksMustSucceed: f.afterCallbacksMustSucceed,
     slotCount: 0,
     failedCallCount: 0,
     firstSeenAt: timestamp,
@@ -463,29 +475,29 @@ export async function getOrCreateHook(
   });
 }
 
-/** Move a hook's slot count, creating the row if this is its first slot. */
-export async function bumpHookSlotCount(
+/** Move a module's slot count, creating the row if this is its first slot. */
+export async function bumpModuleSlotCount(
   ctx: Context,
-  hookAddrRaw: Hex,
+  moduleAddrRaw: Hex,
   timestamp: bigint,
   delta: number,
 ) {
-  const id = lower(hookAddrRaw);
+  const id = lower(moduleAddrRaw);
   if (id === ZERO_ADDR) return;
-  await getOrCreateHook(ctx, id, timestamp);
-  await ctx.db.update(hook, { id, chainId: ctx.chain.id }).set((row) => ({
+  await getOrCreateModule(ctx, id, timestamp);
+  await ctx.db.update(module, { id, chainId: ctx.chain.id }).set((row) => ({
     slotCount: Math.max(0, row.slotCount + delta),
     updatedAt: timestamp,
   }));
 }
 
-/** Columns for `slot`, from a flag snapshot. */
-export const hookFlagColumns = (f: HookFlagSet) => ({
-  hookBeforeBuy: f.beforeBuy,
-  hookBeforeSelfAssess: f.beforeSelfAssess,
-  hookAfterBuy: f.afterBuy,
-  hookAfterRelease: f.afterRelease,
-  hookAfterLiquidate: f.afterLiquidate,
-  hookAfterSettle: f.afterSettle,
-  hookStrict: f.strict,
+/** Columns for `slot`, from the accepted scopes. */
+export const scopeColumns = (f: ScopeSet) => ({
+  scopeBeforeBuy: f.beforeBuy,
+  scopeBeforeSelfAssess: f.beforeSelfAssess,
+  scopeAfterBuy: f.afterBuy,
+  scopeAfterRelease: f.afterRelease,
+  scopeAfterLiquidate: f.afterLiquidate,
+  scopeAfterSettle: f.afterSettle,
+  scopeAfterCallbacksMustSucceed: f.afterCallbacksMustSucceed,
 });

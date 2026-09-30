@@ -70,19 +70,13 @@ export function OrdersTab({
    *
    * No cleanup follows: the book marks the row filled as it goes, and the board
    * stops listing it on its own.
+   *
+   * `minPrice` is the price shown on the button. A bidder edits an offer in
+   * place, so the fill must not land at anything lower.
    */
-  const accept = async (id: number) => {
-    if (!walletClient || !book) return;
-    const hash = await actions.exec("Accept offer", () =>
-      walletClient.writeContract({
-        address: book,
-        abi: offerBookAbi,
-        functionName: "acceptOffer",
-        args: [slot, BigInt(id)],
-        account: walletClient.account,
-        chain: walletClient.chain,
-      }),
-    );
+  const accept = async (id: number, minPrice: bigint) => {
+    if (!book) return;
+    const hash = await actions.acceptOffer(slot, BigInt(id), minPrice);
     if (hash) refresh();
   };
 
@@ -180,7 +174,7 @@ export function OrdersTab({
                 <Button
                   size="sm"
                   disabled={actions.busy}
-                  onClick={() => accept(bestId)}
+                  onClick={() => accept(bestId, bestOffer.price)}
                 >
                   {actions.busy ? (
                     <Loader2 className="size-3.5 animate-spin" />
@@ -224,7 +218,7 @@ export function OrdersTab({
             fmt={fmt}
             onCancel={() => cancelOffer(o.id)}
             onRevoke={() => cancelOffer(o.id)}
-            onAccept={() => accept(o.id)}
+            onAccept={() => accept(o.id, o.price)}
           />
         ))}
       </div>

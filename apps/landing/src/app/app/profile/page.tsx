@@ -13,7 +13,7 @@ import { SlotList } from "@/components/slots/slot-list";
  *
  * This asked the chain until recently: `SlotCreated` carries `creator` and
  * `recipient` as indexed topics, so both questions could be answered from
- * logs, and for a while that was the only way — the port to the hook protocol
+ * logs, and for a while that was the only way — the port to the v1 protocol
  * left the generated GraphQL types describing the retired schema. The cost was
  * a full-history log scan per poll that returned every slot ever created and
  * could not page. `SlotList` reads the indexer instead.

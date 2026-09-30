@@ -109,25 +109,29 @@ forge script script/slots/SeedSlots.s.sol:SeedSlots \
   || { echo "  seed failed:"; tail -25 /tmp/seed-local.log; exit 1; }
 grep -E "^  [0-9] " /tmp/seed-local.log | sed 's/^/  /' || true
 
-# The generated address table must match what the seed just deployed.
+# The generated address table must match what this run just deployed.
 #
-# `packages/sdk` and the create form read the local test token from
-# `packages/contracts/src/generated.ts`, which `wagmi generate` writes FROM the
-# records this run has just written. If the seed changed what it deploys, the
-# committed table is a step behind and the app offers a token with no code —
-# every ERC-20 approval then reverts with nothing naming the cause.
+# `packages/sdk` and the app read every local address — factory, lens, book,
+# test token — from `packages/contracts/src/generated.ts`, which `wagmi
+# generate` writes FROM the records this run has just written. Any contract
+# whose code changed gets a new CREATE2 address, and a table a step behind
+# points the app at addresses with no code: `createSlot` returns "0x" and
+# every slot page says nothing answers like a slot.
 GEN="$HERE/../../packages/contracts/src/generated.ts"
-TOKEN=$(addr SlotsTestToken)
-if ! grep -qi "$TOKEN" "$GEN" 2>/dev/null; then
-  echo >&2
-  echo "  the seed's test token moved." >&2
-  echo "    the seed just deployed  $TOKEN" >&2
-  echo "    generated table has     $(grep -oE 'SlotsTestToken: \{ address: "0x[0-9a-fA-F]{40}"' "$GEN" 2>/dev/null | grep -oE '0x[0-9a-fA-F]{40}' || echo 'nothing')" >&2
-  echo >&2
-  echo "  Regenerate it:" >&2
-  echo "    pnpm --filter @0xslots/contracts codegen" >&2
-  echo "    pnpm --filter @0xslots/contracts build" >&2
-  exit 1
+STALE=""
+for rec in "$DEPLOYMENTS"/*.json; do
+  case "$rec" in *.layout.json) continue ;; esac
+  name=$(basename "$rec" .json)
+  a=$(addr "$name")
+  [ -n "$a" ] && ! grep -qi "$a" "$GEN" 2>/dev/null && STALE="$STALE $name"
+done
+if [ -n "$STALE" ]; then
+  echo "▸ regenerating addresses (moved:$STALE)"
+  ( cd "$HERE/../.." \
+    && pnpm --filter @0xslots/contracts codegen >/tmp/codegen-local.log 2>&1 \
+    && pnpm --filter @0xslots/contracts build >>/tmp/codegen-local.log 2>&1 ) \
+    || { echo "  codegen failed:"; tail -25 /tmp/codegen-local.log; exit 1; }
+  echo "    done — restart the web dev server if it was already running (Next caches the old build)"
 fi
 
 cat <<EOF

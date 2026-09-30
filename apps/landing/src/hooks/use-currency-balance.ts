@@ -9,7 +9,7 @@ import { useAccount, useBalance, useReadContract } from "wagmi";
  * unit.
  *
  * wagmi v2's `useBalance` reads native ETH only — the `token` parameter that
- * used to cover ERC-20s was removed — so the two cases need different hooks.
+ * used to cover ERC-20s was removed — so the two cases need different apps.
  * Both are called unconditionally to respect the rules of hooks, and each is
  * disabled when it does not apply so only one request is ever issued.
  */

@@ -1,24 +1,35 @@
 "use client";
 
-import { findKnownHook } from "@0xslots/contracts/slots";
-import type { SlotState } from "@0xslots/sdk/slots";
+import { findKnownModule } from "@0xslots/contracts/slots";
+import {
+  packScopes,
+  type SlotState,
+  TERMS,
+  unpackScopes,
+} from "@0xslots/sdk/slots";
 import { Info, Loader2 } from "lucide-react";
 import { type Address, zeroAddress } from "viem";
 import { Button } from "@/components/ui/button";
 import { useChain } from "@/context/chain";
 import { useChainTimeSkew } from "@/hooks/slots/use-slots";
+import { useModuleSummary } from "@/hooks/use-module-schema";
 import type { useSlotsAction } from "@/hooks/slots/use-slots-action";
 import { cn } from "@/lib/utils";
-import { formatBps, truncateAddress } from "@/utils";
+import { describeScopes } from "@/lib/module-scopes";
+import { formatBps, formatDuration, truncateAddress } from "@/utils";
 
 type Actions = ReturnType<typeof useSlotsAction>;
 
 /**
- * Which of the two dimensions a queued change touches. `proposeTerms` takes a
- * flag per dimension and `cancelTerms` takes one per dimension, so a retraction
- * has to name which — the two may belong to different roles in a collective.
+ * Which term a queued change touches. `cancelTerms` takes a mask, so a
+ * retraction names which — terms may belong to different roles in a collective.
  */
-export type PendingDimension = "tax" | "hook";
+export type PendingDimension =
+  | "tax"
+  | "recipient"
+  | "minDeposit"
+  | "module"
+  | "scopes";
 
 /**
  * This file owns one subject — terms queued but not yet in force — in the two
@@ -44,9 +55,29 @@ export function eligibleIn(appliesAt: bigint, nowSeconds: number): string {
   return `${Math.ceil(left / 86400)}d`;
 }
 
-function hookLabel(chainId: number, hook: Address): string {
-  if (hook === zeroAddress) return "none";
-  return findKnownHook(chainId, hook)?.name ?? truncateAddress(hook);
+function moduleLabel(
+  chainId: number,
+  module: Address,
+  summary?: string | null,
+): string {
+  if (module === zeroAddress) return "none";
+  return (
+    summary || findKnownModule(chainId, module)?.name || truncateAddress(module)
+  );
+}
+
+/**
+ * Both sides of a module change in the modules' own words, read from their
+ * on-chain metadata — so a change that keeps the module and only moves its
+ * settings (a longer tenure, stricter moderation) is visible as such.
+ */
+function useModuleSummaries(state: SlotState) {
+  const current = useModuleSummary(state.module, state.settings);
+  const next = useModuleSummary(
+    state.pending.moduleTerms.module,
+    state.pending.moduleTerms.settings,
+  );
+  return { current, next };
 }
 
 export type PendingRow = {
@@ -67,36 +98,79 @@ export type PendingRow = {
  * The queued changes, resolved into before/after strings.
  *
  * Reads the `has*` flags rather than testing values for emptiness: the zero
- * address is a REAL proposed value for the hook dimension — "detach the hook"
+ * address is a REAL proposed value for the module dimension — "detach the module"
  * is something someone deliberately queued, and treating it as "nothing
  * pending" would hide the more consequential of the two.
  */
 export function pendingChanges(
   state: SlotState,
   chainId: number,
+  modules: { current?: string | null; next?: string | null } = {},
 ): PendingRow[] {
   const rows: PendingRow[] = [];
   const { pending } = state;
 
-  if (pending.hasTax) {
+  if (pending.hasTaxRate) {
     rows.push({
       dimension: "tax",
       label: "Tax rate",
-      current: `${formatBps(Number(state.taxBps))}`,
-      next: `${formatBps(Number(pending.taxBps))} / mo`,
-      direction: pending.taxBps > state.taxBps ? "up" : "down",
+      current: `${formatBps(Number(state.taxRateBps))}`,
+      next: `${formatBps(pending.taxTerms.rateBps)} / mo`,
+      direction:
+        BigInt(pending.taxTerms.rateBps) > state.taxRateBps ? "up" : "down",
     });
   }
-  if (pending.hasHook) {
+  if (pending.hasRecipient) {
     rows.push({
-      dimension: "hook",
-      label: "Hook",
-      current: hookLabel(chainId, state.hook),
-      next: hookLabel(chainId, pending.hook),
+      dimension: "recipient",
+      label: "Recipient",
+      current: truncateAddress(state.recipient),
+      next: truncateAddress(pending.taxTerms.recipient),
+    });
+  }
+  if (pending.hasMinRunway) {
+    rows.push({
+      dimension: "minDeposit",
+      label: "Minimum runway",
+      current: formatDuration(Number(state.minRunwaySeconds)),
+      next: formatDuration(pending.taxTerms.minRunwaySeconds),
+    });
+  }
+  if (pending.hasModule) {
+    rows.push({
+      dimension: "module",
+      label: "Module",
+      current: moduleLabel(chainId, state.module, modules.current),
+      next: moduleLabel(chainId, pending.moduleTerms.module, modules.next),
+    });
+  }
+  if (pending.hasScopes) {
+    const callbacks = (scopes: number) =>
+      describeScopes(unpackScopes(scopes)).granted.join(", ") || "none";
+    rows.push({
+      dimension: "scopes",
+      label: "Module scopes",
+      current: callbacks(packScopes(state.scopes)),
+      next: callbacks(pending.scopes),
     });
   }
 
   return rows;
+}
+
+/**
+ * When one row lands. Tax terms and the module ripen on separate clocks, so a
+ * row reads its own: module and scopes from the module's, the rest from the
+ * tax terms'. Ripeness comes from the chain, never this browser's clock.
+ */
+function rowTiming(
+  row: PendingRow,
+  pending: SlotState["pending"],
+): { ripe: boolean; at: bigint } {
+  const moduleRow = row.dimension === "module" || row.dimension === "scopes";
+  return moduleRow
+    ? { ripe: pending.moduleApplies, at: pending.moduleAppliesAt }
+    : { ripe: pending.taxApplies, at: pending.taxAppliesAt };
 }
 
 /** Must match the labels `useSlotAction` reports through `activeAction`, so a
@@ -104,12 +178,26 @@ export function pendingChanges(
  *  both at once. See `cancelTerms` in the SDK's react bindings. */
 const CANCEL_LABEL: Record<PendingDimension, string> = {
   tax: "Cancel tax update",
-  hook: "Cancel hook update",
+  recipient: "Cancel recipient update",
+  minDeposit: "Cancel minimum deposit update",
+  module: "Cancel module update",
+  scopes: "Cancel module scopes update",
+};
+
+const MASK: Record<PendingDimension, number> = {
+  tax: TERMS.TAX_RATE,
+  recipient: TERMS.RECIPIENT,
+  minDeposit: TERMS.MIN_RUNWAY,
+  module: TERMS.MODULE,
+  scopes: TERMS.SCOPES,
 };
 
 const CANCEL_TEXT: Record<PendingDimension, string> = {
   tax: "Cancel tax change",
-  hook: "Cancel hook change",
+  recipient: "Cancel recipient change",
+  minDeposit: "Cancel runway change",
+  module: "Cancel module change",
+  scopes: "Cancel scopes change",
 };
 
 /** The changed value, tinted by direction. Shared so the two views cannot
@@ -135,7 +223,7 @@ function NextValue({ row }: { row: PendingRow }) {
  *
  * It used to be three amber panels' worth of copy, rendered twice — once in the
  * details tab and once above the buy form — with a headline and a subtext per
- * viewer, plus a paragraph explaining what an occupancy transition is. Nothing
+ * viewer, plus a paragraph explaining when queued terms land. Nothing
  * queued here is dangerous: it is a fact about the slot with one consequence for
  * a buyer, and amber spent on it is amber unavailable for INSOLVENT, which
  * genuinely is urgent. So: info tint, one line of numbers, one line of
@@ -168,7 +256,8 @@ export function PendingTermsBanner({
    */
   const skew = useChainTimeSkew();
 
-  const rows = pendingChanges(state, chainId);
+  const modules = useModuleSummaries(state);
+  const rows = pendingChanges(state, chainId, modules);
   if (rows.length === 0) return null;
 
   const chainNow = nowSeconds + skew;
@@ -177,13 +266,12 @@ export function PendingTermsBanner({
    * browser's clock. The contract decides against ITS clock.
    */
   const ripe = state.pending.applies;
-  const { appliesAt } = state.pending;
   const tax = rows.find((r) => r.dimension === "tax");
 
   // One consequence line, and it turns on ripeness. Ripe: the reader's own buy
   // is the transition that lands this. Unripe: it cannot be, whatever they do.
   const consequence = ripe
-    ? tax
+    ? tax && state.pending.taxApplies
       ? `Applies at the next buy — including yours, at ${tax.next}.`
       : "Applies at the next buy — including yours."
     : tax
@@ -219,9 +307,9 @@ export function PendingTermsBanner({
               </span>
               <NextValue row={row} />
               <span className="ml-auto shrink-0 font-medium tabular-nums text-sky-700 dark:text-sky-300">
-                {ripe
+                {rowTiming(row, state.pending).ripe
                   ? "eligible now"
-                  : `in ${eligibleIn(appliesAt, chainNow)}`}
+                  : `in ${eligibleIn(rowTiming(row, state.pending).at, chainNow)}`}
               </span>
             </div>
           ))}
@@ -263,12 +351,17 @@ export function QueuedTermsControls({
   const { chainId } = useChain();
   const skew = useChainTimeSkew();
 
-  const rows = pendingChanges(state, chainId);
+  const modules = useModuleSummaries(state);
+  const rows = pendingChanges(state, chainId, modules);
   if (rows.length === 0) return null;
 
   const chainNow = nowSecondsOf(skew);
-  const ripe = state.pending.applies;
-  const { appliesAt } = state.pending;
+  // The header speaks for the whole queue: every row ripe, or the soonest one.
+  const allRipe = rows.every((r) => rowTiming(r, state.pending).ripe);
+  const soonest = rows
+    .filter((r) => !rowTiming(r, state.pending).ripe)
+    .map((r) => rowTiming(r, state.pending).at)
+    .reduce((a, b) => (a < b ? a : b), 0n);
 
   return (
     <div className="space-y-2 border border-sky-500/30 bg-sky-500/[0.06] p-3">
@@ -277,9 +370,9 @@ export function QueuedTermsControls({
           Queued
         </h4>
         <span className="text-[10px] font-medium tabular-nums text-sky-700 dark:text-sky-300">
-          {ripe
+          {allRipe
             ? "eligible now"
-            : `eligible in ${eligibleIn(appliesAt, chainNow)}`}
+            : `${rows.some((r) => rowTiming(r, state.pending).ripe) ? "part eligible now, rest" : "eligible"} in ${eligibleIn(soonest, chainNow)}`}
         </span>
       </div>
 
@@ -312,11 +405,7 @@ export function QueuedTermsControls({
                   // Per-dimension, mirroring the contract. The two may belong
                   // to different roles, so an all-or-nothing cancel would let
                   // one retraction silently destroy the other's queued change.
-                  actions.cancelTerms(
-                    slot,
-                    row.dimension === "tax",
-                    row.dimension === "hook",
-                  )
+                  actions.cancelTerms(slot, MASK[row.dimension])
                 }
               >
                 {working && (

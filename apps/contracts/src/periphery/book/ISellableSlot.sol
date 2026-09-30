@@ -9,26 +9,26 @@ pragma solidity ^0.8.24;
 ///      the book is deliberately replaceable, so it must not drag the core in
 ///      behind it.
 ///
-///      This list used to name `sell`, `sellOrderHash`, `orderNonce` and
-///      `orderUsed`. The core no longer has them: a consensual sale is
-///      `selfAssess` then `buy`, and the book performs both. What it needs from
-///      the slot is therefore the ordinary market surface plus the two writes,
-///      which is why nothing here is sale-specific any more.
+///      Nothing here is sale-specific: a consensual sale is `selfAssess` then
+///      `buy`, and the book performs both, so what it needs is the ordinary
+///      market surface plus those two writes.
 interface ISellableSlot {
     function occupant() external view returns (address);
     function price() external view returns (uint256);
     function deposit() external view returns (uint256);
     function currency() external view returns (address);
+    function taxOwed() external view returns (uint256);
 
-    /// @dev What `buy` will charge `account` for `depositAmount` of escrow:
-    ///      the sitting price, the escrow, and any arrears that account owes.
-    function quoteBuy(address account, uint256 depositAmount)
-        external
-        view
-        returns (uint256);
+    /// @dev What `buy` will charge for `depositAmount` of escrow: the sitting
+    ///      price and the escrow.
+    function quoteBuy(address account, uint256 depositAmount) external view returns (uint256);
 
-    /// @dev The escrow floor at `price_`. `selfAssess` enforces it, so raising
-    ///      a price can require a top-up first.
+    /// @dev The escrow floor at `price_` under the terms in force. `selfAssess`
+    ///      enforces it, so raising a price can require a top-up first.
+    function minDepositToHold(uint256 price_) external view returns (uint256);
+
+    /// @notice The smallest deposit `buy` accepts at `price_`, ripe queued
+    ///         terms included.
     function minDepositForBuy(uint256 price_) external view returns (uint256);
 
     /// @dev True while `operator` may reprice on the CURRENT occupant's behalf.

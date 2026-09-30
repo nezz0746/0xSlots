@@ -5,11 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {SlotGovernance} from "../SlotGovernance.sol";
-import {
-    IGDAv1Forwarder,
-    ISuperfluidPool,
-    ISuperToken
-} from "./interfaces/ISuperfluid.sol";
+import {IGDAv1Forwarder, ISuperfluidPool, ISuperToken} from "./interfaces/ISuperfluid.sol";
 
 /// @title SlotStreamCollective — a collective that pays out through a Superfluid pool
 ///
@@ -79,6 +75,11 @@ contract SlotStreamCollective is SlotGovernance {
     ///      see the note there on why renaming a live role identifier silently
     ///      strips its holders.
     bytes32 public constant POOL_MANAGER_ROLE = keccak256("POOL_MANAGER_ROLE");
+
+    /// @dev The pool manager decides who is paid, so a module fee is theirs too.
+    function _payoutRole() internal pure override returns (bytes32) {
+        return POOL_MANAGER_ROLE;
+    }
 
     // ═══════════════════════════════════════════════════════════
     // IMMUTABLES
@@ -194,15 +195,13 @@ contract SlotStreamCollective is SlotGovernance {
 
     /// @param admin Holder of `DEFAULT_ADMIN_ROLE`.
     /// @param taxManagers Initial `TAX_MANAGER_ROLE` holders. May be empty.
-    /// @param hookManagers Initial `POLICY_MANAGER_ROLE` holders — the role
-    ///        that governs the hook. May be empty. There is no longer a
-    ///        separate utility role: a hook is the old policy and the old
-    ///        utility unified, so the two collapsed into one.
+    /// @param policyManagers Initial `POLICY_MANAGER_ROLE` holders — the role
+    ///        that governs the module. May be empty.
     /// @param poolManagers Initial `POOL_MANAGER_ROLE` holders. May be empty.
     struct InitialRoles {
         address admin;
         address[] taxManagers;
-        address[] hookManagers;
+        address[] policyManagers;
         address[] poolManagers;
     }
 
@@ -287,11 +286,7 @@ contract SlotStreamCollective is SlotGovernance {
         // never pay anyone.
         if (unitsTotal == 0) revert EmptyPool();
 
-        _initGovernance(
-            roles.admin,
-            roles.taxManagers,
-            roles.hookManagers
-        );
+        _initGovernance(roles.admin, roles.taxManagers, roles.policyManagers);
         _grantRoleBatch(POOL_MANAGER_ROLE, roles.poolManagers);
     }
 
@@ -307,19 +302,19 @@ contract SlotStreamCollective is SlotGovernance {
     ///      is a genuine improvement on the split, where rewriting allocations
     ///      before someone calls `distribute()` retroactively redirects money
     ///      that was earned under the old shares.
-    function setMemberUnits(address member, uint128 units)
-        external
-        onlyRoleOrAdmin(POOL_MANAGER_ROLE)
-    {
+    function setMemberUnits(
+        address member,
+        uint128 units
+    ) external onlyRoleOrAdmin(POOL_MANAGER_ROLE) {
         pool.updateMemberUnits(member, units);
         emit MemberUnitsUpdated(member, units, msg.sender);
     }
 
     /// @notice Set many members' units in one call.
-    function setMemberUnitsBatch(address[] calldata members, uint128[] calldata units)
-        external
-        onlyRoleOrAdmin(POOL_MANAGER_ROLE)
-    {
+    function setMemberUnitsBatch(
+        address[] calldata members,
+        uint128[] calldata units
+    ) external onlyRoleOrAdmin(POOL_MANAGER_ROLE) {
         uint256 length = members.length;
         if (units.length != length) revert LengthMismatch();
         for (uint256 i; i < length; ++i) {
@@ -358,20 +353,11 @@ contract SlotStreamCollective is SlotGovernance {
         if (balance == 0) return 0;
 
         distributed = GDA.estimateDistributionActualAmount(
-            address(SUPER_TOKEN),
-            address(this),
-            address(pool),
-            balance
+            address(SUPER_TOKEN), address(this), address(pool), balance
         );
         if (distributed == 0) return 0;
 
-        GDA.distribute(
-            address(SUPER_TOKEN),
-            address(this),
-            address(pool),
-            distributed,
-            ""
-        );
+        GDA.distribute(address(SUPER_TOKEN), address(this), address(pool), distributed, "");
         emit Distributed(distributed, msg.sender);
     }
 
@@ -394,13 +380,7 @@ contract SlotStreamCollective is SlotGovernance {
     ///      current balance.
     function setFlowRate(int96 newFlowRate) external onlyRoleOrAdmin(POOL_MANAGER_ROLE) {
         _wrap();
-        GDA.distributeFlow(
-            address(SUPER_TOKEN),
-            address(this),
-            address(pool),
-            newFlowRate,
-            ""
-        );
+        GDA.distributeFlow(address(SUPER_TOKEN), address(this), address(pool), newFlowRate, "");
         emit FlowRateUpdated(newFlowRate, msg.sender);
     }
 
@@ -432,11 +412,7 @@ contract SlotStreamCollective is SlotGovernance {
 
     /// @notice The rate currently streaming into the pool, per second.
     function flowRate() external view returns (int96) {
-        return GDA.getFlowDistributionFlowRate(
-            address(SUPER_TOKEN),
-            address(this),
-            address(pool)
-        );
+        return GDA.getFlowDistributionFlowRate(address(SUPER_TOKEN), address(this), address(pool));
     }
 
     // ═══════════════════════════════════════════════════════════

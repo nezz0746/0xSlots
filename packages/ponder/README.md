@@ -1,8 +1,15 @@
 # @0xslots/ponder
 
 The 0xSlots indexer. [Ponder](https://ponder.sh) watches `SlotFactory` and every
-slot it deploys, and serves the result as GraphQL. This is what `@0xslots/sdk`
-reads.
+slot it deploys — plus AdLand, the collective factory and the slot-bound NFT
+factory — and serves the result as GraphQL at `/graphql` (and `/sql/*` for
+Ponder's SQL client). `@0xslots/sdk` exports the endpoints as `DEFAULT_API_URL`
+and `LOCAL_API_URL`; its `SlotsClient` reads the chain directly.
+
+Contract addresses and start blocks come from the versioned records in
+`apps/contracts/deployments/<chainId>/`, or from env overrides
+(`SLOTS_FACTORY_<CHAIN>`, `ADLAND_<CHAIN>`, …). A chain with neither indexes
+nothing.
 
 ## Scripts
 
@@ -25,9 +32,8 @@ every configured chain into one database, so the chain is a `where: { chainId }`
 filter on the query rather than a property of the endpoint.
 
 That is the shape difference that matters most for consumers. An unfiltered list
-query returns Base and Base Sepolia rows interleaved — a plausible-looking result
-that is quietly wrong. `SlotsClient` merges the filter into every list query for
-exactly this reason; anything querying the endpoint directly must do the same.
+query returns every chain's rows interleaved — a plausible-looking result that is
+quietly wrong. Anything querying the endpoint must filter on `chainId`.
 
 The API is served **unauthenticated**. There is no key.
 
@@ -47,12 +53,13 @@ replaced in four ways:
 
 | Entity | Notes |
 | --- | --- |
-| `slot` | Terms, live financials, and the pending update per dimension |
+| `slot` | Terms, the module and the scopes the slot accepted, live financials, and queued terms |
+| `module` | A module contract: the scopes it declared, `slotCount`, `failedCallCount` |
 | `account` | Protocol-wide totals. Has **no** `chainId` |
 | `accountChain` | The same counters per chain — read this for any per-chain view |
 | `currency` | Token metadata |
-| `module` | Verified utilities, with `metadataURI` |
-| `metadataSlot` | Per-slot metadata, plus resolved IPFS content |
+| `creative`, `adKey` | AdLand's current creative per slot, and its name registry |
+| `slotCollective`, `collection`, `wrapper` | Collectives and slot-bound NFT collections |
 | `*Event` | Immutable event rows, all carrying `chainId` |
 
 `accountChain` exists because `account` cannot cheaply gain a `chainId`, and
@@ -62,10 +69,10 @@ counts slots the account *occupies*, `slotCount` counts slots where it is the
 *recipient*, and `occupiedAsRecipient` is the only honest numerator for an
 occupancy percentage.
 
-On `slot`, a `NULL` pending column means **nothing is queued**. It is not
-interchangeable with the zero address, which is a real proposed value for both
-address dimensions — "remove the utility" and "drop the occupancy policy" are
-changes someone deliberately queued.
+On `slot`, read the `pendingHas*` booleans (or `pendingMask`) to know what is
+queued, never the value columns. The zero address is a real proposed value —
+`pendingModule` = zero with `pendingHasModule` = true is a deliberately queued
+"remove the module".
 
 ## Schema changes are breaking, in both directions
 
@@ -73,8 +80,7 @@ The indexer serves exactly one schema, and GraphQL rejects a whole document
 containing an unknown field. So a renamed column does not degrade to a missing
 field — it returns an **empty list**, and a table simply renders nothing.
 
-Deploy this and publish the SDK together. The `moduleURI` → `metadataURI` rename
-is the worked example.
+Deploy this and its consumers together.
 
 ## Indexing status
 

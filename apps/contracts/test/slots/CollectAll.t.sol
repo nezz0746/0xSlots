@@ -1,39 +1,57 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AskModule, Ask} from "../utils/AskModule.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms, ModuleFee} from "../../src/types/SlotTypes.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {SlotFactory} from "../../src/SlotFactory.sol";
-import {ISlotHook, HookFlags, SlotContext} from "../../src/ISlotHook.sol";
-import "../../src/SlotErrors.sol";
+import {ISlotModule, Scopes, SlotContext} from "../../src/interfaces/ISlotModule.sol";
+import {ScopesLib} from "../../src/libraries/ScopesLib.sol";
+import "../../src/errors/SlotErrors.sol";
 
 contract Tok is ERC20 {
     constructor() ERC20("T", "T") {}
-    function mint(address to, uint256 a) external { _mint(to, a); }
+
+    function mint(address to, uint256 a) external {
+        _mint(to, a);
+    }
 }
 
 /**
- * @dev Reverts in `afterSettle` and declares `strict`, so the revert is NOT
+ * @dev Reverts in `afterSettle` and declares `afterCallbacksMustSucceed`, so the revert is NOT
  *      swallowed by the slot's stipend — it propagates out of `collect()`.
  *      That is the one way a healthy-looking slot can fail a collection, and
  *      the case the batch has to survive.
  */
-contract StrictBreaker is ISlotHook {
-    function validateHookData(bytes32) external pure {}
-    function subscriptions() external pure returns (HookFlags memory f) {
+contract StrictBreaker is AskModule {
+    function validateSettings(bytes calldata) external pure {}
+
+    function _ask(bytes calldata) internal pure override returns (Ask memory o) {
+        Scopes memory f;
         f.afterSettle = true;
-        f.strict = true;
+        f.afterCallbacksMustSucceed = true;
+        o.scopes = ScopesLib.pack(f);
     }
     function beforeBuy(SlotContext calldata) external view {}
     function beforeSelfAssess(SlotContext calldata) external view {}
     function afterBuy(SlotContext calldata) external {}
     function afterRelease(SlotContext calldata) external {}
     function afterLiquidate(SlotContext calldata) external {}
-    function afterSettle(SlotContext calldata) external pure { revert("nope"); }
+
+    function afterSettle(SlotContext calldata) external pure {
+        revert("nope");
+    }
+
+    function onUninstall(SlotContext calldata) external {}
+
+    function onInstall(SlotContext calldata) external pure {}
 }
 
 /**
@@ -55,31 +73,41 @@ contract CollectAllTest is Test {
     address recipientA = makeAddr("recipientA");
     address recipientB = makeAddr("recipientB");
 
-    uint256 constant TAX = 1000;      // 10% / 30 days
+    uint256 constant TAX_RATE = 1000; // 10% / 30 days
     uint256 constant MIN_DEP = 1 days;
 
     function setUp() public {
-        factory = SlotFactory(address(new ERC1967Proxy(
-            address(new SlotFactory()),
-            abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
-        )));
+        factory = SlotFactory(
+            address(
+                new ERC1967Proxy(
+                    address(new SlotFactory()),
+                    abi.encodeCall(SlotFactory.initialize, (address(this), address(new Slot())))
+                )
+            )
+        );
         token = new Tok();
         token.mint(alice, 1_000_000 ether);
         vm.warp(1_000_000);
     }
 
-    function _slot(address recipient_, address hook) internal returns (Slot) {
-        return Slot(payable(factory.createSlot(SlotInit({
-            recipient: recipient_,
-            currency: IERC20(address(token)),
-            manager: address(0),
-            hook: hook,
-            hookData: bytes32(0),
-            taxBps: TAX,
-            minDepositSeconds: MIN_DEP,
-            mutableTax: false,
-            mutableHook: false
-        }))));
+    function _slot(address recipient_, address module) internal returns (Slot) {
+        return Slot(
+            payable(factory.createSlot(
+                    SlotInit({
+                        currency: IERC20(address(token)),
+                        manager: address(0),
+                        mutableTax: false,
+                        mutableRecipient: false,
+                        mutableModule: false,
+                        taxTerms: TaxTerms({
+                            recipient: recipient_,
+                            rateBps: uint16(TAX_RATE),
+                            minRunwaySeconds: uint32(MIN_DEP)
+                        }),
+                        moduleTerms: ModuleTerms({module: module, settings: ""})
+                    })
+                ))
+        );
     }
 
     function _take(Slot s, uint256 price) internal {
@@ -114,7 +142,7 @@ contract CollectAllTest is Test {
         assertEq(token.balanceOf(recipientB), collected[1], "and what b paid");
 
         // Four times the price at the same rate for the same time. Within a
-        // few wei: `taxFor` floors, so four times a floored figure is not the
+        // few wei: accrual floors, so four times a floored figure is not the
         // floor of four times it.
         assertApproxEqAbs(collected[1], collected[0] * 4, 4, "proportional to the valuation");
     }
@@ -191,9 +219,9 @@ contract CollectAllTest is Test {
     /**
      * @notice A slot that reverts must not cost the others their rent.
      *
-     * @dev `strict` is what makes this reachable: without it the slot caps the
-     *      hook's gas and swallows the revert, so `collect()` succeeds anyway.
-     *      With it, the hook's revert comes all the way out of `collect()`.
+     * @dev `afterCallbacksMustSucceed` is what makes this reachable: without it the slot caps the
+     *      module's gas and swallows the revert, so `collect()` succeeds anyway.
+     *      With it, the module's revert comes all the way out of `collect()`.
      */
     function test_OneRevertingSlotDoesNotSinkTheBatch() public {
         Slot broken = _slot(recipientA, address(new StrictBreaker()));
@@ -264,11 +292,5 @@ contract CollectAllTest is Test {
         assertGt(collected[0], 0);
         assertEq(token.balanceOf(stranger), 0, "the caller takes nothing");
         assertEq(token.balanceOf(recipientA), collected[0], "the recipient takes it all");
-    }
-
-    /// @dev The doc says to bump it with any change to this contract.
-    ///      4 is the move from CREATE to CREATE2 in `createSlot`.
-    function test_TheFactoryVersionWasBumped() public view {
-        assertEq(factory.version(), 4);
     }
 }

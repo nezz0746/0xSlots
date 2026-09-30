@@ -20,11 +20,11 @@ import { useNow } from "@/hooks/use-duration";
  * Because it does not have to. `taxOwed()` is a pure function of the block
  * timestamp:
  *
- *   price * taxBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
+ *   price * taxRateBps * (now - lastSettled) / (MONTH * BASIS_POINTS)
  *
  * so the same arithmetic run in the browser reproduces it exactly, for free and
- * for any instant. The formula is UNCHANGED under the hook-based protocol —
- * `Slot.taxOwed()` is still `Math.mulDiv(price, taxBps * elapsed, MONTH *
+ * for any instant. The formula is UNCHANGED under the v1 protocol —
+ * `Slot.taxOwed()` is still `Math.mulDiv(price, taxRateBps * elapsed, MONTH *
  * BASIS_POINTS)` — so what needed porting here was the shape of the input, not
  * a line of the mathematics.
  *
@@ -121,7 +121,7 @@ export function useLiveAccrual(
     live: false,
   };
 
-  const perMonth = slot ? slot.price * slot.taxBps : ZERO;
+  const perMonth = slot ? slot.price * slot.taxRateBps : ZERO;
   const nowSec = BigInt(now);
 
   // Computed before the early return so the flash hook is called unconditionally.

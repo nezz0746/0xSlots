@@ -15,7 +15,7 @@ import { usePublicClient } from "wagmi";
 import { useChain } from "@/context/chain";
 
 /**
- * Everything the hook-based protocol needs from the chain, in one place.
+ * Everything the v1 protocol needs from the chain, in one place.
  *
  * Reads go straight to the node. The ponder deployment now indexes THIS
  * protocol — see `packages/ponder/ponder.schema.ts` — and the explorer reads it
@@ -207,7 +207,7 @@ export function useWithdrawable(
     queryKey: ["slots", "withdrawable", chainId, slot, account],
     enabled: !!slot && !!account,
     refetchInterval: 10_000,
-    queryFn: () => client.withdrawableOf(slot!, account!),
+    queryFn: () => client.claimableOf(slot!, account!),
   });
 }
 
@@ -229,9 +229,9 @@ export function useIsOperator(
 /**
  * The smallest deposit a BUY will accept at `price`, asked of the slot itself.
  *
- * NOT `minDepositFor(price, taxBps, minDepositSeconds)`. Entry is an
- * occupancy transition, so `_applyPending` runs before the funding check — a
- * buyer funds the terms they are buying INTO. Where a tax rise is queued, the
+ * NOT `minDepositFor(price, taxRateBps, minRunwaySeconds)`. A buy applies
+ * queued terms before its funding check — a buyer funds the terms they are
+ * buying INTO. Where a tax rise is queued, the
  * local formula sizes from the visible rate, under-quotes, and the buy reverts
  * `InvalidDeposit` for a reason nothing on screen explains. The slot already
  * knows which rate it will use, so it is asked.
@@ -255,21 +255,13 @@ export function useMinDepositForBuy(slot: Address | undefined, price: bigint) {
 /**
  * What taking the slot will actually charge, asked of the slot itself.
  *
- * NOT `price() + deposit`. The payment rule is the contract's promise and it
- * folds in the seated account's arrears; a native slot checks `msg.value` for
- * EQUALITY, so a figure derived here rather than quoted would revert whenever
- * the two disagreed.
+ * NOT `price() + deposit` computed here. The payment rule is the contract's
+ * promise, and a native slot checks `msg.value` for EQUALITY, so a figure
+ * derived here rather than quoted would revert whenever the two disagreed.
  */
 export function useTakeQuote(
   slot: Address | undefined,
-  /**
-   * The address being SEATED, not the one paying.
-   *
-   * Both quotes include that account's arrears, and the two need not be the
-   * same address — this app lets a buyer seat someone else. Quoting for the
-   * payer under-quotes a debtor's re-entry, and on a native slot, where
-   * `msg.value` is checked for EQUALITY, an under-quote is a revert.
-   */
+  /** The address being SEATED, not the one paying. */
   account: Address | undefined,
   depositAmount: bigint,
 ) {
@@ -291,28 +283,3 @@ export function useTakeQuote(
   });
 }
 
-/**
- * Tax `account` still owes this slot from an occupancy its deposit could not
- * cover.
- *
- * Settling can only take what the deposit holds; the shortfall used to be
- * written off, which made running dry and retaking the vacated seat the
- * cheapest way to hold a slot. It is carried on the ACCOUNT now and charged on
- * re-entry — so it is part of what taking this slot costs, and the person
- * paying it deserves to see it as its own line rather than folded into a total
- * that is quietly larger than the price plus the deposit.
- */
-export function useArrears(
-  slot: Address | undefined,
-  account: Address | undefined,
-) {
-  const { chainId } = useChain();
-  const client = useSlots();
-
-  return useQuery({
-    queryKey: ["slots", "arrears", chainId, slot, account],
-    enabled: !!slot && !!account,
-    refetchInterval: 10_000,
-    queryFn: () => client.arrearsOf(slot!, account!),
-  });
-}

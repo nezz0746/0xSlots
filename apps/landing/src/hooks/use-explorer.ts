@@ -23,10 +23,10 @@ import { indexerUrlFor } from "@/lib/indexer";
  *     old `{ first, skip }` shape has no equivalent, so the callers page with a
  *     cursor stack instead. See `useExplorerSlots`.
  *
- * The raw-fetch style is deliberate and matches `hooks/use-collectives.ts`: one
+ * The raw-fetch style is deliberate and matches `apps/use-collectives.ts`: one
  * endpoint per chain from `indexerUrlFor`, hand-written documents, row types
  * declared here. Move this into the SDK once codegen has run against the
- * hook-based indexer.
+ * v1 indexer.
  */
 
 /**
@@ -37,7 +37,7 @@ import { indexerUrlFor } from "@/lib/indexer";
  * database. Retrying it three times behind a spinner turned "this instance runs
  * the old schema" into "the network is slow" — and it was not hypothetical.
  * With `NEXT_PUBLIC_SLOTS_ENV` unset, the app read the production instance,
- * which still serves the retired protocol: no `hook`, no `hookRef`, no
+ * which still serves the retired protocol: no `module`, no `moduleRef`, no
  * `tenureId`. Every explorer query failed validation and took about seven
  * seconds of exponential backoff to say so.
  */
@@ -101,14 +101,14 @@ interface CurrencyRef {
 }
 
 /**
- * The hook a slot points at, as the indexer sees it TODAY.
+ * The module a slot points at, as the indexer sees it TODAY.
  *
- * `declared*` here and `hook*` on the slot are two different facts and the
+ * `declared*` here and `module*` on the slot are two different facts and the
  * schema stores both on purpose: the slot obeys the snapshot it took when the
- * hook was attached, and a hook behind a proxy can change its declaration
+ * module was attached, and a module behind a proxy can change its declaration
  * afterwards. A row where they disagree is the interesting one.
  */
-export interface HookRow {
+export interface ModuleRow {
   id: Address;
   declaredKnown: boolean;
   slotCount: number;
@@ -127,20 +127,15 @@ export interface ExplorerSlot {
   currencyRef: CurrencyRef | null;
   price: string;
   deposit: string;
-  taxBps: string;
-  minDepositSeconds: string;
-  /** Null is an ordinary configuration — the plain Harberger slot. */
-  hook: Address | null;
-  hookRef: HookRow | null;
+  taxRateBps: string;
+  minRunwaySeconds: string;
+  /** Null is an ordinary configuration — the plain common-ownership slot. */
+  module: Address | null;
+  moduleRef: ModuleRow | null;
   mutableTax: boolean;
-  mutableHook: boolean;
-  /**
-   * A queued term change. Two independent dimensions sharing one deferral, so
-   * both booleans are read: a queued hook change TO the zero address means
-   * "detach the hook", which `pendingHook` alone cannot express.
-   */
-  pendingHasTax: boolean;
-  pendingHasHook: boolean;
+  mutableModule: boolean;
+  /** Which terms are queued. Non-zero means a change is waiting. */
+  pendingMask: number;
   createdAt: string;
   /**
    * When tax was last realised out of `deposit`. Null on rows written before
@@ -177,19 +172,18 @@ const SLOT_FIELDS = /* GraphQL */ `
   }
   price
   deposit
-  taxBps
-  minDepositSeconds
-  hook
-  hookRef {
+  taxRateBps
+  minRunwaySeconds
+  module
+  moduleRef {
     id
     declaredKnown
     slotCount
     failedCallCount
   }
   mutableTax
-  mutableHook
-  pendingHasTax
-  pendingHasHook
+  mutableModule
+  pendingMask
   createdAt
   lastSettled
 `;
@@ -292,12 +286,12 @@ export function useAccounts() {
 }
 
 // ──────────────────────────────────────────
-// Hooks (the protocol's one extension point)
+// Modules (the protocol's one extension point)
 // ──────────────────────────────────────────
 
-const HOOKS_QUERY = /* GraphQL */ `
-  query Hooks($chainId: Int!) {
-    hooks(
+const MODULES_QUERY = /* GraphQL */ `
+  query Modules($chainId: Int!) {
+    modules(
       where: { chainId: $chainId }
       orderBy: "slotCount"
       orderDirection: "desc"
@@ -314,25 +308,25 @@ const HOOKS_QUERY = /* GraphQL */ `
 `;
 
 /**
- * Every hook any slot on this chain points at.
+ * Every module any slot on this chain points at.
  *
  * The successor to `useModules`, and not a rename: a slot had a gallery of
- * modules and now has exactly ONE hook, so this is a filter dimension with one
+ * modules and now has exactly ONE module, so this is a filter dimension with one
  * value per slot rather than many.
  */
-export function useHooks() {
+export function useModules() {
   const { chainId } = useChain();
 
   return useQuery({
-    queryKey: ["explorer", "hooks", chainId],
+    queryKey: ["explorer", "modules", chainId],
     queryFn: async ({ signal }) => {
-      const data = await indexerFetch<{ hooks: { items: HookRow[] } }>(
+      const data = await indexerFetch<{ modules: { items: ModuleRow[] } }>(
         chainId,
-        HOOKS_QUERY,
+        MODULES_QUERY,
         { chainId },
         signal,
       );
-      return data.hooks?.items ?? [];
+      return data.modules?.items ?? [];
     },
   });
 }
@@ -342,8 +336,8 @@ export function useHooks() {
 // ──────────────────────────────────────────
 
 export interface SlotFilters {
-  /** Hook addresses to include. Empty or absent means every hook. */
-  hooks?: string[];
+  /** Module addresses to include. Empty or absent means every module. */
+  modules?: string[];
   recipient?: string;
   occupant?: string;
   /**
@@ -385,9 +379,9 @@ export interface PageInfo {
  */
 function buildSlotWhere(chainId: number, filters?: SlotFilters): string {
   const parts = [`chainId: ${chainId}`];
-  if (filters?.hooks && filters.hooks.length > 0) {
-    const list = filters.hooks.map((h) => `"${h.toLowerCase()}"`).join(", ");
-    parts.push(`hook_in: [${list}]`);
+  if (filters?.modules && filters.modules.length > 0) {
+    const list = filters.modules.map((h) => `"${h.toLowerCase()}"`).join(", ");
+    parts.push(`module_in: [${list}]`);
   }
   if (filters?.recipient)
     parts.push(`recipient: "${filters.recipient.toLowerCase()}"`);
@@ -403,7 +397,7 @@ const SORTABLE = new Set([
   "createdAt",
   "isOccupied",
   "price",
-  "taxBps",
+  "taxRateBps",
   "updatedAt",
 ]);
 
@@ -449,9 +443,9 @@ function slotsQuery(
  * `endCursor`. The caller keeps the cursor for each page it has visited so
  * Prev still works — see `SlotsTable`.
  *
- * `hooks` filters with `hook_in`. A slot with no hook has `hook: null` and is
+ * `modules` filters with `module_in`. A slot with no module has `module: null` and is
  * excluded by that filter, which is correct: "show me slots running the minimum
- * tenure hook" should not return the plain Harberger ones.
+ * tenure module" should not return the plain common-ownership ones.
  */
 export function useExplorerSlots(
   filters: SlotFilters | undefined,
@@ -465,7 +459,7 @@ export function useExplorerSlots(
       "explorer",
       "slots",
       chainId,
-      filters?.hooks?.join(",") ?? "",
+      filters?.modules?.join(",") ?? "",
       filters?.recipient ?? "",
       filters?.occupant ?? "",
       filters?.creator ?? "",
@@ -502,7 +496,7 @@ export function useExplorerSlots(
  * their own, and rendering a deposit at the wrong scale is off by orders of
  * magnitude while looking perfectly plausible.
  *
- * `hookAttestedEvent`, `adminTransferredEvent` and `beaconUpgradedEvent` are
+ * `adminTransferredEvent` and `beaconUpgradedEvent` are
  * deliberately absent: they are FACTORY events with no slot, and every row in
  * this feed links to a slot. They belong on a factory/admin screen.
  */
@@ -520,7 +514,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         recipient
         creator
         deployer
-        hook
+        module
         timestamp
         tx
       }
@@ -766,9 +760,9 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         slot
         manager
         changeTax
-        changeHook
-        taxBps
-        hook
+        changeModule
+        taxRateBps
+        module
         timestamp
         tx
       }
@@ -782,12 +776,12 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
       items {
         id
         slot
-        taxBps
-        hook
+        taxRateBps
+        module
         previousTaxPercentage
-        previousHook
+        previousModule
         taxChanged
-        hookChanged
+        moduleChanged
         timestamp
         tx
       }
@@ -803,12 +797,12 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
         slot
         manager
         cancelTax
-        cancelHook
+        cancelModule
         timestamp
         tx
       }
     }
-    hookCallFailedEvents(
+    moduleCallFailedEvents(
       where: { chainId: $chainId }
       orderBy: "timestamp"
       orderDirection: "desc"
@@ -817,7 +811,7 @@ const RECENT_EVENTS_QUERY = /* GraphQL */ `
       items {
         id
         slot
-        hook
+        module
         selector
         timestamp
         tx
@@ -930,7 +924,7 @@ export function useIndexerMeta() {
 // Solvency, without asking the chain
 // ──────────────────────────────────────────
 
-/** The contract's denominator. `taxBps` is basis points per 30 days. */
+/** The contract's denominator. `taxRateBps` is basis points per 30 days. */
 const BASIS_POINTS = 10_000n;
 
 /**
@@ -949,7 +943,7 @@ const BASIS_POINTS = 10_000n;
  *
  * The arithmetic is the contract's own, from `SlotMath.taxFor`:
  *
- *   owed = price * taxBps * elapsed / (30 days * 10_000)
+ *   owed = price * taxRateBps * elapsed / (30 days * 10_000)
  *
  * evaluated against `lastSettled`, which is what `SlotAccounting.taxOwed()`
  * measures from. BigInt throughout and the division last, mirroring the
@@ -983,7 +977,7 @@ export function taxOwedAt(
   if (nowSeconds <= settled) return 0n;
 
   return (
-    (BigInt(slot.price) * BigInt(slot.taxBps) * (nowSeconds - settled)) /
+    (BigInt(slot.price) * BigInt(slot.taxRateBps) * (nowSeconds - settled)) /
     (MONTH_SECONDS * BASIS_POINTS)
   );
 }

@@ -6,7 +6,7 @@
     "dev": "vocs dev",
     "build": "vocs build",
     "preview": "vocs preview",
-    "//start": "vocs 2.x emits a Waku RSC server app, not a static site — dist/ holds an SSR bundle and zero HTML. This is what the host must run.",
+    "//start": "vocs 2.x emits a Waku RSC server app, not a static site \u2014 dist/ holds an SSR bundle and zero HTML. This is what the host must run.",
     "start": "node dist/serve-node.js"
   },
   "dependencies": {
@@ -14,8 +14,8 @@
     "mermaid": "^11.13.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "vite": "^8.1.5",
-    "vocs": "^2.8.2",
+    "vite": "8.1.5",
+    "vocs": "2.8.2",
     "waku": "1.0.0-beta.8"
   },
   "devDependencies": {

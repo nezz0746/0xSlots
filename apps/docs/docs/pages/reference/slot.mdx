@@ -2,9 +2,10 @@ import { Callout } from 'vocs'
 
 # Slot
 
-The contract behind one position. Every mutating call settles accrued tax before
-anything else happens, so the numbers are correct whenever anyone looks —
-nothing runs on a timer.
+The contract behind one position, deployed by the [SlotFactory](/reference/factory)
+as a beacon proxy. Every mutating call settles accrued tax before anything else
+happens, so the numbers are correct whenever anyone looks — nothing runs on a
+timer. `Slot` inherits OpenZeppelin's `Multicall`.
 
 ## Occupant operations
 
@@ -17,186 +18,160 @@ function buy(
 ) external payable;
 
 function selfAssess(uint256 newPrice) external;   // occupant or operator
-function topUp(uint256 amount) external payable;   // anyone may fund a slot
+function topUp(uint256 amount) external payable;   // anyone may fund an occupied slot
 function withdraw(uint256 amount) external;        // occupant only
-function release() external;                       // occupant only, always allowed
+function release() external;                       // occupant only
+function setOperator(address operator, bool allowed) external; // occupant only
 ```
 
 `buy` separates who **pays** (`msg.sender`) from who **holds** (`account`), so a
-contract can acquire a slot on someone's behalf.
+contract can acquire a slot on someone's behalf. It charges
+`quoteBuy(account, depositAmount)`: the sitting occupant's price (zero when
+vacant), plus the deposit, plus any debt `account` owes this slot. Native slots
+require `msg.value` to equal it exactly.
 
 <Callout type="warning">
-`maxPayment` bounds the total an ERC-20 buy can cost. The sitting price is read
-at execution, not when you quoted it, so without a ceiling the occupant could
-raise it between your simulation and your inclusion and take the whole allowance.
-Native buys are incidentally safe (`buy` checks `msg.value` for equality). Pass
-`0` only to opt out on purpose.
+`maxPayment` bounds what a buy can cost. The sitting price is read at execution,
+not when you quoted it, so without a ceiling the occupant could raise it between
+your simulation and your inclusion. Pass `0` only to opt out on purpose.
 </Callout>
 
-## Selling into an offer
+`selfAssess`, `withdraw` and `buy` all require the deposit to cover
+`minRunwaySeconds` of tax at the price in question. An operator may only
+`selfAssess`, and the grant lapses when the tenure ends.
 
-`Slot.sell` no longer exists. It took a buyer's signed order and seated them —
-a SECOND seating path, resetting the tenure like `buy` but running `beforeSell`
-instead of `beforeBuy`, so every hook author had two doors to police.
-
-A consensual sale is now two calls the core already had, performed by the
-[OfferBook](/reference/book) inside the occupant's own transaction:
-
-```solidity
-slot.selfAssess(price)                 // the occupant's price, restated
-slot.buy(bidder, price, deposit, max)  // the ordinary market path
-```
-
-Atomic, so nothing can take the slot between them. The economics are unchanged —
-`buy` already refunds the outgoing occupant their deposit plus the price.
-
-For the book to make the first call the occupant must make it their operator:
-
-```solidity
-slot.setOperator(book, true);   // lapses with the tenure
-book.acceptOffer(slot, id);     // occupant only
-```
-
-<Callout type="info">
-Choosing your counterparty went with `sell`, deliberately: it is the one thing a
-Harberger market exists to deny. An occupant who wants price `P` calls
-`selfAssess(P)` and anybody may take it — they receive `P` either way. What the
-book adds is that they are at `P` for zero blocks rather than sitting exposed at
-a valuation they only wanted if somebody bought it.
-</Callout>
+A consensual sale goes through the [OfferBook](/reference/book), which calls
+`selfAssess` then `buy` inside the occupant's own transaction.
 
 ## Permissionless operations
 
 ```solidity
-function collect() external;            // push accrued tax to the recipient
-function liquidate() external;          // evict an insolvent occupant
-function claim(address account) external;
+function collect() external;              // pay out collected tax: module fee, then recipient
+function liquidate() external;            // evict an occupant whose deposit is empty
+function claim(address account) external; // pay `account` a credited payout
+function applyTerms() external;           // land ripe terms — occupant only while occupied
 ```
 
-<Callout type="info">
 `liquidate()` has **no bounty**. The reward is the slot itself: a vacant slot
 costs only the taker's own deposit, so whoever wants it can evict and buy it in
-one transaction. Paying keepers out of the recipient's accrued tax would have
-funded the incentive from the wrong pocket — across tenures that weren't even
-the defaulter's.
-</Callout>
+one `multicall`.
 
-`claim` withdraws funds credited to an account when a direct payout failed (a
-refund to a contract that rejected it, say) — pull, not push.
-
-## Delegation
-
-```solidity
-function setOperator(address operator, bool allowed) external;  // occupant only
-```
-
-An operator may `selfAssess` on the occupant's behalf — delegate price changes
-without handing over the slot.
+A payout that cannot be pushed (a contract that rejects it, say) is credited
+instead of reverting; `claim` pulls it later.
 
 ## Manager operations
 
-Only if the slot was created with `mutableTax` or `mutableHook`, and only by the
-manager. Proposed terms apply after a delay (`TERMS_DELAY`, 1 day).
+Only by the manager, and only for what the slot was created mutable for.
 
 ```solidity
-function proposeTerms(
-    uint256 newTax,
-    address newHook,       // address(0) detaches the hook
-    bytes32 newHookData,   // that hook's configuration; must be 0 when it is
-    bool    changeTax,
-    bool    changeHook
-) external;
-
-function cancelTerms(bool cancelTax, bool cancelHook) external;
+function proposeTerms(TaxTerms calldata taxTerms, ModuleTerms calldata moduleTerms, uint16 mask) external;
+function cancelTerms(uint16 mask) external;
+function acceptFee(ModuleFee calldata expected) external;  // applies now
+function acceptScopes(uint16 expected) external;          // queues for the next buy
+function setManager(address next) external;               // immediate, one step
 ```
 
-Tax and hook are proposed and cancelled **independently**, with a flag each.
-They may be governed by different parties behind one manager address; an
-all-or-nothing cancel would let whoever moves the hook wipe a queued tax change
-as a side effect. A change touching a mutable dimension you did not open reverts.
+`mask` names what to change:
 
-`newHookData` is not a third dimension — it rides under `changeHook`, because a
-hook and the configuration meant for it are one decision. The hook is asked to
-validate it now: one that rejects it is refused here rather than attached and
-vetoing every callback afterwards.
+| Bit | Constant | Changes | Needs |
+|---|---|---|---|
+| `1` | `TERM_TAX_RATE` | `taxTerms.rateBps` | `mutableTax` |
+| `2` | `TERM_RECIPIENT` | `taxTerms.recipient` | `mutableRecipient` |
+| `4` | `TERM_MIN_RUNWAY` | `taxTerms.minRunwaySeconds` | `mutableTax` |
+| `8` | `TERM_MODULE` | the whole `moduleTerms` | `mutableModule` |
+| `16` | `TERM_SCOPES` | queued by `acceptScopes`, never proposed | `mutableModule` |
+
+Fields outside the mask are ignored. Proposals are validated now — a module is
+asked `validateSettings`, `scopes` and `fee` at proposal — and then **queue**: they
+ripen after `TERMS_DELAY` (one hour) and land at the next `buy`, or earlier
+through `applyTerms`. Tax terms and the module ripen on separate clocks, so one
+role's change never holds another's back. Proposing again overwrites the named
+terms, keeps the rest queued, and restarts the delay of the group it touched. `cancelTerms` drops whichever of `mask` is
+queued and leaves the rest.
+
+## Modules
 
 ```solidity
-event TermsProposed(
-    uint256 taxBps, address hook, bytes32 hookData, bool tax, bool hook_
-);
-event TermsApplied(uint256 taxBps, address hook, bytes32 hookData);
-event TermsCancelled(bool tax, bool hook);
+function module() external view returns (address);
+function moduleTerms() external view returns (ModuleTerms memory);
+function mutableModule() external view returns (bool);
+function scopes() external view returns (Scopes memory);   // the slot's accepted copy, unpacked
+function fee() external view returns (ModuleFee memory);   // the slot's accepted copy
 ```
+
+When the module declares something different, the manager accepts it, passing
+the value they reviewed. Each reverts `NothingToAccept` if nothing would change.
+
+- `acceptFee(expected)` applies at once; tax collected so far is paid out under
+  the old fee first. Reverts `FeeChanged` if the module now says something else;
+  a rise needs `mutableRecipient`.
+- `acceptScopes(expected)` queues under `TERM_SCOPES` and lands at the next buy,
+  only when the slot's module is mutable. Reverts `ScopesChanged` if the module
+  now says something else, and `ModuleChangeQueued` while a new module is queued.
+
+To see whether there is anything to accept, ask
+[`SlotLens.moduleUpdate(slot)`](/reference/lens#moduleupdate). The SDK's
+`moduleUpdate(slot)` calls it.
 
 ## Reading state
 
-```solidity
-function getSlotInfo() external view returns (SlotInfo memory);
-```
+One getter per field (`occupant`, `price`, `terms`, `scopes`, `fee`, …), and
+the constants are public (`MAX_PRICE`, `TERMS_DELAY`,
+`MODULE_CALLBACK_GAS_LIMIT`, the `TERM_*` bits, …). For a whole slot in one
+call, or many slots, use [`SlotLens`](/reference/lens).
 
-Everything in one call — terms, the attached hook and its snapshotted
-`HookFlags`, live occupancy and financials, and any queued terms. Prefer it over
-assembling individual getters, which each re-read and re-settle.
-
-```solidity
-struct SlotInfo {
-    // terms
-    address recipient; IERC20 currency; address manager;
-    uint256 taxBps; uint256 minDepositSeconds;
-    bool mutableTax; bool mutableHook;
-    // extension
-    address hook; bytes32 hookData; HookFlags hookFlags;
-    // occupancy
-    address occupant; uint256 price; uint256 deposit;
-    uint64 occupiedSince; uint64 tenureId; uint64 lastSettled;
-    // money, as of this block
-    uint256 taxOwed; uint256 collectedTax;
-    bool isVacant; bool isInsolvent; uint256 secondsUntilLiquidation;
-    // queued terms
-    uint256 pendingTaxBps; address pendingHook; bytes32 pendingHookData;
-    bool pendingHasTax; bool pendingHasHook;
-    uint64 pendingProposedAt; bool hasRipeTerms;
-}
-```
-
-Individual getters exist for the common fields:
+Beyond the fields:
 
 ```solidity
-function occupant() external view returns (address);
-function price() external view returns (uint256);
-function deposit() external view returns (uint256);
-function taxOwed() external view returns (uint256);
-function isInsolvent() external view returns (bool);
-function isVacant() external view returns (bool);
+function quoteBuy(address account, uint256 depositAmount) external view returns (uint256);
+function minDepositForBuy(uint256 price) external view returns (uint256);  // uses ripe queued terms
+function minDepositToHold(uint256 price) external view returns (uint256);  // terms in force
+function hasRipeTerms() external view returns (bool);
+function pending() external view returns (Pending memory); // stored as-is
+function isOperator(address operator) external view returns (bool);
+function debtOf(address account) external view returns (uint256);
+function claimableOf(address account) external view returns (uint256);
 ```
+
+Size a buy's deposit with `minDepositForBuy`: a buy applies ripe queued terms
+before its funding check, so the buyer funds the terms they are buying into.
 
 ## Events
 
-The occupancy and money log. `Sold` and `OrderCancelled` went with `sell` — a
-sale now emits `Bought` on the slot and `Filled` on the book.
-
 ```solidity
-event Bought(/* buyer, account, price, deposit, … */);
+event Initialized(address indexed currency, address indexed manager, bool mutableTax,
+                  bool mutableRecipient, bool mutableModule, TaxTerms taxTerms, ModuleTerms moduleTerms);
+event Bought(address indexed buyer, address indexed from, uint256 price, uint256 deposit, uint256 paid);
 event Released(address indexed occupant, uint256 refund);
 event Liquidated(address indexed by, address indexed occupant);
 event PriceSet(address indexed by, uint256 oldPrice, uint256 newPrice);
 event Deposited(address indexed by, uint256 amount, uint256 total);
 event Withdrawn(address indexed occupant, uint256 amount, uint256 left);
+event OperatorSet(address indexed operator, bool allowed, uint64 indexed tenureId);
+
 event Settled(uint256 owed, uint256 paid, uint256 depositLeft);
 event TaxPaid(address indexed payer, uint256 owed, uint256 paid);
 event TaxCollected(address indexed recipient, uint256 amount);
-event OperatorSet(address indexed operator, bool allowed, uint64 indexed tenureId);
-event Credited(address indexed account, uint256 amount);   // a push payment failed
-event Claimed(address indexed account, uint256 amount);    // and was later pulled
+event ModuleFeePaid(address indexed module, address indexed recipient, uint256 amount);
+event DebtRepaid(address indexed account, uint256 amount);
+event Credited(address indexed account, uint256 amount);  // a push payment failed
+event Claimed(address indexed account, uint256 amount);   // and was later pulled
+
+event TermsProposed(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 mask);
+event TermsCancelled(uint16 mask);
+event TermsApplied(TaxTerms taxTerms, ModuleTerms moduleTerms, uint16 scopes, ModuleFee fee, uint16 mask);
+event ManagerSet(address indexed previous, address indexed next);
+event FeeAccepted(ModuleFee fee);
+event ScopesAccepted(uint16 scopes);
+
+event ModuleCallFailed(address indexed module, bytes4 selector); // an effect callback reverted, swallowed
+event ModuleDropped(address indexed module);                     // a queued module could not be installed
+event ScopesDropped(address indexed module, uint16 scopes);      // accepted scopes the module no longer declares
 ```
 
-`OperatorSet` carries the `tenureId` it is scoped to. An approval dies with the
+`OperatorSet` carries the `tenureId` it is scoped to: an approval dies with the
 tenure and there is no revocation event, so a log without it cannot be replayed
-into `isOperator` — an indexer would show a previous occupant's bot as a
-co-signer on somebody else's asking price.
+into `isOperator`.
 
-`TaxPaid` is the one to reduce over for per-address accounting, and it **always**
-fires — including when an `after` hook call fails. A failed hook emits
-`HookCallFailed(hook, selector)` and is otherwise swallowed; a hook that reverts
-its own attachment check is dropped with `HookDetached(hook)`. Neither can block
-the operation, which is the whole point of the `after` side.
+`TaxPaid` is the one to reduce over for per-address accounting, and it fires
+whether or not the module's `afterSettle` succeeds.

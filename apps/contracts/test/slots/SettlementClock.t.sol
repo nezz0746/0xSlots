@@ -6,25 +6,23 @@ import {Slot, SlotInit} from "../../src/Slot.sol";
 import {SlotsTest} from "./Slots.t.sol";
 
 /**
- * Settlement may never charge the same second twice.
+ * Settlement may never charge the same second twice, and never forgive one.
  *
- * `_settle` advances `lastSettled` by the time actually paid for rather than
- * to now, which is what stops anyone grinding the clock forward for free. The
- * conversion floors, and so does `taxFor` — in the opposite direction. At a
- * fractional per-second rate that combination took a wei and advanced nothing,
- * leaving the guard at the top of `_settle` disarmed and the same second
- * chargeable for ever through `topUp(0)`.
+ * `_settle` moves the clock to now and CARRIES whatever fell short of a whole
+ * unit (`Occupancy.taxCarry`). Two earlier designs each failed one direction:
+ * holding the clock back by the time paid for, with a floor, took a wei and
+ * advanced nothing, so the same second was chargeable for ever through
+ * `topUp(0)`; the ceiling that fixed it forgave up to a unit per settle, and a
+ * settle every block turned that into up to half the rent. Carrying the
+ * remainder makes the total independent of how often anybody settles.
  */
 contract SettlementClockTest is SlotsTest {
     /// @dev A native slot whose per-second tax is deliberately fractional.
-    function _fractional(
-        uint256 taxBps,
-        uint256 window
-    ) internal returns (Slot s) {
+    function _fractional(uint256 taxRateBps, uint256 window) internal returns (Slot s) {
         SlotInit memory init = _init(address(0), 0);
         init.currency = IERC20(address(0));
-        init.taxBps = taxBps;
-        init.minDepositSeconds = window;
+        init.taxTerms.rateBps = uint16(taxRateBps);
+        init.taxTerms.minRunwaySeconds = uint32(window);
         return Slot(payable(factory.createSlot(init)));
     }
 
@@ -50,7 +48,9 @@ contract SettlementClockTest is SlotsTest {
         vm.startPrank(bob);
         s.topUp(0);
         uint256 afterFirst = s.deposit();
-        for (uint256 i; i < 99; ++i) s.topUp(0);
+        for (uint256 i; i < 99; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         assertEq(block.timestamp, start + 1, "no time passed");
@@ -77,7 +77,9 @@ contract SettlementClockTest is SlotsTest {
         assertGt(oneSecond, 0, "a second is worth something here");
 
         vm.startPrank(bob);
-        for (uint256 i; i < 500; ++i) s.topUp(0);
+        for (uint256 i; i < 500; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         // Exactly one second, however many times it was asked for. A tolerance
@@ -90,14 +92,11 @@ contract SettlementClockTest is SlotsTest {
     }
 
     /**
-     * The property the conversion exists for, still holding.
-     *
-     * A window too short to price one unit of currency must accrue zero AND
-     * leave the clock alone — otherwise the same free settle grinds time
-     * forward at no cost, which is the mirror of the bug above. The floor is
-     * lifted only when something was actually taken.
+     * A window too short to price one unit of currency accrues zero now, but
+     * is carried rather than lost — so a free settle cannot grind time
+     * forward for nothing, which is the mirror of the bug above.
      */
-    function test_AWindowTooShortToChargeDoesNotAdvanceTheClock() public {
+    function test_AWindowTooShortToChargeIsCarriedNotLost() public {
         Slot s = _fractional(1, 30 days);
         uint256 price = 1e6; // 1 wei per ~2.6e7 seconds: a second buys nothing
         uint256 dep = s.minDepositForBuy(price);
@@ -109,7 +108,9 @@ contract SettlementClockTest is SlotsTest {
         assertEq(s.taxOwed(), 0, "a second is worth nothing here");
 
         vm.startPrank(bob);
-        for (uint256 i; i < 50; ++i) s.topUp(0);
+        for (uint256 i; i < 50; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         assertEq(s.deposit(), dep, "nothing taken");
@@ -118,6 +119,38 @@ contract SettlementClockTest is SlotsTest {
         // And the unpaid second is still owed, rather than ground away.
         vm.warp(block.timestamp + 30 days);
         assertGt(s.taxOwed(), 0, "the elapsed time still accrues");
+    }
+
+    /**
+     * The grind the ceiling allowed, measured at its worst price band.
+     *
+     * 5,183,999 at 100%/month accrues 1.9999996 wei a second. Settled once an
+     * hour that is 7,199 wei; settled every second under the old ceiling it
+     * was 3,600 — half the rent destroyed by 3,600 free `topUp(0)` calls. The
+     * carried remainder makes the two identical to the wei.
+     */
+    function test_SettlingEverySecondChargesWhatSettlingOnceDoes() public {
+        Slot once = _fractional(10_000, 0);
+        Slot ground = _fractional(10_000, 0);
+        uint256 price = 5_183_999;
+        vm.deal(alice, 1 ether);
+        vm.startPrank(alice);
+        once.buy{value: 10_000}(alice, price, 10_000, 10_000);
+        ground.buy{value: 10_000}(alice, price, 10_000, 10_000);
+        vm.stopPrank();
+
+        // `skip`, not `warp(start + i)`: under via-IR the optimizer may re-read
+        // `block.timestamp` in place of a local copy, and the warps compound.
+        vm.startPrank(bob);
+        for (uint256 i = 1; i <= 3600; ++i) {
+            skip(1);
+            ground.topUp(0);
+        }
+        once.topUp(0);
+        vm.stopPrank();
+
+        assertEq(once.collectedTax(), 7_199, "an hour, settled once");
+        assertEq(ground.collectedTax(), once.collectedTax(), "settled every second: the same");
     }
 
     /// @notice Tax over a long window is unchanged by the floor.

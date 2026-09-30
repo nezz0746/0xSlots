@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {SlotConstants} from "../../src/slot/SlotConstants.sol";
+
+import {SlotInit, TaxTerms, ModuleTerms} from "../../src/types/SlotTypes.sol";
+
 import {SlotsTest, DenyBuys} from "./Slots.t.sol";
-import {Slot, SlotInit} from "../../src/Slot.sol";
+import {Slot} from "../../src/Slot.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {InsufficientGasForTerms} from "../../src/SlotErrors.sol";
 
 /**
  * The two defects this file was written to demonstrate, now asserting the fix.
@@ -15,11 +18,11 @@ import {InsufficientGasForTerms} from "../../src/SlotErrors.sol";
  * the exact shape of the mistake, and the comment saying "this used to drain
  * the deposit" is worth more beside the assertion than in a commit message.
  */
-contract QuickAuditTest is SlotsTest {
+contract QuickAuditTest is SlotsTest, SlotConstants {
     /**
      * @notice Settling a hundred times in one second costs one second of tax.
      *
-     * @dev This drained the whole deposit. `secondsFor(paid, price, taxBps)`
+     * @dev This drained the whole deposit. `secondsFor(paid, price, taxRateBps)`
      *      floors, so at a price whose per-second tax is fractional — 1.5 wei
      *      here — one wei of tax bought ZERO seconds of clock. The settle took
      *      the wei and left `lastSettled` where it was, so the next call in the
@@ -34,7 +37,7 @@ contract QuickAuditTest is SlotsTest {
     function test_RepeatedSettlementCannotDrainDepositInOneBlock() public {
         SlotInit memory init = _init(address(0), 0);
         init.currency = IERC20(address(0));
-        init.taxBps = 10_000;
+        init.taxTerms.rateBps = uint16(10_000);
         Slot s = Slot(payable(factory.createSlot(init)));
         vm.deal(alice, 100);
         vm.prank(alice);
@@ -45,7 +48,9 @@ contract QuickAuditTest is SlotsTest {
         assertEq(s.taxOwed(), 1);
 
         vm.startPrank(bob);
-        for (uint256 i; i < 100; ++i) s.topUp(0);
+        for (uint256 i; i < 100; ++i) {
+            s.topUp(0);
+        }
         vm.stopPrank();
 
         assertEq(block.timestamp, start + 1, "no time passed");
@@ -61,37 +66,29 @@ contract QuickAuditTest is SlotsTest {
     }
 
     /**
-     * @notice A buy too gas-starved to apply ripe terms reverts, rather than
-     *         buying under the old ones.
+     * @notice A buyer cannot be seated under terms a ripe proposal replaced.
      *
-     * @dev `_applyPending` was gas-guarded so a hostile hook could not block a
-     *      slot, and `buy` inherited the guard. That let a buyer CHOOSE to skip
-     *      it: send just enough gas for the buy and not enough for the terms,
-     *      and a ripe hook that would have vetoed you never ran, while the tax
-     *      rate stayed at the old one. The manager's change sat ripe and
-     *      unapplied for as long as buyers kept starving it.
-     *
-     *      The guard still exists everywhere it was protecting somebody —
-     *      settlement, release, liquidation — and `buy` alone now insists.
-     *      Nobody is trapped by that: a buy is optional, and the person it
-     *      inconveniences is the one who chose the gas.
+     * @dev REGRESSION, restated. `buy` applies the queue BEFORE asking the module,
+     *      so a buyer always faces the module their purchase brings in. It used to
+     *      be skippable by starving the gas the application needed; exits no
+     *      longer apply terms, so there is no starvation path left to inherit.
      */
-    function test_LowGasBuyCannotSkipRipeTerms() public {
+    function test_ABuyCannotSlipPastRipeTerms() public {
         Slot s = _slot(address(0));
         DenyBuys deny = new DenyBuys();
         vm.prank(manager);
-        s.proposeTerms(10_000, address(deny), bytes32(0), true, true);
-        vm.warp(block.timestamp + s.TERMS_DELAY());
+        s.proposeTerms(
+            TaxTerms({recipient: address(0), rateBps: uint16(10_000), minRunwaySeconds: 0}),
+            ModuleTerms({module: address(deny), settings: ""}),
+            uint16(9)
+        );
+        vm.warp(block.timestamp + TERMS_DELAY);
         assertTrue(s.hasRipeTerms());
+
         vm.startPrank(bob);
         token.approve(address(s), type(uint256).max);
-        // With gas to spare, the ripe hook applies and then vetoes.
         vm.expectRevert(DenyBuys.Denied.selector);
         s.buy(bob, 100 ether, 1 ether, 1 ether);
-
-        // Starved of gas, it no longer slips past — it says so.
-        vm.expectRevert(InsufficientGasForTerms.selector);
-        s.buy{gas: 300_000}(bob, 100 ether, 1 ether, 1 ether);
         vm.stopPrank();
 
         assertEq(s.occupant(), address(0), "nobody bought under the old terms");

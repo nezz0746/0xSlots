@@ -243,7 +243,7 @@ export function RecipientPageContent({ address }: { address: string }) {
  *
  * Only `taxOwed` was genuinely absent, because it is a function of
  * `block.timestamp` rather than of any event — and it is arithmetic over
- * `lastSettled`, `price` and `taxBps`, which the indexer does have. So it is
+ * `lastSettled`, `price` and `taxRateBps`, which the indexer does have. So it is
  * computed here, from the same formula the contract uses, against one clock
  * shared by the whole page.
  */
@@ -276,7 +276,7 @@ function RecipientSlotRow({
     occupant: (slot.occupant ?? zeroAddress) as Address,
     isInsolvent: now === null ? false : isInsolventAt(slot, now),
     price: BigInt(slot.price),
-    taxBps: BigInt(slot.taxBps),
+    taxRateBps: BigInt(slot.taxRateBps),
     deposit: BigInt(slot.deposit),
   };
 
@@ -309,7 +309,7 @@ function RecipientSlotRow({
         {state ? amount(state.price) : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
-        {state ? `${formatBps(Number(state.taxBps))}/mo` : "…"}
+        {state ? `${formatBps(Number(state.taxRateBps))}/mo` : "…"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-xs">
         {state ? amount(state.deposit) : "…"}
