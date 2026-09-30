@@ -1,5 +1,131 @@
 # @0xslots/contracts
 
+## 1.0.0
+
+### Major Changes
+
+- 4f38a09: Protocol v1: a clean-slate redeploy of every contract, at new addresses, with every `version()` back at 1. Nothing is compatible with the previous deployment.
+
+  **Terms.** A slot's terms are `TaxTerms { recipient, rateBps (uint16), minRunwaySeconds (uint32) }` and `ModuleTerms { module, settings }`. `SlotInit` is `{ currency, manager, mutableTax, mutableRecipient, mutableModule, taxTerms, moduleTerms }`; a manager is required exactly when something is mutable.
+
+  - `proposeTerms(TaxTerms, ModuleTerms, uint16 mask)` queues any combination of `TERM_TAX_RATE | TERM_RECIPIENT | TERM_MIN_RUNWAY | TERM_MODULE`, each allowed only if the slot was created mutable for it (`mutableTax` covers the tax rate and minimum runway). `TERM_SCOPES` is queued only by `acceptScopes`. `cancelTerms(uint16 mask)` clears whichever of those are queued. Everything lands at the next `buy` once `TERMS_DELAY` (one hour) has passed, or at `applyTerms()` — callable by the occupant while somebody is seated, by anyone while the slot is vacant. `release` and `liquidate` land nothing: a vacated slot keeps the terms it had until the next buyer funds the new ones, so no eviction ever reads an incoming module.
+  - `setManager(address)` hands over immediately.
+  - Views: `terms()` (`Terms { taxTerms, moduleTerms }`), `pending()` (`Pending { taxTerms, nextModule, mask, proposedAt, moduleProposedAt }`), `hasRipeTerms()`, `taxTerms()`, `moduleTerms()`, `module()`, `scopes()`, `fee()`, `mutableTax()`, `mutableRecipient()`, `mutableModule()`, `taxRateBps()`, `minRunwaySeconds()`, `scopes()`, and a public getter for every constant, `MAX_MIN_RUNWAY` and the `TERM_*` bits included. `Initialized`, `TermsProposed`, `TermsCancelled` and `TermsApplied` carry the structs and mask.
+
+  **Modules.** A slot installs one module: any contract implementing `ISlotModule`. A module declares what it asks of a slot in two reads: `scopes(bytes settings) returns (uint16)`, its callbacks (`before*`/`after*`, `onInstall`, `onUninstall` and `afterCallbacksMustSucceed`) as `ScopesLib` bits, and `fee(bytes settings) returns (ModuleFee { bps, recipient })`, a share of rent. The slot reads both when the module is proposed and when it is installed, keeps its own copy, and pays the fee share of collected rent on every payout (`ModuleFeePaid`). Payouts and callbacks never read the module's current answer. A `before*` callback may refuse and is `view`; an `after*` callback records, is gas-capped and swallowed (`ModuleCallFailed`) unless the module declares `afterCallbacksMustSucceed`.
+
+  - **Settings are bytes on the slot.** `ModuleTerms.settings` is `bytes`: `abi.encode` of the fields the module's definition lists, handed to every callback. No size cap, no module-side store.
+  - **One module record.** The installed module is one `InstalledModule { module, scopes, fee, settings }` at `slots.module`; installing copies a record in, removing deletes it. `ModuleLib` holds everything the slot does with it: reverting and fail-open reads, `before`/`after` calls by scope, install. Capped calls never copy returndata, so a module cannot inflate an eviction's gas with a huge answer.
+  - **One pending struct.** Everything queued lives in one `Pending` (`taxTerms`, `module`, `mask`, `proposedAt`), stored exactly as `pending()` returns it; `module` is the same record, holding the proposed module with its reviewed scopes and fee, or only newly accepted scopes; whether it lands next is `hasRipeTerms()` (also `SlotInfo.hasRipeTerms`). A proposed module keeps the scopes and fee reviewed for it there; accepted scopes use the same field, and a proposed module replaces them. AdLand's key-change struct is `PendingKey`.
+  - A module changing its scopes or fee changes nothing until the manager accepts it. The SDK's `moduleUpdate(slot)` compares the two.
+  - `acceptFee(ModuleFee expected)` applies at once, after paying out earned rent under the old fee (`FeeAccepted`); a rise, or a new fee recipient, needs `mutableRecipient`, and it waits while the occupant owes debt (`DebtOutstanding`). `acceptScopes(uint16 expected)` queues under `TERM_SCOPES` for the next buy, only when the module is mutable (`ScopesAccepted`), and reverts `ModuleChangeQueued` while a new module is queued. Both revert `FeeChanged`/`ScopesChanged` unless the module still declares exactly `expected`, and `NothingToAccept` if nothing would change.
+  - A new fee applies at once on any slot, after paying out earned rent under the old fee: it never changes what an occupant pays.
+  - New scopes queue under `TERM_SCOPES` for the next buy, only when the module is mutable. At that transition the module is read again; scopes it no longer declares are dropped (`ScopesDropped`), and a queued module that cannot be read is dropped (`ModuleDropped`). A queued `TERM_MODULE` supersedes queued scopes.
+  - Modules validate their settings in `validateSettings(bytes)`. One that cannot answer within the stipend the slot reads it under is refused at proposal (`ModuleTooExpensive`), rather than being installed as nothing later.
+  - `onInstall(SlotContext)` tells a module it has become a slot's module, from `initialize` and wherever a queued module lands. It honours `afterCallbacksMustSucceed`, and never fires on an eviction. `onUninstall(SlotContext)` tells the outgoing module, before the swap, so it is handed its own settings — capped and swallowed even for a `afterCallbacksMustSucceed` module, because a module able to refuse its own removal is one a manager can never replace.
+  - **Discovery.** `IModuleMetadata` is one call: `metadata()` returns a JSON document whose `settings` is a JSON Schema 2020-12, which an application hands to `react-jsonschema-form`, JSONForms or AJV untouched. `ModuleSchemaLib` builds it from the module's own constants, so a published bound cannot drift from the check that enforces it. The protocol adds `x-abi` (an ordered `AbiParameter[]`, since encoding is positional), `x-optional`, and `x-semantic` / `x-unit` / `x-minimum` / `x-maximum` / `x-enum-labels` / `x-format`, and an `errors` list naming and wording each way `validateSettings` may refuse. Every value is a string, because a `uint64` bound does not survive `JSON.parse` as a number.
+  - Shipped modules live in `src/modules/`: `MinimumTenureModule` (one deployment, every duration — the window is the slot's `settings`), `AdLand`, and the `SlotBoundNFT` family.
+
+  **Debt.** Tax an occupant's deposit could not cover is `debtOf(account)` (`DebtRepaid` when paid), and it lasts for the tenure only. It is paid out of a top-up before it funds the deposit and out of the price when the occupant is bought out; whatever is left ends at release, liquidation or buyout. `buy` seats whoever the payer names, so debt that followed the account could have been pinned on anyone. `quoteBuy` is the sitting price plus the deposit; its account argument no longer changes the answer. `applyTerms` waits while the occupant owes debt, as `acceptFee` does, so owed tax is paid under the terms it was earned under.
+
+  **Two clocks.** Queued tax terms and the queued module (or accepted scopes) ripen on separate clocks, `proposedAt` and `moduleProposedAt`, and each lands on its own — one role re-proposing its terms can no longer hold another's change back. `SlotLens.getSlotInfo` reports `taxTermsRipe` and `moduleTermsRipe`; the SDK's `Pending` carries `moduleProposedAt`, `taxAppliesAt` / `moduleAppliesAt` and `taxApplies` / `moduleApplies`.
+
+  **Module callbacks.** A capped callback reverts with `ModuleGasTooLow` rather than run short of its stipend, so a caller cannot starve one on purpose and have the failure swallowed. A queued scopes change lets the outgoing module judge a displacing buy, as a queued module change does. `onInstall` for a module attached by queued terms is capped and swallowed, so it cannot refuse every buy; a queued module that is dropped leaves the old one installed. `collectAll` and a collective's `sweep` give each slot at most 1.5M gas, so one slot cannot sink a batch. `secondsUntilLiquidation` counts the carried fraction and is exact.
+
+  **Hardening.** Settling rounds the paid seconds up, so settling every block charges what settling once does. A currency that delivers less than it transfers reverts with `CurrencyTakesACut`. `OfferBook.acceptOffer(slot, id, minPrice)` pins the lowest accepted price. Debt repaid at a buyout is paid out under the outgoing terms. `minDepositToHold(price)` is the floor under the terms in force; the OfferBook checks a fill against it and charges a bidder only the price and deposit. AdLand buy-and-publish approves what the slot will charge. Module re-entry bars are written only by the slot itself (`MinimumTenure.NotTheSlot`), and AdLand records them on release and liquidation for slots with a tenure window.
+
+  **Review fixes (2026-09-22).** A queued module is pinned to the scopes and fee reviewed at proposal and dropped if it declares anything else when it lands. `proposeTerms`, `cancelTerms` and `setManager` are `nonReentrant`. Settlement carries the remainder below one unit (`Occupancy.taxCarry`) and always moves the clock to now, so settling every block charges exactly what settling once does, and a later price or rate can never re-bill the past. A buy that lands a module change is judged first by the outgoing module. `MinimumTenure`'s re-entry bar also names the payer. A module fee may be up to 100%, but attaching a charging module or raising a fee needs `mutableRecipient`; on a collective it also needs the payout role. `minRunwaySeconds` is capped at a year (`MAX_MIN_RUNWAY`, `InvalidRunway`). Payouts are measured by balance delta, not decoded. `OfferBook` adds `boardPage`, `bestIn` and `liveCountIn`, counts an offer live only if its deposit meets `minDepositForBuy`, and caps a fill's pull at the offer (`QuoteAboveOffer`). AdLand reserves `primary`, resolves a key's holder live from its slot's manager (`keyOwner`), and lets an owner proposal outrank the holder's (`OwnerProposalPending`). `SlotBoundNFTWrapper.wrap` takes a `maxFee`, checks the underlying arrived (`NotReceived`) and refuses a live duplicate (`AlreadyWrapped`). `SlotCollective`'s implementation refuses a deployer without code (`DeployedByAnAccount`). The SDK's `offerBoard` reads in pages and exports `MAX_MIN_RUNWAY_SECONDS`.
+
+  **Storage.** Every concern lives at its own ERC-7201 location, so each group can grow in an upgrade.
+
+  **Indexer.** A `module` table per module contract, with its declared scopes, slot count and swallowed-call count. Slot columns follow the contract: `module`, `settings`, `mutableModule`, `moduleFeeBps`, `moduleFeeRecipient`, `moduleFeesTotal`, `pendingModule`, `pendingModuleSettings`, `pendingHasModule`, `taxRateBps`, `minRunwaySeconds`, `mutableTax`, `scope*` for accepted scopes, `pendingTaxRateBps`, `pendingHasTaxRate`, `pendingMinRunwaySeconds`, `pendingHasMinRunway`, `pendingScopes`, `pendingHasScopes`. `debtRepaidTotal` on the slot and a `debt_repaid_event` table record every `DebtRepaid`; `module_fee_paid_event` and `module_call_failed_event` record the module's payouts and swallowed calls.
+
+  **AdLand.** An ordinary module, with no slot entrypoint of its own. Its settings are `abi.encode(AdConfig { tenureWindow, moderation, key })`, stored on the slot; changing any of it goes through `proposeTerms` like every other module term. `claimKey(slot)` is permissionless. Its `scopes` read the config: `beforeBuy` and `beforeSelfAssess` are declared only when it sets a tenure window. Moderation is `approveCreative`, `rejectCreative` and `moderationOf`, with the mode read from the registered config.
+
+  **SlotLens.** A UUPS proxy beside the factories, deployed by `DeployProtocol`. `getSlotInfo(slot)` returns the whole slot in one call, with grouped `terms`, `scopes`, `fee` and `pending`; `getSlotInfos(slots)` does many; `getSlotConstants(slot)` reads every constant the slot runs under; `moduleUpdate(slot)` quotes what the module declares beside the slot's copy and whether `acceptFee`/`acceptScopes` would change anything. The slot keeps one getter per field, which keeps it under the 24,576-byte limit. AdLand's `ad()` reads the slot through the lens (a constructor argument); `SlotBoundNFT.getSlotInfoOf` is gone.
+
+  **Carried over.** `SlotFactory.collectAll` / `collectFrom`, `OfferBook`, `SlotCollective` governance (relays masks; `proposeModule` takes `ModuleTerms` and is `POLICY_MANAGER_ROLE`'s, granted at creation to `policyManagers`; `acceptFee` and `acceptScopes` relay a module's update (a fee rise or a new fee recipient also needs the payout role); `proposeModule` checks the fee the slot actually queued, not the module's own answer, before requiring the payout role; `setSplit(current, next, tokens, slots)` sweeps `slots` and pays out under the current split first — but pays nothing while paused — and refuses an empty split; `multicall` batches any of its calls under their own role checks), `SlotBoundNFTFactory` (the wrapper beacon is set in `initialize`).
+
+  **SDK.** `SlotInit`, `TaxTerms`, `ModuleTerms`, `NO_MODULE`, `TERMS`, `ALL_TERMS`; `proposeTerms({ taxRateBps, recipient, minRunwaySeconds, moduleTerms })`; `cancelTerms(slot, mask)`; `moduleUpdate(slot)`, `acceptFee(slot, fee)`, `acceptScopes(slot, scopes)`, the OfferBook (`offerBoard`, `offerAt`, `isOfferFundable`, `offerCost`, `postOffer`, `cancelOffer`, `approveOfferBook`, `authorizeOfferBook`, `acceptOffer(slot, id, minPrice)`), module reads (`readScopes`, `readFee`, `validateSettings`, `moduleMetadata`, `moduleSettings`), `liquidateAndBuy` for ERC-20 slots, `applyTerms(slot)`, `slotConstants(slot)` through the lens, `isSlot(slot)` and `slotCount()` on the factory, reads for `terms`, `fee`, `manager`, `collectedTax`, `lastSettled`, `occupiedSince` and `minRunwaySeconds`, `debtOf(slot, account)`, a `CollectivesClient` (create, tax and module relays with batching, cancels, `sweep`, `distribute`, `setSplit` with the slots to sweep and payout first, `acceptFee`, `acceptScopes`, `batch` over `multicall`, roles as `COLLECTIVE_ROLES.{admin,tax,policy,split}`) and `useCollectivesClient`, `ModuleFee`, `ModuleUpdate`, `Pending`, `SettingsCheck`, `SCOPE_BITS`, `unpackScopes`, `packScopes`, `TERMS.SCOPES`; `SlotState` carries `taxRateBps`, `minRunwaySeconds`, the three `mutable*` flags, `module`, `settings`, `scopes` and `fee`, read through `SlotLens.getSlotInfo` in one call; `slotStates(slots)` reads many; `lensAddress` overrides the lens; `pending` carries `taxTerms`, `moduleTerms`, `scopes`, `mask` and a flag per term. `knownModules` / `findKnownModule` (from `@0xslots/contracts/slots`) name the modules a client can offer by name.
+
+## 0.26.0
+
+### Minor Changes
+
+- 2cffcc2: `AdLand` is version 3: two ways to do several things in one transaction.
+
+  `createAdSlotMany(AdSlotParams[])` takes an array of the same seven fields `createAdSlot` takes and returns the addresses it made, in order. One dispatch and one `slotFactory` read rather than one of each per space — and, more usefully, calldata a wallet can decode: ten spaces read as ten structs instead of ten opaque `bytes` blobs. An empty array reverts `EmptyBatch` rather than succeeding at nothing. One revert takes the whole batch down, which follows from the single transaction and is the behaviour to want: the reverts reachable here are a missing factory, terms the core refuses, and a name already taken, none of which is a reason to keep the other nine and leave the caller to work out which is missing. Two entries claiming the same name revert on the second, because the first has already written `slotOf` — the same rule as two separate transactions, with no special case.
+
+  `multicall(bytes[])` batches anything else on the hook — publishes, terms changes, a create and a `setSlot` together. It is OpenZeppelin's `MulticallUpgradeable`, so each entry is a self-`delegatecall` and `msg.sender` is preserved throughout. That is the difference from routing the same batch through a generic aggregator like Multicall3, where every call arrives from the aggregator and a name claimed in the batch ends up owned by IT rather than by the person. It grants nothing new: every function it reaches is one the caller could already call directly, with the same access control in the same order.
+
+  `createAdSlot` keeps its exact signature and now delegates to an internal shared with the batch path, so the two cannot drift into making different kinds of slot.
+
+  Additive, and safe on a live proxy. `MulticallUpgradeable` declares no storage — it extends `Initializable` and `ContextUpgradeable`, both already inherited through `OwnableUpgradeable`, and OZ v5 keeps their state in ERC-7201 namespaced slots. `forge inspect` on the new implementation is byte-identical to the recorded layout, and the upgrade reported `layout ok` on every chain.
+
+## 0.25.0
+
+### Minor Changes
+
+- 5923351: Slots, collectives and slot-bound collections no longer share an address across chains.
+
+  All three factories deployed their children with plain `new`, which is CREATE, whose address is `keccak(rlp(deployer, nonce))` and nothing else. Constructor arguments do not enter a CREATE address at all, so two slots with different recipients, currencies, hooks and tax rates still landed on the same address whenever the factory's nonce matched — nothing about a slot's own terms ever separated it from another chain's.
+
+  Each factory is deployed at the same address on every chain, deliberately, and each therefore ran through the same nonce sequence on each of them. Slot #N on Base and slot #N on Ethereum Sepolia were consequently not merely at risk of colliding: they were the same address, by arithmetic. `SlotFactory` at `0x14df7d78` produced `0xf37e7bbf` as its first slot on both.
+
+  That is what took the indexer down. Its `slot` table was keyed on the address alone, so the second chain's row was a duplicate primary key, the insert threw unhandled, and the container restart-looped. The indexer is now keyed on (address, chainId); this is the other half, so the chains stop producing the same address in the first place.
+
+  `createSlot`, `createCollective` and `createCollection` now use CREATE2, salted with `keccak256(abi.encode(block.chainid, <counter>))` — `slotCount`, `collectives.length` and `collectionCount` respectively. Both halves are load bearing. The counter makes children distinct within a chain, and because it only ever increases, a salt never repeats and CREATE2 cannot revert on an occupied address. `block.chainid` makes them distinct across chains, and without it the collision would have survived the move untouched: a BeaconProxy's initcode is its beacon and its initializer calldata, both of which can be byte-identical on two chains.
+
+  Factories keep one address across chains. That is deliberate and is not what changes here — only their children stop sharing one. Contracts deployed directly rather than through a factory, such as `MinimumTenureHook`, are unaffected and still land at one address everywhere, which is why anything indexing them must treat (chainId, address) as the identity regardless.
+
+  No ABI change: all three creation signatures are unchanged, and an address is still returned the same way. `SlotFactory.version()` is now 4, `SlotCollectiveFactory.version()` 3, and `SlotBoundNFTFactory.version()` 2.
+
+  This does not upgrade in place. The deployment namespace moved to `0xslots.v3`, so every recorded address changes on Base, Base Sepolia and Ethereum Sepolia — factories, implementations, `AdLand`, `OfferBook` and `MinimumTenureHook` alike. The previous deployment keeps working, untouched, at addresses this package no longer names, but nothing carries over: slots, collectives, collections and every AdLand key from it are orphaned, and any embed pointing at an old slot address resolves to a space the new deployment does not know about.
+
+## 0.24.0
+
+### Minor Changes
+
+- a548f2a: `AdLand` is version 2: it can create the slots it hooks, and a key can have an owner.
+
+  `createAdSlot(recipient, currency, taxBps, minDepositSeconds, tenureWindow, manager, key)` deploys through the recorded `SlotFactory` with `hook` fixed to AdLand. It removes the three fields of `SlotInit` that fail quietly: the hook address, which a form can fill with the wrong one and produce a valid slot that simply is not an ad space; `hookData`, a `bytes32` that is really seconds; and `mutableHook`, which is `false` here, so a slot made this way is an ad space permanently rather than currently. Anyone wanting the other trade still calls `SlotFactory.createSlot` directly — this gates nothing.
+
+  A non-zero `key` claims a registry name in the same transaction, first come first served, recorded in the new `keyOwner` mapping. Only an UNCLAIMED key can be taken, so `primary` and anything already pointing somewhere are not available; the owner can still repoint any key through `setSlot`'s two-day path, so a squatted name costs a delay rather than being lost. A taken key reverts the whole creation rather than handing back a slot the caller believes is named and is not.
+
+  `setSlot` accepts the key's owner as well as the contract owner. Everything else about it is unchanged, including that the first write to an unset key is immediate and every later one waits `CHANGE_DELAY` and needs `commitSlot`.
+
+  New surface on `adLandAbi`: `createAdSlot`, `setSlotFactory`, `slotFactory`, `keyOwner`, and a `NotKeyOwner` / `KeyTaken` / `NoFactory` error each. `slotFactory` must be set by the owner once after upgrading, or `createAdSlot` reverts with `NoFactory`.
+
+  Storage is append-only, so this upgrades the live proxies in place. The recorded AdLand address changes on Base, Base Sepolia and Ethereum Sepolia.
+
+- 3976783: Add `SlotFactory.collectAll(address[])` — flush accrued tax out of many slots in
+  one transaction, and `collectFrom(address)` for a single one.
+
+  Collection is already permissionless and the money always goes to each slot's
+  own `recipient`, so this grants no new authority: it is a gas convenience for a
+  keeper, or for a recipient holding many slots.
+
+  Each collection is isolated, so a slot that reverts — `NothingToCollect`, or a
+  `strict` hook that reverts in `afterSettle` — leaves a zero in the returned
+  array instead of denying every other recipient their rent. Addresses the factory
+  did not create are skipped rather than rejected.
+
+  The returned amounts are what actually moved, capped by each slot's deposit: for
+  an insolvent slot the raw `taxOwed()` exceeds what settlement will pay out, and
+  the excess is carried as arrears rather than transferred. Simulate the call to
+  price a "collect all" button before showing it.
+
+  Adds a `NotASlot` error. `SlotFactory.version()` is now 3; this is an
+  implementation change with no storage change, so it upgrades in place.
+
+  On the SDK: `collectAll(slots)`, `simulateCollectAll(slots)` and
+  `collectFrom(slot)` on `SlotsClient`, plus a `collectAll` in the
+  `useSlotsActions` React bindings. Simulate to price a "collect all" button — a
+  transaction hash carries no return value, so that is the only way to show what a
+  collection is worth before signing it. An empty batch is refused client-side:
+  the contract accepts it, which is exactly why a UI should not be able to prompt
+  for a signature that pays gas to do nothing.
+
 ## 0.23.0
 
 ### Minor Changes
